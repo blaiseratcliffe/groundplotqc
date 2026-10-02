@@ -200,6 +200,11 @@ function Get-DataCandidates([string]$Word) {
     foreach ($m in [regex]::Matches($text, $PathInText)) {
         $leaf = ($m.Value -split '[\\/]')[-1]
         if ($leaf -match '^\.[A-Za-z]+$') { continue }
+        # An R reader or writer named without a call, as in lapply(files, read.csv).
+        if ($m.Value -notmatch '[\\/]' -and
+            ($leaf -replace '^.*::', '') -match '^(read|write)\.(csv|xlsx|xls|dbf)$') {
+            continue
+        }
         $found.Add($m.Value)
     }
     return , $found
