@@ -1,0 +1,77 @@
+{
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(Rscript *)",
+      "Bash(gh pr view *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git reset --hard *)",
+      "Bash(rm -r *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(gh pr merge *)",
+      "Bash(git branch -d *)",
+      "Bash(git stash drop *)",
+      "Bash(git stash clear *)",
+      "Bash(git filter-branch *)",
+      "Bash(git worktree remove --force *)",
+      "Bash(gh repo delete *)",
+      "PowerShell",
+      "Monitor",
+      "Agent(general-purpose)",
+      "Agent(fork)",
+      "Agent(claude)"
+    ],
+    "ask": [
+      "Edit(/.claude/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"
+            ],
+            "timeout": 30,
+            "statusMessage": "groundplotqc guard"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe",
+            "args": [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"
+            ],
+            "timeout": 30,
+            "statusMessage": "groundplotqc guard"
+          }
+        ]
+      }
+    ]
+  }
+}
