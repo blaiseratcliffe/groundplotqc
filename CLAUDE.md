@@ -93,7 +93,8 @@ question.
 - The guard hook blocks destructive git, commits and pushes to `main`, file writes
   through Bash, edits in `spec/` and to the consent list, and reads of data files named
   in a tool call. It can't see reads made inside R scripts or through a database
-  connection; "Data" still covers those. Don't work around it; ask me.
+  connection, or commands run through `eval`, `$(...)`, `xargs` or `git --git-dir`;
+  "Data" and "Files" still cover those. Don't work around it; ask me.
 - Superpowers specs and task plans go in the folder named by `GPQ_PLANS_DIR` (task plans
   as `milestones/<Mx>_tasks.md`), not in the repo; don't commit them.
 

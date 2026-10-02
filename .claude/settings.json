@@ -1,4 +1,8 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "disableBypassPermissionsMode": "disable",
     "allow": [
@@ -17,7 +21,12 @@
       "Bash(rm -r *)",
       "Bash(rm -rf *)",
       "Bash(rm -fr *)",
+      "Bash(rm -R *)",
+      "Bash(rm -Rf *)",
+      "Bash(rm -fR *)",
+      "Bash(rm --recursive *)",
       "Bash(gh pr merge *)",
+      "Bash(gh api *pulls/*/merge*)",
       "Bash(git branch -d *)",
       "Bash(git stash drop *)",
       "Bash(git stash clear *)",
@@ -31,7 +40,11 @@
       "Agent(claude)"
     ],
     "ask": [
-      "Edit(/.claude/**)"
+      "Bash(gh pr close *)",
+      "Edit(/.claude/**)",
+      "Write(/.claude/**)",
+      "Edit(**/.claude/**)",
+      "Write(**/.claude/**)"
     ]
   },
   "hooks": {
@@ -47,7 +60,7 @@
               "-ExecutionPolicy",
               "Bypass",
               "-File",
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-launch.ps1"
             ],
             "timeout": 30,
             "statusMessage": "groundplotqc guard"
@@ -65,7 +78,7 @@
               "-ExecutionPolicy",
               "Bypass",
               "-File",
-              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.ps1"
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-launch.ps1"
             ],
             "timeout": 30,
             "statusMessage": "groundplotqc guard"

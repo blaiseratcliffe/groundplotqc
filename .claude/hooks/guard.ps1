@@ -6,9 +6,15 @@
 # it and returns the message on stderr to Claude; an "ask" decision is printed as JSON
 # on stdout with exit 0. Windows PowerShell 5.1; keep this file ASCII.
 #
-# What it can't see (plan 20.3, D9.4): reads inside R scripts, database connections
-# opened from R, a Grep over a folder with no data-extension filter, and provider data
-# in files without a data extension. CLAUDE.md "Data" covers those.
+# What it can't see (plan 20.3, D9.4, D10.17): reads inside R scripts, database
+# connections opened from R, a Grep over a folder with no data-extension filter,
+# provider data in files without a data extension, and commands run through eval,
+# $(...), xargs or git --git-dir. CLAUDE.md covers those.
+#
+# settings.json runs guard-launch.ps1, which passes the call in as -RawInput and
+# blocks the call if this file fails to load (D10.17).
+
+param([string]$RawInput)
 
 $ErrorActionPreference = 'Stop'
 
@@ -19,15 +25,21 @@ $ConsentFile = Join-Path $ProjectDir '.claude\data_consent.local.txt'
 # Data extensions: the .gitignore list (plan 19.2; *.txt kept, D10.3).
 $DataExtPattern = 'rdata|rda|rds|csv|tsv|txt|xlsx|xls|sqlite|gpkg|accdb|mdb|shp|shx|dbf|prj|cpg|tif|tiff|zip|gz|parquet|feather|fst|qs'
 
-# A path with a data extension inside a longer word, such as R code; not a function
-# call such as read.csv( (plan 20.3 row 3).
-$PathInText = "(?i)[^\s'""(),;=<>|&{}\[\]]*\.(?:$DataExtPattern)(?![A-Za-z0-9_(])"
+# Path-like tokens inside a longer word, such as R code. A plain character class, so
+# the scan is linear on long words (D10.17).
+$TokenPattern = "[^\s'""(),;=<>|&{}\[\]]+"
 
 # Folders allowlisted for data files, relative to a checkout root (plan 20.3 row 3).
 $AllowedPrefixes = @('spec/', 'inst/extdata/', 'tests/', 'bench/')
 
+# Words that start a command without being one: shell keywords and wrappers whose
+# command follows (D10.17). eval, xargs and $(...) are not followed (20.3's limits).
+$ShellKeywords = @('if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until',
+    'for', 'case', 'esac', '{', '}', '!', 'time', 'command', 'nohup', 'exec', 'builtin')
+
 $script:Consents = $null
-$RawInput = ''
+# Branch a directory is on after a same-line git switch or checkout (D10.17).
+$script:AssumedBranch = @{}
 
 function Stop-Call([string]$Message) {
     [Console]::Error.WriteLine("groundplotqc guard: $Message")
@@ -100,6 +112,10 @@ function Resolve-GuardPath([string]$Path, [string]$Base) {
             if ($parts.Count -gt 0) { $parts.RemoveAt($parts.Count - 1) }
             continue
         }
+        # Windows ignores an alternate data stream (name:stream) and trailing dots
+        # and spaces, so x.Rdata::$DATA and x.Rdata. name x.Rdata (D10.17).
+        $segment = ($segment -replace ':.*$', '').TrimEnd('.', ' ')
+        if ($segment -eq '') { continue }
         $parts.Add($segment)
     }
     return $prefix + '\' + ($parts -join '\')
@@ -147,7 +163,9 @@ function Get-Consents {
             $text = $line.Trim()
             if ($text -eq '' -or $text.StartsWith('#')) { continue }
             if ($text -match '^\d{4}-\d{2}-\d{2}\s+(.+)$') {
-                $list.Add((Resolve-GuardPath $Matches[1] $ProjectDir))
+                # An inline comment after the path is dropped (D10.17).
+                $path = ($Matches[1] -replace '\s+#.*$', '').Trim()
+                if ($path) { $list.Add((Resolve-GuardPath $path $ProjectDir)) }
             }
         }
     }
@@ -155,6 +173,9 @@ function Get-Consents {
 }
 
 function Test-DataAllowed([string]$FullPath) {
+    # A path holding a variable or a wildcard can expand outside the allowlist, and
+    # can't match a consent line (D10.17).
+    if ($FullPath -match '[$*?]') { return $false }
     $root = Get-CheckoutRoot $FullPath
     if ($root) {
         $inside = Get-CheckoutPath $FullPath $root
@@ -178,13 +199,23 @@ function Test-DataAllowed([string]$FullPath) {
 
 function Assert-DataRead([string]$Candidate, [string]$Base) {
     if (-not $Candidate) { return }
-    if (-not (Test-DataExtension $Candidate)) { return }
     $full = Resolve-GuardPath $Candidate $Base
+    if (-not (Test-DataExtension $full)) { return }
     if (Test-DataAllowed $full) { return }
     Stop-Call ("reading '$Candidate' needs the user's consent: it has a data extension " +
         'and is outside spec/, data/magp_example.rda, inst/extdata/, tests/, bench/, the ' +
         'build tarball and the matrix working copy. Ask the user, naming the file and why ' +
         '(CLAUDE.md "Data"); with consent they add it to .claude/data_consent.local.txt.')
+}
+
+# Names that look like data files but aren't: an extension alone (".csv", as in a
+# regex), and an R reader or writer named without a call, as in
+# lapply(files, read.csv) (D10.17).
+function Test-NotAFile([string]$Value) {
+    $leaf = ($Value -split '[\\/]')[-1]
+    if ($leaf -match '^\.[A-Za-z0-9]+$') { return $true }
+    return ($Value -notmatch '[\\/]' -and
+        ($leaf -replace '^.*::', '') -match '^(read|write)\.(csv|xlsx|xls|dbf)$')
 }
 
 # Paths with a data extension in one word of a command or one string of a tool input.
@@ -193,19 +224,22 @@ function Get-DataCandidates([string]$Word) {
     if (-not $Word -or $Word.Contains('://')) { return , $found }
     $text = $Word
     if ($text -match '^--?[A-Za-z][A-Za-z0-9-]*=(.*)$') { $text = $Matches[1] }
-    if ((Test-DataExtension $text) -and $text -notmatch "[()'"",;]") {
-        $found.Add($text)
+    # A git revision and path, such as HEAD:spec/x.csv or :spec/x.csv: the path part
+    # (D10.17). A drive letter (D:) and R's pkg::fun don't match.
+    if ($text -match '^([A-Za-z0-9_.@^~/{}-]{2,})?:(?![\\/:])(.+)$') { $text = $Matches[2] }
+    $whole = $text.TrimEnd('.', ' ')
+    if ((Test-DataExtension $whole) -and $text -notmatch "[()'"",;]") {
+        if (-not (Test-NotAFile $whole)) { $found.Add($whole) }
         return , $found
     }
-    foreach ($m in [regex]::Matches($text, $PathInText)) {
-        $leaf = ($m.Value -split '[\\/]')[-1]
-        if ($leaf -match '^\.[A-Za-z]+$') { continue }
-        # An R reader or writer named without a call, as in lapply(files, read.csv).
-        if ($m.Value -notmatch '[\\/]' -and
-            ($leaf -replace '^.*::', '') -match '^(read|write)\.(csv|xlsx|xls|dbf)$') {
-            continue
-        }
-        $found.Add($m.Value)
+    foreach ($m in [regex]::Matches($text, $TokenPattern)) {
+        $token = $m.Value.TrimEnd('.', ' ')
+        if (-not (Test-DataExtension $token)) { continue }
+        # A function call such as read.csv( is not a file.
+        $after = $m.Index + $m.Length
+        if ($after -lt $text.Length -and $text[$after] -eq '(') { continue }
+        if (Test-NotAFile $token) { continue }
+        $found.Add($token)
     }
     return , $found
 }
@@ -223,22 +257,25 @@ function Read-ShellCommand([string]$Command) {
     }
     $tokens = $result.Tokens
     $word = New-Object System.Text.StringBuilder
-    $state = @{ InWord = $false; Expect = '' }
+    $state = @{ InWord = $false; Expect = ''; InTest = $false }
     $heredocs = New-Object System.Collections.Generic.List[object]
     $n = $Command.Length
     $i = 0
 
     # End the current word. A word after > or >> is a write target (allowed only for
-    # /dev/null, NUL and the standard streams); every other word is kept.
+    # /dev/null, NUL, the terminal and the standard streams); every other word is
+    # kept. [[ and ]] open and close a test, where < and > compare (D10.17).
     $flush = {
         if ($state.InWord) {
             $text = $word.ToString()
             if ($state.Expect -eq 'write') {
-                if ($text -notmatch '^(?i)(/dev/null|nul|/dev/stdout|/dev/stderr)$') {
+                if ($text -notmatch '^(?i)(/dev/null|nul|/dev/stdout|/dev/stderr|/dev/tty|/dev/fd/\d+)$') {
                     $result.Writes.Add($text)
                 }
             } else {
                 $tokens.Add(@{ Kind = 'word'; Text = $text })
+                if ($text -eq '[[') { $state.InTest = $true }
+                if ($text -eq ']]') { $state.InTest = $false }
             }
             $state.Expect = ''
             $null = $word.Clear()
@@ -253,8 +290,36 @@ function Read-ShellCommand([string]$Command) {
     }
     $stops = " `t`r`n;|&<>()"
 
+    # Index just past the )) that closes an arithmetic (( opened at Start.
+    $arithmeticEnd = {
+        param([int]$Start)
+        $depth = 0
+        for ($p = $Start; $p -lt $n; $p++) {
+            if ($Command[$p] -eq '(') { $depth++ }
+            elseif ($Command[$p] -eq ')') {
+                $depth--
+                if ($depth -eq 0) { return $p + 1 }
+            }
+        }
+        return $n
+    }
+
     while ($i -lt $n) {
         $c = $Command[$i]
+
+        # Arithmetic $(( )) and (( )): < and > there are operators, not redirects.
+        if ($c -eq '$' -and $i + 2 -lt $n -and $Command[$i + 1] -eq '(' -and
+            $Command[$i + 2] -eq '(') {
+            $end = & $arithmeticEnd ($i + 1)
+            $null = $word.Append($Command.Substring($i, $end - $i))
+            $state.InWord = $true
+            $i = $end
+            continue
+        }
+        if ($c -eq '(' -and -not $state.InWord -and $i + 1 -lt $n -and $Command[$i + 1] -eq '(') {
+            $i = & $arithmeticEnd $i
+            continue
+        }
 
         if ($c -eq "`n") {
             & $addOp ';'
@@ -345,6 +410,13 @@ function Read-ShellCommand([string]$Command) {
             }
             & $addOp '&'
             if ($i + 1 -lt $n -and $Command[$i + 1] -eq '&') { $i += 2 } else { $i++ }
+            continue
+        }
+        if (($c -eq '<' -or $c -eq '>') -and $state.InTest) {
+            # Inside [[ ]], < and > compare strings.
+            $null = $word.Append($c)
+            $state.InWord = $true
+            $i++
             continue
         }
         if ($c -eq '<' -or $c -eq '>') {
@@ -478,6 +550,11 @@ function Get-MessageIndexes([string]$Name, $Words) {
         foreach ($flag in $flags) {
             if ($flag.StartsWith('--') -and $Words[$w].StartsWith($flag + '=')) { $skip.Add($w) }
         }
+        # git's combined short flags: -am "text" and -m"text" (D10.17).
+        if ($Name -eq 'git') {
+            if ($Words[$w] -cmatch '^-[A-Za-z]*m$') { $skip.Add($w + 1) }
+            elseif ($Words[$w] -cmatch '^-[A-Za-z]*m.') { $skip.Add($w) }
+        }
     }
     return , $skip
 }
@@ -493,6 +570,36 @@ function Get-CurrentBranch([string]$Dir) {
     }
     if ($code -ne 0 -or -not $branch) { return '' }
     return ([string]$branch).Trim()
+}
+
+# The branch Dir is on when this part of the command runs: the target of an earlier
+# git switch or checkout in the same command, else the current branch (D10.17).
+function Get-EffectiveBranch([string]$Dir) {
+    $key = $Dir.ToLowerInvariant()
+    if ($script:AssumedBranch.ContainsKey($key)) { return $script:AssumedBranch[$key] }
+    return Get-CurrentBranch $Dir
+}
+
+# Record the branch a git switch or checkout moves Dir to, when the words name one.
+function Set-AssumedBranch([string]$Sub, $Words, [string]$Dir) {
+    if ($Words -contains '--') { return }    # checkout -- paths: not a branch switch
+    $target = $null
+    for ($p = 0; $p -lt $Words.Count; $p++) {
+        $w = $Words[$p]
+        if (@('-b', '-B', '-c', '-C', '--orphan', '--create', '--force-create') -ccontains $w) {
+            if ($p + 1 -lt $Words.Count) { $target = $Words[$p + 1] }
+            break
+        }
+        if ($w -eq '--detach' -or $w -eq '-d') {
+            $target = ''
+            break
+        }
+        if ($w.StartsWith('-')) { continue }
+        if ($null -eq $target) { $target = $w }
+    }
+    if ($null -ne $target -and $target -ne '-') {
+        $script:AssumedBranch[$Dir.ToLowerInvariant()] = $target
+    }
 }
 
 function Get-WordsAfter($Words, [int]$Index) {
@@ -523,7 +630,7 @@ function Test-GitPush($Words, [string]$Dir) {
     $toMain = 'pushing to main is blocked: main changes only through a PR the user ' +
         'merges (D5.13). Push the milestone branch instead.'
     if ($positional.Count -le 1) {
-        if ((Get-CurrentBranch $Dir) -eq 'main') { Stop-Call $toMain }
+        if ((Get-EffectiveBranch $Dir) -eq 'main') { Stop-Call $toMain }
         return
     }
     for ($r = 1; $r -lt $positional.Count; $r++) {
@@ -534,7 +641,7 @@ function Test-GitPush($Words, [string]$Dir) {
         $destination = $spec
         if ($spec.Contains(':')) { $destination = $spec.Substring($spec.LastIndexOf(':') + 1) }
         if ($destination -eq 'HEAD' -or $destination -eq '@') {
-            $destination = Get-CurrentBranch $Dir
+            $destination = Get-EffectiveBranch $Dir
         }
         if ($destination -eq 'main' -or $destination -eq 'refs/heads/main') { Stop-Call $toMain }
     }
@@ -562,7 +669,7 @@ function Test-GitCommand($Words, [string]$Dir) {
     if ($sub -eq 'push') {
         Test-GitPush $rest $Dir
     } elseif ($sub -eq 'commit') {
-        if ((Get-CurrentBranch $Dir) -eq 'main') {
+        if ((Get-EffectiveBranch $Dir) -eq 'main') {
             Stop-Call ('committing on main is blocked: commit on the milestone branch; main ' +
                 'changes only through a PR the user merges (D5.13, D7.24).')
         }
@@ -582,10 +689,36 @@ function Test-GitCommand($Words, [string]$Dir) {
         if ($forceDelete.Count -gt 0 -or ($delete.Count -gt 0 -and $force.Count -gt 0)) {
             Stop-Call 'git branch -D is blocked: it deletes a branch with unmerged work. Ask the user.'
         }
+        # Moving, renaming or copying onto main (D10.17).
+        $moves = @($rest | Where-Object { @('-f', '--force', '-m', '-M', '--move', '-c', '-C', '--copy') -ccontains $_ })
+        if ($moves.Count -gt 0 -and $rest -contains 'main') {
+            Stop-Call 'git branch -f, -m or -c involving main is blocked: main moves only through a PR the user merges (D10.17).'
+        }
     } elseif ($sub -eq 'checkout') {
         if ($rest -contains '.') {
             Stop-Call ('git checkout . (or -- .) is blocked: it throws away every uncommitted ' +
                 'change (D10.14). Ask the user.')
+        }
+        Set-AssumedBranch $sub $rest $Dir
+    } elseif ($sub -eq 'switch') {
+        Set-AssumedBranch $sub $rest $Dir
+    } elseif (@('merge', 'cherry-pick', 'revert', 'am') -contains $sub) {
+        if ((Get-EffectiveBranch $Dir) -eq 'main') {
+            Stop-Call ("git $sub on main is blocked: main changes only through a PR the user " +
+                'merges (D10.17).')
+        }
+    } elseif ($sub -eq 'pull') {
+        if (-not ($rest -contains '--ff-only') -and (Get-EffectiveBranch $Dir) -eq 'main') {
+            Stop-Call ('git pull on main is blocked unless it is --ff-only: a merge or rebase ' +
+                'would change main locally (D10.17). Use git pull --ff-only.')
+        }
+    } elseif ($sub -eq 'update-ref') {
+        if ($rest -contains 'main' -or $rest -contains 'refs/heads/main') {
+            Stop-Call 'git update-ref on main is blocked (D10.17).'
+        }
+    } elseif ($sub -eq 'rm' -or $sub -eq 'mv') {
+        foreach ($w in $rest) {
+            if (-not $w.StartsWith('-')) { Assert-NotProtected $w $Dir "git $sub" }
         }
     } elseif ($sub -eq 'restore') {
         $staged = ($rest -contains '--staged') -or ($rest -ccontains '-S')
@@ -605,7 +738,7 @@ function Test-GitCommand($Words, [string]$Dir) {
             if ($rest[$p].StartsWith('-')) { continue }
             $positional.Add($rest[$p])
         }
-        if ((Get-CurrentBranch $Dir) -eq 'main' -or
+        if ((Get-EffectiveBranch $Dir) -eq 'main' -or
             ($positional.Count -ge 2 -and $positional[1] -eq 'main')) {
             Stop-Call ('a git rebase that rewrites main is blocked (D9.6). Rebase the milestone ' +
                 'branch, or merge main into it.')
@@ -613,8 +746,63 @@ function Test-GitCommand($Words, [string]$Dir) {
     }
 }
 
-function Test-BashCommand([string]$Command, [string]$Cwd) {
+# Index of the word that names the command: past assignments, shell keywords and the
+# wrappers env, nice and timeout with their options (D10.17).
+function Get-CommandIndex($Words) {
+    $k = 0
+    while ($k -lt $Words.Count) {
+        $w = $Words[$k]
+        if ($w -match '^[A-Za-z_][A-Za-z0-9_]*=' -or $ShellKeywords -contains $w) {
+            $k++
+            continue
+        }
+        $base = (($w -split '[\\/]')[-1]).ToLowerInvariant() -replace '\.exe$', ''
+        if ($base -eq 'env' -or $base -eq 'nice' -or $base -eq 'timeout') {
+            $k++
+            while ($k -lt $Words.Count -and $Words[$k].StartsWith('-')) {
+                if (@('-u', '-C', '-n', '-k', '-s') -ccontains $Words[$k]) { $k++ }
+                $k++
+            }
+            if ($base -eq 'timeout') { $k++ }    # the duration
+            continue
+        }
+        break
+    }
+    return $k
+}
+
+# Why a path may not be changed by Edit, Write or a Bash command, or '' if it may
+# (plan 20.3 rows 7 and 8; Bash writers D10.17).
+function Get-ProtectedReason([string]$FullPath) {
+    $pieces = $FullPath.Split('\')
+    if ($pieces.Count -ge 2 -and $pieces[-1] -eq 'data_consent.local.txt' -and
+        $pieces[-2] -eq '.claude') {
+        return ('only the user edits the consent list, .claude/data_consent.local.txt ' +
+            '(plan 20.3, D8.22).')
+    }
+    $inSpec = $false
+    $root = Get-CheckoutRoot $FullPath
+    if ($root) {
+        $inside = Get-CheckoutPath $FullPath $root
+        $inSpec = ($inside -eq 'spec' -or $inside.StartsWith('spec/'))
+    }
+    # Without GPQ_WORKTREE_ROOT a worktree isn't recognised: any spec folder counts.
+    if (-not $env:GPQ_WORKTREE_ROOT -and $pieces -contains 'spec') { $inSpec = $true }
+    if ($inSpec) {
+        return ('files in spec/ are never edited (CLAUDE.md "Sources of truth"); new ' +
+            'versions come from the user through the update-spec skill.')
+    }
+    return ''
+}
+
+function Assert-NotProtected([string]$Path, [string]$Base, [string]$What) {
+    $reason = Get-ProtectedReason (Resolve-GuardPath $Path $Base)
+    if ($reason) { Stop-Call ("$What on '$Path' is blocked: " + $reason) }
+}
+
+function Test-BashCommand([string]$Command, [string]$Cwd, [int]$Depth = 0) {
     if (-not $Command) { return }
+    if ($Depth -gt 4) { Stop-Call 'commands nested more than four deep are blocked (D10.17).' }
     $parsed = Read-ShellCommand $Command
     if ($parsed.Writes.Count -gt 0) {
         Stop-Call ("Bash can't create or change files (CLAUDE.md ""Files""): this command " +
@@ -627,17 +815,38 @@ function Test-BashCommand([string]$Command, [string]$Cwd) {
     }
     $dir = $Cwd
     foreach ($words in (Get-Segments $parsed.Tokens)) {
-        $k = 0
-        while ($k -lt $words.Count -and ($words[$k] -match '^[A-Za-z_][A-Za-z0-9_]*=' -or
-                @('command', 'time', 'nohup', 'exec', 'env', 'builtin') -contains $words[$k])) {
-            $k++
-        }
+        $k = Get-CommandIndex $words
         if ($k -ge $words.Count) { continue }
         $name = (($words[$k] -split '[\\/]')[-1]).ToLowerInvariant() -replace '\.exe$', ''
         $rest = Get-WordsAfter $words $k
 
         if ($name -eq 'cd' -or $name -eq 'pushd') {
             if ($rest.Count -gt 0) { $dir = Resolve-GuardPath $rest[0] $dir }
+        } elseif (@('bash', 'sh', 'dash', 'zsh', 'ksh') -contains $name) {
+            # bash -c 'commands': the string is a command line of its own (D10.17).
+            for ($w = 0; $w -lt $rest.Count - 1; $w++) {
+                if ($rest[$w] -cmatch '^-[A-Za-z]*c[A-Za-z]*$') {
+                    Test-BashCommand $rest[$w + 1] $dir ($Depth + 1)
+                    break
+                }
+            }
+        } elseif ($name -eq 'rm') {
+            $recursive = @($rest | Where-Object { $_ -cmatch '^-[A-Za-z]*[rR]' -or $_ -eq '--recursive' })
+            if ($recursive.Count -gt 0) {
+                Stop-Call ('rm with a recursive flag is blocked (D10.17). Remove a folder from R ' +
+                    'with unlink(path, recursive = TRUE), or a worktree with git worktree ' +
+                    'remove (plan 20.2).')
+            }
+            foreach ($w in $rest) { if (-not $w.StartsWith('-')) { Assert-NotProtected $w $dir 'rm' } }
+        } elseif (@('mv', 'rmdir', 'touch', 'truncate', 'unlink') -contains $name) {
+            foreach ($w in $rest) { if (-not $w.StartsWith('-')) { Assert-NotProtected $w $dir $name } }
+        } elseif (@('cp', 'install', 'rsync', 'ln') -contains $name) {
+            $targets = @($rest | Where-Object { -not $_.StartsWith('-') })
+            if ($targets.Count -gt 0) { Assert-NotProtected $targets[-1] $dir $name }
+        } elseif ($name -eq 'gh' -and $rest.Count -gt 0 -and $rest[0] -eq 'api') {
+            if (@($rest | Where-Object { $_ -match 'pulls/\d+/merge' }).Count -gt 0) {
+                Stop-Call 'merging a PR through gh api is blocked: the user merges every PR (D9.5, D10.17).'
+            }
         } elseif ($name -eq 'tee') {
             Stop-Call ("tee writes files; Bash can't create or change files (CLAUDE.md " +
                 '"Files"). Use the Write or Edit tool.')
@@ -678,7 +887,8 @@ function Test-GrepTool($ToolInput, [string]$Cwd) {
     # A file filter naming a data extension is judged by the folder searched (D10.14).
     $extensions = New-Object System.Collections.Generic.List[string]
     $glob = [string](Get-Key $ToolInput 'glob')
-    if ($glob) {
+    # A negated glob (!*.csv) excludes those files rather than reading them (D10.17).
+    if ($glob -and -not $glob.StartsWith('!')) {
         $pattern = "(?i)(?<=[.{,])($DataExtPattern)(?=$|[},])"
         foreach ($m in [regex]::Matches($glob, $pattern)) { $extensions.Add($m.Value) }
     }
@@ -697,18 +907,8 @@ function Test-GrepTool($ToolInput, [string]$Cwd) {
 # Edit, Write and NotebookEdit (plan 20.3 rows 7 and 8).
 function Test-EditTool([string]$Path, [string]$Cwd) {
     if (-not $Path) { return }
-    $full = Resolve-GuardPath $Path $Cwd
-    $pieces = $full.Split('\')
-    if ($pieces.Count -ge 2 -and $pieces[-1] -eq 'data_consent.local.txt' -and
-        $pieces[-2] -eq '.claude') {
-        Stop-Call ('only the user edits the consent list, .claude/data_consent.local.txt ' +
-            '(plan 20.3, D8.22).')
-    }
-    $root = Get-CheckoutRoot $full
-    if ($root -and (Get-CheckoutPath $full $root).StartsWith('spec/')) {
-        Stop-Call ('files in spec/ are never edited (CLAUDE.md "Sources of truth"); new ' +
-            'versions come from the user through the update-spec skill.')
-    }
+    $reason = Get-ProtectedReason (Resolve-GuardPath $Path $Cwd)
+    if ($reason) { Stop-Call $reason }
 }
 
 function Get-StringValues($Value) {
@@ -731,6 +931,7 @@ function Get-StringValues($Value) {
 function Invoke-Guard([string]$Raw) {
     $call = ConvertFrom-HookJson $Raw
     $tool = [string](Get-Key $call 'tool_name')
+    if (-not $tool) { throw 'the input names no tool (empty or malformed)' }
     $toolInput = Get-Key $call 'tool_input'
     $cwd = [string](Get-Key $call 'cwd')
     if (-not $cwd) { $cwd = $ProjectDir }
@@ -756,15 +957,15 @@ function Invoke-Guard([string]$Raw) {
     # Glob, and any other tool, is allowed: it lists names only (plan 20.3 row 6).
 }
 
-# An Edit or Write on this file, recognised from the raw input so a broken hook can be
-# repaired (D10.14); settings.json still asks the user first.
+# An Edit or Write on the guard's own files, recognised from the raw input so a broken
+# hook can be repaired (D10.14); settings.json still asks the user first.
 function Test-SelfEdit([string]$Raw) {
     return ($Raw -match '"tool_name"\s*:\s*"(Edit|Write|MultiEdit)"' -and
-        $Raw -match '"file_path"\s*:\s*"[^"]*[\\/]\.claude[\\/]+hooks[\\/]+guard\.ps1"')
+        $Raw -match '"file_path"\s*:\s*"[^"]*[\\/]\.claude[\\/]+hooks[\\/]+guard(-launch)?\.ps1"')
 }
 
 try {
-    $RawInput = Read-HookInput
+    if (-not $PSBoundParameters.ContainsKey('RawInput')) { $RawInput = Read-HookInput }
     Invoke-Guard $RawInput
 } catch {
     if (Test-SelfEdit $RawInput) { exit 0 }
