@@ -838,11 +838,14 @@ function Test-BashCommand([string]$Command, [string]$Cwd, [int]$Depth = 0) {
                     'remove (plan 20.2).')
             }
             foreach ($w in $rest) { if (-not $w.StartsWith('-')) { Assert-NotProtected $w $dir 'rm' } }
-        } elseif (@('mv', 'rmdir', 'touch', 'truncate', 'unlink') -contains $name) {
+        } elseif (@('mv', 'rmdir', 'unlink') -contains $name) {
             foreach ($w in $rest) { if (-not $w.StartsWith('-')) { Assert-NotProtected $w $dir $name } }
-        } elseif (@('cp', 'install', 'rsync', 'ln') -contains $name) {
-            $targets = @($rest | Where-Object { -not $_.StartsWith('-') })
-            if ($targets.Count -gt 0) { Assert-NotProtected $targets[-1] $dir $name }
+        } elseif (@('cp', 'touch', 'install', 'rsync', 'truncate', 'ln') -contains $name) {
+            # These create or overwrite files, which is the Write tool's job; renames and
+            # deletions (mv, rm, git mv, git rm) have no tool equivalent (D10.18).
+            Stop-Call ("$name creates or overwrites files; Bash can't create or change files " +
+                '(CLAUDE.md "Files"). Use the Write or Edit tool. Renames and deletions (mv, ' +
+                'rm, git mv, git rm) are allowed outside spec/ and the consent list (D10.18).')
         } elseif ($name -eq 'gh' -and $rest.Count -gt 0 -and $rest[0] -eq 'api') {
             if (@($rest | Where-Object { $_ -match 'pulls/\d+/merge' }).Count -gt 0) {
                 Stop-Call 'merging a PR through gh api is blocked: the user merges every PR (D9.5, D10.17).'
