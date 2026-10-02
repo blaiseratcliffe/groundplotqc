@@ -1,0 +1,59 @@
+# Private folders (D5.27, D5.31)
+/plans/
+/prompts/
+/temp pipeline scripts for development/
+
+# Delivered data: never committed (brief)
+/4_magpv2_final_tables.Rdata
+*.Rdata
+*.RData
+*.rda
+*.rds
+*.csv
+*.tsv
+*.txt
+*.xlsx
+*.xls
+*.sqlite
+*.gpkg
+*.accdb
+*.mdb
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.tif
+*.tiff
+*.zip
+*.gz
+*.parquet
+*.feather
+*.fst
+*.qs
+
+# Anything under a folder named data, whatever its extension (brief)
+**/data/*
+
+# Allowlist (tracked on purpose)
+!/data/magp_example.rda
+!/spec/*.xlsx
+!/spec/*.csv
+!/inst/extdata/**/*.csv
+!/inst/extdata/examples/*.tif
+!/tests/testthat/_snaps/**
+
+# QC run outputs anywhere in the tree; benchmark results
+runs/
+/bench/results/
+
+# R and tooling
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+/docs/
+/.superpowers/
+/.claude/settings.local.json
+/.claude/data_consent.local.txt
