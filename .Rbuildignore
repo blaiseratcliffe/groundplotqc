@@ -1,0 +1,21 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^\.claude$
+^\.superpowers$
+^\.lintr$
+^CLAUDE\.md$
+^FILEMAP\.md$
+^NAMING\.md$
+^LICENSE\.md$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^spec$
+^data-raw$
+^bench$
+^runs$
+^plans$
+^prompts$
+^temp pipeline scripts for development$
+^4_magpv2_final_tables\.Rdata$
