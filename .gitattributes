@@ -1,0 +1,3 @@
+# Spec files are hashed in manifest.csv (plan 4.4): keep
+# their bytes exact on every OS.
+/spec/** -text
