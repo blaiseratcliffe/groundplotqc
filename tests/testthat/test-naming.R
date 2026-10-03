@@ -49,9 +49,16 @@ parse_rd_lines <- function(lines) {
   tools::parse_Rd(path)
 }
 
-test_that("every export carries the gpq_ or magp_ prefix", {
+test_that("every export is gpq_ or magp_ followed by lower snake case", {
   exports <- package_exports()
   expect_equal(exports[!grepl(export_pattern, exports)], character())
+})
+
+test_that("the export pattern accepts gpq_ and magp_ lower snake names only", {
+  expect_equal(
+    grepl(export_pattern, c("gpq_ok", "magp_ok", "foo", "gpq_Bad")),
+    c(TRUE, TRUE, FALSE, FALSE)
+  )
 })
 
 test_that("every export has a help page with an example", {

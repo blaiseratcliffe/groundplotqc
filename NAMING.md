@@ -67,7 +67,7 @@ Required arguments come first, starting with the data (so `output_dir` is second
 
 ## Abbreviations
 
-Allowed: `id`, `pk`, `fk`, `dd`, `qc`, `dt` (internal variables only), `n`, `html`, `csv`, `utm`, `dem`, `crs`; the short forms approved names already use: `spec`, `lang`, `lat`, `lon`, `latlon`, `hd`, `min`, `max`, `abs`, `rel`, `dir`, `col`, `cols`, `fun`, `coords`, `meta`, `stat`, `config`, `info`, `utils` (D9.8); and MAGPlot attribute names as the DD spells them. Everything else is spelled out. M2's naming test lists any other short form found in an approved name, for my approval.
+Allowed: `id`, `pk`, `fk`, `dd`, `qc`, `dt` (internal variables only), `n`, `html`, `csv`, `utm`, `dem`, `crs`, `rd` (R's Rd help files) and `db` (as in `tools::Rd_db()`) (D11.12); the short forms approved names already use: `spec`, `lang`, `lat`, `lon`, `latlon`, `hd`, `min`, `max`, `abs`, `rel`, `dir`, `col`, `cols`, `fun`, `coords`, `meta`, `stat`, `config`, `info`, `utils` (D9.8); and MAGPlot attribute names as the DD spells them. Everything else is spelled out. M2's naming test lists any other short form found in an approved name, for my approval.
 
 ## Enforcement (D5.7, D5.8)
 
