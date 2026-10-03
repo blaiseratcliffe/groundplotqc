@@ -66,6 +66,15 @@ row per file (D7.10):
 | .github/scripts/check_filemap.R | CI's FILEMAP check: every tracked file has a row and every row a tracked file; folder rows only for folders listed as covered by one row (plan 20.6; D7.10, D11.8) | none exported; tracked_files(), outside_fences(), filemap_section(), filemap_paths(), covered_folders(), filemap_problems(), check_filemap_lines(), main() | git, FILEMAP.md |
 | .github/scripts/check_coverage.R | CI's coverage gate: runs the tests under covr, writes covr's HTML report, and fails when the engine files' combined line coverage is below 90% (plan 18.4; D11.2, D11.7) | none exported; is_engine_file(), engine_line_coverage(), coverage_verdict(), main() | covr, DT, htmltools |
 
+## .github/workflows/
+
+| Path | Purpose | Key functions (exported; internal) | Depends on |
+|---|---|---|---|
+| .github/workflows/R-CMD-check.yaml | R CMD check without `--as-cran` on seven jobs: Windows, macOS and Ubuntu on release; Ubuntu on devel, oldrel-1 and R 4.5.0; Ubuntu on release with `NOT_CRAN=false` (plan 19.4; D11.2, D11.8) | none | DESCRIPTION, r-lib/actions v2 |
+| .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the FILEMAP check and the tracked-data check (plan 19.4; D11.2, D11.8) | none | .lintr, .github/scripts/check_filemap.R, .gitignore |
+| .github/workflows/pkgdown.yaml | Builds the site on pull requests; builds and deploys it to `gh-pages` with `pkgdown::deploy_to_branch()` on pushes to `main`; deletes CLAUDE.md, FILEMAP.md and NAMING.md from the runner's checkout first, so the site leaves them out (plan 19.4; D11.1, D11.7, D11.17) | none | _pkgdown.yml |
+| .github/workflows/test-coverage.yaml | Runs the coverage gate and uploads covr's HTML report as an artifact (plan 19.4; D11.2, D11.7) | none | .github/scripts/check_coverage.R, DESCRIPTION |
+
 ## spec/
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |

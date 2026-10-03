@@ -1,0 +1,40 @@
+# Coverage gate: 90% of the engine files' lines combined; covr's HTML report
+# is uploaded as an artifact, no external service (plan 18.4, 19.4; D8.21,
+# D11.2, D11.7).
+name: test-coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: coverage
+
+      - name: Coverage gate
+        run: Rscript .github/scripts/check_coverage.R "$RUNNER_TEMP/coverage"
+        shell: bash
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: ${{ runner.temp }}/coverage
