@@ -70,9 +70,9 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| .github/workflows/R-CMD-check.yaml | R CMD check without `--as-cran` on seven jobs: Windows, macOS and Ubuntu on release; Ubuntu on devel, oldrel-1 and R 4.5.0; Ubuntu on release with `NOT_CRAN=false` (plan 19.4; D11.2, D11.8) | none | DESCRIPTION, r-lib/actions v2 |
-| .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the FILEMAP check and the tracked-data check (plan 19.4; D11.2, D11.8) | none | .lintr, .github/scripts/check_filemap.R, .gitignore |
-| .github/workflows/pkgdown.yaml | Builds the site on pull requests; builds and deploys it to `gh-pages` with `pkgdown::deploy_to_branch()` on pushes to `main`; deletes CLAUDE.md, FILEMAP.md and NAMING.md from the runner's checkout first, so the site leaves them out (plan 19.4; D11.1, D11.7, D11.17) | none | _pkgdown.yml |
+| .github/workflows/R-CMD-check.yaml | R CMD check without `--as-cran` on seven jobs: Windows, macOS and Ubuntu on release; Ubuntu on devel, oldrel-1 and R 4.5.0; Ubuntu on release with `NOT_CRAN=false` (plan 19.4; D11.2, D11.8) | none | DESCRIPTION, rcmdcheck |
+| .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the FILEMAP check and the tracked-data check (plan 19.4; D11.2, D11.8) | none | DESCRIPTION, .lintr, .github/scripts/check_filemap.R, .gitignore, lintr |
+| .github/workflows/pkgdown.yaml | Builds the site on pull requests; builds and deploys it to `gh-pages` with `pkgdown::deploy_to_branch()` on pushes to `main`; deletes CLAUDE.md, FILEMAP.md and NAMING.md from the runner's checkout first, so the site leaves them out (plan 19.4; D11.1, D11.7, D11.17) | none | DESCRIPTION, _pkgdown.yml, pkgdown, CLAUDE.md, FILEMAP.md, NAMING.md |
 | .github/workflows/test-coverage.yaml | Runs the coverage gate and uploads covr's HTML report as an artifact (plan 19.4; D11.2, D11.7) | none | .github/scripts/check_coverage.R, DESCRIPTION |
 
 ## spec/
