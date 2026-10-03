@@ -58,7 +58,7 @@ Required arguments come first, starting with the data (so `output_dir` is second
 | Kind | Pattern |
 |---|---|
 | R source | `R/<family>_<topic>.R`, families `spec`, `preflight`, `rules`, `results`, `check`, `fix`, `lineage` (lineage, issue classes, attribution), `report`, `tool`, `magp`, `utils`. Package-level exceptions, named by R convention: `groundplotqc-package.R`, `globals.R`, `options.R`, `data.R`; and `preflight.R`, the pre-flight checks (D9.8) |
-| Tests | `tests/testthat/test-<R file stem>.R`; helpers `helper-<topic>.R`. Exception: `test-naming.R`, which tests package-wide naming and documentation (Enforcement, below), not one R file |
+| Tests | `tests/testthat/test-<R file stem>.R`; helpers `helper-<topic>.R`. Exceptions: `test-naming.R`, which tests package-wide naming and documentation (Enforcement, below), not one R file; `test-dev_scripts.R`, which tests the scripts in `.github/scripts/` from the source tree (D11.8) |
 | data-raw | `build_<thing>.R` |
 | Bundled configuration | `inst/extdata/<group>/<name>.csv`, lower snake; groups `magp` (MAGPlot configuration), `text` (report text), `examples` (tool, help-page and vignette inputs, the toy spec among them), `rules` (package-wide rule files such as `rule_id_map.csv`) (groups approved, D8.5) |
 | Spec files | `spec/YYYYMMDD_magpv2_<name>.<ext>` |
