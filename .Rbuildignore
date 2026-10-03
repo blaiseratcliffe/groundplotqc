@@ -19,3 +19,4 @@
 ^prompts$
 ^temp pipeline scripts for development$
 ^4_magpv2_final_tables\.Rdata$
+^\.git$
