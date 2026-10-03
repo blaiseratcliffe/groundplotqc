@@ -52,8 +52,9 @@ question.
 - Written from scratch. No code is copied from MAGPlotQC, the MAGPlot processing
   scripts, translation_audit, OSM or anywhere else. Existing code is evidence of
   behaviour and a source of check ideas only.
-- data.table and base R. Imports: data.table, and sf from M14 (plan section 15). No new
-  dependency without my approval.
+- data.table and base R. Imports: data.table and utils (D11.5, D11.6), tools from M2
+  and stats at its first use, sf from M14 (plan section 15). No new dependency without
+  my approval.
 - The engine (`gpq_`) never names a MAGPlot table, column or code; MAGPlot specifics
   reach it through the spec object, rule set and settings.
 - Thresholds, sentinels, code lists, tolerances and strategies are inputs, never

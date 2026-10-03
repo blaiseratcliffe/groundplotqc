@@ -51,7 +51,7 @@ Required arguments come first, starting with the data (so `output_dir` is second
 
 ## Options (D5.3)
 
-`groundplotqc.<setting>`, lower snake after the dot, all documented on one help page (`?groundplotqc_options`, approved, D8.21).
+`groundplotqc.<setting>`, lower snake after the dot, all documented on one help page (`?groundplotqc_options`, approved, D8.21). M1 starts the page with the naming pattern and the resolution order (argument > rule set > option > built-in, plan section 3.5) and no options; each milestone that implements a setting adds its option to the page, M3's settings code first. `R/options.R` holds documentation only: no code sets options when the package loads (D11.4).
 
 ## Files
 
@@ -60,6 +60,7 @@ Required arguments come first, starting with the data (so `output_dir` is second
 | R source | `R/<family>_<topic>.R`, families `spec`, `preflight`, `rules`, `results`, `check`, `fix`, `lineage` (lineage, issue classes, attribution), `report`, `tool`, `magp`, `utils`. Package-level exceptions, named by R convention: `groundplotqc-package.R`, `globals.R`, `options.R`, `data.R`; and `preflight.R`, the pre-flight checks (D9.8) |
 | Tests | `tests/testthat/test-<R file stem>.R`; helpers `helper-<topic>.R`. Exceptions: `test-naming.R`, which tests package-wide naming and documentation (Enforcement, below), not one R file; `test-dev_scripts.R`, which tests the scripts in `.github/scripts/` from the source tree (D11.8) |
 | data-raw | `build_<thing>.R` |
+| Development scripts | `.github/scripts/check_<thing>.R`, run by CI with Rscript, outside the package build (D11.8, D11.19) |
 | Bundled configuration | `inst/extdata/<group>/<name>.csv`, lower snake; groups `magp` (MAGPlot configuration), `text` (report text), `examples` (tool, help-page and vignette inputs, the toy spec among them), `rules` (package-wide rule files such as `rule_id_map.csv`) (groups approved, D8.5) |
 | Spec files | `spec/YYYYMMDD_magpv2_<name>.<ext>` |
 | Run folders | `<output_dir>/<run_id>/` (D4.16) |
@@ -67,11 +68,11 @@ Required arguments come first, starting with the data (so `output_dir` is second
 
 ## Abbreviations
 
-Allowed: `id`, `pk`, `fk`, `dd`, `qc`, `dt` (internal variables only), `n`, `html`, `csv`, `utm`, `dem`, `crs`, `rd` (R's Rd help files) and `db` (as in `tools::Rd_db()`) (D11.12); the short forms approved names already use: `spec`, `lang`, `lat`, `lon`, `latlon`, `hd`, `min`, `max`, `abs`, `rel`, `dir`, `col`, `cols`, `fun`, `coords`, `meta`, `stat`, `config`, `info`, `utils` (D9.8); and MAGPlot attribute names as the DD spells them. Everything else is spelled out. M2's naming test lists any other short form found in an approved name, for my approval.
+Allowed: `id`, `pk`, `fk`, `dd`, `qc`, `dt` (internal variables only), `n`, `html`, `csv`, `utm`, `dem`, `crs`, `rd` (R's Rd help files) and `db` (as in `tools::Rd_db()`) (D11.12), `dev`, `env` and `args` (D11.19); the short forms approved names already use: `spec`, `lang`, `lat`, `lon`, `latlon`, `hd`, `min`, `max`, `abs`, `rel`, `dir`, `col`, `cols`, `fun`, `coords`, `meta`, `stat`, `config`, `info`, `utils` (D9.8); and MAGPlot attribute names as the DD spells them. Everything else is spelled out. M2's naming test lists any other short form found in an approved name, for my approval. The list governs the names of functions, arguments, columns and files; local variables inside a function are not covered (D11.19).
 
 ## Enforcement (D5.7, D5.8)
 
-- `.lintr`: tidyverse style, line length 100, `object_name_linter` snake_case, and a custom check that exports carry the `gpq_` or `magp_` prefix (D5.7): a linter inside `.lintr`'s `linters:` field that flags a function under a roxygen `@export` tag whose name lacks the prefix, skipping a dotted name, which is an S3 method (D11.4, D11.7); `object_usage_linter` off (R CMD check covers it). NSE column names go in `R/globals.R` via `utils::globalVariables()`.
+- `.lintr`: tidyverse style, line length 100, `object_name_linter` snake_case, and a custom check that exports carry the `gpq_` or `magp_` prefix (D5.7), a linter defined inside `.lintr`'s `linters:` field that flags a function under a roxygen `@export` tag whose name lacks the prefix (D11.4), skipping a dotted name, which is an S3 method since function names are snake_case (D11.7); `object_usage_linter` off (R CMD check covers it). NSE column names go in `R/globals.R` via `utils::globalVariables()`.
 - `tests/testthat/test-naming.R` (D5.8: a test checks exported names and documentation): every export matches `^(gpq|magp)_[a-z0-9_]+$`, every export has a help page with an example, every rule ID in the registry is unique lower snake and has report text, and every reason code the registry lists is lower snake and has report text (D9.33).
 - The lint CI job runs lintr and fails on any lint.
 - The datatable-reviewer and spec-conformance reviewer agents check new names against NAMING.md.

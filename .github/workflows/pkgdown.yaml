@@ -43,10 +43,14 @@ jobs:
         run: pkgdown::build_site_github_pages(new_process = FALSE, install = FALSE)
         shell: Rscript {0}
 
+      # The deletion is committed on the runner, never pushed, so the checkout of
+      # main that deploy_to_branch() makes when it creates gh-pages doesn't bring
+      # the files back (D11.19).
       - name: Build the site and deploy it to gh-pages
         if: github.event_name == 'push'
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --all -m "Leave the project's working files out of the site"
           Rscript -e 'pkgdown::deploy_to_branch(new_process = FALSE, install = FALSE)'
         shell: bash

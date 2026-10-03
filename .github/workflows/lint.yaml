@@ -1,5 +1,5 @@
-# Lint, the FILEMAP check and the tracked-data check (plan 19.4; D5.15, D8.22,
-# D11.2, D11.8). check_manifest.R joins at M2.
+# Lint, the source-tree tests, the FILEMAP check and the tracked-data check
+# (plan 19.4; D5.15, D8.22, D11.2, D11.8, D11.19). check_manifest.R joins at M2.
 name: lint
 
 on:
@@ -37,6 +37,13 @@ jobs:
           lints <- lintr::lint_dir(".github/scripts")
           print(lints)
           if (length(lints) > 0L) quit(save = "no", status = 1L)
+        shell: Rscript {0}
+
+      # The tests of .lintr, _pkgdown.yml and .github/scripts/ skip under R CMD
+      # check and covr, which use the built package; here they run on the source
+      # tree (D11.19).
+      - name: Tests from the source tree
+        run: testthat::test_local()
         shell: Rscript {0}
 
       - name: FILEMAP check
