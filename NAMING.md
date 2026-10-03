@@ -71,7 +71,7 @@ Allowed: `id`, `pk`, `fk`, `dd`, `qc`, `dt` (internal variables only), `n`, `htm
 
 ## Enforcement (D5.7, D5.8)
 
-- `.lintr`: tidyverse style, line length 100, `object_name_linter` snake_case, and a custom check that exports carry the `gpq_` or `magp_` prefix (D5.7); `object_usage_linter` off (R CMD check covers it). NSE column names go in `R/globals.R` via `utils::globalVariables()`.
+- `.lintr`: tidyverse style, line length 100, `object_name_linter` snake_case, and a custom check that exports carry the `gpq_` or `magp_` prefix (D5.7): a linter inside `.lintr`'s `linters:` field that flags a function under a roxygen `@export` tag whose name lacks the prefix, skipping a dotted name, which is an S3 method (D11.4, D11.7); `object_usage_linter` off (R CMD check covers it). NSE column names go in `R/globals.R` via `utils::globalVariables()`.
 - `tests/testthat/test-naming.R` (D5.8: a test checks exported names and documentation): every export matches `^(gpq|magp)_[a-z0-9_]+$`, every export has a help page with an example, every rule ID in the registry is unique lower snake and has report text, and every reason code the registry lists is lower snake and has report text (D9.33).
 - The lint CI job runs lintr and fails on any lint.
 - The datatable-reviewer and spec-conformance reviewer agents check new names against NAMING.md.

@@ -28,6 +28,7 @@ row per file (D7.10):
 | LICENSE.md | The full MIT licence text, same holder; left out of the package build (plan 19.3) | none | none |
 | README.md | What the package does, its status, installing from GitHub, links to the site and the issues page (D11.4) | none | none |
 | NEWS.md | Changes per version, one bullet per user-visible change (D11.5, D11.6) | none | none |
+| .lintr | lintr settings: tidyverse style, line length 100, snake_case names, `object_usage_linter` off, and the export-prefix linter (plan 17.8; D11.4, D11.7) | none exported; export_prefix_linter (defined inline) | lintr |
 
 ## R/
 
@@ -54,7 +55,7 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| tests/testthat/test-naming.R | Package-wide checks: export names and help pages with examples (D5.8) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines() | NAMESPACE, man/ |
+| tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples and the export-prefix linter (D5.8, D11.4) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config() | NAMESPACE, man/, .lintr |
 
 ## spec/
 

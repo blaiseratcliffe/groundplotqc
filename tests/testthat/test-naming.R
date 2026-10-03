@@ -79,3 +79,57 @@ test_that("the help-page check flags exports without a page or an example", {
     c("gpq_demo", "gpq_missing")
   )
 })
+
+lint_with_package_config <- function(code, env = parent.frame()) {
+  lintr_file <- file.path(source_root(), ".lintr")
+  if (!file.exists(lintr_file)) {
+    testthat::skip(".lintr is not in this tree")
+  }
+  testthat::skip_if_not_installed("lintr")
+  dir <- withr::local_tempdir(.local_envir = env)
+  file.copy(lintr_file, file.path(dir, ".lintr"))
+  dir.create(file.path(dir, "R"))
+  writeLines(code, file.path(dir, "R", "cases.R"))
+  lints <- Filter(
+    function(lint) identical(lint$linter, "export_prefix_linter"),
+    lintr::lint_dir(dir)
+  )
+  sort(vapply(lints, function(lint) as.integer(lint$line_number), integer(1)))
+}
+
+test_that("the export-prefix linter flags unprefixed exports only", {
+  cases <- c(
+    "#' Prefixed export",
+    "#' @export",
+    "gpq_good_one <- function() 1",
+    "",
+    "#' Unprefixed export",
+    "#' @param x A value.",
+    "#' @export",
+    "bad_export <- function(x) x",
+    "",
+    "#' S3 method, skipped (D11.7)",
+    "#' @export",
+    "print.gpq_results <- function(x, ...) invisible(x)",
+    "",
+    "#' Internal helper",
+    "#' @noRd",
+    "helper_thing <- function() 2",
+    "",
+    "#' Export named in the tag",
+    "#' @export magp_named",
+    "NULL",
+    "",
+    "#' Unprefixed name in the tag",
+    "#' @export other_named",
+    "NULL",
+    "",
+    "#' S3 tag, never checked",
+    "#' @exportS3Method base::format",
+    "format.gpq_spec <- function(x, ...) \"spec\"",
+    "",
+    "#' Export tag on the last line",
+    "#' @export"
+  )
+  expect_equal(lint_with_package_config(cases), c(8L, 24L))
+})
