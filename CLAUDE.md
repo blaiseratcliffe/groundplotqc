@@ -52,8 +52,9 @@ question.
 - Written from scratch. No code is copied from MAGPlotQC, the MAGPlot processing
   scripts, translation_audit, OSM or anywhere else. Existing code is evidence of
   behaviour and a source of check ideas only.
-- data.table and base R. Imports: data.table, and sf from M14 (plan section 15). No new
-  dependency without my approval.
+- data.table and base R. Imports: data.table and utils (D11.5, D11.6), tools from M2
+  and stats at its first use, sf from M14 (plan section 15). No new dependency without
+  my approval.
 - The engine (`gpq_`) never names a MAGPlot table, column or code; MAGPlot specifics
   reach it through the spec object, rule set and settings.
 - Thresholds, sentinels, code lists, tolerances and strategies are inputs, never
@@ -77,9 +78,9 @@ question.
 - Before committing, style with `styler::style_pkg()`, then run `roxygen2::roxygenise()`
   and commit the `man/` and NAMESPACE files it regenerates with the change.
 - Before a PR: document (any change to `man/` or NAMESPACE fails), test, lint, check
-  style with `styler::style_pkg(dry = "fail")`, and R CMD check with 0 errors,
-  0 warnings and 0 notes, except environment notes I have approved (use the
-  check-runner agent).
+  style with `styler::style_pkg(dry = "fail")`, check the site's index with
+  `pkgdown::check_pkgdown()`, and R CMD check with 0 errors, 0 warnings and 0 notes,
+  except environment notes I have approved (use the check-runner agent).
 - Add, rename or remove a file: update FILEMAP.md in the same commit.
 
 ## Git, branches and worktrees

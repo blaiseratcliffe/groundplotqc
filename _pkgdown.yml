@@ -1,0 +1,9 @@
+url: https://blaiseratcliffe.github.io/groundplotqc/
+
+template:
+  bootstrap: 5
+
+reference:
+  - title: Configuration and data
+    contents:
+      - groundplotqc_options

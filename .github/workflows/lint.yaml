@@ -1,0 +1,62 @@
+# Lint, the source-tree tests, the FILEMAP check and the tracked-data check
+# (plan 19.4; D5.15, D8.22, D11.2, D11.8, D11.19). check_manifest.R joins at M2.
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+
+      - name: Lint the package
+        run: |
+          lints <- lintr::lint_package()
+          print(lints)
+          if (length(lints) > 0L) quit(save = "no", status = 1L)
+        shell: Rscript {0}
+
+      - name: Lint .github/scripts
+        run: |
+          lints <- lintr::lint_dir(".github/scripts")
+          print(lints)
+          if (length(lints) > 0L) quit(save = "no", status = 1L)
+        shell: Rscript {0}
+
+      # The tests of .lintr, _pkgdown.yml and .github/scripts/ skip under R CMD
+      # check and covr, which use the built package; here they run on the source
+      # tree (D11.19).
+      - name: Tests from the source tree
+        run: testthat::test_local()
+        shell: Rscript {0}
+
+      - name: FILEMAP check
+        run: Rscript .github/scripts/check_filemap.R
+
+      # Fails on any tracked file that .gitignore would ignore, so 19.2's
+      # patterns stay the only list (D11.2).
+      - name: Tracked-data check
+        run: |
+          ignored="$(git ls-files --cached --ignored --exclude-standard)"
+          if [ -n "$ignored" ]; then
+            echo "Tracked files that .gitignore ignores:"
+            echo "$ignored"
+            exit 1
+          fi
+        shell: bash

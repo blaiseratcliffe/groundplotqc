@@ -1,0 +1,43 @@
+linters: linters_with_defaults(
+    line_length_linter = line_length_linter(100L),
+    object_name_linter = object_name_linter("snake_case"),
+    object_usage_linter = NULL,
+    export_prefix_linter = Linter(
+      function(source_expression) {
+        if (!is_lint_level(source_expression, "file")) {
+          return(list())
+        }
+        lines <- source_expression$file_lines
+        tag_lines <- grep("^\\s*#'\\s*@export(\\s|$)", lines)
+        lints <- list()
+        for (tag_line in tag_lines) {
+          explicit <- sub("^\\s*#'\\s*@export\\s*", "", lines[[tag_line]])
+          target <- tag_line
+          while (target < length(lines) && grepl("^\\s*(#'|$)", lines[[target]])) {
+            target <- target + 1L
+          }
+          assigned <- regmatches(
+            lines[[target]],
+            regexec("^\\s*`?([A-Za-z.][A-Za-z0-9._]*)`?\\s*(<-|=)", lines[[target]])
+          )[[1L]]
+          name <- if (nzchar(explicit)) explicit else if (length(assigned) > 1L) assigned[[2L]] else ""
+          if (!nzchar(name) || grepl(".", name, fixed = TRUE)) {
+            next
+          }
+          if (!grepl("^(gpq|magp)_", name)) {
+            lints[[length(lints) + 1L]] <- Lint(
+              filename = source_expression$filename,
+              line_number = target,
+              column_number = 1L,
+              type = "style",
+              message = paste0("Exported name `", name, "` must start with gpq_ or magp_."),
+              line = lines[[target]]
+            )
+          }
+        }
+        lints
+      },
+      linter_level = "file"
+    )
+  )
+encoding: "UTF-8"
