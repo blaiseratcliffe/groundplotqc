@@ -114,3 +114,63 @@ test_that("tracked_files lists a non-ASCII path unquoted", {
   system2("git", c("-C", shQuote(repo), "add", shQuote(name)))
   expect_equal(fm$tracked_files(repo), name)
 })
+
+coverage_lines <- function(files, hits) {
+  data.frame(
+    filename = rep(files, lengths(hits)),
+    line = sequence(lengths(hits)),
+    value = unlist(hits)
+  )
+}
+
+test_that("engine files are the R files of the engine families", {
+  cov <- load_dev_script("check_coverage.R")
+  engine <- c(
+    "R/spec_read.R", "R/preflight.R", "R/preflight_report.R", "R/rules_registry.R",
+    "R/results_schema.R", "R/check_keys.R", "R/fix_apply.R", "R/lineage_decode.R",
+    "R/report_html.R", "R/utils_dt.R"
+  )
+  other <- c(
+    "R/tool_coords.R", "R/magp_run.R", "R/groundplotqc-package.R", "R/globals.R",
+    "R/options.R", "R/data.R", "R/specifics.R"
+  )
+  expect_equal(cov$is_engine_file(engine), rep(TRUE, length(engine)))
+  expect_equal(cov$is_engine_file(other), rep(FALSE, length(other)))
+})
+
+test_that("the gate uses the engine files' lines combined", {
+  cov <- load_dev_script("check_coverage.R")
+  lines <- coverage_lines(
+    c("R/spec_read.R", "R/check_keys.R", "R/magp_run.R"),
+    list(c(rep(1, 9), 0), rep(3, 10), rep(0, 10))
+  )
+  per_file <- cov$engine_line_coverage(lines)
+  expect_equal(per_file$filename, c("R/check_keys.R", "R/spec_read.R"))
+  expect_equal(per_file$covered, c(10L, 9L))
+  expect_equal(per_file$total, c(10L, 10L))
+  verdict <- cov$coverage_verdict(per_file)
+  expect_true(verdict$pass)
+  expect_equal(verdict$percent, 95)
+})
+
+test_that("the gate fails below 90% and passes at exactly 90%", {
+  cov <- load_dev_script("check_coverage.R")
+  below <- coverage_lines(
+    c("R/spec_read.R", "R/check_keys.R"),
+    list(c(rep(1, 8), 0, 0), c(rep(1, 9), 0))
+  )
+  at <- coverage_lines("R/spec_read.R", list(c(rep(1, 9), 0)))
+  expect_false(cov$coverage_verdict(cov$engine_line_coverage(below))$pass)
+  expect_true(cov$coverage_verdict(cov$engine_line_coverage(at))$pass)
+})
+
+test_that("with no engine files the gate passes and says so", {
+  cov <- load_dev_script("check_coverage.R")
+  empty <- data.frame(filename = character(), line = integer(), value = numeric())
+  layer_only <- coverage_lines("R/magp_run.R", list(c(0, 0)))
+  for (lines in list(empty, layer_only)) {
+    verdict <- cov$coverage_verdict(cov$engine_line_coverage(lines))
+    expect_true(verdict$pass)
+    expect_equal(verdict$message, "no engine files yet")
+  }
+})

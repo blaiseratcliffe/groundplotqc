@@ -56,13 +56,14 @@ row per file (D7.10):
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples and the export-prefix linter (D5.8, D11.4) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config() | NAMESPACE, man/, .lintr |
-| tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/`, run from the source tree and skipped in a built package (D11.8) | none exported; load_dev_script() | .github/scripts/ |
+| tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/`, run from the source tree and skipped in a built package (D11.8) | none exported; load_dev_script(), coverage_lines() | .github/scripts/ |
 
 ## .github/scripts/
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | .github/scripts/check_filemap.R | CI's FILEMAP check: every tracked file has a row and every row a tracked file; folder rows only for folders listed as covered by one row (plan 20.6; D7.10, D11.8) | none exported; tracked_files(), outside_fences(), filemap_section(), filemap_paths(), covered_folders(), filemap_problems(), check_filemap_lines(), main() | git, FILEMAP.md |
+| .github/scripts/check_coverage.R | CI's coverage gate: runs the tests under covr, writes covr's HTML report, and fails when the engine files' combined line coverage is below 90% (plan 18.4; D11.2, D11.7) | none exported; is_engine_file(), engine_line_coverage(), coverage_verdict(), main() | covr, DT, htmltools |
 
 ## spec/
 
