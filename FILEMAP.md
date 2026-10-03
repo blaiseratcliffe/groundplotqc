@@ -29,6 +29,7 @@ row per file (D7.10):
 | README.md | What the package does, its status, installing from GitHub, links to the site and the issues page (D11.4) | none | none |
 | NEWS.md | Changes per version, one bullet per user-visible change (D11.5, D11.6) | none | none |
 | .lintr | lintr settings: tidyverse style, line length 100, snake_case names, `object_usage_linter` off, and the export-prefix linter (plan 17.8; D11.4, D11.7) | none exported; export_prefix_linter (defined inline) | lintr |
+| _pkgdown.yml | pkgdown site settings: the site's address, Bootstrap 5, and the reference index, one group per family as exports arrive (plan 19.5; D11.6, D11.9) | none | R/options.R |
 
 ## R/
 
@@ -55,7 +56,7 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples and the export-prefix linter (D5.8, D11.4) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config() | NAMESPACE, man/, .lintr |
+| tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples, the export-prefix linter, and each export in exactly one pkgdown group (D5.8, D11.4, D11.9) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config(), index_entries(), is_plain_topic_name(), exports_not_in_one_group() | NAMESPACE, man/, .lintr, _pkgdown.yml |
 | tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/`, run from the source tree and skipped in a built package (D11.8) | none exported; load_dev_script(), coverage_lines() | .github/scripts/ |
 
 ## .github/scripts/

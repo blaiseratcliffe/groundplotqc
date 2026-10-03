@@ -133,3 +133,70 @@ test_that("the export-prefix linter flags unprefixed exports only", {
   )
   expect_equal(lint_with_package_config(cases), c(8L, 24L))
 })
+
+index_entries <- function(reference) {
+  has_contents <- vapply(reference, function(section) length(section$contents) > 0L, logical(1))
+  positions <- which(has_contents)
+  contents <- lapply(reference[positions], function(section) as.character(unlist(section$contents)))
+  data.frame(
+    group = rep(positions, lengths(contents)),
+    entry = as.character(unlist(contents, use.names = FALSE))
+  )
+}
+
+is_plain_topic_name <- function(x) {
+  grepl("^[A-Za-z.][A-Za-z0-9._-]*$", x)
+}
+
+exports_not_in_one_group <- function(exports, entries, rd_db) {
+  page_names <- lapply(rd_db, function(rd) c(rd_field(rd, "\\name"), rd_field(rd, "\\alias")))
+  n_groups <- vapply(exports, function(x) {
+    pages <- Filter(function(names) x %in% names, page_names)
+    selectors <- unique(c(x, unlist(pages, use.names = FALSE)))
+    length(unique(entries$group[entries$entry %in% selectors]))
+  }, integer(1))
+  exports[n_groups != 1L]
+}
+
+test_that("index_entries keeps each section's position", {
+  reference <- list(
+    list(title = "A", contents = list("gpq_a", "gpq_b")),
+    list(title = "Heading only"),
+    list(subtitle = "B", contents = list("gpq_c"))
+  )
+  entries <- index_entries(reference)
+  expect_equal(entries$entry, c("gpq_a", "gpq_b", "gpq_c"))
+  expect_equal(entries$group, c(1L, 1L, 3L))
+})
+
+test_that("the index check finds exports in no group or in two", {
+  page <- parse_rd_lines(c(
+    "\\name{gpq_fit}", "\\alias{gpq_fit}", "\\alias{gpq_fit_ratio}",
+    "\\title{Fit}", "\\description{Fit.}", "\\examples{gpq_fit()}"
+  ))
+  entries <- data.frame(
+    group = c(1L, 2L, 2L, 3L),
+    entry = c("gpq_once", "gpq_twice", "gpq_fit", "gpq_twice")
+  )
+  expect_equal(
+    exports_not_in_one_group(
+      c("gpq_once", "gpq_twice", "gpq_fit_ratio", "gpq_nowhere"), entries, list(gpq_fit.Rd = page)
+    ),
+    c("gpq_twice", "gpq_nowhere")
+  )
+})
+
+test_that("_pkgdown.yml lists every export in exactly one reference group", {
+  testthat::skip_if_not_installed("pkgdown")
+  root <- source_root()
+  if (!file.exists(file.path(root, "_pkgdown.yml"))) {
+    testthat::skip("_pkgdown.yml is not in this tree")
+  }
+  entries <- index_entries(pkgdown::as_pkgdown(root)$meta$reference)
+  expect_equal(
+    entries$entry[!is_plain_topic_name(entries$entry)],
+    character(),
+    label = "Selectors in _pkgdown.yml (write topic names out in full, D11.9)"
+  )
+  expect_equal(exports_not_in_one_group(package_exports(), entries, package_rd_db()), character())
+})

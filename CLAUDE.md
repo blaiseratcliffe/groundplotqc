@@ -77,9 +77,9 @@ question.
 - Before committing, style with `styler::style_pkg()`, then run `roxygen2::roxygenise()`
   and commit the `man/` and NAMESPACE files it regenerates with the change.
 - Before a PR: document (any change to `man/` or NAMESPACE fails), test, lint, check
-  style with `styler::style_pkg(dry = "fail")`, and R CMD check with 0 errors,
-  0 warnings and 0 notes, except environment notes I have approved (use the
-  check-runner agent).
+  style with `styler::style_pkg(dry = "fail")`, check the site's index with
+  `pkgdown::check_pkgdown()`, and R CMD check with 0 errors, 0 warnings and 0 notes,
+  except environment notes I have approved (use the check-runner agent).
 - Add, rename or remove a file: update FILEMAP.md in the same commit.
 
 ## Git, branches and worktrees
