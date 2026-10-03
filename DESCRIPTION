@@ -1,0 +1,47 @@
+Package: groundplotqc
+Title: Quality Checks for Related Forest Ground-Plot Tables
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Blaise", "Ratcliffe", ,
+      "16580109+blaiseratcliffe@users.noreply.github.com",
+      role = c("aut", "cre")
+    ),
+    person(
+      "His Majesty the King in Right of Canada, as represented by the Minister of Natural Resources",
+      role = "cph"
+    )
+  )
+Description: Checks a set of related tables against a specification: table
+    and column structure, data types, missing-value sentinels, code lists,
+    keys and an applicability matrix. Flags implausible values and changes
+    between visits, proposes corrections, links each issue to its root
+    cause, and writes self-contained HTML reports and CSV issue lists. A
+    generic engine works with any specification; a layer for the MAGPlot
+    2.0 ground-plot database supplies its compiled specification, rule set
+    and defaults.
+License: MIT + file LICENSE
+URL: https://blaiseratcliffe.github.io/groundplotqc/,
+    https://github.com/blaiseratcliffe/groundplotqc
+BugReports: https://github.com/blaiseratcliffe/groundplotqc/issues
+Depends:
+    R (>= 4.5.0)
+Imports:
+    data.table,
+    utils
+Suggests:
+    jsonlite,
+    knitr,
+    lintr,
+    pkgdown,
+    readxl,
+    rmarkdown,
+    styler,
+    terra,
+    testthat (>= 3.0.0),
+    withr
+Config/Needs/coverage: covr, DT, htmltools
+Config/Needs/document: roxygen2
+Config/testthat/edition: 3
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
