@@ -1,4 +1,5 @@
-# Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54, D12.58).
+# Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54, D12.58,
+# D12.59).
 
 write_bytes <- function(lines, env = parent.frame()) {
   path <- withr::local_tempfile(fileext = ".csv", .local_envir = env)
@@ -309,6 +310,7 @@ test_that("malformed has a column for each slot its kinds fill, NA where unused 
     charToRaw("a,b"), charToRaw("1,2"), charToRaw("3"), charToRaw("4,5")
   )))
   expect_named(ragged$malformed, c("kind", "line", "fields", "n_records", "n_read", "value"))
+  expect_equal(nrow(ragged$malformed), 1L)
   expect_true(all(is.na(unlist(ragged$malformed[, c("n_records", "n_read", "value")]))))
   clean <- read_csv_text(write_bytes(list(charToRaw("a,b"), charToRaw("1,2"))))
   expect_named(clean$malformed, c("kind", "line", "fields", "n_records", "n_read", "value"))
@@ -424,6 +426,118 @@ test_that("an invalid byte gives no unknown problem, nor an encoding warning bes
   expect_equal(nrow(coded$malformed), 0L)
   plain <- read_csv_text(write_bytes(list(charToRaw("a,b"), charToRaw("1,2"))))
   expect_equal(plain$malformed$kind, "unknown")
+})
+
+test_that("rows only the file's read leaves out are short through the skip check (D12.58)", {
+  real_fread <- data.table::fread
+  # Only the file's read loses its last row; the lines read on their own read in full.
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if ("file" %in% names(list(...))) out[seq_len(max(nrow(out) - 1L, 0L))] else out
+  })
+  # A line is missing below fread()'s header, so the skip check runs: line 1 has fread()'s
+  # names and line 2 doesn't, so the missing line is a row left out, not a skipped line.
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,4"), charToRaw("5,6")
+  ))))
+  expect_named(read$data, c("a", "b"))
+  expect_equal(read$data$a, c("1", "3"))
+  expect_equal(read$lines, 2:3)
+  expect_equal(read$malformed$kind, "short")
+  expect_equal(read$malformed$n_records, 3L)
+  expect_equal(read$malformed$n_read, 2L)
+})
+
+test_that("a warning from reading one line on its own isn't the file's (D12.58)", {
+  real_fread <- data.table::fread
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if ("file" %in% names(list(...))) {
+      out[seq_len(max(nrow(out) - 1L, 0L))]
+    } else {
+      warning("A warning about one line.", call. = FALSE)
+      out
+    }
+  })
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,4"), charToRaw("5,6")
+  ))))
+  expect_equal(read$malformed$kind, "short")
+})
+
+test_that("a title line is the header beside an encoding warning and a bad byte (D12.56, D12.58)", {
+  # fread() skips the GB-18030 mark with a warning; spec_encoding_invalid covers that
+  # warning only where a bad byte it reads gives a finding.
+  mark <- as.raw(c(0x84, 0x31, 0x95, 0x33))
+  titled <- read_csv_text(write_bytes(list(
+    c(mark, charToRaw("Title")), charToRaw("id,name"), c(charToRaw("1,a"), as.raw(0x97)),
+    charToRaw("2,b")
+  )))
+  expect_named(titled$data, "Title")
+  expect_equal(nrow(titled$data), 0L)
+  # Line 2 and the lines after it aren't read, so neither is the bad byte on line 3, and
+  # fread()'s warning is no other finding's.
+  expect_equal(titled$malformed$kind, c("fields", "unknown"))
+  expect_equal(titled$malformed$line, c(2L, NA))
+  expect_equal(titled$malformed$fields, c(1L, NA))
+  expect_match(titled$malformed$value[[2L]], "^GB-18030 encoding detected")
+  expect_equal(nrow(titled$invalid), 0L)
+  # With no bad byte the warning is unknown and the read is left as fread() made it.
+  no_byte <- read_csv_text(write_bytes(list(
+    c(mark, charToRaw("Title")), charToRaw("id,name"), charToRaw("1,a"), charToRaw("2,b")
+  )))
+  expect_equal(no_byte$malformed$kind, "unknown")
+  # With no title line the bad byte is spec_encoding_invalid's, on its line.
+  no_title <- read_csv_text(write_bytes(list(
+    c(mark, charToRaw("id,name")), c(charToRaw("1,a"), as.raw(0x97)), charToRaw("2,b")
+  )))
+  expect_equal(nrow(no_title$malformed), 0L)
+  expect_equal(no_title$invalid$row, 1L)
+  expect_equal(no_title$lines, 2:3)
+})
+
+test_that("a session's warn = 2 doesn't stop the read, and its warn is put back (D12.59)", {
+  withr::local_options(warn = 2)
+  expect_no_error(ragged <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")
+  ))))
+  expect_equal(
+    ragged$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 3L, fields = 2L)
+  )
+  expect_equal(getOption("warn"), 2)
+  expect_error(read_csv_text(tempdir()))
+  expect_equal(getOption("warn"), 2)
+})
+
+test_that("fread()'s quote error on a one-column file is one quote problem, no rows (D12.59)", {
+  # A blank line, then a line whose quote isn't closed or doubled: fread() stops with an
+  # error, not a warning, on a file of one column.
+  expect_no_warning(expect_no_error(read <- read_csv_text(write_bytes(list(
+    charToRaw("code"), charToRaw("A"), raw(0), charToRaw("\"B\" extra")
+  )))))
+  expect_equal(
+    read$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "quote", line = NA_integer_, fields = NA_integer_)
+  )
+  expect_equal(ncol(read$data), 0L)
+  expect_equal(read$lines, integer())
+  expect_equal(nrow(read$invalid), 0L)
+  # Every other error still stops the read.
+  expect_error(read_csv_text(file.path(tempdir(), "no such file.csv")))
+})
+
+test_that("a warning the reader doesn't know before the quote error is kept (D12.58, D12.59)", {
+  real_fread <- data.table::fread
+  local_mocked_bindings(fread = function(...) {
+    warning("A new warning.", call. = FALSE)
+    real_fread(...)
+  })
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("code"), charToRaw("A"), raw(0), charToRaw("\"B\" extra")
+  ))))
+  expect_equal(read$malformed$kind, c("quote", "unknown"))
+  expect_equal(read$malformed$value, c(NA, "A new warning."))
 })
 
 test_that("fix_invalid_utf8 leaves valid text alone", {

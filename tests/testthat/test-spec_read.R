@@ -1,4 +1,5 @@
-# Tests for reading a specification (plan 3.6, 4.1; D12.13 to D12.25, D12.45, D12.54, D12.58).
+# Tests for reading a specification (plan 3.6, 4.1; D12.13 to D12.25, D12.45, D12.54, D12.58,
+# D12.59).
 
 csv_file <- function(lines, env = parent.frame()) {
   path <- withr::local_tempfile(fileext = ".csv", .local_envir = env)
@@ -161,6 +162,37 @@ test_that("rows the CSV read leaves out without a warning are one finding (D12.5
     read$findings$detail,
     paste(basename(path), "has 2 records after its header, but only 1 were read.")
   )
+})
+
+test_that("a warning the CSV read doesn't recognise is one finding without a cell (D12.58)", {
+  path <- csv_file(c("id,name", "1,a"))
+  real_fread <- data.table::fread
+  # Only this file's read warns; the report text's own CSV reads as it is.
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if (identical(list(...)$file, path)) warning("A new warning.", call. = FALSE)
+    out
+  })
+  expect_no_warning(read <- read_input_table(path, "datasets"))
+  expect_equal(read$data$id, "1")
+  expect_equal(read$findings$rule_id, "spec_csv_malformed")
+  expect_equal(read$findings$detail, paste0(
+    "Reading ", basename(path), " gave a warning the package doesn't recognise, so some of its",
+    " lines may not have been read: \"A new warning.\"."
+  ))
+  expect_true(is.na(read$findings$source_cell))
+})
+
+test_that("a one-column CSV fread() stops on for a quote is one finding, no error (D12.59)", {
+  path <- csv_file(c("code", "A", "", "\"B\" extra"))
+  expect_no_warning(expect_no_error(read <- read_input_table(path, "datasets")))
+  expect_equal(read$findings$rule_id, "spec_csv_malformed")
+  expect_equal(read$findings$detail, paste(
+    basename(path),
+    "has a quote that isn't closed or doubled as CSV needs, so some cells may not read as written."
+  ))
+  expect_equal(nrow(read$data), 0L)
+  expect_error(read_input_table(file.path(tempdir(), "no such file.csv"), "datasets"))
 })
 
 test_that("cell references follow each kind of input", {
