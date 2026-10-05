@@ -271,6 +271,12 @@ CASES = [
     ("D12.46", "block", "git diff of a data path", bash("git diff -- plans/x.csv")),
     ("D12.46", "block", "git grep in a data path", bash("git grep foo -- plans/x.csv")),
     ("D12.46", "block", "git ls-files, then cat", bash("git ls-files x.csv && cat x.csv")),
+    # D12.52: the exemption covers path arguments only, never a file the command reads
+    ("D12.52", "block", "check-ignore --stdin from a redirected file", bash("git check-ignore --stdin -v -n < data-raw/provider.csv")),
+    ("D12.52", "block", "check-attr --stdin from a redirected file", bash("git check-attr --stdin -a < plans/x.csv")),
+    ("D12.52", "block", "ls-files --exclude-from=file", bash("git ls-files --others --exclude-from=data-raw/provider.csv")),
+    ("D12.52", "block", "ls-files -X file", bash("git ls-files -X data-raw/provider.csv")),
+    ("D12.52", "block", "git -c core.excludesFile=file check-ignore", bash("git -c core.excludesFile=plans/x.csv check-ignore -v foo")),
     # Internal errors (D10.14, D10.17)
     ("err", "block", "malformed input blocks", '{"tool_name":"Bash","tool_input":{"command":"git status"'),
     ("err", "block", "empty input blocks (D10.17)", ""),
