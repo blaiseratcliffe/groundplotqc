@@ -1,0 +1,5 @@
+data_type,r_class,date_format
+VARCHAR,character,
+INTEGER,integer,
+DECIMAL,double,
+YYYYMMDD,character,%Y%m%d

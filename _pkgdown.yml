@@ -4,6 +4,11 @@ template:
   bootstrap: 5
 
 reference:
+  - title: "Generic engine: specification and pre-flight"
+    contents:
+      - gpq_column_map
+      - gpq_sentinels
+      - gpq_type_map
   - title: Configuration and data
     contents:
       - groundplotqc_options
