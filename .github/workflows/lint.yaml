@@ -1,5 +1,6 @@
-# Lint, the source-tree tests, the FILEMAP check and the tracked-data check
-# (plan 19.4; D5.15, D8.22, D11.2, D11.8, D11.19). check_manifest.R joins at M2.
+# Lint, the source-tree tests, the FILEMAP check, the agent and skill frontmatter
+# check and the tracked-data check (plan 19.4; D5.15, D8.22, D11.2, D11.8, D11.19,
+# D12.46). check_manifest.R joins at M2.
 name: lint
 
 on:
@@ -24,6 +25,8 @@ jobs:
           use-public-rspm: true
 
       - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          needs: lint
 
       - name: Lint the package
         run: |
@@ -48,6 +51,9 @@ jobs:
 
       - name: FILEMAP check
         run: Rscript .github/scripts/check_filemap.R
+
+      - name: Agent and skill frontmatter check
+        run: Rscript .github/scripts/check_agents.R
 
       # Fails on any tracked file that .gitignore would ignore, so 19.2's
       # patterns stay the only list (D11.2).

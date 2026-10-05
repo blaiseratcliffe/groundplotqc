@@ -57,7 +57,7 @@ row per file (D7.10):
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples, the export-prefix linter, and each export in exactly one pkgdown group (D5.8, D11.4, D11.9) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config(), index_entries(), is_plain_topic_name(), exports_not_in_one_group() | NAMESPACE, man/, .lintr, _pkgdown.yml |
-| tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/`, run from the source tree and skipped in a built package (D11.8) | none exported; load_dev_script(), coverage_lines() | .github/scripts/ |
+| tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/` (`check_filemap.R`, `check_coverage.R`, `check_agents.R`), run from the source tree and skipped in a built package (D11.8, D12.46) | none exported; load_dev_script(), coverage_lines(), frontmatter_fixture() | .github/scripts/, .claude/agents/, .claude/skills/, yaml |
 
 ## .github/scripts/
 
@@ -65,13 +65,14 @@ row per file (D7.10):
 |---|---|---|---|
 | .github/scripts/check_filemap.R | CI's FILEMAP check: every tracked file has a row and every row a tracked file; folder rows only for folders listed as covered by one row (plan 20.6; D7.10, D11.8) | none exported; tracked_files(), outside_fences(), filemap_section(), filemap_paths(), covered_folders(), filemap_problems(), check_filemap_lines(), main() | git, FILEMAP.md |
 | .github/scripts/check_coverage.R | CI's coverage gate: runs the tests under covr, writes covr's HTML report, and fails when the engine files' combined line coverage is below 90% (plan 18.4; D11.2, D11.7) | none exported; is_engine_file(), engine_line_coverage(), coverage_verdict(), main() | covr, DT, htmltools |
+| .github/scripts/check_agents.R | CI's agent and skill check: every `.claude/agents/*.md` and `.claude/skills/*/SKILL.md` has YAML frontmatter that parses, with a name matching its file and a description (D12.43, D12.46) | none exported; agent_files(), frontmatter_lines(), frontmatter_problems(), check_agents_files(), main() | yaml, .claude/agents/, .claude/skills/ |
 
 ## .github/workflows/
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | .github/workflows/R-CMD-check.yaml | R CMD check without `--as-cran` on seven jobs: Windows, macOS and Ubuntu on release; Ubuntu on devel, oldrel-1 and R 4.5.0; Ubuntu on release with `NOT_CRAN=false` (plan 19.4; D11.2, D11.8) | none | DESCRIPTION, rcmdcheck |
-| .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the tests that need the source tree, the FILEMAP check and the tracked-data check (plan 19.4; D11.2, D11.8, D11.19) | none | DESCRIPTION, .lintr, tests/testthat/, .github/scripts/check_filemap.R, .gitignore, lintr, testthat |
+| .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the tests that need the source tree, the FILEMAP check, the agent and skill frontmatter check and the tracked-data check (plan 19.4; D11.2, D11.8, D11.19, D12.46) | none | DESCRIPTION, .lintr, tests/testthat/, .github/scripts/check_filemap.R, .github/scripts/check_agents.R, .gitignore, lintr, testthat, yaml |
 | .github/workflows/pkgdown.yaml | Builds the site on pull requests; builds and deploys it to `gh-pages` with `pkgdown::deploy_to_branch()` on pushes to `main`; deletes CLAUDE.md, FILEMAP.md and NAMING.md from the runner's checkout first, committing that deletion on the runner before a deploy, so the site leaves them out (plan 19.4; D11.1, D11.7, D11.17, D11.19) | none | DESCRIPTION, _pkgdown.yml, pkgdown, CLAUDE.md, FILEMAP.md, NAMING.md |
 | .github/workflows/test-coverage.yaml | Runs the coverage gate and uploads covr's HTML report as an artifact (plan 19.4; D11.2, D11.7) | none | .github/scripts/check_coverage.R, DESCRIPTION |
 
@@ -92,7 +93,7 @@ row per file (D7.10):
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | .claude/hooks/guard-launch.ps1 | Entry point settings.json runs: reads the tool call from stdin, runs guard.ps1 on it, and blocks the call if guard.ps1 fails to load (D10.17) | none | .claude/hooks/guard.ps1 |
-| .claude/hooks/guard.ps1 | Guard hook run before Bash, Read, Grep, Glob, Edit, Write, NotebookEdit and MCP tool calls: blocks destructive git, changes to `main`, file writes through Bash, changes in `spec/` and to the consent list, recursive `rm`, and data-file reads outside the allowlist without consent; asks before package installs (plan 20.3, D10.14, D10.17) | none exported; Invoke-Guard, Test-BashCommand, Read-ShellCommand, Get-CommandIndex, Test-GitCommand, Test-GitPush, Get-EffectiveBranch, Test-GrepTool, Test-EditTool, Get-ProtectedReason, Assert-DataRead, Get-DataCandidates, Test-DataAllowed, Resolve-GuardPath | the git-ignored consent list `.claude/data_consent.local.txt` in the project folder; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR`; git |
+| .claude/hooks/guard.ps1 | Guard hook run before Bash, Read, Grep, Glob, Edit, Write, NotebookEdit and MCP tool calls: blocks destructive git, changes to `main`, file writes through Bash, changes in `spec/` and to the consent list, recursive `rm`, and data-file reads outside the allowlist without consent, the consent list itself excepted; asks before package installs (plan 20.3, D10.14, D10.17, D12.46, D12.52) | none exported; Invoke-Guard, Test-BashCommand, Read-ShellCommand, Get-CommandIndex, Get-PathOnlyIndexes, Test-GitCommand, Test-GitPush, Get-EffectiveBranch, Test-GrepTool, Test-EditTool, Get-ProtectedReason, Assert-DataRead, Get-DataCandidates, Test-DataAllowed, Resolve-GuardPath | the git-ignored consent list `.claude/data_consent.local.txt` in the project folder; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR`; git |
 | .claude/hooks/test_guard.py | The guard hook's tests: feeds guard-launch.ps1 tool calls as JSON and checks each verdict, every 20.3 row both ways; run with `python .claude/hooks/test_guard.py` after every change to the hook (D10.15, D10.17) | none exported; run(), parse_error_cases(), main() | guard-launch.ps1, guard.ps1; Python 3; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR` |
 
 ## .claude/agents/
