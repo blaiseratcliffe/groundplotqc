@@ -984,3 +984,269 @@ build_codes <- function(code_list_map, code_lists, crosswalks) {
   })
   bind_component("codes", codes)
 }
+
+#' The id_bands component and its site_id_range_invalid findings
+#'
+#' The reader makes every finding of the check, where the bands sheet's file is known
+#' (D12.28): a missing sheet or column, a bad bound, a blank or unknown label, a band
+#' starting after it ends, and two valid bands overlapping, citing both.
+#' @noRd
+build_id_bands <- function(id_bands, code_lists, file) {
+  out <- list(
+    bands = empty_table(spec_schema()$id_bands),
+    findings = empty_table(spec_schema()$read_findings)
+  )
+  if (is.null(id_bands)) {
+    return(out)
+  }
+  # A caller's error unless each element has its shape and the pattern compiles (R10).
+  one_name <- function(x) {
+    is.character(x) && length(x) == 1L && !is.na(x) && !is_blank(x) && validUTF8(x)
+  }
+  from <- if (is.list(id_bands)) id_bands$labels_from
+  from_ok <- is.null(from) || is.character(from) && length(from) == 2L &&
+    setequal(names(from), c("sheet", "column")) && all(vapply(from, one_name, TRUE))
+  pattern <- if (is.list(id_bands)) id_bands$reserved_pattern
+  pattern_ok <- is.null(pattern) || one_name(pattern)
+  if (pattern_ok && !is.null(pattern)) {
+    pattern_ok <- tryCatch(
+      is.logical(grepl(pattern, "")),
+      error = function(e) FALSE, warning = function(w) FALSE
+    )
+  }
+  shaped <- is.list(id_bands) && setequal(names(id_bands), spec_input_schema()$id_bands) &&
+    all(vapply(id_bands[c("sheet", "label_col", "start_col", "end_col")], one_name, TRUE)) &&
+    from_ok && pattern_ok
+  if (!shaped) {
+    stop(paste(
+      "`id_bands` is list(sheet, label_col, start_col, end_col, labels_from,",
+      "reserved_pattern): one name each for the first four, labels_from NULL or",
+      "c(sheet = , column = ), reserved_pattern NULL or one regular expression."
+    ), call. = FALSE)
+  }
+  finding <- function(detail, cell = NA_character_) {
+    data.table(
+      rule_id = "site_id_range_invalid", input = "code_lists", file = file,
+      detail = detail, source_cell = cell
+    )
+  }
+  needed <- c(id_bands$label_col, id_bands$start_col, id_bands$end_col)
+  cells <- code_lists[sheet == id_bands$sheet]
+  from_header <- if (!is.null(from)) {
+    code_lists[sheet == from[["sheet"]] & source_row == 1L, value]
+  }
+  columns_missing <- !all(needed %in% cells[source_row == 1L, value]) ||
+    !is.null(from) && !from[["column"]] %in% from_header
+  if (columns_missing) {
+    out$findings <- finding(report_text(
+      "preflight_detail_site_id_range_invalid_sheet",
+      sheet = id_bands$sheet, columns = paste(c(needed, from[["column"]]), collapse = ", ")
+    ))
+    return(out)
+  }
+  body <- cells[source_row > 1L & sheet_column %chin% needed]
+  value_of <- function(column) {
+    one <- body[sheet_column == column]
+    one[match(sort(unique(body$source_row)), one$source_row)]
+  }
+  label <- value_of(id_bands$label_col)
+  start <- value_of(id_bands$start_col)
+  end <- value_of(id_bands$end_col)
+  keep <- !(is.na(label$value) & is.na(start$value) & is.na(end$value))
+  label <- label[keep]
+  start <- start[keep]
+  end <- end[keep]
+  # A bound is whole only when written in decimal digits, finite and without a fraction:
+  # "Inf" and "0x10" aren't (R16).
+  as_bound <- function(x) {
+    decimal <- grepl("^ *[-+]?[0-9]+([.][0-9]*)?([eE][-+]?[0-9]+)? *$", x)
+    number <- suppressWarnings(as.numeric(x))
+    fifelse(decimal & is.finite(number) & number == round(number), number, NA_real_)
+  }
+  bands <- data.table(
+    label = label$value, band_start = as_bound(start$value), band_end = as_bound(end$value),
+    reserved = !is.null(pattern) & !is.na(label$value) & grepl(pattern %||% "^$", label$value),
+    source_row = label$source_row, source_cell = label$source_cell
+  )
+  # A band with a blank label gets only that finding, below; its bounds, order and
+  # overlaps are checked once it has a label (D12.36, D12.37).
+  labelled <- !is.na(bands$label)
+  # One finding per bad bound, citing its own cell (D12.33): a blank bound has its own
+  # text, one that isn't a whole number shows its value. Either leaves the band's bound
+  # NA, so the order and overlap checks below leave the band out.
+  blank_text <- c(
+    start = "preflight_detail_site_id_range_invalid_blank_start",
+    end = "preflight_detail_site_id_range_invalid_blank_end"
+  )
+  bounds <- list(start = start, end = end)
+  bound_findings <- do.call(c, lapply(names(bounds), function(side) {
+    cells <- bounds[[side]]
+    blank <- which(labelled & is.na(cells$value))
+    not_whole <- which(labelled & !is.na(cells$value) & is.na(as_bound(cells$value)))
+    list(
+      if (length(blank) > 0L) {
+        finding(
+          report_text(blank_text[[side]], label = bands$label[blank]),
+          cells$source_cell[blank]
+        )
+      },
+      if (length(not_whole) > 0L) {
+        finding(
+          report_text(
+            "preflight_detail_site_id_range_invalid_bound",
+            label = bands$label[not_whole], value = cells$value[not_whole]
+          ),
+          cells$source_cell[not_whole]
+        )
+      }
+    )
+  }))
+  known <- if (is.null(from)) {
+    bands$label
+  } else {
+    code_lists[
+      sheet == from[["sheet"]] & sheet_column == from[["column"]] & source_row > 1L, value
+    ]
+  }
+  # A blank label is a finding of its own, labels_from or not, the band named by where it
+  # is (D12.36).
+  blank_label <- which(!labelled)
+  blank_label_findings <- if (length(blank_label) > 0L) {
+    finding(
+      report_text(
+        "preflight_detail_site_id_range_invalid_blank_label",
+        location = band_location(bands$source_cell[blank_label], bands$source_row[blank_label])
+      ),
+      bands$source_cell[blank_label]
+    )
+  }
+  unknown <- which(labelled & !bands$reserved & !bands$label %chin% known)
+  # The text names the labels' sheet and column, not what the labels are (D12.35).
+  label_findings <- if (length(unknown) > 0L) {
+    finding(
+      report_text(
+        "preflight_detail_site_id_range_invalid_label",
+        label = bands$label[unknown], column = from[["column"]], sheet = from[["sheet"]]
+      ),
+      bands$source_cell[unknown]
+    )
+  }
+  # Order and overlap are found here too, where the bands sheet's file is known, so
+  # every site_id_range_invalid finding names it (D12.28). Overlap is among valid bands
+  # only (D12.22), and an overlap finding cites both bands, the earlier first.
+  has_bounds <- labelled & !is.na(bands$band_start) & !is.na(bands$band_end)
+  inverted <- which(has_bounds & bands$band_start > bands$band_end)
+  order_findings <- if (length(inverted) > 0L) {
+    finding(
+      report_text(
+        "preflight_detail_site_id_range_invalid_order",
+        label = bands$label[inverted], band_start = bands$band_start[inverted],
+        band_end = bands$band_end[inverted]
+      ),
+      bands$source_cell[inverted]
+    )
+  }
+  valid <- which(has_bounds & bands$band_start <= bands$band_end)
+  valid <- valid[order(bands$band_start[valid], bands$band_end[valid])]
+  overlap_findings <- NULL
+  if (length(valid) > 1L) {
+    ends <- bands$band_end[valid]
+    running <- cummax(ends)
+    holder <- valid[match(running, ends)]
+    previous_end <- shift(running)
+    hit <- which(!is.na(previous_end) & bands$band_start[valid] <= previous_end)
+    if (length(hit) > 0L) {
+      later <- valid[hit]
+      earlier <- shift(holder)[hit]
+      overlap_findings <- finding(
+        report_text(
+          "preflight_detail_site_id_range_invalid_overlap",
+          label = bands$label[earlier],
+          location = band_location(bands$source_cell[earlier], bands$source_row[earlier]),
+          other_label = bands$label[later],
+          other_location = band_location(bands$source_cell[later], bands$source_row[later])
+        ),
+        bands$source_cell[later]
+      )
+    }
+  }
+  out$bands <- bands
+  out$findings <- bind_component("read_findings", c(
+    bound_findings, list(blank_label_findings, label_findings, order_findings, overlap_findings)
+  ))
+  out
+}
+
+#' A band's place in words, by input form (D12.28)
+#'
+#' A CSV's line, a workbook's cell, a data.frame's row as R counts it. A band's
+#' source_cell is NA in memory and holds "!" only for a workbook (sheet!A1; a CSV's is
+#' file:line, whose line is taken from it, since an origin may move the file's rows,
+#' D12.33).
+#' @noRd
+band_location <- function(source_cell, source_row) {
+  # Each text is filled for its own bands only: a text's slot never takes an NA (D12.45).
+  out <- source_cell
+  memory <- is.na(source_cell)
+  csv <- !memory & !grepl("!", source_cell, fixed = TRUE)
+  out[memory] <- report_text("location_band_memory", row = source_row[memory] - 1L)
+  out[csv] <- report_text("location_band_csv", line = sub("^.*:", "", source_cell[csv]))
+  out
+}
+
+#' The file a code-list sheet came from: its own CSV, or else the workbook (D12.28)
+#' @noRd
+sheet_file <- function(manifest, sheet) {
+  if (is.null(manifest) || is.null(sheet)) {
+    return(NA_character_)
+  }
+  own <- match(paste0("code_lists:", sheet), manifest$input)
+  if (!is.na(own)) {
+    return(manifest$file[[own]])
+  }
+  workbook <- match("code_lists", manifest$input)
+  if (is.na(workbook)) NA_character_ else manifest$file[[workbook]]
+}
+
+#' A stop unless an input has exactly its columns (D12.33)
+#'
+#' A precedence or lineage input without exactly its columns is a caller's error: one
+#' message names every missing and every extra column, as 3.6's input_unparseable does
+#' for run inputs.
+#' @noRd
+check_input_columns <- function(data, columns, input) {
+  missing <- setdiff(columns, names(data))
+  extra <- setdiff(names(data), columns)
+  if (length(missing) == 0L && length(extra) == 0L) {
+    return(invisible(NULL))
+  }
+  stop(sprintf(
+    "`%s` must have exactly the columns %s; %s.", input, paste(columns, collapse = ", "),
+    paste(c(
+      if (length(missing) > 0L) paste("missing:", paste(missing, collapse = ", ")),
+      if (length(extra) > 0L) paste("not taken:", paste(extra, collapse = ", "))
+    ), collapse = "; ")
+  ), call. = FALSE)
+}
+
+#' The precedence input, checked
+#' @noRd
+read_precedence <- function(x, origin = NULL) {
+  table <- read_input_table(x, "precedence", origin)
+  columns <- spec_input_schema()$precedence
+  check_input_columns(table$data, columns, "precedence")
+  data <- table$data[, columns, with = FALSE]
+  known <- all(data$winner %in% c("datasets", "code_lists")) &&
+    all(data$blank_rule %in% c("yields", "wins"))
+  if (!known) {
+    stop(
+      "`precedence`'s winner is datasets or code_lists and its blank_rule yields or wins.",
+      call. = FALSE
+    )
+  }
+  # One rule per sheet, key and attribute: two would leave the winner to row order (D12.54).
+  if (anyDuplicated(data, by = c("sheet", "key_col", "attribute_name")) > 0L) {
+    stop("`precedence` has more than one row for a sheet, key and attribute.", call. = FALSE)
+  }
+  list(data = data, manifest = table$manifest, findings = table$findings)
+}

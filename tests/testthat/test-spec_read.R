@@ -852,3 +852,159 @@ test_that("a translation table whose read warns is unreadable, with no warning e
   expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
   expect_equal(walks$findings$detail, "Translation table td can't be read as a CSV file.")
 })
+
+band_lists <- function() {
+  read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "PEI", "reserved_1", NA, "BC"),
+      v2_start = c("1", "100", "200", NA, "1.5"), v2_end = c("99", "199", "299", NA, "9")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "PE", "BC"))
+  ))$long
+}
+
+band_spec <- list(
+  sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+  labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+  reserved_pattern = "^reserved_[0-9]+$"
+)
+
+test_that("build_id_bands reads bands and reports unknown labels and bad bounds", {
+  built <- build_id_bands(band_spec, band_lists(), "lookup.xlsx")
+  expect_equal(built$bands$label, c("AB", "PEI", "reserved_1", "BC"))
+  expect_equal(built$bands$reserved, c(FALSE, FALSE, TRUE, FALSE))
+  expect_true(is.na(built$bands$band_start[[4L]]))
+  expect_equal(built$findings$rule_id, rep("site_id_range_invalid", 2L))
+  expect_match(built$findings$detail[[1L]], "1.5", fixed = TRUE)
+  expect_match(built$findings$detail[[2L]], "PEI", fixed = TRUE)
+})
+
+test_that("a bands sheet without its columns is one finding", {
+  wrong <- modifyList(band_spec, list(end_col = "v3_end"))
+  built <- build_id_bands(wrong, band_lists(), "lookup.xlsx")
+  expect_equal(nrow(built$bands), 0L)
+  expect_equal(built$findings$rule_id, "site_id_range_invalid")
+})
+
+test_that("id_bands of the wrong shape is a caller's error (R10)", {
+  expect_error(build_id_bands("ranges", band_lists(), "f"), "id_bands")
+  two <- modifyList(band_spec, list(label_col = c("contributor", "v2_start")))
+  expect_error(build_id_bands(two, band_lists(), "f"), "id_bands")
+  pattern <- modifyList(band_spec, list(reserved_pattern = "("))
+  expect_error(build_id_bands(pattern, band_lists(), "f"), "regular expression")
+})
+
+test_that("build_id_bands finds an inverted band and an overlap, citing both bands (D12.28)", {
+  lists <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "BC", "ON"), v2_start = c("1", "50", "300"),
+      v2_end = c("100", "150", "250")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "BC", "ON"))
+  ))$long
+  built <- build_id_bands(band_spec, lists, "in memory")
+  expect_equal(built$findings$detail, c(
+    "Band \"ON\" starts at 300, after it ends at 250.",
+    "Bands \"AB\" (row 1) and \"BC\" (row 2) overlap."
+  ))
+  expect_equal(unique(built$findings$file), "in memory")
+})
+
+test_that("sheet_file finds a sheet's own CSV, else the workbook", {
+  per_sheet <- data.table::data.table(
+    input = c("code_lists:contributor", "code_lists:ranges"), file = c("c.csv", "r.csv")
+  )
+  expect_equal(sheet_file(per_sheet, "ranges"), "r.csv")
+  workbook <- data.table::data.table(input = "code_lists", file = "lookup.xlsx")
+  expect_equal(sheet_file(workbook, "ranges"), "lookup.xlsx")
+  expect_true(is.na(sheet_file(NULL, "ranges")))
+})
+
+test_that("each bad bound is one finding, a blank one with its own text, no overlap (D12.33)", {
+  lists <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "BC", "ON", "QC"), v2_start = c(NA, "50", "x", "1"),
+      v2_end = c("100", NA, NA, "100")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "BC", "ON", "QC"))
+  ))$long
+  built <- build_id_bands(band_spec, lists, "in memory")
+  # AB and BC would overlap QC if their bounds were whole; ON has two bad bounds.
+  # Findings' order isn't part of the contract: compared sorted (D12.30).
+  expect_equal(sort(built$findings$detail), sort(c(
+    "Band \"AB\" has a blank start.", "Band \"BC\" has a blank end.",
+    "Band \"ON\" has a bound that isn't a whole number: \"x\".", "Band \"ON\" has a blank end."
+  )))
+})
+
+test_that("a bound must be written in decimal digits and be finite (R16)", {
+  lists <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "BC", "ON"), v2_start = c("1", "0x10", "1e3"),
+      v2_end = c("Inf", "20", "2000")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "BC", "ON"))
+  ))$long
+  built <- build_id_bands(band_spec, lists, "in memory")
+  expect_equal(built$bands$band_start, c(1, NA, 1000))
+  expect_equal(built$bands$band_end, c(NA, 20, 2000))
+  expect_equal(sort(built$findings$detail), sort(c(
+    "Band \"AB\" has a bound that isn't a whole number: \"Inf\".",
+    "Band \"BC\" has a bound that isn't a whole number: \"0x10\"."
+  )))
+})
+
+test_that("a blank label is the band's only finding, labels_from or not (D12.36, D12.37)", {
+  lists <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", NA, NA), v2_start = c("1", "50", NA),
+      v2_end = c("100", "150", "300")
+    ),
+    contributor = data.frame(abbreviated_name = "AB")
+  ))$long
+  # Row 2 would overlap AB and row 3 has a blank start: neither is checked without a label.
+  only_blank <- c("The band at row 2 has a blank label.", "The band at row 3 has a blank label.")
+  expect_equal(build_id_bands(band_spec, lists, "in memory")$findings$detail, only_blank)
+  no_list <- band_spec
+  no_list["labels_from"] <- list(NULL)
+  expect_equal(build_id_bands(no_list, lists, "in memory")$findings$detail, only_blank)
+})
+
+test_that("a precedence input names every missing and extra column at once (D12.33)", {
+  rows <- data.frame(sheet = "s", key_col = "k", attribute_name = "c", decision = "D1")
+  expect_error(
+    read_precedence(rows),
+    paste(
+      "`precedence` must have exactly the columns sheet, key_col, attribute_name, winner,",
+      "blank_rule; missing: winner, blank_rule; not taken: decision."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("a precedence input has one row per sheet, key and attribute (D12.54)", {
+  rows <- data.frame(
+    sheet = "s", key_col = "k", attribute_name = "c", winner = c("datasets", "code_lists"),
+    blank_rule = "wins"
+  )
+  expect_error(read_precedence(rows), "more than one row")
+})
+
+test_that("an origin's columns give a precedence input its file's letters (D12.33)", {
+  bad <- rawToChar(as.raw(c(0x6E, 0x61, 0x97, 0x6D, 0x65)))
+  Encoding(bad) <- "UTF-8"
+  rows <- data.frame(
+    sheet = "dataset", key_col = "magp_dataset_id", attribute_name = bad, winner = "datasets",
+    blank_rule = "wins"
+  )
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", path)
+  # The file's column C held a note that was dropped, so attribute_name is its column D.
+  origin <- list(
+    path = path, sheet = "precedence", rows = 2L,
+    columns = c(sheet = 1, key_col = 2, attribute_name = 4, winner = 5, blank_rule = 6)
+  )
+  read <- read_precedence(rows, origin)
+  expect_equal(read$findings$source_cell, "precedence!D2")
+  expect_equal(read$findings$detail, kept("cell precedence!D2", "na<97>me"))
+})
