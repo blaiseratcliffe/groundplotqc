@@ -589,8 +589,11 @@ test_that("read_code_lists keeps every cell in long form, the header as row 1", 
 test_that("code_lists and crosswalks names are unique, never blank, valid UTF-8 (R11, D12.54)", {
   twice <- list(kind = data.frame(kind = "A"), kind = data.frame(kind = "C"))
   expect_error(read_code_lists(twice), "unique")
-  expect_error(read_code_lists(stats::setNames(list(data.frame(a = "x")), NA)), "unique")
-  invalid <- stats::setNames(list(data.frame(a = "x")), bad_name)
+  unnamed <- list(data.frame(a = "x"))
+  names(unnamed) <- NA
+  expect_error(read_code_lists(unnamed), "unique")
+  invalid <- list(data.frame(a = "x"))
+  names(invalid) <- bad_name
   expect_error(read_code_lists(invalid), "UTF-8")
   walks <- list(t = data.frame(code = "A"), t = data.frame(code = "B"))
   expect_error(read_crosswalks(walks), "unique")
@@ -745,4 +748,96 @@ test_that("a data.frame translation table with an origin is located as its file 
   )
   expect_equal(walks$findings$source_cell, paste0(basename(path), ":3"))
   expect_equal(walks$manifest$file, basename(path))
+})
+
+test_that("a blank workbook header cell is named V<j>, as in the other input forms (D12.61)", {
+  testthat::skip_if_not_installed("readxl")
+  raw <- data.table::data.table(
+    V1 = c("a", "x"), V2 = c(NA, "y"), V3 = c("c", "z")
+  )
+  testthat::local_mocked_bindings(read_xlsx_raw = function(...) data.table::copy(raw))
+  workbook <- read_code_lists(testthat::test_path("fixtures", "blank_cells.xlsx"))
+  from_csv <- read_code_lists(list(Sheet1 = csv_file(c("a,,c", "x,y,z"))))
+  expect_equal(workbook$long$value[workbook$long$source_row == 1L], c("a", "V2", "c"))
+  expect_equal(workbook$long$sheet_column, from_csv$long$sheet_column)
+  expect_equal(workbook$long$sheet_column[1:3], c("a", "a", "V2"))
+})
+
+test_that("an unreadable translation table CSV still has its hash in the manifest (D12.61)", {
+  ragged <- csv_file(c("code,name", "A,x", "B,y,z", "C,w"))
+  walks <- read_crosswalks(list(td = ragged))
+  expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
+  expect_equal(walks$manifest$sha256, unname(tools::sha256sum(ragged)))
+  absent <- read_crosswalks(list(td = file.path(tempdir(), "none.csv")))
+  expect_true(is.na(absent$manifest$sha256))
+})
+
+test_that("a filter entry that is NULL or empty, or a filter column that isn't there, is refused", {
+  table <- data.frame(code = c("FI", "HA"), kind = c("D", "T"))
+  attributes <- data.table::data.table(
+    table_name = "t", attribute_name = c("disturbance_type", "treatment_type"), lookup = "td"
+  )
+  no_sheets <- read_code_lists(NULL)$long
+  for (entry in list(NULL, character())) {
+    values <- list(disturbance_type = "D", treatment_type = entry)
+    walks <- read_crosswalks(list(td = list(
+      table = table, code_col = "code", filter_col = "kind", filter_values = values
+    )))
+    expect_error(
+      build_code_list_map(attributes, no_sheets, character(), walks$long, walks$declared),
+      "no entry for attribute treatment_type"
+    )
+  }
+  absent <- read_crosswalks(list(td = list(
+    table = table, code_col = "code", filter_col = "missing", filter_values = "D"
+  )))
+  expect_error(
+    build_code_list_map(attributes, no_sheets, character(), absent$long, absent$declared),
+    "filter_col missing isn't a column"
+  )
+})
+
+test_that("a lower-case y names the sheet after the attribute (D12.31)", {
+  attributes <- data.table::data.table(table_name = "t", attribute_name = "kind", lookup = "y")
+  read <- read_code_lists(list(kind = data.frame(kind = c("A", "B"))))
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(attributes, read$long, read$sheets, none$long, none$declared)
+  expect_equal(map$source_name, "kind")
+  expect_equal(map$status, "resolved")
+})
+
+test_that("a sheet with no code column is no_code_column and gives no codes", {
+  attributes <- data.table::data.table(table_name = "t", attribute_name = "kind", lookup = "Y")
+  read <- read_code_lists(list(kind = data.frame(other = c("A", "B"))))
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(attributes, read$long, read$sheets, none$long, none$declared)
+  expect_equal(map$status, "no_code_column")
+  expect_equal(nrow(build_codes(map, read$long, none$long)), 0L)
+})
+
+test_that("a translation table's declared code_col is the fallback, and no filter keeps all", {
+  table <- data.frame(abbr = c("FI", "HA", "FI"), kind = c("D", "T", "D"))
+  walks <- read_crosswalks(list(td = list(table = table, code_col = "abbr")))
+  attributes <- data.table::data.table(
+    table_name = "t", attribute_name = "disturbance_type", lookup = "td"
+  )
+  no_sheets <- read_code_lists(NULL)$long
+  map <- build_code_list_map(attributes, no_sheets, character(), walks$long, walks$declared)
+  expect_equal(map$code_column, "abbr")
+  expect_true(is.na(map$filter_column))
+  expect_equal(build_codes(map, no_sheets, walks$long)$code, c("FI", "HA"))
+})
+
+test_that("a translation table whose read warns is unreadable, with no warning escaping", {
+  path <- csv_file(c("code,name", "A,x"))
+  real_fread <- data.table::fread
+  # Only this file's read warns; the report text's own CSV reads as it is.
+  testthat::local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if (identical(list(...)$file, path)) warning("A new warning.", call. = FALSE)
+    out
+  })
+  expect_no_warning(walks <- read_crosswalks(list(td = path)))
+  expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
+  expect_equal(walks$findings$detail, "Translation table td can't be read as a CSV file.")
 })

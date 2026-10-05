@@ -673,11 +673,13 @@ read_code_lists <- function(x, origins = NULL) {
       invalid <- fix_invalid_utf8(raw)
       set(invalid, j = "row", value = invalid$row - 1L)
       header <- if (nrow(raw) > 0L) unlist(raw[1L], use.names = FALSE) else character()
-      # Header names made unique, as in every input form (D12.54); a blank stays blank.
-      named <- which(!is.na(header))
+      # A blank header cell is named V<j> and the names made unique, as in every input form
+      # (D12.54, D12.61).
+      blank <- which(is.na(header))
       unique_header <- header
-      unique_header[named] <- make.unique(header[named])
-      for (j in named[unique_header[named] != header[named]]) {
+      unique_header[blank] <- paste0("V", blank)
+      unique_header <- make.unique(unique_header)
+      for (j in which(is.na(header) | unique_header != header)) {
         set(raw, i = 1L, j = j, value = unique_header[[j]])
       }
       header <- unique_header
@@ -859,9 +861,7 @@ read_one_crosswalk <- function(name, element, origin = NULL) {
   if (is.null(read) || warned || nrow(read$malformed) > 0L) {
     return(list(
       long = NULL, declared = declared,
-      manifest = data.table(
-        input = input, file = file, file_date = file_date(file), sha256 = NA_character_
-      ),
+      manifest = manifest_row(input, table),
       findings = unreadable(file, "preflight_detail_crosswalk_unreadable_file")
     ))
   }
@@ -917,13 +917,20 @@ build_code_list_map <- function(attributes, code_lists, sheets, crosswalks, decl
       d <- declared[[name]]
       # A filter by attribute names every attribute that uses the table: a caller's error
       # otherwise, never the whole table unfiltered (D12.54).
-      if (is.list(d$filter_values) && !attribute %in% names(d$filter_values)) {
+      by_attribute <- is.list(d$filter_values)
+      if (by_attribute && length(d$filter_values[[attribute]]) == 0L) {
         stop(sprintf(
           "Crosswalk %s's filter_values has no entry for attribute %s, which uses it.",
           name, attribute
         ), call. = FALSE)
       }
-      values <- if (is.list(d$filter_values)) d$filter_values[[attribute]] else d$filter_values
+      values <- if (by_attribute) d$filter_values[[attribute]] else d$filter_values
+      # A filter on a column the table lacks would give no codes silently (D12.54).
+      if (!is.null(values) && !d$filter_col %in% table_headers[[name]]) {
+        stop(sprintf(
+          "Crosswalk %s's filter_col %s isn't a column of the table.", name, d$filter_col
+        ), call. = FALSE)
+      }
       code_column <- resolve_code_column(attribute, name, table_headers[[name]], d$code_col)
       return(list(
         "crosswalk", name, code_column,
