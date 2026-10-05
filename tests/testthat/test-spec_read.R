@@ -465,3 +465,106 @@ test_that("a type map with a malformed line carries a spec_csv_malformed finding
   expect_equal(findings$source_cell, paste0(basename(path), ":3"))
   expect_equal(map$data_type, "character")
 })
+
+fish_dictionary <- function() {
+  read_input_table(example_file("fish_dictionary.csv"), "dictionary")
+}
+
+fish_columns <- function(...) {
+  gpq_column_map(
+    table = "table", attribute = "field", type = "kind", key_type = "key",
+    reference = "parent", lookup = "codes", description = "notes", ...
+  )
+}
+
+test_that("read_dictionary maps the fish dictionary's own columns and types", {
+  fish_types <- gpq_type_map(example_file("fish_types.csv"))
+  dd <- read_dictionary(fish_dictionary(), fish_columns(), fish_types)
+  a <- dd$attributes
+  expect_equal(nrow(a), 15L)
+  expect_equal(a$r_class[a$attribute_name == "minutes"], "integer")
+  expect_equal(a$source_row[[1L]], 2L)
+  expect_true(all(is.na(a$lineage_flag)))
+  expect_true(all(is.na(a$id_marked)))
+  expect_equal(nrow(dd$findings), 0L)
+})
+
+test_that("the ID pattern and the lineage flag mark attributes", {
+  dd <- read_dictionary(
+    fish_dictionary(), fish_columns(lineage_flag = c(column = "codes", value = "y")),
+    gpq_type_map(example_file("fish_types.csv")),
+    id_pattern = "_id$"
+  )
+  a <- dd$attributes
+  marked <- a[a$id_marked, ]
+  expect_equal(
+    sort(paste(marked$table_name, marked$attribute_name, sep = ".")),
+    sort(c(
+      "stations.station_id", "hauls.station_id", "hauls.haul_id", "catches.haul_id",
+      "catches.catch_id"
+    ))
+  )
+  expect_equal(a$attribute_name[a$lineage_flag], c("water_body", "gear", "species"))
+})
+
+test_that("detect_type_column finds one, none or both", {
+  expect_equal(detect_type_column(c("a", "data_type"), c("data_type", "datatype"))$status, "ok")
+  expect_equal(detect_type_column("a", c("data_type", "datatype"))$status, "none")
+  both <- detect_type_column(c("datatype", "data_type"), c("data_type", "datatype"))
+  expect_equal(both$status, "both")
+  expect_equal(both$column, "data_type")
+})
+
+test_that("two type columns are a finding, not a stop", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = "a", data_type = "character", datatype = "character"
+  )
+  table <- read_input_table(dictionary, "dictionary")
+  dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+  expect_equal(dd$findings$rule_id, "dd_type_column_ambiguous")
+  expect_equal(dd$attributes$data_type, "character")
+})
+
+test_that("a dictionary without its table and attribute columns names both at once (D12.33)", {
+  expect_error(
+    read_dictionary(fish_dictionary(), gpq_column_map(), gpq_type_map()),
+    paste(
+      "The dictionary (fish_dictionary.csv) has no column table_name (the column map's",
+      "table) and no column attribute_name (the column map's attribute); its columns are",
+      "table, field, kind, key, parent, codes, notes."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("a data.frame dictionary's rows are no file's rows (D12.33)", {
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  table <- read_input_table(dictionary, "dictionary")
+  dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+  expect_equal(dd$attributes$source_row, NA_integer_)
+})
+
+test_that("build_keys numbers PK parts, reads FK targets and ignores case", {
+  a <- data.table::data.table(
+    table_name = c("p", "p", "c", "c"), attribute_name = c("p1", "p2", "c_id", "p1"),
+    key_type = c("PK", "pk", "PK", "fk"), reference_table = c(NA, NA, NA, "p")
+  )
+  keys <- build_keys(a)
+  expect_equal(keys$key_part, c(1L, 2L, 1L, 1L))
+  expect_equal(keys$key_type, c("PK", "PK", "PK", "FK"))
+  expect_true(is.na(keys$reference_attribute[[4L]]))
+  single <- build_keys(a[-2L])
+  expect_equal(single$reference_attribute[single$key_type == "FK"], "p1")
+})
+
+test_that("build_keys keeps an FK whose target has no PK, without a target column (D12.26)", {
+  a <- data.table::data.table(
+    table_name = c("p", "c"), attribute_name = "p1", key_type = c(".", "FK"),
+    reference_table = c(NA, "p")
+  )
+  keys <- build_keys(a)
+  expect_equal(keys$table_name, "c")
+  expect_equal(keys$key_type, "FK")
+  expect_equal(keys$reference_table, "p")
+  expect_equal(keys$reference_attribute, NA_character_)
+})

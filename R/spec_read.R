@@ -509,3 +509,114 @@ manifest_row <- function(input, path = NA_character_) {
 memory_row <- function(x, input) {
   if (is.null(x)) NULL else manifest_row(input)
 }
+
+#' Which of the column map's type names the dictionary has: one, none or several
+#' @noRd
+detect_type_column <- function(columns, candidates) {
+  present <- intersect(candidates, columns)
+  status <- if (length(present) == 1L) "ok" else if (length(present) == 0L) "none" else "both"
+  column <- if (length(present) > 0L) present[[1L]] else NA_character_
+  list(column = column, status = status, present = present)
+}
+
+#' The dictionary as the attributes component, with its read findings
+#'
+#' Stops, a caller's error, when the table or attribute column is missing (D12.33).
+#' @noRd
+read_dictionary <- function(table, column_map, type_map, id_pattern = NULL) {
+  data <- table$data
+  columns <- names(data)
+  # A caller's error, not a spec defect: one message names every missing column, its
+  # role in the column map, the file and the columns found (D12.33).
+  wanted <- c(table = column_map$table, attribute = column_map$attribute)
+  absent <- wanted[!wanted %in% columns]
+  if (length(absent) > 0L) {
+    stop(sprintf(
+      "The dictionary (%s) has %s; its columns are %s.", table$where$file,
+      paste0("no column ", absent, " (the column map's ", names(absent), ")",
+        collapse = " and "
+      ),
+      paste(columns, collapse = ", ")
+    ), call. = FALSE)
+  }
+  type <- detect_type_column(columns, column_map$type)
+  findings <- empty_table(spec_schema()$read_findings)
+  if (type$status != "ok") {
+    named <- if (type$status == "none") column_map$type else type$present
+    findings <- data.table(
+      rule_id = "dd_type_column_ambiguous", input = "dictionary", file = table$where$file,
+      detail = report_text(
+        paste0("preflight_detail_dd_type_column_ambiguous_", type$status),
+        columns = paste(named, collapse = ", ")
+      ),
+      source_cell = NA_character_
+    )
+  }
+  n <- nrow(data)
+  pick <- function(column) {
+    if (!is.na(column) && column %in% columns) data[[column]] else rep(NA_character_, n)
+  }
+  flag <- column_map$lineage_flag
+  lineage_flag <- if (is.null(flag) || !flag[["column"]] %in% columns) {
+    rep(NA, n)
+  } else {
+    !is.na(data[[flag[["column"]]]]) & data[[flag[["column"]]]] == flag[["value"]]
+  }
+  attribute <- data[[column_map$attribute]]
+  data_type <- pick(type$column)
+  id_marked <- if (is.null(id_pattern)) {
+    rep(NA, n)
+  } else {
+    !is.na(attribute) & grepl(id_pattern, attribute)
+  }
+  attributes <- data.table(
+    table_name = data[[column_map$table]], attribute_name = attribute,
+    data_type = data_type, r_class = type_map$r_class[match(data_type, type_map$data_type)],
+    key_type = pick(column_map$key_type), reference_table = pick(column_map$reference),
+    lookup = pick(column_map$lookup), description = pick(column_map$description),
+    lineage_flag = lineage_flag,
+    id_marked = id_marked,
+    # The row in the dictionary's file, through an origin's rows (D12.33); a data.frame
+    # without file rows has none to give, so D12.25's <file>:<row> is NA for it.
+    source_row = if (table$where$kind == "memory") {
+      rep(NA_integer_, n)
+    } else {
+      file_rows(table$where, seq_len(n) + 1L)
+    }
+  )
+  list(attributes = attributes, findings = findings)
+}
+
+#' The keys component from the attributes: PK parts numbered, FK targets read
+#'
+#' An FK whose target table has no PK keeps its row with reference_attribute empty;
+#' dd_pk_missing and dd_fk_target_missing report it (D12.26).
+#' @noRd
+build_keys <- function(attributes) {
+  kind <- toupper(attributes$key_type)
+  keyed <- attributes[kind %chin% c("PK", "FK"), list(
+    table_name, attribute_name,
+    key_type = toupper(key_type), reference_table
+  )]
+  if (nrow(keyed) == 0L) {
+    return(empty_table(spec_schema()$keys))
+  }
+  keyed[, key_part := fifelse(key_type == "PK", cumsum(key_type == "PK"), 1L), by = table_name]
+  keyed[key_type == "PK", reference_table := NA_character_]
+  keyed[, `:=`(n_ref = NA_integer_, ref_pk = NA_character_)]
+  pk_rows <- keyed[key_type == "PK"]
+  # An FK whose target table has no PK keeps its row with reference_attribute empty;
+  # dd_pk_missing reports the table and dd_fk_target_missing the FK (D12.26). With no
+  # PK anywhere there is nothing to look up.
+  if (nrow(pk_rows) > 0L) {
+    pk <- pk_rows[, list(n_pk = .N, pk = attribute_name[[1L]]), by = table_name]
+    keyed[pk, on = list(reference_table = table_name), `:=`(n_ref = i.n_pk, ref_pk = i.pk)]
+  }
+  keyed[, reference_attribute := fifelse(
+    key_type == "FK" & !is.na(n_ref) & n_ref == 1L, ref_pk, NA_character_
+  )]
+  keyed[, list(
+    table_name, attribute_name, key_type,
+    key_part = as.integer(key_part), reference_table, reference_attribute
+  )]
+}
