@@ -174,3 +174,75 @@ test_that("with no engine files the gate passes and says so", {
     expect_equal(verdict$message, "no engine files yet")
   }
 })
+
+frontmatter_fixture <- function(name, description) {
+  c(
+    "---", paste("name:", name), paste("description:", description), "tools: Read",
+    "---", "", "You start cold."
+  )
+}
+
+# fixture-builder's description before D12.43 quoted it.
+unquoted_description <- paste(
+  "Designs and writes synthetic test fixtures for groundplotqc rules: one-edit defect",
+  "blocks on the clean 17-table base, answer-sheet rows and witness values. Use",
+  "whenever a rule is added or its definition changes."
+)
+
+test_that("frontmatter with a quoted description holding ': ' has no problems", {
+  ca <- load_dev_script("check_agents.R")
+  testthat::skip_if_not_installed("yaml")
+  lines <- frontmatter_fixture("fixture-builder", paste0('"', unquoted_description, '"'))
+  expect_equal(
+    ca$frontmatter_problems(".claude/agents/fixture-builder.md", lines), character()
+  )
+})
+
+test_that("an unquoted description holding ': ' is reported as invalid YAML", {
+  ca <- load_dev_script("check_agents.R")
+  testthat::skip_if_not_installed("yaml")
+  lines <- frontmatter_fixture("fixture-builder", unquoted_description)
+  problems <- ca$frontmatter_problems(".claude/agents/fixture-builder.md", lines)
+  expect_length(problems, 1L)
+  expect_match(
+    problems, "^\\.claude/agents/fixture-builder\\.md: frontmatter isn't valid YAML: "
+  )
+})
+
+test_that("a file without a closed frontmatter block is reported", {
+  ca <- load_dev_script("check_agents.R")
+  testthat::skip_if_not_installed("yaml")
+  expected <- paste0(
+    ".claude/agents/x.md: no frontmatter: the file must start with a line \"---\" ",
+    "and close the block with another"
+  )
+  unclosed <- c("---", "name: x", "description: Does x.")
+  unopened <- c("name: x", "description: Does x.", "---")
+  expect_equal(ca$frontmatter_problems(".claude/agents/x.md", unclosed), expected)
+  expect_equal(ca$frontmatter_problems(".claude/agents/x.md", unopened), expected)
+})
+
+test_that("a missing description and a name unlike the file's are reported", {
+  ca <- load_dev_script("check_agents.R")
+  testthat::skip_if_not_installed("yaml")
+  path <- ".claude/skills/add-rule/SKILL.md"
+  expect_equal(
+    ca$frontmatter_problems(path, c("---", "name: other", "---")),
+    c(
+      paste0(path, ": no description (a single, non-empty string)"),
+      paste0(path, ": name \"other\" doesn't match the file's name \"add-rule\"")
+    )
+  )
+  expect_equal(
+    ca$frontmatter_problems(path, c("---", "description: Adds a rule.", "---")),
+    paste0(path, ": no name (a single, non-empty string)")
+  )
+})
+
+test_that("every agent and skill file in this tree has valid frontmatter", {
+  ca <- load_dev_script("check_agents.R")
+  testthat::skip_if_not_installed("yaml")
+  paths <- ca$agent_files(testthat::test_path("..", ".."))
+  expect_gt(length(paths), 0L)
+  expect_equal(ca$check_agents_files(paths), character())
+})

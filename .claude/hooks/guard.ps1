@@ -37,6 +37,17 @@ $AllowedPrefixes = @('spec/', 'inst/extdata/', 'data-raw/magp/', 'tests/', 'benc
 $ShellKeywords = @('if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until',
     'for', 'case', 'esac', '{', '}', '!', 'time', 'command', 'nohup', 'exec', 'builtin')
 
+# git subcommands that name paths without reading what is in them, each with the
+# options it may carry while its path arguments stay unread (D12.46, D12.52).
+$NonReadingGit = @{
+    'check-ignore' = @('-q', '--quiet', '-v', '--verbose', '-n', '--non-matching', '--no-index', '-z')
+    'check-attr'   = @('-a', '--all', '--cached', '-z')
+    'ls-files'     = @('-c', '--cached', '-d', '--deleted', '-m', '--modified', '-o', '--others',
+        '-i', '--ignored', '-s', '--stage', '-u', '--unmerged', '-k', '--killed', '-t', '-v', '-f',
+        '-z', '--directory', '--no-empty-directory', '--exclude-standard', '--full-name',
+        '--deduplicate', '--error-unmatch', '--eol', '--sparse')
+}
+
 $script:Consents = $null
 # Branch a directory is on after a same-line git switch or checkout (D10.17).
 $script:AssumedBranch = @{}
@@ -176,6 +187,8 @@ function Test-DataAllowed([string]$FullPath) {
     # A path holding a variable or a wildcard can expand outside the allowlist, and
     # can't match a consent line (D10.17).
     if ($FullPath -match '[$*?]') { return $false }
+    # The consent list itself may be read; only the user edits it (D12.46).
+    if ($FullPath.Equals($ConsentFile, [StringComparison]::OrdinalIgnoreCase)) { return $true }
     $root = Get-CheckoutRoot $FullPath
     if ($root) {
         $inside = Get-CheckoutPath $FullPath $root
@@ -264,7 +277,8 @@ function Read-ShellCommand([string]$Command) {
 
     # End the current word. A word after > or >> is a write target (allowed only for
     # /dev/null, NUL, the terminal and the standard streams); every other word is
-    # kept. [[ and ]] open and close a test, where < and > compare (D10.17).
+    # kept, a word after < marked as redirected in (D12.52). [[ and ]] open and close
+    # a test, where < and > compare (D10.17).
     $flush = {
         if ($state.InWord) {
             $text = $word.ToString()
@@ -273,7 +287,7 @@ function Read-ShellCommand([string]$Command) {
                     $result.Writes.Add($text)
                 }
             } else {
-                $tokens.Add(@{ Kind = 'word'; Text = $text })
+                $tokens.Add(@{ Kind = 'word'; Text = $text; Redirected = ($state.Expect -eq 'read') })
                 if ($text -eq '[[') { $state.InTest = $true }
                 if ($text -eq ']]') { $state.InTest = $false }
             }
@@ -494,7 +508,8 @@ function Read-ShellCommand([string]$Command) {
                     while ($i -lt $n -and ([string]$Command[$i]) -match '[0-9-]') { $i++ }
                     continue
                 }
-                # < file: the file is read; the word is kept and scanned for data.
+                # < file: the file is read; the word is kept, marked and scanned for data.
+                $state.Expect = 'read'
                 $i++
                 continue
             }
@@ -522,19 +537,21 @@ function Read-ShellCommand([string]$Command) {
     return $result
 }
 
-# Words of each simple command, split at ; | & && || ( ) and newlines.
+# Words of each simple command, split at ; | & && || ( ) and newlines, and whether a
+# file is redirected into it with < (D12.52).
 function Get-Segments($Tokens) {
     $segments = New-Object System.Collections.Generic.List[object]
-    $current = New-Object System.Collections.Generic.List[string]
+    $current = @{ Words = New-Object System.Collections.Generic.List[string]; Redirected = $false }
     foreach ($token in $Tokens) {
         if ($token.Kind -eq 'op') {
-            if ($current.Count -gt 0) { $segments.Add($current) }
-            $current = New-Object System.Collections.Generic.List[string]
+            if ($current.Words.Count -gt 0) { $segments.Add($current) }
+            $current = @{ Words = New-Object System.Collections.Generic.List[string]; Redirected = $false }
         } else {
-            $current.Add($token.Text)
+            $current.Words.Add($token.Text)
+            if ($token.Redirected) { $current.Redirected = $true }
         }
     }
-    if ($current.Count -gt 0) { $segments.Add($current) }
+    if ($current.Words.Count -gt 0) { $segments.Add($current) }
     return , $segments
 }
 
@@ -645,6 +662,37 @@ function Test-GitPush($Words, [string]$Dir) {
         }
         if ($destination -eq 'main' -or $destination -eq 'refs/heads/main') { Stop-Call $toMain }
     }
+}
+
+# Positions, in a git command's words, of the path arguments that check-ignore,
+# check-attr or ls-files only name. None when a file is redirected in, when a global
+# option other than -C comes first, or when an option is off the subcommand's read-free
+# list: then every word is judged as a possible read (D12.46, D12.52).
+function Get-PathOnlyIndexes($Words, [bool]$Redirected) {
+    $none = New-Object System.Collections.Generic.List[int]
+    if ($Redirected) { return , $none }
+    $j = 0
+    while ($j -lt $Words.Count -and $Words[$j].StartsWith('-')) {
+        if ($Words[$j] -cne '-C' -or $j + 1 -ge $Words.Count) { return , $none }
+        $j += 2
+    }
+    if ($j -ge $Words.Count -or -not $NonReadingGit.ContainsKey($Words[$j])) { return , $none }
+    $flags = $NonReadingGit[$Words[$j]]
+    $paths = New-Object System.Collections.Generic.List[int]
+    $afterDashes = $false
+    for ($p = $j + 1; $p -lt $Words.Count; $p++) {
+        $w = $Words[$p]
+        if (-not $afterDashes -and $w -eq '--') {
+            $afterDashes = $true
+            continue
+        }
+        if (-not $afterDashes -and $w.StartsWith('-')) {
+            if ($flags -cnotcontains $w) { return , $none }
+            continue
+        }
+        $paths.Add($p)
+    }
+    return , $paths
 }
 
 function Test-GitCommand($Words, [string]$Dir) {
@@ -814,7 +862,8 @@ function Test-BashCommand([string]$Command, [string]$Cwd, [int]$Depth = 0) {
             "blocked (CLAUDE.md ""Files""): quote the delimiter, as in <<'EOF'.")
     }
     $dir = $Cwd
-    foreach ($words in (Get-Segments $parsed.Tokens)) {
+    foreach ($segment in (Get-Segments $parsed.Tokens)) {
+        $words = $segment.Words
         $k = Get-CommandIndex $words
         if ($k -ge $words.Count) { continue }
         $name = (($words[$k] -split '[\\/]')[-1]).ToLowerInvariant() -replace '\.exe$', ''
@@ -863,6 +912,9 @@ function Test-BashCommand([string]$Command, [string]$Cwd, [int]$Depth = 0) {
         }
 
         $exempt = Get-MessageIndexes $name $rest
+        if ($name -eq 'git') {
+            foreach ($p in (Get-PathOnlyIndexes $rest $segment.Redirected)) { $exempt.Add($p) }
+        }
         for ($w = 0; $w -lt $rest.Count; $w++) {
             if ($exempt -contains $w) { continue }
             foreach ($candidate in (Get-DataCandidates $rest[$w])) {

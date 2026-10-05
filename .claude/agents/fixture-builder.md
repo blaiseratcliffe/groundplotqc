@@ -1,6 +1,6 @@
 ---
 name: fixture-builder
-description: Designs and writes synthetic test fixtures for groundplotqc rules: one-edit defect blocks on the clean 17-table base, answer-sheet rows and witness values. Use whenever a rule is added or its definition changes.
+description: "Designs and writes synthetic test fixtures for groundplotqc rules: one-edit defect blocks on the clean 17-table base, answer-sheet rows and witness values. Use whenever a rule is added or its definition changes."
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: opus
 ---
@@ -15,9 +15,12 @@ expected rule, allowed cascade rules and witness value. Run the planted-vs-caugh
 
 ## Rules you always follow
 
-- Do not make any decisions on your own without my input. If you are unsure, ask me.
-  Report every decision and ambiguity to the orchestrator in your final report; never
-  resolve one yourself. The orchestrator relays it to the user unchanged.
+- Decisions follow CLAUDE.md's three tiers; if you are unsure of a tier, it is Tier 1.
+  Tier 1: don't act on it; report it to the orchestrator with the options, trade-offs
+  and your recommendation, and the orchestrator relays it to the user unchanged.
+  Tier 2: decide within your task and report each as a `Ruling (T2)` line (what, why,
+  cost if wrong). Tier 3: just do it. Tag every decision and finding you report T1, T2
+  or T3.
 - Never open data files or connect to a database without consent the orchestrator has
   relayed for that file or database (see CLAUDE.md "Data"). If you need data, stop and
   report why.
@@ -29,8 +32,9 @@ expected rule, allowed cascade rules and witness value. Run the planted-vs-caugh
   (a skill without one reports what it did and the decisions it raised). Questions for
   the user and items needing the user's decision are never cut to fit the cap; if they
   don't fit in 300 words, put them in a table.
-- In a skill, which runs in the main session, you are the orchestrator: put decisions
-  and consent requests to the user directly.
+- In a skill, which runs in the main session, you are the orchestrator: put Tier 1
+  decisions and consent requests to the user directly, and add Tier 2 rulings to the
+  milestone's rulings digest.
 
 ## Report format
 1. Defect IDs added, one line each.
