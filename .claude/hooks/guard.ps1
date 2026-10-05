@@ -37,6 +37,9 @@ $AllowedPrefixes = @('spec/', 'inst/extdata/', 'tests/', 'bench/')
 $ShellKeywords = @('if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until',
     'for', 'case', 'esac', '{', '}', '!', 'time', 'command', 'nohup', 'exec', 'builtin')
 
+# git subcommands that name paths without reading what is in them (D12.46).
+$NonReadingGit = @('check-ignore', 'check-attr', 'ls-files')
+
 $script:Consents = $null
 # Branch a directory is on after a same-line git switch or checkout (D10.17).
 $script:AssumedBranch = @{}
@@ -176,6 +179,8 @@ function Test-DataAllowed([string]$FullPath) {
     # A path holding a variable or a wildcard can expand outside the allowlist, and
     # can't match a consent line (D10.17).
     if ($FullPath -match '[$*?]') { return $false }
+    # The consent list itself may be read; only the user edits it (D12.46).
+    if ($FullPath.Equals($ConsentFile, [StringComparison]::OrdinalIgnoreCase)) { return $true }
     $root = Get-CheckoutRoot $FullPath
     if ($root) {
         $inside = Get-CheckoutPath $FullPath $root
@@ -647,6 +652,7 @@ function Test-GitPush($Words, [string]$Dir) {
     }
 }
 
+# Judges a git command by the rows above and returns its subcommand ('' if none).
 function Test-GitCommand($Words, [string]$Dir) {
     $j = 0
     while ($j -lt $Words.Count) {
@@ -662,7 +668,7 @@ function Test-GitCommand($Words, [string]$Dir) {
         }
         break
     }
-    if ($j -ge $Words.Count) { return }
+    if ($j -ge $Words.Count) { return '' }
     $sub = $Words[$j]
     $rest = Get-WordsAfter $Words $j
 
@@ -744,6 +750,7 @@ function Test-GitCommand($Words, [string]$Dir) {
                 'branch, or merge main into it.')
         }
     }
+    return $sub
 }
 
 # Index of the word that names the command: past assignments, shell keywords and the
@@ -859,7 +866,8 @@ function Test-BashCommand([string]$Command, [string]$Cwd, [int]$Depth = 0) {
                 Stop-Call 'sed -i changes files in place; use the Edit tool (CLAUDE.md "Files").'
             }
         } elseif ($name -eq 'git') {
-            Test-GitCommand $rest $dir
+            # Paths after check-ignore, check-attr or ls-files aren't reads (D12.46).
+            if ($NonReadingGit -contains (Test-GitCommand $rest $dir)) { continue }
         }
 
         $exempt = Get-MessageIndexes $name $rest

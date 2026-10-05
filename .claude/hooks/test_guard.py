@@ -259,6 +259,18 @@ CASES = [
     ("new rows", "allow", "rm a single file", bash("rm x.R")),
     ("new rows", "block", "gh api merge endpoint", bash("gh api -X PUT repos/o/r/pulls/1/merge")),
     ("new rows", "allow", "gh api reading a PR", bash("gh api repos/o/r/pulls/1")),
+    # D12.46: the consent list may be read; three git commands name paths without reading
+    ("D12.46", "allow", "Read the consent list", read(j(P, ".claude", "data_consent.local.txt"))),
+    ("D12.46", "allow", "cat the consent list", bash("cat .claude/data_consent.local.txt")),
+    ("D12.46", "block", "Read another .txt in .claude/", read(j(P, ".claude", "notes.local.txt"))),
+    ("D12.46", "block", "Read a consent list in a worktree's .claude/", read(j(W, ".claude", "data_consent.local.txt"), cwd=W)),
+    ("D12.46", "allow", "git check-ignore of a data path", bash("git check-ignore --no-index -q data-raw/other.csv")),
+    ("D12.46", "allow", "git check-attr of a data path", bash("git check-attr -a plans/x.csv")),
+    ("D12.46", "allow", "git ls-files of a data path", bash("git ls-files --others --exclude-standard -- x.rds")),
+    ("D12.46", "allow", "git -C dir ls-files", bash("git -C D:/x ls-files a.rds")),
+    ("D12.46", "block", "git diff of a data path", bash("git diff -- plans/x.csv")),
+    ("D12.46", "block", "git grep in a data path", bash("git grep foo -- plans/x.csv")),
+    ("D12.46", "block", "git ls-files, then cat", bash("git ls-files x.csv && cat x.csv")),
     # Internal errors (D10.14, D10.17)
     ("err", "block", "malformed input blocks", '{"tool_name":"Bash","tool_input":{"command":"git status"'),
     ("err", "block", "empty input blocks (D10.17)", ""),
