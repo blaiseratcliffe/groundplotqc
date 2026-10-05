@@ -5,10 +5,11 @@
 
 #' Text escaped for HTML
 #'
-#' NA as "", invalid bytes as `<xx>`, then `& < > " '` escaped.
+#' NA as "", text in another encoding converted to UTF-8, invalid bytes as `<xx>`, then
+#' `& < > " '` escaped.
 #' @noRd
 html_escape <- function(x) {
-  x <- as.character(x)
+  x <- enc2utf8(as.character(x))
   x[is.na(x)] <- ""
   bad <- which(!validUTF8(x))
   if (length(bad) > 0L) {
@@ -23,20 +24,36 @@ html_escape <- function(x) {
 
 #' A sortable, filterable HTML table
 #'
-#' Every cell escaped; capped at `row_cap` rows with a note naming `csv_name`.
+#' Every cell escaped; a `row_cap` caps the rows shown, with a note naming `csv_name`, which
+#' a `row_cap` always needs, whether or not the table reaches it.
 #' @noRd
 html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL) {
+  if (!is.data.frame(dt)) {
+    stop("`dt` must be a data.frame or data.table.", call. = FALSE)
+  }
+  if (!is.character(caption) || length(caption) != 1L || is.na(caption)) {
+    stop("`caption` must be one string.", call. = FALSE)
+  }
+  if (!is.null(row_cap)) {
+    ok <- is.numeric(row_cap) && length(row_cap) == 1L && !is.na(row_cap) && row_cap >= 0
+    if (!ok) {
+      stop("`row_cap` must be one non-negative number or NULL.", call. = FALSE)
+    }
+    if (is.null(csv_name)) {
+      stop("`row_cap` needs `csv_name`, the file that holds the full list.", call. = FALSE)
+    }
+  }
   total <- nrow(dt)
   capped <- !is.null(row_cap) && total > row_cap
-  if (capped && is.null(csv_name)) {
-    stop("A capped table needs `csv_name`.", call. = FALSE)
-  }
   shown <- if (capped) seq_len(row_cap) else seq_len(total)
-  header <- paste0(
-    "<th scope=\"col\" data-gpq-sort>", html_escape(names(dt)), "</th>",
-    collapse = ""
-  )
-  cells <- lapply(dt, function(column) paste0("<td>", html_escape(column[shown]), "</td>"))
+  header <- if (length(dt) > 0L) {
+    paste0("<th scope=\"col\" data-gpq-sort>", html_escape(names(dt)), "</th>", collapse = "")
+  } else {
+    ""
+  }
+  cells <- lapply(dt, function(column) {
+    paste0("<td>", html_escape(if (capped) column[shown] else column), "</td>")
+  })
   rows <- if (length(shown) > 0L && length(cells) > 0L) {
     paste0("<tr>", do.call(paste0, unname(cells)), "</tr>", collapse = "")
   } else {
@@ -62,10 +79,16 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL) {
 }
 
 #' An HTML section carrying its id and title for the contents list
+#'
+#' `body` is trusted HTML, built with the builders in this file: a value that goes into it
+#' goes through `html_escape()` first. `title` is escaped here.
 #' @noRd
 html_section <- function(id, title, body) {
   if (!is.character(id) || length(id) != 1L || !grepl("^[a-z][a-z0-9-]*$", id)) {
     stop("`id` must be one lower-case name of letters, digits and hyphens.", call. = FALSE)
+  }
+  if (!is.character(title) || length(title) != 1L || is.na(title)) {
+    stop("`title` must be one string.", call. = FALSE)
   }
   structure(
     paste0(
@@ -78,13 +101,46 @@ html_section <- function(id, title, body) {
 
 #' A self-contained HTML page from sections
 #'
-#' Contents list from the sections' ids and titles, inline CSS and script, and a footer of
-#' the named `meta` values.
+#' Contents list from the sections' ids and titles (none when there is no section), inline
+#' CSS and script, and a footer of the named `meta` values.
 #' @noRd
 html_page <- function(title, sections, meta = character()) {
+  if (!is.character(title) || length(title) != 1L || is.na(title)) {
+    stop("`title` must be one string.", call. = FALSE)
+  }
+  is_section <- function(s) {
+    info <- attr(s, "gpq_section")
+    is.character(s) && length(s) == 1L && is.character(info) &&
+      all(c("id", "title") %in% names(info))
+  }
+  ok <- is.list(sections) && all(vapply(sections, is_section, logical(1)))
+  if (!ok) {
+    stop("`sections` must be a list of sections built by `html_section()`.", call. = FALSE)
+  }
+  if (length(meta) > 0L) {
+    meta_names <- names(meta)
+    ok <- !is.null(meta_names) && !anyNA(meta_names) && all(nzchar(meta_names))
+    if (!ok) {
+      stop("`meta` must be named, with no empty name.", call. = FALSE)
+    }
+  }
   labels <- vapply(sections, function(s) attr(s, "gpq_section")[["title"]], character(1))
   ids <- vapply(sections, function(s) attr(s, "gpq_section")[["id"]], character(1))
-  contents <- paste0("<li><a href=\"#", ids, "\">", html_escape(labels), "</a></li>", collapse = "")
+  if (anyDuplicated(ids) > 0L) {
+    stop("Section ids must be unique.", call. = FALSE)
+  }
+  nav <- if (length(ids) > 0L) {
+    heading <- html_escape(report_text("report_contents"))
+    links <- paste0(
+      "<li><a href=\"#", html_escape(ids), "\">", html_escape(labels), "</a></li>",
+      collapse = ""
+    )
+    paste0(
+      "<nav aria-label=\"", heading, "\"><h2>", heading, "</h2><ol>", links, "</ol></nav>\n"
+    )
+  } else {
+    ""
+  }
   footer <- if (length(meta) > 0L) {
     paste0(
       "<dl>",
@@ -97,13 +153,11 @@ html_page <- function(title, sections, meta = character()) {
   } else {
     ""
   }
-  heading <- html_escape(report_text("report_contents"))
   paste0(
     "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n",
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
     "<title>", html_escape(title), "</title>\n<style>", page_css(), "</style>\n</head>\n<body>\n",
-    "<header><h1>", html_escape(title), "</h1></header>\n",
-    "<nav aria-label=\"", heading, "\"><h2>", heading, "</h2><ol>", contents, "</ol></nav>\n",
+    "<header><h1>", html_escape(title), "</h1></header>\n", nav,
     "<main>\n", paste(vapply(sections, as.character, character(1)), collapse = "\n"), "\n</main>\n",
     "<footer>", footer, "</footer>\n<script>", page_script(), "</script>\n</body>\n</html>\n"
   )
@@ -117,7 +171,9 @@ page_css <- function() {
     "table{border-collapse:collapse;margin:.5rem 0 1.5rem}",
     "caption{text-align:left;font-weight:600;padding:.25rem 0}",
     "th,td{border:1px solid #c8c8c8;padding:.25rem .5rem;text-align:left;vertical-align:top}",
-    "th[data-gpq-sort]{cursor:pointer;background:#f2f2f2}",
+    "td,th{overflow-wrap:anywhere}",
+    ".gpq-table{overflow-x:auto}",
+    ".gpq-js th[data-gpq-sort]{cursor:pointer;background:#f2f2f2}",
     "th[aria-sort=ascending]::after{content:' \\25B2'}",
     "th[aria-sort=descending]::after{content:' \\25BC'}",
     "input[data-gpq-filter]{margin:.5rem 0;padding:.25rem}",
@@ -145,10 +201,11 @@ page_script <- function() {
     "    var heads = table.querySelectorAll(\"th[data-gpq-sort]\");",
     "    Array.prototype.forEach.call(heads, function (th, i) {",
     "      th.tabIndex = 0;",
+    "      th.setAttribute(\"aria-sort\", \"none\");",
     "      function sort() {",
     "        var up = th.getAttribute(\"aria-sort\") !== \"ascending\";",
     "        Array.prototype.forEach.call(heads, function (h) {",
-    "          h.removeAttribute(\"aria-sort\");",
+    "          h.setAttribute(\"aria-sort\", \"none\");",
     "        });",
     "        th.setAttribute(\"aria-sort\", up ? \"ascending\" : \"descending\");",
     "        var body = table.tBodies[0];",
@@ -163,6 +220,7 @@ page_script <- function() {
     "      th.addEventListener(\"keydown\", function (e) {",
     "        if (e.key === \"Enter\" || e.key === \" \") { e.preventDefault(); sort(); }",
     "      });",
+    "      document.documentElement.classList.add(\"gpq-js\");",
     "    });",
     "  });",
     "  var boxes = document.querySelectorAll(\"input[data-gpq-filter]\");",
