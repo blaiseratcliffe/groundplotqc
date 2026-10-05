@@ -130,6 +130,53 @@ test_that("a ragged line is named by its file line, past the lines of quoted cel
   )
 })
 
+test_that("a header cell with a line break above a ragged line is read by its lines (D12.54)", {
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("\"id"), charToRaw("x\",name"), charToRaw("1,a"), charToRaw("2"), charToRaw("3,b")
+  )))
+  expect_named(read$data, c("id\nx", "name"))
+  expect_equal(read$lines, 3L)
+  expect_equal(read$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+})
+
+test_that("an invalid byte in the line fread() discards doesn't defeat the match (D12.54)", {
+  # fread() quotes the discarded line in its warning, so the warning's text is invalid too.
+  expect_no_warning(ragged <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), c(charToRaw("bad"), as.raw(0x97), charToRaw(",x,y")),
+    charToRaw("3,4"), charToRaw("5,6")
+  ))))
+  expect_equal(nrow(ragged$data), 1L)
+  expect_equal(ragged$lines, 2L)
+  expect_equal(ragged$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  expect_no_warning(footer <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,4"), c(charToRaw("Source: caf"), as.raw(0xE9))
+  ))))
+  expect_equal(nrow(footer$data), 2L)
+  expect_equal(footer$lines, 2:3)
+  expect_equal(footer$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+})
+
+test_that("a trailing line of only spaces or tabs is ignored, as fread() ignores it (D12.54)", {
+  for (end in c("   \n", "   ", "\t \t", "  \n\t\n")) {
+    path <- withr::local_tempfile(fileext = ".csv")
+    writeBin(charToRaw(paste0("a,b\n1,2\n", end)), path)
+    read <- read_csv_text(path)
+    expect_equal(nrow(read$data), 1L)
+    expect_equal(nrow(read$malformed), 0L)
+  }
+  # In a one-column file fread() reads such a line as a row, so a skipped line above the
+  # header is still counted.
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(charToRaw("\nx\n   \n"), path)
+  read <- read_csv_text(path)
+  expect_equal(ncol(read$data), 0L)
+  expect_equal(read$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 0L))
+})
+
+test_that("a folder is an error from the read, as a missing file is (D12.54)", {
+  expect_no_warning(expect_error(read_csv_text(tempdir())))
+})
+
 test_that("a title line above a ragged line is still read as the header (D12.56)", {
   plain <- read_csv_text(write_bytes(list(
     charToRaw("title"), charToRaw("id,name"), charToRaw("1,a"), charToRaw("2"), charToRaw("3,c")

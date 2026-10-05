@@ -54,8 +54,9 @@ fix_invalid_utf8 <- function(data) {
 #' header even where fread() would skip it; a file with no bytes, or only blank lines or
 #' spaces, is "empty" (D12.9, D12.14, D12.24, D12.27, D12.45, D12.54, D12.56). fread() runs
 #' with English messages, whatever the session's language, since its warnings are
-#' recognised by their text. In a file of one column, an unquoted comma is part of the
-#' value (D12.56 (5)).
+#' recognised by their text, matched as bytes because a warning can quote a line that
+#' isn't valid UTF-8. In a file of one column, an unquoted comma is part of the value
+#' (D12.56 (5)).
 #' @noRd
 read_csv_text <- function(path) {
   language <- Sys.getenv("LANGUAGE", unset = NA)
@@ -69,8 +70,8 @@ read_csv_text <- function(path) {
     data.table(kind = kind, line = as.integer(line), fields = as.integer(fields))
   }
   # A file with no bytes, or only blank lines or spaces, is empty: fread() stops on it. A
-  # missing file is left to fread(), whose error names it (D12.54).
-  bytes <- if (file.exists(path)) readBin(path, "raw", file.size(path))
+  # missing file or a folder is left to fread(), whose error names it (D12.54).
+  bytes <- if (file.exists(path) && !dir.exists(path)) readBin(path, "raw", file.size(path))
   blank_file <- !is.null(bytes) && !any(bytes > as.raw(0x20)) &&
     all(bytes %in% as.raw(c(0x09, 0x0A, 0x0D, 0x20)))
   if (blank_file) {
@@ -88,9 +89,11 @@ read_csv_text <- function(path) {
         encoding = "UTF-8", strip.white = FALSE, showProgress = FALSE
       ),
       warning = function(w) {
-        # Collected and muffled, never caught: fread() then finishes its read (D12.54).
+        # Collected and muffled, never caught: fread() then finishes its read (D12.54). The
+        # match runs on bytes: a warning quotes the line it discarded, which may not be
+        # valid UTF-8.
         known <- "Stopped early|Discarded single-line footer|improper quoting"
-        if (grepl(known, conditionMessage(w))) {
+        if (grepl(known, conditionMessage(w), useBytes = TRUE)) {
           warned <<- c(warned, conditionMessage(w))
           invokeRestart("muffleWarning")
         }
@@ -113,9 +116,11 @@ read_csv_text <- function(path) {
     header_end <- if (ncol(data) > 0L) 1L + sum(newlines(names(data))) else 0L
     ends <- header_end + cumsum(row_lines)
     read_to <- if (length(ends) > 0L) ends[[length(ends)]] else header_end
-    stopped <- regmatches(warned, regexec("Stopped early on line ([0-9]+)", warned))
+    stopped <- regmatches(
+      warned, regexec("Stopped early on line ([0-9]+)", warned, useBytes = TRUE)
+    )
     stopped <- as.integer(unlist(lapply(stopped, `[`, -1L)))
-    footer <- any(grepl("Discarded single-line footer", warned, fixed = TRUE))
+    footer <- any(grepl("Discarded single-line footer", warned, fixed = TRUE, useBytes = TRUE))
     # fread() skips lines above the header it chooses, a title, a blank line or, in a
     # one-column file, every line above one with more fields, and can't be told not to.
     # The lines it skipped are those before its last row, or before the record it stopped
@@ -129,8 +134,12 @@ read_csv_text <- function(path) {
     } else if (footer || header_end == 0L) {
       0L
     } else {
+      # Back over the blank bytes at the end. A last line of only spaces or tabs is ignored
+      # by fread() at the end of the file, unless the file has one column, where it is a
+      # row. In the lines read again it is a line like another.
+      blanks <- as.raw(c(0x0A, 0x0D, if (ncol(data) > 1L && is.na(header_line)) c(0x09, 0x20)))
       last <- length(bytes)
-      while (last > 0L && bytes[[last]] %in% as.raw(c(0x0A, 0x0D))) {
+      while (last > 0L && bytes[[last]] %in% blanks) {
         last <- last - 1L
       }
       sum(bytes[seq_len(last)] == as.raw(0x0A)) + 1L - read_to
@@ -154,7 +163,7 @@ read_csv_text <- function(path) {
     if (length(stopped) > 0L) problem("fields", read_to + 1L, ncol(data)),
     if (footer) problem("fields", read_to + 1L, ncol(data)),
     if (!short && !is.na(header_line)) problem("fields", header_line, ncol(data)),
-    if (any(grepl("improper quoting", warned, fixed = TRUE))) problem("quote")
+    if (any(grepl("improper quoting", warned, fixed = TRUE, useBytes = TRUE))) problem("quote")
   ))
   invalid <- fix_invalid_utf8(data)
   if (ncol(data) > 0L) {
