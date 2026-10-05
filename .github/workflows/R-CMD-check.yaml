@@ -1,4 +1,4 @@
-# R CMD check on seven jobs (plan 19.4; D5.9, D8.22, D11.2, D11.8).
+# R CMD check on eight jobs (plan 19.4; D5.9, D8.22, D11.2, D11.8, D12.58).
 name: R-CMD-check
 
 on:
@@ -25,6 +25,7 @@ jobs:
           - {name: "ubuntu (oldrel-1)", os: ubuntu-latest, r: oldrel-1}
           - {name: "ubuntu (4.5.0)", os: ubuntu-latest, r: "4.5.0"}
           - {name: "ubuntu (release, NOT_CRAN=false)", os: ubuntu-latest, r: release, not-cran: "false"}
+          - {name: "ubuntu (release, data.table 1.18.2.1)", os: ubuntu-latest, r: release, data-table: "1.18.2.1"}
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -38,10 +39,25 @@ jobs:
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
 
+      # One job installs DESCRIPTION's data.table floor, the oldest version whose fread()
+      # warnings the CSV reader is checked against; the others take the current release
+      # (D12.58).
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck
+          extra-packages: |
+            any::rcmdcheck
+            ${{ matrix.config.data-table && format('data.table@{0}', matrix.config.data-table) || '' }}
           needs: check
+
+      - name: Check data.table is the pinned version
+        if: matrix.config.data-table
+        run: |
+          installed <- format(packageVersion("data.table"))
+          cat("data.table", installed, "\n")
+          if (installed != "${{ matrix.config.data-table }}") {
+            stop("data.table is ", installed, ", not the pinned ${{ matrix.config.data-table }}.")
+          }
+        shell: Rscript {0}
 
       # setup-r sets NOT_CRAN=true for later steps; this job runs the tests as
       # CRAN would, so CRAN skips are exercised (D11.2, D11.8).
