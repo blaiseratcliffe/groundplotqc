@@ -620,3 +620,365 @@ build_keys <- function(attributes) {
     key_part = as.integer(key_part), reference_table, reference_attribute
   )]
 }
+
+#' A raw table, row 1 its header, as long cells with their references
+#'
+#' NULL for an empty table.
+#' @noRd
+sheet_cells <- function(raw, name, where, name_col = "sheet", column_col = "sheet_column") {
+  n <- nrow(raw)
+  k <- ncol(raw)
+  if (n == 0L || k == 0L) {
+    return(NULL)
+  }
+  header <- unlist(raw[1L], use.names = FALSE)
+  rows <- rep(seq_len(n), times = k)
+  columns <- rep(seq_len(k), each = n)
+  out <- data.table(
+    name, rows, rep(header, each = n), unlist(raw, use.names = FALSE),
+    cell_references(where, rows, columns)
+  )
+  setnames(out, c(name_col, "source_row", column_col, "value", "source_cell"))
+  out
+}
+
+#' A table's names put back as its first row
+#' @noRd
+with_header <- function(data) {
+  rbindlist(list(as.list(names(data)), data), use.names = FALSE)
+}
+
+#' The code lists in long form, with every sheet's name, manifest rows and findings
+#' @noRd
+read_code_lists <- function(x, origins = NULL) {
+  # `sheets` lists every sheet in reading order, a completely empty one included, which
+  # has no cells in `long` (D12.29). A sheet given as a data.frame may have an origin
+  # (D12.33).
+  if (is.null(x)) {
+    return(list(
+      long = empty_table(spec_schema()$code_lists), sheets = character(), manifest = NULL,
+      findings = NULL
+    ))
+  }
+  if (is.character(x) && length(x) == 1L) {
+    if (!is_path_to(x, "xlsx")) {
+      stop("`code_lists` names no existing .xlsx file.", call. = FALSE)
+    }
+    sheets <- workbook_sheets(x)
+    parts <- lapply(sheets, function(sheet) {
+      where <- list(kind = "xlsx", file = basename(x), sheet = sheet)
+      raw <- read_xlsx_raw(x, sheet)
+      # Every sheet is checked for invalid bytes, its header row included (D12.24,
+      # D12.28); rows then count the header as row 0, as fix_invalid_utf8() does.
+      invalid <- fix_invalid_utf8(raw)
+      set(invalid, j = "row", value = invalid$row - 1L)
+      header <- if (nrow(raw) > 0L) unlist(raw[1L], use.names = FALSE) else character()
+      # Header names made unique, as in every input form (D12.54); a blank stays blank.
+      named <- which(!is.na(header))
+      unique_header <- header
+      unique_header[named] <- make.unique(header[named])
+      for (j in named[unique_header[named] != header[named]]) {
+        set(raw, i = 1L, j = j, value = unique_header[[j]])
+      }
+      header <- unique_header
+      list(
+        long = sheet_cells(raw, sheet, where),
+        findings = encoding_findings(invalid, header, "code_lists", where)
+      )
+    })
+    return(list(
+      long = bind_component("code_lists", lapply(parts, `[[`, "long")), sheets = sheets,
+      manifest = manifest_row("code_lists", x),
+      findings = rbindlist(lapply(parts, `[[`, "findings"))
+    ))
+  }
+  if (!is.list(x) || is.data.frame(x) || is.null(names(x))) {
+    stop(paste(
+      "`code_lists` must be the path of an .xlsx workbook or a named list of data.frames",
+      "or CSV paths."
+    ), call. = FALSE)
+  }
+  # A caller's error: a repeated name would read one table twice and lose the other (R11);
+  # a name given in R must be valid UTF-8 (D12.54).
+  sheets <- names(x)
+  names_ok <- !anyNA(sheets) && !any(is_blank(sheets)) && anyDuplicated(sheets) == 0L &&
+    all(validUTF8(sheets))
+  if (!names_ok) {
+    stop(
+      "`code_lists`'s names must be unique sheet names, none blank, all valid UTF-8.",
+      call. = FALSE
+    )
+  }
+  parts <- lapply(seq_along(x), function(k) {
+    sheet <- sheets[[k]]
+    input <- paste0("code_lists:", sheet)
+    table <- read_input_table(x[[k]], input, origins[[input]])
+    list(
+      long = sheet_cells(with_header(table$data), sheet, table$where),
+      manifest = table$manifest, findings = table$findings
+    )
+  })
+  list(
+    long = bind_component("code_lists", lapply(parts, `[[`, "long")), sheets = names(x),
+    manifest = rbindlist(lapply(parts, `[[`, "manifest")),
+    findings = rbindlist(lapply(parts, `[[`, "findings"))
+  )
+}
+
+#' The translation tables in long form, with their declared code columns and filters
+#' @noRd
+read_crosswalks <- function(x, origins = NULL) {
+  if (is.null(x)) {
+    return(list(
+      long = empty_table(spec_schema()$crosswalks), declared = list(),
+      manifest = NULL, findings = NULL
+    ))
+  }
+  if (!is.list(x) || is.data.frame(x) || is.null(names(x))) {
+    stop("`crosswalks` must be a named list.", call. = FALSE)
+  }
+  # As for code_lists: unique names, none blank, valid UTF-8 (R11, D12.54).
+  walks <- names(x)
+  names_ok <- !anyNA(walks) && !any(is_blank(walks)) && anyDuplicated(walks) == 0L &&
+    all(validUTF8(walks))
+  if (!names_ok) {
+    stop(
+      "`crosswalks`'s names must be unique table names, none blank, all valid UTF-8.",
+      call. = FALSE
+    )
+  }
+  parts <- lapply(seq_along(x), function(k) {
+    read_one_crosswalk(walks[[k]], x[[k]], origins[[paste0("crosswalks:", walks[[k]])]])
+  })
+  declared <- lapply(parts, `[[`, "declared")
+  names(declared) <- walks
+  list(
+    long = bind_component("crosswalks", lapply(parts, `[[`, "long")), declared = declared,
+    manifest = rbindlist(lapply(parts, `[[`, "manifest")),
+    findings = rbindlist(lapply(parts, `[[`, "findings"))
+  )
+}
+
+#' One translation table: a data.frame (with its origin) or a CSV path
+#'
+#' A table that can't be read, or isn't UTF-8, is a crosswalk_unreadable finding.
+#' @noRd
+read_one_crosswalk <- function(name, element, origin = NULL) {
+  input <- paste0("crosswalks:", name)
+  if (!is.list(element) || is.data.frame(element)) {
+    element <- list(table = element)
+  }
+  fields <- c("table", "code_col", "filter_col", "filter_values")
+  # A filter needs both its column and its values (D12.54).
+  shapeless <- is.null(element$table) || !all(names(element) %in% fields) ||
+    xor(is.null(element$filter_values), is.null(element$filter_col))
+  if (shapeless) {
+    stop(sprintf(paste(
+      "Crosswalk %s must be a table or list(table = , code_col = , filter_col = ,",
+      "filter_values = )."
+    ), name), call. = FALSE)
+  }
+  # The code-list map keeps filter values "; "-joined, so none may hold "; " or be blank.
+  filter_text <- as_text(unlist(element$filter_values, use.names = FALSE))
+  if (anyNA(filter_text) || any(grepl("; ", filter_text, fixed = TRUE))) {
+    stop(sprintf(
+      "Crosswalk %s's filter_values can't be blank or NA, or hold \"; \".", name
+    ), call. = FALSE)
+  }
+  declared <- list(
+    code_col = element$code_col, filter_col = element$filter_col,
+    filter_values = element$filter_values
+  )
+  unreadable <- function(file, detail_id, lines = NA_integer_) {
+    data.table(
+      rule_id = "crosswalk_unreadable", input = input, file = file,
+      detail = report_text(detail_id, crosswalk = name, line = lines),
+      source_cell = if (all(is.na(lines))) NA_character_ else paste0(file, ":", lines)
+    )
+  }
+  table <- element$table
+  if (is.data.frame(table)) {
+    read <- read_input_table(table, input, origin)
+    bad <- read$invalid
+    where <- read$where
+    findings <- NULL
+    if (nrow(bad) > 0L) {
+      # A table with an origin's file rows is located as that file is (D12.33); one
+      # without has its own text naming the table, a row as R counts it (D12.28, D12.29).
+      detail <- if (where$kind == "memory") {
+        fifelse(
+          bad$row == 0L,
+          report_text(
+            "preflight_detail_crosswalk_unreadable_memory_header",
+            column = bad$column, crosswalk = name, value = shorten_marked(bad$value)
+          ),
+          report_text(
+            "preflight_detail_crosswalk_unreadable_memory",
+            crosswalk = name, row = bad$row, column = names(read$data)[bad$column],
+            value = shorten_marked(bad$value)
+          )
+        )
+      } else {
+        report_text(
+          "preflight_detail_spec_encoding_invalid",
+          location = location_text(
+            where, input, bad$row + 1L, bad$column, names(read$data)[bad$column]
+          ),
+          value = shorten_marked(bad$value)
+        )
+      }
+      findings <- data.table(
+        rule_id = "crosswalk_unreadable", input = input, file = where$file,
+        detail = detail, source_cell = cell_references(where, bad$row + 1L, bad$column)
+      )
+    }
+    long <- sheet_cells(with_header(read$data), name, where, "crosswalk", "crosswalk_column")
+    return(list(long = long, declared = declared, manifest = read$manifest, findings = findings))
+  }
+  if (!is.character(table) || length(table) != 1L) {
+    stop(sprintf("Crosswalk %s's table must be a data.frame or a CSV path.", name),
+      call. = FALSE
+    )
+  }
+  if (!is.null(origin)) {
+    stop(sprintf("`%s` is given as a path, so it takes no origin.", input), call. = FALSE)
+  }
+  file <- basename(table)
+  # A warning is noted and muffled, not caught, so fread() finishes its read (R12); a table
+  # that warned, or that read_csv_text() found malformed, can't be read as written.
+  warned <- FALSE
+  read <- if (file.exists(table) && !dir.exists(table)) {
+    tryCatch(
+      withCallingHandlers(read_csv_text(table), warning = function(w) {
+        warned <<- TRUE
+        invokeRestart("muffleWarning")
+      }),
+      error = function(e) NULL
+    )
+  }
+  if (is.null(read) || warned || nrow(read$malformed) > 0L) {
+    return(list(
+      long = NULL, declared = declared,
+      manifest = data.table(
+        input = input, file = file, file_date = file_date(file), sha256 = NA_character_
+      ),
+      findings = unreadable(file, "preflight_detail_crosswalk_unreadable_file")
+    ))
+  }
+  lines <- readLines(table, warn = FALSE, encoding = "UTF-8")
+  bad <- which(!validUTF8(lines))
+  # Cells are located by the file line each row starts on (D12.54).
+  where <- list(kind = "csv", file = file, row_map = c(1L, read$lines))
+  findings <- if (length(bad) > 0L) {
+    unreadable(file, "preflight_detail_crosswalk_unreadable_encoding", bad)
+  }
+  list(
+    long = sheet_cells(with_header(read$data), name, where, "crosswalk", "crosswalk_column"),
+    declared = declared, manifest = manifest_row(input, table), findings = findings
+  )
+}
+
+#' The code column: named after the attribute, else the sheet or table, else declared
+#' @noRd
+resolve_code_column <- function(attribute, name, headers, declared = NULL) {
+  headers <- headers[!is.na(headers)]
+  for (candidate in c(attribute, name, declared)) {
+    if (candidate %in% headers) {
+      return(candidate)
+    }
+  }
+  NA_character_
+}
+
+#' The code-list map: each coded attribute's sheet or translation table and code column
+#'
+#' "Y", in any case, names the sheet after the attribute, otherwise the value names a
+#' sheet, otherwise a translation table (D5.28, D12.5, D12.31).
+#' @noRd
+build_code_list_map <- function(attributes, code_lists, sheets, crosswalks, declared) {
+  coded <- attributes[!is.na(lookup), list(table_name, attribute_name, lookup)]
+  if (nrow(coded) == 0L) {
+    return(empty_table(spec_schema()$code_list_map))
+  }
+  target <- fifelse(toupper(coded$lookup) == "Y", coded$attribute_name, coded$lookup)
+  sheet_header <- code_lists$source_row == 1L
+  sheet_headers <- split(code_lists$value[sheet_header], code_lists$sheet[sheet_header])
+  table_header <- crosswalks$source_row == 1L
+  table_headers <- split(crosswalks$value[table_header], crosswalks$crosswalk[table_header])
+  resolved <- lapply(seq_len(nrow(coded)), function(i) {
+    attribute <- coded$attribute_name[[i]]
+    name <- target[[i]]
+    # An empty sheet is still a sheet: it resolves with no code column (D12.29).
+    if (name %in% sheets) {
+      code_column <- resolve_code_column(attribute, name, sheet_headers[[name]])
+      return(list("sheet", name, code_column, NA_character_, NA_character_))
+    }
+    if (name %in% names(declared)) {
+      d <- declared[[name]]
+      # A filter by attribute names every attribute that uses the table: a caller's error
+      # otherwise, never the whole table unfiltered (D12.54).
+      if (is.list(d$filter_values) && !attribute %in% names(d$filter_values)) {
+        stop(sprintf(
+          "Crosswalk %s's filter_values has no entry for attribute %s, which uses it.",
+          name, attribute
+        ), call. = FALSE)
+      }
+      values <- if (is.list(d$filter_values)) d$filter_values[[attribute]] else d$filter_values
+      code_column <- resolve_code_column(attribute, name, table_headers[[name]], d$code_col)
+      return(list(
+        "crosswalk", name, code_column,
+        if (is.null(values)) NA_character_ else d$filter_col,
+        if (is.null(values)) NA_character_ else paste(as_text(values), collapse = "; ")
+      ))
+    }
+    list(NA_character_, NA_character_, NA_character_, NA_character_, NA_character_)
+  })
+  # One field of every resolution, by position: vapply() rather than transpose(), which
+  # older data.table may not take a list of lists in (D12.39).
+  field <- function(k) vapply(resolved, `[[`, character(1), k)
+  map <- data.table(
+    table_name = coded$table_name, attribute_name = coded$attribute_name, lookup = coded$lookup,
+    source_type = field(1L), source_name = field(2L), code_column = field(3L),
+    filter_column = field(4L), filter_values = field(5L)
+  )
+  map[, status := fifelse(
+    is.na(source_type), "no_source",
+    fifelse(is.na(code_column), "no_code_column", "resolved")
+  )]
+  map
+}
+
+#' The codes component: each resolved list's codes
+#'
+#' A translation table's list is the distinct codes of its code column, filtered where a
+#' filter is declared (D12.16, D12.21).
+#' @noRd
+build_codes <- function(code_list_map, code_lists, crosswalks) {
+  resolved <- code_list_map[status == "resolved"]
+  codes <- lapply(seq_len(nrow(resolved)), function(i) {
+    one <- resolved[i]
+    if (one$source_type == "sheet") {
+      in_list <- code_lists$sheet == one$source_name &
+        code_lists$sheet_column == one$code_column & code_lists$source_row > 1L &
+        !is.na(code_lists$value)
+      cells <- code_lists[in_list]
+    } else {
+      rows <- crosswalks[crosswalk == one$source_name & source_row > 1L]
+      cells <- rows[crosswalk_column == one$code_column & !is.na(value)]
+      if (!is.na(one$filter_column)) {
+        wanted <- strsplit(one$filter_values, "; ", fixed = TRUE)[[1L]]
+        keep <- rows[crosswalk_column == one$filter_column & value %chin% wanted, source_row]
+        cells <- cells[source_row %in% keep]
+      }
+      cells <- cells[!duplicated(value)]
+    }
+    if (nrow(cells) == 0L) {
+      return(NULL)
+    }
+    data.table(
+      table_name = one$table_name, attribute_name = one$attribute_name, code = cells$value,
+      source_type = one$source_type, source_name = one$source_name, source_row = cells$source_row
+    )
+  })
+  bind_component("codes", codes)
+}

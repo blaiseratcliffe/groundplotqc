@@ -568,3 +568,181 @@ test_that("build_keys keeps an FK whose target has no PK, without a target colum
   expect_equal(keys$reference_table, "p")
   expect_equal(keys$reference_attribute, NA_character_)
 })
+
+fish_lists <- function() {
+  list(
+    water_body = example_file("fish_water_body.csv"), gear = example_file("fish_gear.csv"),
+    species = example_file("fish_species.csv")
+  )
+}
+
+test_that("read_code_lists keeps every cell in long form, the header as row 1", {
+  lists <- read_code_lists(fish_lists())$long
+  gear <- lists[lists$sheet == "gear", ]
+  expect_equal(gear$value[gear$source_row == 1L], c("gear", "description"))
+  gear_code <- gear$source_row == 2L & gear$sheet_column == "gear"
+  expect_equal(gear$source_cell[gear_code], "fish_gear.csv:2")
+  expect_equal(nrow(read_code_lists(NULL)$long), 0L)
+  expect_error(read_code_lists(list(example_file("fish_gear.csv"))), "named list")
+})
+
+test_that("code_lists and crosswalks names are unique, never blank, valid UTF-8 (R11, D12.54)", {
+  twice <- list(kind = data.frame(kind = "A"), kind = data.frame(kind = "C"))
+  expect_error(read_code_lists(twice), "unique")
+  expect_error(read_code_lists(stats::setNames(list(data.frame(a = "x")), NA)), "unique")
+  invalid <- stats::setNames(list(data.frame(a = "x")), bad_name)
+  expect_error(read_code_lists(invalid), "UTF-8")
+  walks <- list(t = data.frame(code = "A"), t = data.frame(code = "B"))
+  expect_error(read_crosswalks(walks), "unique")
+})
+
+test_that("read_code_lists lists every sheet, an empty one included (D12.29)", {
+  expect_equal(read_code_lists(fish_lists())$sheets, c("water_body", "gear", "species"))
+  read <- read_code_lists(list(empty = data.frame(), gear = example_file("fish_gear.csv")))
+  expect_equal(read$sheets, c("empty", "gear"))
+  expect_false("empty" %in% read$long$sheet)
+  expect_equal(read_code_lists(NULL)$sheets, character())
+})
+
+test_that("a code-list workbook's sheets are checked for invalid bytes (D12.24, D12.28)", {
+  testthat::skip_if_not_installed("readxl")
+  lists <- read_code_lists(testthat::test_path("fixtures", "invalid_utf8.xlsx"))
+  expect_true(all(validUTF8(lists$long$value)))
+  expect_equal(lists$findings$source_cell, c("codes!C1", "codes!B3"))
+  expect_equal(lists$findings$detail, c(
+    kept("cell codes!C1", "na<97>me"),
+    kept("cell codes!B3", "ok<97>")
+  ))
+})
+
+test_that("Excel numbers in a code-list workbook keep the text shown (D12.40)", {
+  testthat::skip_if_not_installed("readxl")
+  lists <- read_code_lists(testthat::test_path("fixtures", "excel_numbers.xlsx"))
+  cells <- lists$long[lists$long$source_row > 1L, ]
+  expect_equal(cells$value, c("170.03", "-1"))
+  attributes <- data.table::data.table(table_name = "t", attribute_name = "class", lookup = "Y")
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(attributes, lists$long, lists$sheets, none$long, none$declared)
+  expect_equal(build_codes(map, lists$long, none$long)$code, c("170.03", "-1"))
+})
+
+test_that("a code-list sheet's repeated column names are made unique (D12.54)", {
+  sheet <- csv_file(c("kind,kind,description", "A,B,first", "C,D,second"))
+  attributes <- data.table::data.table(table_name = "t", attribute_name = "kind", lookup = "Y")
+  read <- read_code_lists(list(kind = sheet))
+  expect_equal(read$long$value[read$long$source_row == 1L], c("kind", "kind.1", "description"))
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(attributes, read$long, read$sheets, none$long, none$declared)
+  expect_equal(build_codes(map, read$long, none$long)$code, c("A", "C"))
+})
+
+test_that("the code-list map resolves y, named sheets and translation tables", {
+  fish_types <- gpq_type_map(example_file("fish_types.csv"))
+  dd <- read_dictionary(fish_dictionary(), fish_columns(), fish_types)
+  read <- read_code_lists(fish_lists())
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(dd$attributes, read$long, read$sheets, none$long, none$declared)
+  expect_equal(map$attribute_name, c("water_body", "gear", "species"))
+  expect_equal(map$source_type, rep("sheet", 3L))
+  expect_equal(map$code_column, c("water_body", "gear", "species"))
+  expect_equal(map$status, rep("resolved", 3L))
+  codes <- build_codes(map, read$long, none$long)
+  expect_equal(codes$code[codes$attribute_name == "gear"], c("GN", "TN", "EF"))
+})
+
+test_that("a header-only sheet resolves and gives no codes; a missing list has no source", {
+  attributes <- data.table::data.table(
+    table_name = "t", attribute_name = c("kind", "colour"), lookup = c("Y", "palette")
+  )
+  read <- read_code_lists(list(kind = data.frame(kind = character(), description = character())))
+  none <- read_crosswalks(NULL)
+  map <- build_code_list_map(attributes, read$long, read$sheets, none$long, none$declared)
+  expect_equal(map$status, c("resolved", "no_source"))
+  expect_equal(nrow(build_codes(map, read$long, none$long)), 0L)
+})
+
+test_that("one translation table gives two attributes their own filtered lists", {
+  table <- data.frame(
+    code = c("FI", "HA", "PL", "FI"), treat_vs_dist = c("D", "T", "T", "D"),
+    comment = c("fire", "harvest", "planting", "repeat")
+  )
+  walks <- read_crosswalks(list(treatment_disturbance = list(
+    table = table, code_col = "code", filter_col = "treat_vs_dist",
+    filter_values = list(disturbance_type = "D", treatment_type = "T")
+  )))
+  attributes <- data.table::data.table(
+    table_name = c("dist", "treat"), attribute_name = c("disturbance_type", "treatment_type"),
+    lookup = "treatment_disturbance"
+  )
+  no_sheets <- read_code_lists(NULL)$long
+  map <- build_code_list_map(attributes, no_sheets, character(), walks$long, walks$declared)
+  expect_equal(map$source_type, c("crosswalk", "crosswalk"))
+  expect_equal(map$filter_values, c("D", "T"))
+  codes <- build_codes(map, no_sheets, walks$long)
+  expect_equal(codes$code[codes$attribute_name == "disturbance_type"], "FI")
+  expect_equal(codes$code[codes$attribute_name == "treatment_type"], c("HA", "PL"))
+})
+
+test_that("a filter missing an attribute, or of the wrong shape, is a caller's error (D12.54)", {
+  table <- data.frame(code = c("FI", "HA"), kind = c("D", "T"))
+  walks <- read_crosswalks(list(td = list(
+    table = table, code_col = "code", filter_col = "kind",
+    filter_values = list(disturbance_type = "D")
+  )))
+  attributes <- data.table::data.table(
+    table_name = "t", attribute_name = c("disturbance_type", "treatment_type"), lookup = "td"
+  )
+  no_sheets <- read_code_lists(NULL)$long
+  expect_error(
+    build_code_list_map(attributes, no_sheets, character(), walks$long, walks$declared),
+    "no entry for attribute treatment_type"
+  )
+  expect_error(read_crosswalks(list(td = list(table = table, filter_col = "kind"))), "td")
+  split_value <- list(table = table, filter_col = "kind", filter_values = "D; T")
+  expect_error(read_crosswalks(list(td = split_value)), "; ")
+  blank_value <- list(table = table, filter_col = "kind", filter_values = NA)
+  expect_error(read_crosswalks(list(td = blank_value)), "NA")
+})
+
+test_that("a translation table that isn't UTF-8 or isn't there is crosswalk_unreadable", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(c(charToRaw("code,name\nA,caf"), as.raw(0xE9), charToRaw("\n")), path)
+  walks <- read_crosswalks(list(condition = path, species = file.path(tempdir(), "none.csv")))
+  expect_equal(walks$findings$rule_id, c("crosswalk_unreadable", "crosswalk_unreadable"))
+  expect_equal(walks$findings$source_cell[[1L]], paste0(basename(path), ":2"))
+  expect_true(all(validUTF8(walks$long$value)))
+})
+
+test_that("a malformed translation table is unreadable, and the next read is quiet (R12)", {
+  ragged <- csv_file(c("code,name", "A,x", "B,y,z", "C,w"))
+  walks <- read_crosswalks(list(td = ragged))
+  expect_equal(walks$findings$detail, "Translation table td can't be read as a CSV file.")
+  expect_no_warning(read_input_table(example_file("fish_gear.csv"), "code_lists:gear"))
+})
+
+test_that("a data.frame translation table's invalid byte names the table (D12.28, D12.29)", {
+  bad <- rawToChar(as.raw(c(0x63, 0x61, 0x66, 0xE9)))
+  Encoding(bad) <- "UTF-8"
+  walks <- read_crosswalks(list(cond = data.frame(code = c("A", bad))))
+  expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
+  expect_equal(walks$findings$detail, paste0(
+    "Text at translation table cond, row 2, column code, isn't valid UTF-8; it is kept as ",
+    "\"caf<e9>\"", hex_note
+  ))
+})
+
+test_that("a data.frame translation table with an origin is located as its file (D12.33)", {
+  bad <- rawToChar(as.raw(c(0x63, 0x61, 0x66, 0xE9)))
+  Encoding(bad) <- "UTF-8"
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines("stand-in", path)
+  walks <- read_crosswalks(
+    list(cond = data.frame(code = c("A", bad))),
+    origins = list(`crosswalks:cond` = list(path = path, rows = 2L))
+  )
+  expect_equal(
+    walks$findings$detail, kept(paste0(basename(path), " line 3, column code"), "caf<e9>")
+  )
+  expect_equal(walks$findings$source_cell, paste0(basename(path), ":3"))
+  expect_equal(walks$manifest$file, basename(path))
+})

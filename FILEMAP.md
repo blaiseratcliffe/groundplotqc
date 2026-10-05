@@ -16,7 +16,7 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| .gitignore | Keeps delivered data, the private folders and run outputs out of git; allowlists the spec files, the package's own data, the hand-kept configuration in `data-raw/magp/` and the two workbook fixtures `blank_cells.xlsx` and `invalid_utf8.xlsx` (plan 19.2, D12.16, D12.27, D12.28); ignores Excel's lock files (D12.34) | none | none |
+| .gitignore | Keeps delivered data, the private folders and run outputs out of git; allowlists the spec files, the package's own data, the hand-kept configuration in `data-raw/magp/` and the three workbook fixtures `blank_cells.xlsx`, `invalid_utf8.xlsx` and `excel_numbers.xlsx` (plan 19.2, D12.16, D12.27, D12.28, D12.40); ignores Excel's lock files (D12.34) | none | none |
 | .gitattributes | Keeps files in `spec/` and `data-raw/magp/` byte-exact on every OS, so manifest hashes match on Windows and in CI (D10.13, D12.39) | none | none |
 | .Rbuildignore | Leaves non-package files out of the R package build, and the scripts that write the test fixtures (`^tests/testthat/fixtures/make_.*\.R$`), never the fixtures themselves (plan 19.3; D12.27) | none | none |
 | CLAUDE.md | Rules for every Claude Code session | none | FILEMAP.md, NAMING.md, the plans folder (`GPQ_PLANS_DIR`) |
@@ -44,7 +44,7 @@ row per file (D7.10):
 | R/report_html.R | Base-R HTML builders: escaping, sortable and filterable tables, sections, self-contained pages (plan 11.2; D8.18, D12.17, D12.21) | none exported; html_escape(), html_table(), html_section(), html_page(), page_css(), page_script() | R/report_text.R |
 | R/spec_types.R | The column map and the type map: which dictionary column holds what, and which R class and date format each dictionary type expects (plan 3.4, 4.1; D2.15, D12.13, D12.19, D12.22, D12.54) | gpq_column_map(), gpq_type_map(); validate_type_map(), example_file() | R/utils_strings.R, R/utils_dt.R, R/spec_read.R (`read_input_table()`) |
 | R/spec_sentinels.R | The sentinel table: missing-value codes by family and role, with no built-in values (plan 3.5; D7.4, D8.8, D12.19, D12.54) | gpq_sentinels(); validate_sentinels() | R/utils_strings.R |
-| R/spec_read.R | Reading a specification: component schemas, the gpq_spec validator, input tables from data.frames (with their origins, D12.33), CSV and .xlsx files, a CSV's malformed lines, cell references and the manifest (plan 3.6; D12.13 to D12.25, D12.33, D12.54, D12.58) | none exported; spec_schema(), spec_input_schema(), empty_table(), bind_component(), new_gpq_spec(), validate_gpq_spec(), read_input_table(), malformed_findings(), is_path_to(), origin_where(), origin_columns(), file_rows(), file_columns(), location_text(), encoding_findings(), workbook_sheets(), read_xlsx_raw(), raw_to_table(), cell_references(), file_date(), manifest_row(), memory_row(), detect_type_column(), read_dictionary(), build_keys() | R/utils_strings.R, R/utils_dt.R, R/report_text.R, readxl (Suggests), tools |
+| R/spec_read.R | Reading a specification: component schemas, the gpq_spec validator, input tables from data.frames (with their origins, D12.33), CSV and .xlsx files, a CSV's malformed lines, cell references and the manifest (plan 3.6; D12.13 to D12.25, D12.33, D12.54, D12.58) | none exported; spec_schema(), spec_input_schema(), empty_table(), bind_component(), new_gpq_spec(), validate_gpq_spec(), read_input_table(), malformed_findings(), is_path_to(), origin_where(), origin_columns(), file_rows(), file_columns(), location_text(), encoding_findings(), workbook_sheets(), read_xlsx_raw(), raw_to_table(), cell_references(), file_date(), manifest_row(), memory_row(), detect_type_column(), read_dictionary(), build_keys(), sheet_cells(), with_header(), read_code_lists(), read_crosswalks(), read_one_crosswalk(), resolve_code_column(), build_code_list_map(), build_codes() | R/utils_strings.R, R/utils_dt.R, R/report_text.R, readxl (Suggests), tools |
 
 ## man/
 
@@ -108,6 +108,8 @@ row per file (D7.10):
 | tests/testthat/fixtures/make_blank_cells.R | Writes blank_cells.xlsx with writexl, used only here; build-ignored (D12.27) | none | writexl |
 | tests/testthat/fixtures/invalid_utf8.xlsx | Workbook fixture of the invalid-byte tests: sheet codes with an invalid byte in a header and a cell (D12.28) | none | tests/testthat/fixtures/make_invalid_utf8.R |
 | tests/testthat/fixtures/make_invalid_utf8.R | Writes invalid_utf8.xlsx with writexl and checks the bytes survive a read with readxl; build-ignored (D12.28) | none | writexl, readxl |
+| tests/testthat/fixtures/excel_numbers.xlsx | Workbook fixture of the Excel-number test: sheet class with 170.03 and -1 stored as numbers (D12.40) | none | tests/testthat/fixtures/make_excel_numbers.R |
+| tests/testthat/fixtures/make_excel_numbers.R | Writes excel_numbers.xlsx with writexl, used only here; build-ignored (D12.40) | none | writexl |
 
 ## .github/scripts/
 
