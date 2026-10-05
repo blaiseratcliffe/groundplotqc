@@ -38,9 +38,9 @@ row per file (D7.10):
 | R/groundplotqc-package.R | The package help page (`?groundplotqc`, keyword internal, D11.6) and the NAMESPACE import of data.table (D11.5) | none | DESCRIPTION |
 | R/globals.R | Declares column names data.table code uses without quotes (none yet, D11.8) and imports `utils::globalVariables` (D11.6) | none | utils |
 | R/options.R | Documentation only: the `?groundplotqc_options` help page, the option naming pattern and the order settings resolve in (D11.4) | none | none |
-| R/utils_strings.R | String helpers: blank cells as NA, text as UTF-8 | none exported; blank_to_na(), as_text() | base R, D12.36 |
-| R/utils_dt.R | Text-reading helpers: invalid bytes kept as `<xx>`, CSVs read with quotes and spaces as written, blank cells as NA | none exported; fix_invalid_utf8(), read_csv_text() | data.table, R/utils_strings.R |
-| R/report_text.R | report text lookup with placeholder filling | none exported; report_texts(), report_text(), fill_placeholders() | inst/extdata/text/report_text_engine.csv, R/utils_dt.R |
+| R/utils_strings.R | String helpers: blank cells as NA, text as UTF-8, numbers written in full (D12.36, D12.45) | none exported; is_blank(), blank_to_na(), as_text() | base R |
+| R/utils_dt.R | Text-reading helpers: invalid bytes kept as `<xx>`, CSVs read with quotes and spaces as written, blank cells as NA, malformed lines and each row's file line recorded (D12.54) | none exported; fix_invalid_utf8(), read_csv_text() | data.table, R/utils_strings.R |
+| R/report_text.R | Report text lookup with placeholder filling, values from the specification quoted and blanks shown as the blank text (plan 11.7; D12.21, D12.55) | none exported; report_texts(), report_text(), fill_placeholders(), quote_value(), blank_as_text(), the constants quoted_slots and blank_slots | inst/extdata/text/report_text_engine.csv, R/utils_dt.R, R/utils_strings.R |
 
 ## man/
 
@@ -53,7 +53,7 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| inst/extdata/text/report_text_engine.csv | the engine's English report text: page labels, pre-flight check descriptions and finding details, plan 11.7, D12.21 | none | R/report_text.R |
+| inst/extdata/text/report_text_engine.csv | The engine's English report text: page labels, pre-flight check descriptions and finding details (plan 11.7, D12.21) | none | none |
 
 ## tests/
 
@@ -67,9 +67,9 @@ row per file (D7.10):
 |---|---|---|---|
 | tests/testthat/test-naming.R | Package-wide checks: export names, help pages with examples, the export-prefix linter, and each export in exactly one pkgdown group (D5.8, D11.4, D11.9) | none exported; source_root(), rd_tag(), rd_field(), rd_has_examples(), package_rd_db(), package_exports(), exports_without_examples(), parse_rd_lines(), lint_with_package_config(), index_entries(), is_plain_topic_name(), exports_not_in_one_group() | NAMESPACE, man/, .lintr, _pkgdown.yml |
 | tests/testthat/test-dev_scripts.R | Tests for the scripts in `.github/scripts/` (`check_filemap.R`, `check_coverage.R`, `check_agents.R`), run from the source tree and skipped in a built package (D11.8, D12.46) | none exported; load_dev_script(), coverage_lines(), frontmatter_fixture() | .github/scripts/, .claude/agents/, .claude/skills/, yaml |
-| tests/testthat/test-utils_strings.R | Tests for the string helpers (plan 3.3, 3.6; D12.14, D12.27, D12.36) | none | R/utils_strings.R |
-| tests/testthat/test-utils_dt.R | Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24) | none exported; write_bytes() | R/utils_dt.R, data.table, withr |
-| tests/testthat/test-report_text.R | Tests for the report text lookup (plan 11.7; D4.19, D12.21) | none | R/report_text.R, inst/extdata/text/report_text_engine.csv |
+| tests/testthat/test-utils_strings.R | Tests for the string helpers (plan 3.3, 3.6; D12.14, D12.27, D12.36, D12.45) | none | R/utils_strings.R |
+| tests/testthat/test-utils_dt.R | Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54) | none exported; write_bytes() | R/utils_dt.R, data.table, withr |
+| tests/testthat/test-report_text.R | Tests for the report text lookup (plan 11.7; D4.19, D12.21, D12.45, D12.54, D12.55) | none | R/report_text.R, inst/extdata/text/report_text_engine.csv |
 
 ## .github/scripts/
 
