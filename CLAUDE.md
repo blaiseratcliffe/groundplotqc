@@ -50,19 +50,22 @@ Reviewers grade each finding Critical, Important or Minor and tag its tier.
   Minor finding whose fix would need a Tier 1 choice goes on the list, never applied.
 - Every reviewer writes its full report to the file the dispatch names and returns only
   its verdict, its counts by tier and severity, and its Tier 1 questions verbatim.
-- Stray edits. Just before dispatching a task's reviewers, the session records the time
-  and copies the milestone's ledger, the contracts and reports in `.superpowers/`, its
-  task plan (`milestones/<Mx>_tasks.md`), `decisions_log.md` and the rulings digest to
-  its scratchpad folder; until the sweep, it writes nothing under the worktree or the
+- Stray edits. Before dispatching a task's reviewers, the session checks that
+  `git status --porcelain` in the worktree prints nothing; if it prints anything, it
+  stops and asks me, since those changes may be mine. It then records the time and
+  copies the milestone's `.superpowers/sdd/<Mx>_tasks/` folder, its task plan
+  (`milestones/<Mx>_tasks.md`), `decisions_log.md` and the rulings digest to its
+  scratchpad folder; until the sweep, it writes nothing under the worktree or the
   folder named by `GPQ_PLANS_DIR`. After the reviewers return, it lists every file
   under the worktree (ignored files included, `.git` excluded) and under
   `GPQ_PLANS_DIR` whose last-write time is later than the recorded time. Any file other
-  than those reviewers' own report files is a stray edit. One under the worktree is
-  restored (`git restore` if tracked, otherwise from the copy) and reported to me; one
-  under `GPQ_PLANS_DIR` is shown to me before it is restored, since it may be my own
-  edit. The copies, the listing and a restore from a copy run from one R script the
-  session writes in its scratchpad with Write, an exception to "Files" for this check
-  only.
+  than those reviewers' own report files is a stray edit, and it may be mine. The
+  session shows me each one with its diff and restores it only with my OK: a tracked
+  file with `git restore --source=HEAD --staged --worktree -- <file>`, a copied file
+  from its copy, a new file by deleting it; a file with neither a copy nor a version in
+  `HEAD` is left for me. The copies, the listing and a restore from a copy run from one
+  R script the session writes in its scratchpad with Write, an exception to "Files" for
+  this check only.
 
 ## Before you start
 
