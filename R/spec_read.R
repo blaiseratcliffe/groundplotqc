@@ -846,19 +846,12 @@ read_one_crosswalk <- function(name, element, origin = NULL) {
     stop(sprintf("`%s` is given as a path, so it takes no origin.", input), call. = FALSE)
   }
   file <- basename(table)
-  # A warning is noted and muffled, not caught, so fread() finishes its read (R12); a table
-  # that warned, or that read_csv_text() found malformed, can't be read as written.
-  warned <- FALSE
+  # read_csv_text() records and muffles every fread() warning as a malformed row (R12,
+  # D12.58), so a table it found malformed can't be read as written.
   read <- if (file.exists(table) && !dir.exists(table)) {
-    tryCatch(
-      withCallingHandlers(read_csv_text(table), warning = function(w) {
-        warned <<- TRUE
-        invokeRestart("muffleWarning")
-      }),
-      error = function(e) NULL
-    )
+    tryCatch(read_csv_text(table), error = function(e) NULL)
   }
-  if (is.null(read) || warned || nrow(read$malformed) > 0L) {
+  if (is.null(read) || nrow(read$malformed) > 0L) {
     return(list(
       long = NULL, declared = declared,
       manifest = manifest_row(input, table),
@@ -926,7 +919,9 @@ build_code_list_map <- function(attributes, code_lists, sheets, crosswalks, decl
       }
       values <- if (by_attribute) d$filter_values[[attribute]] else d$filter_values
       # A filter on a column the table lacks would give no codes silently (D12.54).
-      if (!is.null(values) && !d$filter_col %in% table_headers[[name]]) {
+      # An unreadable or headerless table has no headers: no_code_column, not this error.
+      headers <- table_headers[[name]]
+      if (!is.null(values) && length(headers) > 0L && !d$filter_col %in% headers) {
         stop(sprintf(
           "Crosswalk %s's filter_col %s isn't a column of the table.", name, d$filter_col
         ), call. = FALSE)

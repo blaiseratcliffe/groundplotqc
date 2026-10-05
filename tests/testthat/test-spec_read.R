@@ -797,6 +797,17 @@ test_that("a filter entry that is NULL or empty, or a filter column that isn't t
   )
 })
 
+test_that("an unreadable translation table with a filter gives no_code_column, not an error", {
+  ragged <- csv_file(c("code,kind", "A,D", "B,T,z"))
+  filtered <- list(table = ragged, filter_col = "kind", filter_values = "D")
+  walks <- read_crosswalks(list(td = filtered))
+  attributes <- data.table::data.table(table_name = "t", attribute_name = "x", lookup = "td")
+  no_sheets <- read_code_lists(NULL)$long
+  expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
+  map <- build_code_list_map(attributes, no_sheets, character(), walks$long, walks$declared)
+  expect_equal(map$status, "no_code_column")
+})
+
 test_that("a lower-case y names the sheet after the attribute (D12.31)", {
   attributes <- data.table::data.table(table_name = "t", attribute_name = "kind", lookup = "y")
   read <- read_code_lists(list(kind = data.frame(kind = c("A", "B"))))
