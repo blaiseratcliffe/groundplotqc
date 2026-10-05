@@ -380,15 +380,21 @@ encoding_findings <- function(invalid, columns, input, where) {
 }
 
 #' The spec_csv_malformed findings of one CSV file's malformed lines (D12.54, D12.55)
+#'
+#' `{n}` is the header's fields for a "fields" problem and the file's records after its
+#' header for a "short" one; an "unknown" problem's `{value}` is fread()'s warning. Neither
+#' of those two has a line, so neither has a cell (D12.58).
 #' @noRd
 malformed_findings <- function(malformed, input, file) {
   if (nrow(malformed) == 0L) {
     return(empty_table(spec_schema()$read_findings))
   }
+  n <- fifelse(malformed$kind == "short", malformed$n_records, malformed$fields)
   detail <- vapply(seq_len(nrow(malformed)), function(k) {
     report_text(
       paste0("preflight_detail_spec_csv_malformed_", malformed$kind[[k]]),
-      file = file, line = malformed$line[[k]], n = malformed$fields[[k]]
+      file = file, line = malformed$line[[k]], n = n[[k]], n_read = malformed$n_read[[k]],
+      value = malformed$value[[k]]
     )
   }, character(1))
   data.table(

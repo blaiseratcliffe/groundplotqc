@@ -1,4 +1,4 @@
-# Tests for reading a specification (plan 3.6, 4.1; D12.13 to D12.25, D12.45, D12.54).
+# Tests for reading a specification (plan 3.6, 4.1; D12.13 to D12.25, D12.45, D12.54, D12.58).
 
 csv_file <- function(lines, env = parent.frame()) {
   path <- withr::local_tempfile(fileext = ".csv", .local_envir = env)
@@ -128,6 +128,39 @@ test_that("a malformed CSV is one spec_csv_malformed finding per problem (D12.54
     basename(quote),
     "has a quote that isn't closed or doubled as CSV needs, so some cells may not read as written."
   ))
+})
+
+test_that("an unknown warning and a row shortfall are findings without a line (D12.58)", {
+  malformed <- data.table::data.table(
+    kind = c("unknown", "short"), line = NA_integer_, fields = NA_integer_,
+    n_records = c(NA, 3L), n_read = c(NA, 2L), value = c("Odd.", NA)
+  )
+  found <- malformed_findings(malformed, "datasets", "d.csv")
+  expect_equal(found$rule_id, c("spec_csv_malformed", "spec_csv_malformed"))
+  expect_equal(found$detail, c(
+    paste(
+      "Reading d.csv gave a warning the package doesn't recognise, so some of its lines may",
+      "not have been read: \"Odd.\"."
+    ),
+    "d.csv has 3 records after its header, but only 2 were read."
+  ))
+  expect_equal(found$source_cell, c(NA_character_, NA_character_))
+})
+
+test_that("rows the CSV read leaves out without a warning are one finding (D12.58)", {
+  path <- csv_file(c("id,name", "1,a", "2,b"))
+  real_fread <- data.table::fread
+  # Only this file's read loses its last row; the report text's own CSV reads in full.
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if (identical(list(...)$file, path)) out[seq_len(nrow(out) - 1L)] else out
+  })
+  read <- read_input_table(path, "datasets")
+  expect_equal(read$data$id, "1")
+  expect_equal(
+    read$findings$detail,
+    paste(basename(path), "has 2 records after its header, but only 1 were read.")
+  )
 })
 
 test_that("cell references follow each kind of input", {

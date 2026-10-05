@@ -1,4 +1,4 @@
-# Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54).
+# Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54, D12.58).
 
 write_bytes <- function(lines, env = parent.frame()) {
   path <- withr::local_tempfile(fileext = ".csv", .local_envir = env)
@@ -85,7 +85,10 @@ test_that("a ragged line, a blank line, an empty file and a stray quote are malf
     charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")
   )))
   expect_equal(nrow(ragged$data), 1L)
-  expect_equal(ragged$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  expect_equal(
+    ragged$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 3L, fields = 2L)
+  )
   blank <- read_csv_text(write_bytes(list(
     charToRaw("code,label"), charToRaw("A,x"), raw(0), charToRaw("B,y"), charToRaw("C,z")
   )))
@@ -93,7 +96,10 @@ test_that("a ragged line, a blank line, an empty file and a stray quote are malf
   footer <- read_csv_text(write_bytes(list(
     charToRaw("code,label"), charToRaw("A,x"), raw(0), charToRaw("B,y")
   )))
-  expect_equal(footer$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  expect_equal(
+    footer$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 3L, fields = 2L)
+  )
   empty <- withr::local_tempfile(fileext = ".csv")
   file.create(empty)
   expect_equal(read_csv_text(empty)$malformed$kind, "empty")
@@ -119,14 +125,18 @@ test_that("a ragged line is named by its file line, past the lines of quoted cel
   )))
   expect_named(multi$data, c("id", "comments"))
   expect_equal(multi$lines, 2L)
-  expect_equal(multi$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+  expect_equal(
+    multi$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 4L, fields = 2L)
+  )
   two_cells <- read_csv_text(write_bytes(list(
     charToRaw("id,note"), charToRaw("1,\"a"), charToRaw("b"), charToRaw("c\""),
     charToRaw("2,\"d"), charToRaw("e\""), charToRaw("3"), charToRaw("4,z")
   )))
   expect_equal(two_cells$lines, c(2L, 5L))
   expect_equal(
-    two_cells$malformed, data.table::data.table(kind = "fields", line = 7L, fields = 2L)
+    two_cells$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 7L, fields = 2L)
   )
 })
 
@@ -136,7 +146,10 @@ test_that("a header cell with a line break above a ragged line is read by its li
   )))
   expect_named(read$data, c("id\nx", "name"))
   expect_equal(read$lines, 3L)
-  expect_equal(read$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+  expect_equal(
+    read$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 4L, fields = 2L)
+  )
 })
 
 test_that("an invalid byte in the line fread() discards doesn't defeat the match (D12.54)", {
@@ -147,13 +160,19 @@ test_that("an invalid byte in the line fread() discards doesn't defeat the match
   ))))
   expect_equal(nrow(ragged$data), 1L)
   expect_equal(ragged$lines, 2L)
-  expect_equal(ragged$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  expect_equal(
+    ragged$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 3L, fields = 2L)
+  )
   expect_no_warning(footer <- read_csv_text(write_bytes(list(
     charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,4"), c(charToRaw("Source: caf"), as.raw(0xE9))
   ))))
   expect_equal(nrow(footer$data), 2L)
   expect_equal(footer$lines, 2:3)
-  expect_equal(footer$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+  expect_equal(
+    footer$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 4L, fields = 2L)
+  )
 })
 
 test_that("a trailing line of only spaces or tabs is ignored, as fread() ignores it (D12.54)", {
@@ -170,7 +189,16 @@ test_that("a trailing line of only spaces or tabs is ignored, as fread() ignores
   writeBin(charToRaw("\nx\n   \n"), path)
   read <- read_csv_text(path)
   expect_equal(ncol(read$data), 0L)
-  expect_equal(read$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 0L))
+  expect_equal(
+    read$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 0L)
+  )
+  # With no newline after it, fread() drops such a line even in a one-column file: the rows
+  # above it stay, and no line is taken for one above the header (D12.58).
+  writeBin(charToRaw("x\na\nb\n   "), path)
+  read <- read_csv_text(path)
+  expect_equal(read$data$x, c("a", "b"))
+  expect_equal(nrow(read$malformed), 0L)
 })
 
 test_that("a folder is an error from the read, as a missing file is (D12.54)", {
@@ -183,14 +211,20 @@ test_that("a title line above a ragged line is still read as the header (D12.56)
   )))
   expect_named(plain$data, "title")
   expect_equal(nrow(plain$data), 0L)
-  expect_equal(plain$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 1L))
+  expect_equal(
+    plain$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 1L)
+  )
   multi <- read_csv_text(write_bytes(list(
     charToRaw("title"), charToRaw("id,note"), charToRaw("1,\"a"), charToRaw("b\""),
     charToRaw("2"), charToRaw("3,c")
   )))
   expect_named(multi$data, "title")
   expect_equal(nrow(multi$data), 0L)
-  expect_equal(multi$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 1L))
+  expect_equal(
+    multi$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 1L)
+  )
 })
 
 test_that("a file of only blank lines or spaces is empty, never a stop (D12.54)", {
@@ -203,7 +237,7 @@ test_that("a file of only blank lines or spaces is empty, never a stop (D12.54)"
     expect_equal(nrow(read$invalid), 0L)
     expect_equal(read$lines, integer())
     expect_equal(
-      read$malformed,
+      read$malformed[, c("kind", "line", "fields")],
       data.table::data.table(kind = "empty", line = NA_integer_, fields = NA_integer_)
     )
   }
@@ -218,7 +252,10 @@ test_that("fread()'s warnings are recognised whatever the session's language (D1
   expect_no_warning(ragged <- read_csv_text(write_bytes(list(
     charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")
   ))))
-  expect_equal(ragged$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  expect_equal(
+    ragged$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 3L, fields = 2L)
+  )
   empty <- withr::local_tempfile(fileext = ".csv")
   file.create(empty)
   expect_no_warning(read <- read_csv_text(empty))
@@ -245,7 +282,10 @@ test_that("line 1 is the header even where fread() would skip it (D12.56)", {
   )))
   expect_named(titled$data, "Lookup export")
   expect_equal(nrow(titled$data), 0L)
-  expect_equal(titled$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 1L))
+  expect_equal(
+    titled$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 1L)
+  )
   # In a one-column file, fread() takes a last line with more fields as its header.
   one_column <- read_csv_text(write_bytes(list(
     charToRaw("code"), charToRaw("A"), charToRaw("B"), charToRaw("C"), charToRaw("D,E,F")
@@ -253,13 +293,137 @@ test_that("line 1 is the header even where fread() would skip it (D12.56)", {
   expect_equal(one_column$data$code, c("A", "B", "C"))
   expect_equal(one_column$lines, 2:4)
   expect_equal(
-    one_column$malformed, data.table::data.table(kind = "fields", line = 5L, fields = 1L)
+    one_column$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 5L, fields = 1L)
   )
   blank_first <- read_csv_text(write_bytes(list(raw(0), charToRaw("id,name"), charToRaw("1,a"))))
   expect_equal(ncol(blank_first$data), 0L)
   expect_equal(
-    blank_first$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 0L)
+    blank_first$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 0L)
   )
+})
+
+test_that("malformed has a column for each slot its kinds fill, NA where unused (D12.58)", {
+  ragged <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3"), charToRaw("4,5")
+  )))
+  expect_named(ragged$malformed, c("kind", "line", "fields", "n_records", "n_read", "value"))
+  expect_true(all(is.na(unlist(ragged$malformed[, c("n_records", "n_read", "value")]))))
+  clean <- read_csv_text(write_bytes(list(charToRaw("a,b"), charToRaw("1,2"))))
+  expect_named(clean$malformed, c("kind", "line", "fields", "n_records", "n_read", "value"))
+  expect_equal(nrow(clean$malformed), 0L)
+})
+
+test_that("one malformed line is one problem, never short or unknown beside it (D12.58)", {
+  files <- list(
+    ragged = c("id,comments", "1,ok", "2,has, a comma", "3,x"),
+    blank_line = c("code,label", "A,x", "", "B,y", "C,z"),
+    footer = c("code,label", "A,x", "", "B,y"),
+    multi_line = c("id,comments", "1,\"two", "lines\"", "2", "3,x"),
+    title = c("Lookup export", "id,name", "1,a", "2,b"),
+    blank_first = c("", "id,name", "1,a"),
+    one_column = c("code", "A", "B", "D,E,F"),
+    quote = c("id,comments", "1,\"open", "2,next")
+  )
+  for (name in names(files)) {
+    read <- read_csv_text(write_bytes(lapply(files[[name]], charToRaw)))
+    expect_equal(read$malformed$kind, if (name == "quote") "quote" else "fields", info = name)
+  }
+  empty <- withr::local_tempfile(fileext = ".csv")
+  file.create(empty)
+  expect_equal(read_csv_text(empty)$malformed$kind, "empty")
+})
+
+test_that("a warning the reader doesn't know is one unknown problem, its text kept (D12.58)", {
+  real_fread <- data.table::fread
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    warning(paste0("A new warning about ", bad), call. = FALSE, domain = NA)
+    out
+  })
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,4")
+  ))))
+  expect_equal(read$data$a, c("1", "3"))
+  expect_equal(read$lines, 2:3)
+  expect_equal(read$malformed$kind, "unknown")
+  expect_true(is.na(read$malformed$line))
+  # fread()'s text as kept, an invalid byte shown as <xx> (D12.24).
+  expect_equal(read$malformed$value, "A new warning about ok<97>")
+})
+
+test_that("a reworded early stop is one unknown problem, never lines above the header (D12.58)", {
+  real_fread <- data.table::fread
+  local_mocked_bindings(fread = function(...) {
+    withCallingHandlers(real_fread(...), warning = function(w) {
+      warning(
+        sub("Stopped early", "Halted", conditionMessage(w), fixed = TRUE),
+        call. = FALSE, domain = NA
+      )
+      invokeRestart("muffleWarning")
+    })
+  })
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")
+  ))))
+  expect_named(read$data, c("id", "comments"))
+  expect_equal(read$data$id, "1")
+  expect_equal(read$lines, 2L)
+  expect_equal(read$malformed$kind, "unknown")
+  expect_match(read$malformed$value, "^Halted on line 3")
+})
+
+test_that("rows fread() leaves out without a warning are one short problem (D12.58)", {
+  real_fread <- data.table::fread
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    out[seq_len(max(nrow(out) - 1L, 0L))]
+  })
+  # Three records after the header: a newline inside quotes and a blank line aren't records.
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("1,2"), charToRaw("3,\"x"), charToRaw("y\""), charToRaw("5,6"),
+    raw(0)
+  ))))
+  expect_equal(read$data$a, c("1", "3"))
+  expect_equal(read$lines, 2:3)
+  expect_equal(read$malformed$kind, "short")
+  expect_equal(read$malformed$n_records, 3L)
+  expect_equal(read$malformed$n_read, 2L)
+  expect_true(is.na(read$malformed$line))
+})
+
+test_that("line 1 repeated where fread() takes its header is still a skip, never short (D12.58)", {
+  # fread() skips to line 3, whose names are line 1's: the lines it skipped are found by
+  # the line it skipped to, not taken for rows left out.
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("id,name"), charToRaw("x"), charToRaw("id,name"), charToRaw("1,a")
+  )))
+  expect_equal(read$malformed$kind, "fields")
+})
+
+test_that("an invalid byte gives no unknown problem, nor an encoding warning beside it (D12.58)", {
+  byte <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), c(charToRaw("1,a"), as.raw(0x97), charToRaw("b"))
+  )))
+  expect_equal(nrow(byte$invalid), 1L)
+  expect_equal(nrow(byte$malformed), 0L)
+  real_fread <- data.table::fread
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    warning("GB-18030 encoding detected, however fread() is unable to decode it.", call. = FALSE)
+    out
+  })
+  # The encoding warning is spec_encoding_invalid's where the file has an invalid byte, and
+  # an unknown problem where it has none.
+  coded <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), c(charToRaw("1,"), as.raw(c(0xC4, 0xE3)))
+  )))
+  expect_equal(nrow(coded$invalid), 1L)
+  expect_equal(nrow(coded$malformed), 0L)
+  plain <- read_csv_text(write_bytes(list(charToRaw("a,b"), charToRaw("1,2"))))
+  expect_equal(plain$malformed$kind, "unknown")
 })
 
 test_that("fix_invalid_utf8 leaves valid text alone", {

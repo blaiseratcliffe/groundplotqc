@@ -26,7 +26,7 @@ BugReports: https://github.com/blaiseratcliffe/groundplotqc/issues
 Depends:
     R (>= 4.5.0)
 Imports:
-    data.table,
+    data.table (>= 1.18.2.1),
     tools,
     utils
 Suggests:

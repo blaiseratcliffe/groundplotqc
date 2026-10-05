@@ -1,4 +1,4 @@
-# Tests for the report text lookup (plan 11.7; D4.19, D12.21, D12.45, D12.54, D12.55).
+# Tests for the report text lookup (plan 11.7; D4.19, D12.21, D12.45, D12.54, D12.55, D12.58).
 
 test_that("every row has an id, an English text and a unique id per language", {
   texts <- report_texts()
@@ -61,6 +61,24 @@ test_that("an NA in another slot stops, and so do values of two lengths (D12.45)
   expect_error(
     report_text("preflight_detail_code_list_blank_row", row = 1:2, sheet = c("a", "b", "c")),
     "common length"
+  )
+})
+
+test_that("a CSV's unknown warning and row shortfall fill their slots; NA stops (D12.58)", {
+  expect_equal(
+    report_text("preflight_detail_spec_csv_malformed_unknown", file = "a.csv", value = "Odd."),
+    paste(
+      "Reading a.csv gave a warning the package doesn't recognise, so some of its lines may",
+      "not have been read: \"Odd.\"."
+    )
+  )
+  expect_equal(
+    report_text("preflight_detail_spec_csv_malformed_short", file = "a.csv", n = 3L, n_read = 2L),
+    "a.csv has 3 records after its header, but only 2 were read."
+  )
+  expect_error(
+    report_text("preflight_detail_spec_csv_malformed_short", file = "a.csv", n = 3L, n_read = NA),
+    "n_read"
   )
 })
 

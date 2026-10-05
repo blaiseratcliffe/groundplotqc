@@ -1,7 +1,7 @@
 # Small helpers for reading text into data.tables (plan 3.6, 16.2; D12.14, D12.24,
-# D12.45, D12.54). Every CSV the package reads goes through read_csv_text(): fread()
-# keeps a quoted field's doubled quotes, so they are undone here, which is exact for
-# RFC 4180 files.
+# D12.45, D12.54, D12.58). Every CSV the package reads goes through read_csv_text():
+# fread() keeps a quoted field's doubled quotes, so they are undone here, which is exact
+# for RFC 4180 files.
 
 #' Invalid UTF-8 in a data.table kept as <xx>
 #'
@@ -44,19 +44,27 @@ fix_invalid_utf8 <- function(data) {
 
 #' A CSV file read as text, exactly as written
 #'
-#' Read as comma-separated text with a header, fread()'s warnings on a malformed file
-#' collected rather than shown. Every column character, blanks NA, spaces kept, doubled
-#' quotes undone in cells and names, names made unique, invalid bytes kept as `<xx>`.
-#' Returns `list(data, invalid, malformed, lines)`: `invalid` what fix_invalid_utf8()
-#' changed, each value as kept; `malformed` one row per problem fread() met, `kind`
-#' ("fields", "empty" or "quote"), the file `line` where known and the header's `fields`;
-#' `lines` the file line each data row starts on, the header being line 1. Line 1 is the
-#' header even where fread() would skip it; a file with no bytes, or only blank lines or
-#' spaces, is "empty" (D12.9, D12.14, D12.24, D12.27, D12.45, D12.54, D12.56). fread() runs
-#' with English messages, whatever the session's language, since its warnings are
-#' recognised by their text, matched as bytes because a warning can quote a line that
-#' isn't valid UTF-8. In a file of one column, an unquoted comma is part of the value
-#' (D12.56 (5)).
+#' Read as comma-separated text with a header, every warning fread() gives collected
+#' rather than shown. Every column character, blanks NA, spaces kept, doubled quotes undone
+#' in cells and names, names made unique, invalid bytes kept as `<xx>`. Returns
+#' `list(data, invalid, malformed, lines)`: `invalid` what fix_invalid_utf8() changed, each
+#' value as kept; `malformed` one row per problem met, `kind` ("fields", "empty", "quote",
+#' "unknown" or "short"), the file `line` where known, the header's `fields`, for "short"
+#' the file's `n_records` after its header and the `n_read` rows read, and for "unknown"
+#' fread()'s warning as `value`, a bad byte as `<xx>`; `lines` the file line each data row
+#' starts on, the header being line 1. Line 1 is the header even where fread() would skip
+#' it; a file with no bytes, or only blank lines or spaces, is "empty" (D12.9, D12.14,
+#' D12.24, D12.27, D12.45, D12.54, D12.56). fread() runs with English messages, whatever
+#' the session's language, since its warnings are recognised by their text, matched as
+#' bytes because a warning can quote a line that isn't valid UTF-8. The read fails closed
+#' (D12.58): a warning it doesn't recognise is "unknown", unless it is about the text's
+#' encoding and the file has invalid bytes, which spec_encoding_invalid reports; fewer rows
+#' than the file's records after its header are "short" where no other problem, and no
+#' header line read again, explains them. Records are counted on the file's bytes: a
+#' newline inside a quoted field doesn't end one, a quote opening a field only at its
+#' start, as RFC 4180 writes it, and a line with no byte above a space, such as one of only
+#' spaces or tabs, isn't one. In a file of one column, an unquoted comma is part of the
+#' value (D12.56 (5)).
 #' @noRd
 read_csv_text <- function(path) {
   language <- Sys.getenv("LANGUAGE", unset = NA)
@@ -66,8 +74,12 @@ read_csv_text <- function(path) {
     if (is.na(language)) Sys.unsetenv("LANGUAGE") else Sys.setenv(LANGUAGE = language)
     invisible(bindtextdomain(NULL))
   })
-  problem <- function(kind, line = NA_integer_, fields = NA_integer_) {
-    data.table(kind = kind, line = as.integer(line), fields = as.integer(fields))
+  problem <- function(kind, line = NA_integer_, fields = NA_integer_, n_records = NA_integer_,
+                      n_read = NA_integer_, value = NA_character_) {
+    data.table(
+      kind = kind, line = as.integer(line), fields = as.integer(fields),
+      n_records = as.integer(n_records), n_read = as.integer(n_read), value = as.character(value)
+    )
   }
   # A file with no bytes, or only blank lines or spaces, is empty: fread() stops on it. A
   # missing file or a folder is left to fread(), whose error names it (D12.54).
@@ -81,6 +93,7 @@ read_csv_text <- function(path) {
     ))
   }
   warned <- character()
+  unknown <- character()
   read <- function(...) {
     withCallingHandlers(
       fread(
@@ -89,16 +102,65 @@ read_csv_text <- function(path) {
         encoding = "UTF-8", strip.white = FALSE, showProgress = FALSE
       ),
       warning = function(w) {
-        # Collected and muffled, never caught: fread() then finishes its read (D12.54). The
-        # match runs on bytes: a warning quotes the line it discarded, which may not be
-        # valid UTF-8.
+        # Every warning is collected and muffled, never caught: fread() then finishes its
+        # read (D12.54). One the reader doesn't recognise is kept apart, so none is shown or
+        # lost (D12.58). The match runs on bytes: a warning quotes the line it discarded,
+        # which may not be valid UTF-8.
         known <- "Stopped early|Discarded single-line footer|improper quoting"
         if (grepl(known, conditionMessage(w), useBytes = TRUE)) {
           warned <<- c(warned, conditionMessage(w))
-          invokeRestart("muffleWarning")
+        } else {
+          unknown <<- c(unknown, conditionMessage(w))
         }
+        invokeRestart("muffleWarning")
       }
     )
+  }
+  # The newlines that end a record, found on the bytes apart from fread() (D12.58): one
+  # inside a quoted field doesn't. A quote opens a field only at the field's start, so one
+  # inside an unquoted field is text, as fread() reads it. A run of quotes changes whether
+  # a field is open only if its length is odd: at a field's start it opens or closes one,
+  # elsewhere it closes the field it is in.
+  record_breaks <- function(bytes) {
+    newline_at <- which(bytes == as.raw(0x0A))
+    quote_at <- which(bytes == as.raw(0x22))
+    if (length(quote_at) == 0L) {
+      return(newline_at)
+    }
+    first <- which(c(TRUE, diff(quote_at) != 1L))
+    run <- quote_at[first[diff(c(first, length(quote_at) + 1L)) %% 2L == 1L]]
+    bom <- length(bytes) >= 3L && all(bytes[1:3] == as.raw(c(0xEF, 0xBB, 0xBF)))
+    before <- bytes[pmax(run - 1L, 1L)]
+    at_start <- run == 1L | (bom & run == 4L) | before == as.raw(0x0A) |
+      before == as.raw(0x0D) | before == as.raw(0x2C)
+    # A field is open after a run when the runs at a field's start since the last run
+    # elsewhere, which closes any field, are odd in number.
+    opened <- cumsum(at_start)
+    in_field <- (opened - cummax(fifelse(at_start, 0L, opened))) %% 2L == 1L
+    after <- findInterval(newline_at, run)
+    newline_at[after == 0L | !in_field[pmax(after, 1L)]]
+  }
+  # The names of the record that starts at byte `from`, read on their own; NULL for a
+  # record with no byte above a space. Their known warnings aren't the file's (D12.58).
+  names_at <- function(bytes, from) {
+    rest <- bytes[from:length(bytes)]
+    breaks <- record_breaks(rest)
+    record <- rest[seq_len(if (length(breaks) > 0L) breaks[[1L]] - 1L else length(rest))]
+    if (any(record > as.raw(0x20))) {
+      known_before <- warned
+      on.exit(warned <<- known_before)
+      names(read(text = rawToChar(record)))
+    }
+  }
+  # The file's records after its header, a record with no byte above a space, such as one
+  # of only spaces, tabs or a carriage return, not being one (D12.58).
+  records_after_header <- function(bytes) {
+    breaks <- record_breaks(bytes)
+    content <- which(bytes > as.raw(0x20))
+    record_start <- c(1L, breaks + 1L)
+    record_end <- c(breaks - 1L, length(bytes))
+    filled <- findInterval(record_end, content) > findInterval(record_start - 1L, content)
+    sum(filled[-1L])
   }
   # The file line each row starts on: a quoted cell spanning lines moves every later row
   # down (D12.54). Counted on the cells as read, before a blank one becomes NA.
@@ -125,13 +187,14 @@ read_csv_text <- function(path) {
     # one-column file, every line above one with more fields, and can't be told not to.
     # The lines it skipped are those before its last row, or before the record it stopped
     # on, beyond the header's and the rows' own. Before a discarded footer they can't be
-    # told from blank lines between the rows and the footer, so none are assumed.
+    # told from blank lines between the rows and the footer, so none are assumed; nor after
+    # a warning the reader doesn't recognise, which may have cut the rows short (D12.58).
     skipped <- if (length(stopped) > 0L) {
       # "Stopped early on line N" counts records from the first line, so a quoted cell
       # over several lines counts once: the header, the rows and the line it stopped on
       # are N less the lines skipped (D12.54).
       stopped[[1L]] - 2L - nrow(data)
-    } else if (footer || header_end == 0L) {
+    } else if (footer || header_end == 0L || length(unknown) > 0L) {
       0L
     } else {
       # Back over the blank bytes at the end. A last line of only spaces or tabs is ignored
@@ -143,6 +206,16 @@ read_csv_text <- function(path) {
         last <- last - 1L
       }
       sum(bytes[seq_len(last)] == as.raw(0x0A)) + 1L - read_to
+    }
+    if (skipped > 0L && is.na(header_line) && length(stopped) == 0L) {
+      # Lines missing are rows fread() left out, not lines it skipped, where line 1 has
+      # fread()'s names and the line it would have skipped to doesn't; the record count
+      # below finds them (D12.58).
+      left_out <- identical(names_at(bytes, 1L), names(data)) &&
+        !identical(names_at(bytes, which(bytes == as.raw(0x0A))[[skipped]] + 1L), names(data))
+      if (left_out) {
+        skipped <- 0L
+      }
     }
     if (skipped <= 0L) {
       break
@@ -157,15 +230,33 @@ read_csv_text <- function(path) {
     data <- if (blank_lines) data.table() else read(text = rawToChar(bytes))
   }
   lines <- as.integer(ends - row_lines + 1L)
-  short <- length(stopped) > 0L || footer
+  ended_early <- length(stopped) > 0L || footer
+  invalid <- fix_invalid_utf8(data)
+  # A warning about the text's encoding is spec_encoding_invalid's where the file has
+  # invalid bytes; any other the reader doesn't recognise is kept as fread() wrote it, a bad
+  # byte as <xx> (D12.24, D12.58).
+  unknown <- unique(unknown)
+  if (nrow(invalid) > 0L) {
+    unknown <- unknown[!grepl("encoding", unknown, ignore.case = TRUE, useBytes = TRUE)]
+  }
   malformed <- rbindlist(list(
     problem(character()),
     if (length(stopped) > 0L) problem("fields", read_to + 1L, ncol(data)),
     if (footer) problem("fields", read_to + 1L, ncol(data)),
-    if (!short && !is.na(header_line)) problem("fields", header_line, ncol(data)),
-    if (any(grepl("improper quoting", warned, fixed = TRUE, useBytes = TRUE))) problem("quote")
+    if (!ended_early && !is.na(header_line)) problem("fields", header_line, ncol(data)),
+    if (any(grepl("improper quoting", warned, fixed = TRUE, useBytes = TRUE))) problem("quote"),
+    if (length(unknown) > 0L) {
+      problem("unknown", value = iconv(unknown, "UTF-8", "UTF-8", sub = "byte"))
+    }
   ))
-  invalid <- fix_invalid_utf8(data)
+  # Fewer rows than the file's records after its header are a problem of their own where
+  # no other problem explains them; a header line read again always gives one (D12.58).
+  if (nrow(malformed) == 0L) {
+    n_records <- records_after_header(bytes)
+    if (nrow(data) < n_records) {
+      malformed <- problem("short", n_records = n_records, n_read = nrow(data))
+    }
+  }
   if (ncol(data) > 0L) {
     setnames(data, make.unique(gsub("\"\"", "\"", names(data), fixed = TRUE)))
   }

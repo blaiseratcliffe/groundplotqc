@@ -71,6 +71,8 @@
 "preflight_detail_spec_csv_malformed_fields","en","{file} line {line} doesn't have as many fields as the header ({n}), so it and the lines after it aren't read."
 "preflight_detail_spec_csv_malformed_empty","en","{file} is empty."
 "preflight_detail_spec_csv_malformed_quote","en","{file} has a quote that isn't closed or doubled as CSV needs, so some cells may not read as written."
+"preflight_detail_spec_csv_malformed_unknown","en","Reading {file} gave a warning the package doesn't recognise, so some of its lines may not have been read: {value}."
+"preflight_detail_spec_csv_malformed_short","en","{file} has {n} records after its header, but only {n_read} were read."
 "preflight_detail_site_id_range_invalid_sheet","en","The bands' sheet {sheet} lacks one or more of the columns {columns}."
 "preflight_detail_site_id_range_invalid_bound","en","Band {label} has a bound that isn't a whole number: {value}."
 "preflight_detail_site_id_range_invalid_blank_start","en","Band {label} has a blank start."
