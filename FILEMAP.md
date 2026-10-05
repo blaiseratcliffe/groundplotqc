@@ -41,6 +41,7 @@ row per file (D7.10):
 | R/utils_strings.R | String helpers: blank cells as NA, text as UTF-8, numbers written in full (D12.36, D12.45) | none exported; is_blank(), blank_to_na(), as_text() | base R |
 | R/utils_dt.R | Text-reading helpers: invalid bytes kept as `<xx>`, CSVs read with quotes and spaces as written, blank cells as NA, malformed lines and each row's file line recorded (D12.54) | none exported; fix_invalid_utf8(), read_csv_text() | data.table, R/utils_strings.R |
 | R/report_text.R | Report text lookup with placeholder filling, values from the specification quoted and blanks shown as the blank text (plan 11.7; D12.21, D12.55) | none exported; report_texts(), report_text(), fill_placeholders(), quote_value(), blank_as_text(), the constants quoted_slots and blank_slots | inst/extdata/text/report_text_engine.csv, R/utils_dt.R, R/utils_strings.R |
+| R/report_html.R | Base-R HTML builders: escaping, sortable and filterable tables, sections, self-contained pages (plan 11.2; D8.18, D12.17, D12.21) | none exported; html_escape(), html_table(), html_section(), html_page(), page_css(), page_script() | R/report_text.R |
 
 ## man/
 
@@ -70,6 +71,7 @@ row per file (D7.10):
 | tests/testthat/test-utils_strings.R | Tests for the string helpers (plan 3.3, 3.6; D12.14, D12.27, D12.36, D12.45) | none | R/utils_strings.R |
 | tests/testthat/test-utils_dt.R | Tests for the data.table helpers (plan 3.6, 16.2; D12.14, D12.24, D12.45, D12.54) | none exported; write_bytes() | R/utils_dt.R, data.table, withr |
 | tests/testthat/test-report_text.R | Tests for the report text lookup (plan 11.7; D4.19, D12.21, D12.45, D12.54, D12.55) | none | R/report_text.R, inst/extdata/text/report_text_engine.csv |
+| tests/testthat/test-report_html.R | Tests for the HTML builders (plan 11.1, 11.2, 18.4; D8.18, D12.17, D12.21) | none | R/report_html.R, data.table |
 
 ## .github/scripts/
 
