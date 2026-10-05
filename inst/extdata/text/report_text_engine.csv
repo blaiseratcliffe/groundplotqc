@@ -64,7 +64,7 @@
 "preflight_detail_spec_clash_resolved_value","en","{column_name} for {key_col} {key_value}: {source_a} has {value_a}, {source_b} has {value_b}; {winner} wins."
 "preflight_detail_spec_clash_resolved_placement","en","{key_value} is in table {value_a} in the lineage spec and in table {value_b} in the dictionary; the dictionary's table is used."
 "preflight_detail_spec_clash_unresolved","en","{column_name} for {key_col} {key_value}: {source_a} has {value_a}, {source_b} has {value_b}, and no precedence row settles it."
-"preflight_detail_spec_clash_unresolved_setup","en","A precedence row names sheet {sheet} with key {key_col}, which the code lists or the datasets table lack."
+"preflight_detail_spec_clash_unresolved_setup","en","A precedence row names sheet {sheet} with key {key_col}, which the code lists or the datasets table lacks."
 "preflight_detail_datasets_row_missing","en","{key_col} {key_value} is in sheet {sheet} but has no row in the datasets table."
 "preflight_detail_spec_encoding_invalid","en","Text at {location} isn't valid UTF-8; it is kept as {value}, each bad byte shown as its hex code in angle brackets."
 "preflight_detail_spec_encoding_invalid_header","en","The name of column {column} of {input} isn't valid UTF-8; it is kept as {value}, each bad byte shown as its hex code in angle brackets."

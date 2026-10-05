@@ -19,6 +19,13 @@ test_that("as_text writes numbers in full, never in scientific notation (D12.45)
   expect_equal(as_text(as.Date("2020-01-02")), "2020-01-02")
 })
 
+test_that("as_text keeps no names or attributes (D12.45)", {
+  expect_identical(as_text(c(a = 1.5, b = NA)), c("1.5", NA))
+  expect_identical(as_text(c(a = 2L)), "2")
+  expect_identical(as_text(matrix(c(1, 2), nrow = 1)), c("1", "2"))
+  expect_identical(as_text(c(a = "x")), "x")
+})
+
 test_that("blank_to_na makes only cells empty after trimming NA (D12.27)", {
   expect_equal(
     blank_to_na(c("", "   ", "\t", "NA", " NT_PSP", NA)),

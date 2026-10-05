@@ -74,14 +74,14 @@ fill_placeholders <- function(template, values, lang = "en") {
   }
   used <- unique(wanted)
   sizes <- lengths(values[used])
-  if (any(sizes == 0L)) {
-    return(character())
-  }
   if (length(unique(sizes[sizes != 1L])) > 1L) {
     stop(sprintf(
       "Report text values must have length 1 or one common length; got %s.",
       paste0(used, " ", sizes, collapse = ", ")
     ), call. = FALSE)
+  }
+  if (any(sizes == 0L)) {
+    return(character())
   }
   filled <- lapply(used, function(name) {
     x <- as_text(values[[name]])

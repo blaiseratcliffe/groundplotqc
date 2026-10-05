@@ -111,6 +111,87 @@ test_that("each row's line counts the lines of a quoted cell above it (D12.54)",
   expect_equal(read$lines, c(2L, 4L))
 })
 
+test_that("a ragged line is named by its file line, past the lines of quoted cells (D12.54)", {
+  # fread() counts records, so a quoted cell over several lines must not shift the line.
+  multi <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), charToRaw("1,\"two"), charToRaw("lines\""), charToRaw("2"),
+    charToRaw("3,x")
+  )))
+  expect_named(multi$data, c("id", "comments"))
+  expect_equal(multi$lines, 2L)
+  expect_equal(multi$malformed, data.table::data.table(kind = "fields", line = 4L, fields = 2L))
+  two_cells <- read_csv_text(write_bytes(list(
+    charToRaw("id,note"), charToRaw("1,\"a"), charToRaw("b"), charToRaw("c\""),
+    charToRaw("2,\"d"), charToRaw("e\""), charToRaw("3"), charToRaw("4,z")
+  )))
+  expect_equal(two_cells$lines, c(2L, 5L))
+  expect_equal(
+    two_cells$malformed, data.table::data.table(kind = "fields", line = 7L, fields = 2L)
+  )
+})
+
+test_that("a title line above a ragged line is still read as the header (D12.56)", {
+  plain <- read_csv_text(write_bytes(list(
+    charToRaw("title"), charToRaw("id,name"), charToRaw("1,a"), charToRaw("2"), charToRaw("3,c")
+  )))
+  expect_named(plain$data, "title")
+  expect_equal(nrow(plain$data), 0L)
+  expect_equal(plain$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 1L))
+  multi <- read_csv_text(write_bytes(list(
+    charToRaw("title"), charToRaw("id,note"), charToRaw("1,\"a"), charToRaw("b\""),
+    charToRaw("2"), charToRaw("3,c")
+  )))
+  expect_named(multi$data, "title")
+  expect_equal(nrow(multi$data), 0L)
+  expect_equal(multi$malformed, data.table::data.table(kind = "fields", line = 2L, fields = 1L))
+})
+
+test_that("a file of only blank lines or spaces is empty, never a stop (D12.54)", {
+  blank_only <- list(
+    list(raw(0)), list(raw(0), raw(0)), list(charToRaw("   \r")), list(charToRaw("\t "))
+  )
+  for (lines in blank_only) {
+    read <- read_csv_text(write_bytes(lines))
+    expect_equal(ncol(read$data), 0L)
+    expect_equal(nrow(read$invalid), 0L)
+    expect_equal(read$lines, integer())
+    expect_equal(
+      read$malformed,
+      data.table::data.table(kind = "empty", line = NA_integer_, fields = NA_integer_)
+    )
+  }
+})
+
+test_that("a missing file is an error from the read, even with a space in its name (D12.45)", {
+  expect_error(read_csv_text(file.path(tempdir(), "no such file.csv")))
+})
+
+test_that("fread()'s warnings are recognised whatever the session's language (D12.54)", {
+  withr::local_envvar(LANGUAGE = "fr")
+  expect_no_warning(ragged <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")
+  ))))
+  expect_equal(ragged$malformed, data.table::data.table(kind = "fields", line = 3L, fields = 2L))
+  empty <- withr::local_tempfile(fileext = ".csv")
+  file.create(empty)
+  expect_no_warning(read <- read_csv_text(empty))
+  expect_equal(read$malformed$kind, "empty")
+  expect_no_warning(quote <- read_csv_text(write_bytes(list(
+    charToRaw("id,comments"), charToRaw("1,\"open"), charToRaw("2,next")
+  ))))
+  expect_equal(quote$malformed$kind, "quote")
+  expect_equal(Sys.getenv("LANGUAGE"), "fr")
+})
+
+test_that("the session's language is put back whether it was set or not, and after an error", {
+  withr::local_envvar(LANGUAGE = NA)
+  read_csv_text(write_bytes(list(charToRaw("a"), charToRaw("1"))))
+  expect_true(is.na(Sys.getenv("LANGUAGE", unset = NA)))
+  withr::local_envvar(LANGUAGE = "de")
+  expect_error(read_csv_text(file.path(tempdir(), "no such file.csv")))
+  expect_equal(Sys.getenv("LANGUAGE"), "de")
+})
+
 test_that("line 1 is the header even where fread() would skip it (D12.56)", {
   titled <- read_csv_text(write_bytes(list(
     charToRaw("Lookup export"), charToRaw("id,name"), charToRaw("1,a"), charToRaw("2,b")

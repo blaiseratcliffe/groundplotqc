@@ -16,6 +16,15 @@ test_that("every text is ASCII and braces only mark placeholders (D12.45)", {
   expect_false(any(grepl("[{}]", outside)))
 })
 
+test_that("no placeholder can be taken for text_id or lang, and every slot list name is used", {
+  texts <- report_texts()
+  found <- unlist(regmatches(texts$text, gregexpr("\\{[a-z0-9_]+\\}", texts$text)))
+  slot_names <- unique(gsub("[{}]", "", found))
+  # R matches a value named `te` or `la` to text_id or lang instead of to `...`.
+  expect_false(any(startsWith("text_id", slot_names) | startsWith("lang", slot_names)))
+  expect_true(all(c(quoted_slots, blank_slots) %in% slot_names))
+})
+
 test_that("report_text fills placeholders, vectorised", {
   expect_equal(
     report_text("preflight_detail_code_list_blank_row", row = c(13L, 14L), sheet = "visit_type"),
@@ -68,4 +77,15 @@ test_that("numbers fill in full (D12.45)", {
 test_that("fill_placeholders keeps plain text and gives nothing for no values", {
   expect_equal(fill_placeholders("Plain {not one", list()), "Plain {not one")
   expect_equal(fill_placeholders("Row {row}.", list(row = integer())), character())
+})
+
+test_that("a zero-length value beside a longer one stops as two lengths (D12.45)", {
+  expect_error(
+    fill_placeholders("Row {row} of {sheet}.", list(row = integer(), sheet = c("a", "b"))),
+    "common length"
+  )
+  expect_equal(
+    fill_placeholders("Row {row} of {sheet}.", list(row = integer(), sheet = "a")),
+    character()
+  )
 })
