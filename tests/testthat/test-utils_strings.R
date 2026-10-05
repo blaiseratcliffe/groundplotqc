@@ -42,6 +42,19 @@ test_that("column letters and numbers convert both ways", {
   expect_equal(column_numbers(c("A", "z", "AA", "AAA", "a1")), c(1L, 26L, 27L, 703L, NA))
 })
 
+test_that("column numbers beyond the integer range are NA with no warning (D12.36)", {
+  # FXSHRXW is the last letters name inside the integer range.
+  expect_equal(column_numbers(c("FXSHRXW", "FXSHRXX")), c(.Machine$integer.max, NA))
+  too_long <- c("ZZZZZZZ", "A", "ZZZZZZZZZZ", strrep("Z", 1000L))
+  expect_no_warning(column_numbers(too_long))
+  expect_equal(column_numbers(too_long), c(NA, 1L, NA, NA))
+})
+
+test_that("column_letters gives NA for NA (D12.36)", {
+  expect_equal(column_letters(c(1L, NA, 27L)), c("A", NA, "AA"))
+  expect_equal(column_letters(NA), NA_character_)
+})
+
 test_that("shorten_marked cuts a long value around its first marker (D12.28)", {
   expect_equal(shorten_marked("short ok<97>"), "short ok<97>")
   long <- paste0(strrep("a", 50), "ok<97>", strrep("b", 50))

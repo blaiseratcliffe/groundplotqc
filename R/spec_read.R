@@ -263,7 +263,7 @@ origin_where <- function(origin, x, input) {
   }
   sheet <- origin$sheet
   sheet_ok <- is.null(sheet) || is.character(sheet) && length(sheet) == 1L && !is.na(sheet) &&
-    nzchar(sheet)
+    !is_blank(sheet)
   if (!sheet_ok) {
     stop(sprintf("The origin of %s must give its sheet as NULL or one name.", input),
       call. = FALSE
@@ -272,9 +272,12 @@ origin_where <- function(origin, x, input) {
   rows <- origin$rows
   n <- nrow(x)
   if (!is.null(rows)) {
+    # Every file row is a whole number from 2 up to the integer maximum; one number must
+    # also leave room for the last data row.
     whole <- is.numeric(rows) && length(rows) > 0L && !anyNA(rows) &&
-      all(rows == round(rows))
-    if (!whole || !(length(rows) == 1L || length(rows) == n) || rows[[1L]] < 2) {
+      all(rows == round(rows) & rows >= 2 & rows <= .Machine$integer.max)
+    fits <- !whole || length(rows) != 1L || rows + (n - 1) <= .Machine$integer.max
+    if (!whole || !fits || !(length(rows) == 1L || length(rows) == n)) {
       stop(sprintf(paste(
         "The origin of %s must give its rows as NULL, the file row of the first data row",
         "(2 or more), or one file row per data row."
@@ -285,7 +288,7 @@ origin_where <- function(origin, x, input) {
   if (is.null(rows)) {
     return(list(kind = "memory", file = basename(path)))
   }
-  data_rows <- if (length(rows) == 1L) rows + seq_len(n) - 1L else rows
+  data_rows <- if (length(rows) == 1L) rows + (seq_len(n) - 1L) else rows
   list(
     kind = if (is.null(sheet)) "csv" else "xlsx", file = basename(path), sheet = sheet,
     row_map = as.integer(c(rows[[1L]] - 1L, data_rows)), col_map = col_map
@@ -295,7 +298,8 @@ origin_where <- function(origin, x, input) {
 #' An origin's file column for each column of the data.frame (D12.33)
 #'
 #' `columns` is NULL for the file's order, or the file column, by number or letter, of
-#' every column of the data.frame, no two the same; every problem is named in one message.
+#' every column of the data.frame, each named once and no two the same; every problem is
+#' named in one message.
 #' @noRd
 origin_columns <- function(columns, names, input) {
   if (is.null(columns)) {
@@ -315,11 +319,15 @@ origin_columns <- function(columns, names, input) {
   unknown <- setdiff(names(numbers), names)
   unplaced <- setdiff(names, names(numbers))
   repeated <- unique(numbers[duplicated(numbers)])
+  named_twice <- unique(names(numbers)[duplicated(names(numbers))])
   problems <- c(
     if (length(unknown) > 0L) paste("not a column:", paste(unknown, collapse = ", ")),
     if (length(unplaced) > 0L) paste("not placed:", paste(unplaced, collapse = ", ")),
     if (length(repeated) > 0L) {
       paste("position given twice:", paste(repeated, collapse = ", "))
+    },
+    if (length(named_twice) > 0L) {
+      paste("name given twice:", paste(named_twice, collapse = ", "))
     }
   )
   if (length(problems) > 0L) {
@@ -458,9 +466,10 @@ raw_to_table <- function(raw) {
 cell_references <- function(where, rows, columns) {
   switch(where$kind,
     memory = rep(NA_character_, length(rows)),
-    csv = paste0(where$file, ":", file_rows(where, rows)),
+    csv = paste0(where$file, ":", file_rows(where, rows), recycle0 = TRUE),
     xlsx = paste0(
-      where$sheet, "!", column_letters(file_columns(where, columns)), file_rows(where, rows)
+      where$sheet, "!", column_letters(file_columns(where, columns)), file_rows(where, rows),
+      recycle0 = TRUE
     )
   )
 }

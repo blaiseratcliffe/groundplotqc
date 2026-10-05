@@ -48,6 +48,19 @@ test_that("gpq_type_map refuses a bad map", {
   expect_error(gpq_type_map(invalid), "UTF-8")
 })
 
+test_that("gpq_type_map reads a path ending in .csv, in any case, and names `map` otherwise", {
+  lines <- c("data_type,r_class,date_format", "x,character,")
+  txt <- withr::local_tempfile(fileext = ".txt")
+  writeLines(lines, txt)
+  expect_error(
+    gpq_type_map(txt), "`map` must be the path of a file ending in .csv.",
+    fixed = TRUE
+  )
+  upper <- withr::local_tempfile(fileext = ".CSV")
+  writeLines(lines, upper)
+  expect_equal(gpq_type_map(upper)$data_type, "x")
+})
+
 test_that("the forest example's defect list names records that exist", {
   defects <- read_csv_text(example_file("forest_defects.csv"))$data
   trees <- read_csv_text(example_file("forest_trees.csv"))$data

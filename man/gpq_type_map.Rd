@@ -7,8 +7,9 @@
 gpq_type_map(map = NULL)
 }
 \arguments{
-\item{map}{\code{NULL} for the four built-in rows, or a data.frame or the path of a CSV file
-with columns \code{data_type}, \code{r_class} and \code{date_format}, which replaces them.}
+\item{map}{\code{NULL} for the four built-in rows, or a data.frame or the path of a CSV file,
+ending in \code{.csv}, with columns \code{data_type}, \code{r_class} and \code{date_format}, which replaces
+them.}
 }
 \value{
 A data.table with columns \code{data_type} (the dictionary's type name), \code{r_class}

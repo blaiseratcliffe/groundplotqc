@@ -62,8 +62,9 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
 #' The type map says which R class each type of the data dictionary expects, and which
 #' types hold dates (D2.15).
 #'
-#' @param map `NULL` for the four built-in rows, or a data.frame or the path of a CSV file
-#'   with columns `data_type`, `r_class` and `date_format`, which replaces them.
+#' @param map `NULL` for the four built-in rows, or a data.frame or the path of a CSV file,
+#'   ending in `.csv`, with columns `data_type`, `r_class` and `date_format`, which replaces
+#'   them.
 #' @return A data.table with columns `data_type` (the dictionary's type name), `r_class`
 #'   (`"character"`, `"integer"` or `"double"`) and `date_format` (a [strptime()] format
 #'   that non-sentinel values must parse with, or `NA`). Built in: `character`, `integer`,
@@ -89,6 +90,9 @@ gpq_type_map <- function(map = NULL) {
   } else if (is.character(map) && length(map) == 1L) {
     if (is.na(map) || !file.exists(map) || dir.exists(map)) {
       stop("`map` names a file that doesn't exist.", call. = FALSE)
+    }
+    if (!grepl("[.]csv$", map, ignore.case = TRUE)) {
+      stop("`map` must be the path of a file ending in .csv.", call. = FALSE)
     }
     # The file's findings ride on the map until gpq_read_spec() reads them (D12.55).
     read <- read_input_table(map, "type_map")

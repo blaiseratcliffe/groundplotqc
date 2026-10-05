@@ -54,27 +54,34 @@ shorten_marked <- function(value, width = 40L) {
   )
 }
 
-#' Column numbers as spreadsheet letters (1 A, 27 AA)
+#' Column numbers as spreadsheet letters (1 A, 27 AA); NA for NA
 #' @noRd
 column_letters <- function(j) {
   j <- as.integer(j)
   out <- character(length(j))
-  while (any(j > 0L)) {
-    k <- j > 0L
+  out[is.na(j)] <- NA_character_
+  while (any(j > 0L, na.rm = TRUE)) {
+    k <- !is.na(j) & j > 0L
     out[k] <- paste0(LETTERS[(j[k] - 1L) %% 26L + 1L], out[k])
     j[k] <- (j[k] - 1L) %/% 26L
   }
   out
 }
 
-#' Spreadsheet column letters as numbers, in any case; NA for anything else
+#' Spreadsheet column letters as numbers, in any case
+#'
+#' NA for anything else, and for letters beyond the integer range, with no warning: the
+#' sum is taken in double and compared with the maximum before it becomes an integer.
 #' @noRd
 column_numbers <- function(x) {
   x <- toupper(x)
   out <- rep(NA_integer_, length(x))
   for (i in which(grepl("^[A-Z]+$", x))) {
     digits <- match(strsplit(x[[i]], "", fixed = TRUE)[[1L]], LETTERS)
-    out[[i]] <- as.integer(sum(digits * 26^(rev(seq_along(digits)) - 1L)))
+    number <- sum(digits * 26^(rev(seq_along(digits)) - 1L))
+    if (number <= .Machine$integer.max) {
+      out[[i]] <- as.integer(number)
+    }
   }
   out
 }

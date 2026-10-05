@@ -42,6 +42,14 @@ test_that("validate_gpq_spec checks without dropping an index (D12.54)", {
   expect_false(is.null(attr(components$keys, "index")))
 })
 
+test_that("new_gpq_spec drops the components' indices (D12.27, D12.54)", {
+  components <- empty_components()
+  data.table::setindex(components$keys, table_name)
+  expect_false(is.null(attr(components$keys, "index")))
+  spec <- new_gpq_spec(components)
+  expect_null(attr(spec$keys, "index"))
+})
+
 test_that("read_input_table reads a data.frame as text, blanks as NA", {
   read <- read_input_table(data.frame(a = c("x", ""), b = c(1.5, NA)), "datasets")
   expect_equal(read$data$a, c("x", NA))
@@ -131,6 +139,13 @@ test_that("cell references follow each kind of input", {
   expect_equal(cell_references(list(kind = "memory"), 1:2, 1:2), c(NA_character_, NA_character_))
 })
 
+test_that("no rows give no cell references, in every form", {
+  none <- integer()
+  expect_identical(cell_references(list(kind = "xlsx", sheet = "DD"), none, none), character())
+  expect_identical(cell_references(list(kind = "csv", file = "a.csv"), none, none), character())
+  expect_identical(cell_references(list(kind = "memory"), none, none), character())
+})
+
 test_that("manifest rows take the date in the file's name", {
   expect_equal(file_date("20260925_magpv2_DD.xlsx"), "20260925")
   expect_true(is.na(file_date("dictionary.csv")))
@@ -149,7 +164,9 @@ test_that("a workbook's blank and spaces-only cells are NA, text as written (D12
   testthat::skip_if_not_installed("readxl")
   path <- testthat::test_path("fixtures", "blank_cells.xlsx")
   read <- read_input_table(path, "dictionary")
-  # The leading space shows that readxl reads with trim_ws = FALSE (D12.9).
+  # readxl blanks the spaces-only cell itself, so the mocked test below pins the
+  # reader's own blank_to_na(). The leading space shows that readxl reads with
+  # trim_ws = FALSE (D12.9).
   expect_equal(read$data$value, c(NA, NA, "NA", " NT_PSP"))
   expect_equal(read$data$value[[4L]], " NT_PSP")
   # Only the dictionary is read from a workbook (D12.22, D12.34).
@@ -158,6 +175,30 @@ test_that("a workbook's blank and spaces-only cells are NA, text as written (D12
     "`datasets` must be a data.frame or the path of an existing .csv file.",
     fixed = TRUE
   )
+})
+
+test_that("read_xlsx_raw makes a blank or spaces-only cell NA whatever readxl gives (D12.27)", {
+  testthat::skip_if_not_installed("readxl")
+  testthat::local_mocked_bindings(
+    read_excel = function(...) data.frame(cells = c("   ", "", " x")),
+    .package = "readxl"
+  )
+  expect_equal(read_xlsx_raw("any.xlsx", "any")$V1, c(NA, NA, " x"))
+})
+
+test_that("a sheet's first row is its names: a blank one V<j>, then each unique (D12.54)", {
+  raw <- data.table::data.table(
+    V1 = c("a", "1"), V2 = c(NA, "2"), V3 = c("a", "3"), V4 = c(NA, "4")
+  )
+  table <- raw_to_table(raw)
+  expect_named(table, c("a", "V2", "a.1", "V4"))
+  expect_equal(table$V2, "2")
+  # A generated name that meets a name in the sheet is made unique too.
+  met <- data.table::data.table(
+    V1 = c("a", "1"), V2 = c(NA, "2"), V3 = c("a", "3"), V4 = c("V2", "4")
+  )
+  expect_named(raw_to_table(met), c("a", "V2", "a.1", "V2.1"))
+  expect_equal(nrow(raw_to_table(data.table::data.table())), 0L)
 })
 
 # The same bad cell (row 2's comments) and bad header (column 3) in each input form;
@@ -210,6 +251,19 @@ test_that("a data.frame's findings give its input name and its row as R counts i
     kept("datasets row 2, column comments", "ok<97>")
   ))
   expect_true(all(is.na(read$findings$source_cell)))
+})
+
+test_that("a caller's table is left as it was, a data.table or a data.frame (D12.27)", {
+  # An invalid byte and a blank cell in a character column: the reader rewrites its own
+  # copy of both, never the caller's.
+  frame <- data.frame(id = c("1", "2", "3"), comments = c("fine", bad_cell, ""))
+  dt <- data.table::as.data.table(frame)
+  frame_before <- data.table::copy(frame)
+  dt_before <- data.table::copy(dt)
+  read_input_table(frame, "datasets")
+  read_input_table(dt, "datasets")
+  expect_identical(frame, frame_before)
+  expect_identical(dt, dt_before)
 })
 
 test_that("a long value is cut to about 40 characters around its marker (D12.28)", {
@@ -272,9 +326,54 @@ test_that("an origin is checked, every column problem in one message (D12.33)", 
   expect_error(read_input_table(csv, "datasets", list(path = csv)), "given as a path")
   expect_error(read_input_table(frame, "datasets", list(path = tempdir())), "path")
   expect_error(read_input_table(frame, "datasets", list(path = csv, sheet = "")), "sheet")
+  # Blank means empty after trimming (D12.27).
+  expect_error(read_input_table(frame, "datasets", list(path = csv, sheet = "  ")), "sheet")
   expect_error(
     read_input_table(frame, "datasets", list(path = csv, columns = c(a = 1, b = 2, c = 1e10))),
     "columns"
+  )
+})
+
+test_that("an origin's rows are file rows inside the integer range, with no warning (D12.33)", {
+  csv <- stand_in(".csv")
+  frame <- data.frame(a = c("1", "2"))
+  refused <- function(rows) {
+    expect_no_warning(expect_error(
+      read_input_table(frame, "datasets", list(path = csv, rows = rows)), "rows"
+    ))
+  }
+  refused(c(5L, 1L))
+  refused(c(5L, -3L))
+  refused(Inf)
+  refused(1e10)
+  # The last data row would pass the integer maximum.
+  refused(.Machine$integer.max)
+  # One data row ends at the maximum, which is allowed.
+  one <- data.frame(a = "1")
+  edge <- list(path = csv, sheet = "s", rows = .Machine$integer.max)
+  expect_no_warning(read <- read_input_table(one, "datasets", edge))
+  expect_equal(read$where$row_map, c(.Machine$integer.max - 1L, .Machine$integer.max))
+})
+
+test_that("an origin's column letters beyond the integer range are an error, not a warning", {
+  csv <- stand_in(".csv")
+  frame <- data.frame(a = "1")
+  expect_no_warning(expect_error(
+    read_input_table(frame, "datasets", list(path = csv, columns = c(a = "ZZZZZZZZZZ"))),
+    "columns"
+  ))
+})
+
+test_that("an origin's columns name each column once (D12.33)", {
+  csv <- stand_in(".csv")
+  frame <- data.frame(a = "1", b = "2")
+  expect_error(
+    read_input_table(frame, "datasets", list(path = csv, columns = c(a = 1, a = 2, b = 3))),
+    paste0(
+      "In the origin of datasets, `columns` must place every column of the data once: ",
+      "name given twice: a."
+    ),
+    fixed = TRUE
   )
 })
 
