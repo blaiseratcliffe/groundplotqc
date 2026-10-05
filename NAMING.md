@@ -47,7 +47,7 @@ Required arguments come first, starting with the data (so `output_dir` is second
 - Rule IDs (D5.2): readable lower snake, no layer prefix, unique across the package, never reused. Renames and splits go in `rule_id_map.csv`.
 - Reason codes (D5.2): lower snake (`misidentification`, `refinement`, `coarsening`, `harmonization_artifact`, `tag_id_error`, `dead_to_live`, ...); a rule with one reason uses its rule ID (D9.33).
 - Severities: `error`, `warning`, `flag`, `info` (`info` approved, D8.12; plan section 9.2). Issue classes: `source`, `harmonization`, `unclassified`. Information rules have the default class "none" in the registry (approved, D8.12) and write results rows only, never issue rows, so "none" never reaches `issue_class` (D9.21). The exception is an `info` reason code inside a rule that writes issues (today `refinement`, whose proposals need an issue row, plan section 9.4): its rows carry class "none" (D9.33). Statuses: `pass`, `fail`, `not_run`; `open`, `not_evaluated`, `acknowledged`.
-- Classed conditions: `gpq_<what>_error`, for example `gpq_preflight_error`, `gpq_network_error`, `gpq_missing_package_error` (approved, D8.21).
+- Classed conditions: `gpq_<what>_error`, for example `gpq_preflight_error`, `gpq_network_error`, `gpq_missing_package_error`, and `gpq_<what>_warning`, for example `gpq_preflight_warning` (D12.16) (approved, D8.21).
 
 ## Options (D5.3)
 
@@ -58,8 +58,9 @@ Required arguments come first, starting with the data (so `output_dir` is second
 | Kind | Pattern |
 |---|---|
 | R source | `R/<family>_<topic>.R`, families `spec`, `preflight`, `rules`, `results`, `check`, `fix`, `lineage` (lineage, issue classes, attribution), `report`, `tool`, `magp`, `utils`. Package-level exceptions, named by R convention: `groundplotqc-package.R`, `globals.R`, `options.R`, `data.R`; and `preflight.R`, the pre-flight checks (D9.8) |
-| Tests | `tests/testthat/test-<R file stem>.R`; helpers `helper-<topic>.R`. Exceptions: `test-naming.R`, which tests package-wide naming and documentation (Enforcement, below), not one R file; `test-dev_scripts.R`, which tests the scripts in `.github/scripts/` from the source tree (D11.8) |
+| Tests | `tests/testthat/test-<R file stem>.R`; helpers `helper-<topic>.R`. Exceptions: `test-naming.R`, which tests package-wide naming and documentation (Enforcement, below), not one R file; `test-dev_scripts.R`, which tests the scripts in `.github/scripts/` from the source tree (D11.8); `test-data_raw.R`, which tests the scripts in `data-raw/` from the source tree (D12.23) |
 | data-raw | `build_<thing>.R` |
+| Hand-kept configuration | `data-raw/magp/<name>.csv`, lower snake; read by the build, never written by it (D12.15) |
 | Development scripts | `.github/scripts/check_<thing>.R`, run by CI with Rscript, outside the package build (D11.8, D11.19) |
 | Bundled configuration | `inst/extdata/<group>/<name>.csv`, lower snake; groups `magp` (MAGPlot configuration), `text` (report text), `examples` (tool, help-page and vignette inputs, the toy spec among them), `rules` (package-wide rule files such as `rule_id_map.csv`) (groups approved, D8.5) |
 | Spec files | `spec/YYYYMMDD_magpv2_<name>.<ext>` |

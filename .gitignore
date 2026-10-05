@@ -40,8 +40,12 @@
 !/spec/*.xlsx
 !/spec/*.csv
 !/inst/extdata/**/*.csv
+!/data-raw/magp/*.csv
 !/inst/extdata/examples/*.tif
 !/tests/testthat/_snaps/**
+
+# Excel's lock files, after the allowlist so it can't re-include them (D12.34)
+~$*
 
 # QC run outputs anywhere in the tree; benchmark results
 runs/

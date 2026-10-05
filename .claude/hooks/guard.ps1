@@ -30,7 +30,7 @@ $DataExtPattern = 'rdata|rda|rds|csv|tsv|txt|xlsx|xls|sqlite|gpkg|accdb|mdb|shp|
 $TokenPattern = "[^\s'""(),;=<>|&{}\[\]]+"
 
 # Folders allowlisted for data files, relative to a checkout root (plan 20.3 row 3).
-$AllowedPrefixes = @('spec/', 'inst/extdata/', 'tests/', 'bench/')
+$AllowedPrefixes = @('spec/', 'inst/extdata/', 'data-raw/magp/', 'tests/', 'bench/')
 
 # Words that start a command without being one: shell keywords and wrappers whose
 # command follows (D10.17). eval, xargs and $(...) are not followed (20.3's limits).
@@ -203,7 +203,7 @@ function Assert-DataRead([string]$Candidate, [string]$Base) {
     if (-not (Test-DataExtension $full)) { return }
     if (Test-DataAllowed $full) { return }
     Stop-Call ("reading '$Candidate' needs the user's consent: it has a data extension " +
-        'and is outside spec/, data/magp_example.rda, inst/extdata/, tests/, bench/, the ' +
+        'and is outside spec/, data/magp_example.rda, inst/extdata/, data-raw/magp/, tests/, bench/, the ' +
         'build tarball and the matrix working copy. Ask the user, naming the file and why ' +
         '(CLAUDE.md "Data"); with consent they add it to .claude/data_consent.local.txt.')
 }
@@ -902,7 +902,7 @@ function Test-GrepTool($ToolInput, [string]$Cwd) {
         if (-not (Test-DataAllowed $probe)) {
             Stop-Call ("a Grep over '" + $target + "' filtered to ." + $ext + ' reads data ' +
                 'files outside the allowlisted folders (plan 20.3, D10.14). Ask the user, ' +
-                'or search inside spec/, inst/extdata/, tests/ or bench/.')
+                'or search inside spec/, inst/extdata/, data-raw/magp/, tests/ or bench/.')
         }
     }
 }

@@ -16,8 +16,8 @@ row per file (D7.10):
 
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
-| .gitignore | Keeps delivered data, the private folders and run outputs out of git; allowlists the spec files and the package's own data (plan 19.2) | none | none |
-| .gitattributes | Keeps files in `spec/` byte-exact on every OS, so manifest hashes match on Windows and in CI (D10.13) | none | none |
+| .gitignore | Keeps delivered data, the private folders and run outputs out of git; allowlists the spec files, the package's own data and the hand-kept configuration in `data-raw/magp/` (plan 19.2, D12.16); ignores Excel's lock files (D12.34) | none | none |
+| .gitattributes | Keeps files in `spec/` and `data-raw/magp/` byte-exact on every OS, so manifest hashes match on Windows and in CI (D10.13, D12.39) | none | none |
 | .Rbuildignore | Leaves non-package files out of the R package build (plan 19.3) | none | none |
 | CLAUDE.md | Rules for every Claude Code session | none | FILEMAP.md, NAMING.md, the plans folder (`GPQ_PLANS_DIR`) |
 | FILEMAP.md | This map of tracked files | none | none |
@@ -92,7 +92,7 @@ row per file (D7.10):
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | .claude/hooks/guard-launch.ps1 | Entry point settings.json runs: reads the tool call from stdin, runs guard.ps1 on it, and blocks the call if guard.ps1 fails to load (D10.17) | none | .claude/hooks/guard.ps1 |
-| .claude/hooks/guard.ps1 | Guard hook run before Bash, Read, Grep, Glob, Edit, Write, NotebookEdit and MCP tool calls: blocks destructive git, changes to `main`, file writes through Bash, changes in `spec/` and to the consent list, recursive `rm`, and data-file reads outside the allowlist without consent; asks before package installs (plan 20.3, D10.14, D10.17) | none exported; Invoke-Guard, Test-BashCommand, Read-ShellCommand, Get-CommandIndex, Test-GitCommand, Test-GitPush, Get-EffectiveBranch, Test-GrepTool, Test-EditTool, Get-ProtectedReason, Assert-DataRead, Get-DataCandidates, Test-DataAllowed, Resolve-GuardPath | the git-ignored consent list `.claude/data_consent.local.txt` in the project folder; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR`; git |
+| .claude/hooks/guard.ps1 | Guard hook run before Bash, Read, Grep, Glob, Edit, Write, NotebookEdit and MCP tool calls: blocks destructive git, changes to `main`, file writes through Bash, changes in `spec/` and to the consent list, recursive `rm`, and data-file reads outside the allowlist (`spec/`, `inst/extdata/`, `data-raw/magp/`, `tests/`, `bench/`) without consent; asks before package installs (plan 20.3, D10.14, D10.17) | none exported; Invoke-Guard, Test-BashCommand, Read-ShellCommand, Get-CommandIndex, Test-GitCommand, Test-GitPush, Get-EffectiveBranch, Test-GrepTool, Test-EditTool, Get-ProtectedReason, Assert-DataRead, Get-DataCandidates, Test-DataAllowed, Resolve-GuardPath | the git-ignored consent list `.claude/data_consent.local.txt` in the project folder; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR`; git |
 | .claude/hooks/test_guard.py | The guard hook's tests: feeds guard-launch.ps1 tool calls as JSON and checks each verdict, every 20.3 row both ways; run with `python .claude/hooks/test_guard.py` after every change to the hook (D10.15, D10.17) | none exported; run(), parse_error_cases(), main() | guard-launch.ps1, guard.ps1; Python 3; environment variables `GPQ_WORKTREE_ROOT`, `GPQ_PLANS_DIR` |
 
 ## .claude/agents/
