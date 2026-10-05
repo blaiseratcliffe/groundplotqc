@@ -2,24 +2,78 @@
 
 ## The rule
 
-Do not make any decisions on your own without my input. If you are unsure, ask me.
+Every decision falls in one of three tiers. If you are unsure which, it is Tier 1.
 
-A decision is anything that affects scope, design, schemas, dependencies, defaults,
-file names or locations, function and argument names, how to interpret or resolve
-ambiguity in the specification, or user-facing behaviour. Present the options with
-trade-offs and your recommendation, then wait for my answer. Subagents report every
-decision and ambiguity back to the orchestrator. The orchestrator relays them to me
-unchanged and does not answer them itself.
+- **Tier 1: ask me first.** Anything that affects scope, design, schemas,
+  dependencies, defaults, file names or locations, function and argument names, how to
+  interpret or resolve ambiguity in the specification, or user-facing behaviour, and
+  anything that would change what the plan or the decisions log says the package does.
+  A change to what report text means is Tier 1, and so is a fix that changes an
+  exported function's documented behaviour or its signature. Present the options with
+  trade-offs and your recommendation, then wait for my answer. Only the work that
+  depends on the answer stops.
+- **Tier 2: decide, then log.** A fix that makes code do what the plan, the decisions
+  log and its documentation already say, its signature, names and documented
+  behaviour unchanged: a bug in code the plan wrote, or a verified bug in an exported
+  function. Typos, grammar and my writing rules in report text and documentation.
+  Choices inside one task that touch none of the Tier 1 items, such as how a test is
+  laid out. Record each in the milestone's ledger as
+  `Ruling (T2): <what you decided>; why: <reason>; cost if wrong: <cost>`. The session
+  copies them into the rulings digest, `milestones/<Mx>_rulings.md` in the folder named
+  by `GPQ_PLANS_DIR`, which I read at each hand-off.
+- **Tier 3: just do it.** Work with one right answer: applying a decision already
+  taken, making a test, lint or style check pass without changing behaviour, FILEMAP
+  rows that describe files as they are, and Minor review findings (see "Review
+  findings"). The commit is the record.
+
+Subagents tag every decision and finding they report T1, T2 or T3. They act on Tiers 2
+and 3 and list what they did; they report Tier 1 items without acting on them. The
+orchestrator relays every Tier 1 item to me unchanged and does not answer it itself.
 
 This file takes precedence over skills. Where a superpowers skill tells you to rule on,
 adjudicate or park something yourself (subagent-driven-development's conflict scan,
-its fix-round breaker and the final review's residuals), stop and put it to me as a
-question.
+its fix-round breaker and the final review's residuals), do so only for Tier 2 and
+Tier 3 items, each ruling a `Ruling (T2)` line; a Tier 1 item stops the work it affects
+and comes to me as a question.
+
+## Review findings
+
+Reviewers grade each finding Critical, Important or Minor and tag its tier.
+
+- A Tier 1 Critical or Important finding stops its task: it comes to me as a question,
+  and the task waits for my answer.
+- Every other Critical or Important finding enters the fix loop as Tier 2.
+- Minor findings are Tier 3. The implementer applies them in the fix round when the
+  finding states the fix and the fix stays in the task's own files; the session lists
+  the rest in the milestone's minors list, `milestones/<Mx>_minors.md` in the folder
+  named by `GPQ_PLANS_DIR`, which the milestone's PR description carries for me. A
+  Minor finding whose fix would need a Tier 1 choice goes on the list, never applied.
+- Every reviewer writes its full report to the file the dispatch names and returns only
+  its verdict, its counts by tier and severity, and its Tier 1 questions verbatim.
+- Stray edits. Just before dispatching a task's reviewers, the session records the time
+  and copies the milestone's ledger, the contracts and reports in `.superpowers/`, its
+  task plan (`milestones/<Mx>_tasks.md`), `decisions_log.md` and the rulings digest to
+  its scratchpad folder; until the sweep, it writes nothing under the worktree or the
+  folder named by `GPQ_PLANS_DIR`. After the reviewers return, it lists every file
+  under the worktree (ignored files included, `.git` excluded) and under
+  `GPQ_PLANS_DIR` whose last-write time is later than the recorded time. Any file other
+  than those reviewers' own report files is a stray edit. One under the worktree is
+  restored (`git restore` if tracked, otherwise from the copy) and reported to me; one
+  under `GPQ_PLANS_DIR` is shown to me before it is restored, since it may be my own
+  edit. The copies, the listing and a restore from a copy run from one R script the
+  session writes in its scratchpad with Write, an exception to "Files" for this check
+  only.
 
 ## Before you start
 
 - The approved plan and decisions log are in the folder named by `GPQ_PLANS_DIR`:
   `groundplotqc_plan.md` and `decisions_log.md`. Read the sections for your milestone.
+- Resuming a milestone, read in this order: `handoff.md` in the folder named by
+  `GPQ_PLANS_DIR`, this file, the milestone's ledger `progress.md` and its
+  `global-constraints.md` (in the worktree's `.superpowers/sdd/<Mx>_tasks/`), and the
+  brief of the task in hand. Read the milestone's task plan in full only once, for
+  subagent-driven-development's conflict scan; after that, read only the parts a brief
+  or the ledger points to.
 - Worktrees live in the folder named by `GPQ_WORKTREE_ROOT`.
 - If either variable is unset, stop and tell me. Never guess a path.
 - Start every session in the project folder, whose `.claude/settings.local.json` sets
@@ -79,8 +133,9 @@ question.
   and commit the `man/` and NAMESPACE files it regenerates with the change.
 - Before a PR: document (any change to `man/` or NAMESPACE fails), test, lint, check
   style with `styler::style_pkg(dry = "fail")`, check the site's index with
-  `pkgdown::check_pkgdown()`, and R CMD check with 0 errors, 0 warnings and 0 notes,
-  except environment notes I have approved (use the check-runner agent).
+  `pkgdown::check_pkgdown()`, check the agent and skill files with
+  `Rscript .github/scripts/check_agents.R`, and R CMD check with 0 errors, 0 warnings
+  and 0 notes, except environment notes I have approved (use the check-runner agent).
 - Add, rename or remove a file: update FILEMAP.md in the same commit.
 
 ## Git, branches and worktrees
