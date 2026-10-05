@@ -36,3 +36,16 @@ test_that("blank_to_na makes only cells empty after trimming NA (D12.27)", {
   expect_identical(blank_to_na(bad), bad)
   expect_equal(is_blank(c("", " ", "a", NA)), c(TRUE, TRUE, FALSE, FALSE))
 })
+
+test_that("column letters and numbers convert both ways", {
+  expect_equal(column_letters(c(1L, 26L, 27L, 52L, 703L)), c("A", "Z", "AA", "AZ", "AAA"))
+  expect_equal(column_numbers(c("A", "z", "AA", "AAA", "a1")), c(1L, 26L, 27L, 703L, NA))
+})
+
+test_that("shorten_marked cuts a long value around its first marker (D12.28)", {
+  expect_equal(shorten_marked("short ok<97>"), "short ok<97>")
+  long <- paste0(strrep("a", 50), "ok<97>", strrep("b", 50))
+  expect_equal(
+    shorten_marked(long), paste0("...", strrep("a", 18), "ok<97>", strrep("b", 16), "...")
+  )
+})

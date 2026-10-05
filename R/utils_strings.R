@@ -35,3 +35,46 @@ as_text <- function(x) {
   }
   as.vector(blank_to_na(enc2utf8(as.character(x))))
 }
+
+#' A value cut to about `width` characters around its first <xx> marker
+#'
+#' "..." marks where text is cut, so a long cell stays readable in a finding's detail;
+#' the cell itself keeps all its text (D12.28).
+#' @noRd
+shorten_marked <- function(value, width = 40L) {
+  n <- nchar(value)
+  at <- regexpr("<[0-9a-fA-F]{2}>", value)
+  at[at < 1L] <- 1L
+  start <- pmax(1L, pmin(at - width %/% 2L, n - width + 1L))
+  end <- pmin(n, start + width - 1L)
+  fifelse(
+    n > width,
+    paste0(fifelse(start > 1L, "...", ""), substr(value, start, end), fifelse(end < n, "...", "")),
+    value
+  )
+}
+
+#' Column numbers as spreadsheet letters (1 A, 27 AA)
+#' @noRd
+column_letters <- function(j) {
+  j <- as.integer(j)
+  out <- character(length(j))
+  while (any(j > 0L)) {
+    k <- j > 0L
+    out[k] <- paste0(LETTERS[(j[k] - 1L) %% 26L + 1L], out[k])
+    j[k] <- (j[k] - 1L) %/% 26L
+  }
+  out
+}
+
+#' Spreadsheet column letters as numbers, in any case; NA for anything else
+#' @noRd
+column_numbers <- function(x) {
+  x <- toupper(x)
+  out <- rep(NA_integer_, length(x))
+  for (i in which(grepl("^[A-Z]+$", x))) {
+    digits <- match(strsplit(x[[i]], "", fixed = TRUE)[[1L]], LETTERS)
+    out[[i]] <- as.integer(sum(digits * 26^(rev(seq_along(digits)) - 1L)))
+  }
+  out
+}

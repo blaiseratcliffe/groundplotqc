@@ -14,7 +14,11 @@ with columns \code{data_type}, \code{r_class} and \code{date_format}, which repl
 A data.table with columns \code{data_type} (the dictionary's type name), \code{r_class}
 (\code{"character"}, \code{"integer"} or \code{"double"}) and \code{date_format} (a \code{\link[=strptime]{strptime()}} format
 that non-sentinel values must parse with, or \code{NA}). Built in: \code{character}, \code{integer},
-\code{numeric} (double) and \code{date} (character, \code{"\%Y-\%m-\%d"}).
+\code{numeric} (double) and \code{date} (character, \code{"\%Y-\%m-\%d"}). A map read from a file
+carries what was found reading it, an invalid byte or a malformed line, as its
+attribute \code{gpq_read_findings}, which \code{gpq_read_spec()} adds to its \code{read_findings}.
+Nothing is signalled here: \code{gpq_preflight()} reports them, and
+\code{attr(map, "gpq_read_findings")} shows them.
 }
 \description{
 The type map says which R class each type of the data dictionary expects, and which
@@ -22,5 +26,7 @@ types hold dates (D2.15).
 }
 \examples{
 gpq_type_map()
-gpq_type_map(system.file("extdata", "examples", "fish_types.csv", package = "groundplotqc"))
+path <- system.file("extdata", "examples", "fish_types.csv", package = "groundplotqc")
+fish <- gpq_type_map(path)
+attr(fish, "gpq_read_findings")
 }

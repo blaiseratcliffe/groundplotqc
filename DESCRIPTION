@@ -27,6 +27,7 @@ Depends:
     R (>= 4.5.0)
 Imports:
     data.table,
+    tools,
     utils
 Suggests:
     jsonlite,

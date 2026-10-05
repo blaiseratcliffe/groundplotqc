@@ -67,12 +67,19 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
 #' @return A data.table with columns `data_type` (the dictionary's type name), `r_class`
 #'   (`"character"`, `"integer"` or `"double"`) and `date_format` (a [strptime()] format
 #'   that non-sentinel values must parse with, or `NA`). Built in: `character`, `integer`,
-#'   `numeric` (double) and `date` (character, `"%Y-%m-%d"`).
+#'   `numeric` (double) and `date` (character, `"%Y-%m-%d"`). A map read from a file
+#'   carries what was found reading it, an invalid byte or a malformed line, as its
+#'   attribute `gpq_read_findings`, which `gpq_read_spec()` adds to its `read_findings`.
+#'   Nothing is signalled here: `gpq_preflight()` reports them, and
+#'   `attr(map, "gpq_read_findings")` shows them.
 #' @examples
 #' gpq_type_map()
-#' gpq_type_map(system.file("extdata", "examples", "fish_types.csv", package = "groundplotqc"))
+#' path <- system.file("extdata", "examples", "fish_types.csv", package = "groundplotqc")
+#' fish <- gpq_type_map(path)
+#' attr(fish, "gpq_read_findings")
 #' @export
 gpq_type_map <- function(map = NULL) {
+  findings <- NULL
   if (is.null(map)) {
     map <- data.table(
       data_type = c("character", "integer", "numeric", "date"),
@@ -83,11 +90,18 @@ gpq_type_map <- function(map = NULL) {
     if (is.na(map) || !file.exists(map) || dir.exists(map)) {
       stop("`map` names a file that doesn't exist.", call. = FALSE)
     }
-    map <- read_csv_text(map)$data
+    # The file's findings ride on the map until gpq_read_spec() reads them (D12.55).
+    read <- read_input_table(map, "type_map")
+    map <- read$data
+    findings <- read$findings
   } else if (!is.data.frame(map)) {
     stop("`map` must be NULL, a data.frame or the path of a CSV file.", call. = FALSE)
   }
-  validate_type_map(map)
+  out <- validate_type_map(map)
+  if (!is.null(findings)) {
+    setattr(out, "gpq_read_findings", findings)
+  }
+  out
 }
 
 #' A type map checked, its columns as text
