@@ -23,6 +23,45 @@ hand_kept <- function(name) {
   read$data
 }
 
+# The tree's spec/ and data-raw/magp/, or a skip where either is missing (a built package).
+tree_dirs <- function() {
+  spec_dir <- testthat::test_path("..", "..", "spec")
+  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
+  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
+    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
+  }
+  list(spec = spec_dir, config = config_dir)
+}
+
+# What the build makes of the tree's spec/, built once for the tests that read its result and
+# handed out as a copy, so one test's subsetting can't leave an index on the next one's
+# (D12.27).
+tree_spec <- local({
+  built <- NULL
+  function() {
+    testthat::skip_if_not_installed("readxl")
+    dirs <- tree_dirs()
+    if (is.null(built)) {
+      built <<- load_data_raw("build_magp_config.R")$build_magp_spec(dirs$spec, dirs$config)
+    }
+    data.table::copy(built)
+  }
+})
+
+# One translation table of the tree's spec/, read apart from the build; it reads clean, or an
+# expected list built from it would lose rows as the built one would (D12.58).
+tree_table <- function(kind) {
+  path <- list.files(
+    tree_dirs()$spec,
+    pattern = paste0("^[0-9]{8}_magpv2_", kind, "[.]csv$"), full.names = TRUE
+  )
+  testthat::expect_length(path, 1L)
+  read <- read_csv_text(path)
+  testthat::expect_equal(nrow(read$malformed), 0L)
+  testthat::expect_equal(nrow(read$invalid), 0L)
+  read$data
+}
+
 test_that("spec_files finds one file per kind and stops on two of one kind", {
   build <- load_data_raw("build_magp_config.R")
   dir <- withr::local_tempdir()
@@ -346,46 +385,60 @@ test_that("the reader reads the DD workbook in spec/ from its first sheet", {
 })
 
 test_that("the build reads the tree's spec/ without a stale exception (D12.22)", {
-  testthat::skip_if_not_installed("readxl")
-  build <- load_data_raw("build_magp_config.R")
-  spec_dir <- testthat::test_path("..", "..", "spec")
-  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
-  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
-    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
-  }
   # A row of spec_exceptions.csv the dated DD no longer matches stops the build.
-  expect_no_error(build$build_magp_spec(spec_dir, config_dir))
+  expect_no_error(tree_spec())
 })
 
 test_that("the species code list is the table's NFI codes less UNKN.SPP (D2.22, D12.73)", {
-  testthat::skip_if_not_installed("readxl")
-  build <- load_data_raw("build_magp_config.R")
-  spec_dir <- testthat::test_path("..", "..", "spec")
-  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
-  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
-    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
-  }
-  table <- read_csv_text(build$spec_files(spec_dir)[["species"]])$data
+  species_table <- tree_table("species")
   # The Veg_type filter is how UNKN.SPP, which has no Veg_type, leaves the list. The table
   # lists it, so a later table where the two stop coinciding fails here.
-  expect_true("UNKN.SPP" %in% table$NFI)
-  expected <- setdiff(unique(table$NFI[!is.na(table$NFI)]), "UNKN.SPP")
-  spec <- build$build_magp_spec(spec_dir, config_dir)
-  listed <- spec$codes[spec$codes$attribute_name == "species", ]
+  expect_true("UNKN.SPP" %in% species_table$NFI)
+  expected <- setdiff(unique(species_table$NFI[!is.na(species_table$NFI)]), "UNKN.SPP")
+  codes <- tree_spec()$codes
+  listed <- codes[codes$attribute_name == "species", ]
   expect_gt(length(unique(listed$table_name)), 0L)
-  for (name in unique(listed$table_name)) {
-    expect_setequal(listed$code[listed$table_name == name], expected)
+  for (table_name in unique(listed$table_name)) {
+    species_codes <- listed$code[listed$table_name == table_name]
+    expect_setequal(species_codes, expected)
+    expect_false(anyDuplicated(species_codes) > 0L)
   }
 })
 
-test_that("the compiled specification is the one the build makes (D12.14, D12.27)", {
-  testthat::skip_if_not_installed("readxl")
-  build <- load_data_raw("build_magp_config.R")
-  spec_dir <- testthat::test_path("..", "..", "spec")
-  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
-  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
-    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
+test_that("CLR is in both the disturbance and the treatment lists (D12.73 (5a), (9))", {
+  # A re-copy of the treatment table from its master gives CLR "T" again and drops it from
+  # the disturbance list, until the master says TD.
+  codes <- tree_spec()$codes
+  for (attribute in c("disturbance_type", "treatment_type")) {
+    expect_true("CLR" %in% codes$code[codes$attribute_name == attribute], info = attribute)
   }
+})
+
+test_that("the species copy keeps its fold notes on their rows only (D12.72 (13), (21))", {
+  notes <- c(
+    BETU.GLA = "Folded code: BETU.GLA covers Betula glandulifera and Betula glandulosa.",
+    ALNU.VIR = "Folded code: ALNU.VIR folds Alnus crispa var. mollis into Alnus viridis.",
+    POPU.SPP = "Folded code: POPU.SPP folds the unnamed Populus hybrid (Populus X) into the genus."
+  )
+  species_table <- tree_table("species")
+  # A re-copy of the table from its master has no comments column at all.
+  expect_identical(names(species_table)[[ncol(species_table)]], "comments")
+  expect_equal(as.integer(table(species_table$NFI)[names(notes)]), c(2L, 2L, 2L))
+  expect_identical(species_table$comments, unname(notes[species_table$NFI]))
+})
+
+test_that("every treat_vs_dist value is in a filter list, blank only on NO and ND (#39)", {
+  columns <- hand_kept("crosswalk_columns.csv")
+  filters <- columns$filter_values[columns$crosswalk == "treatment_disturbance"]
+  listed <- unique(unlist(strsplit(filters, "; ", fixed = TRUE)))
+  expect_gt(length(listed), 0L)
+  walk <- tree_table("treatment_disturbance")
+  # A value in neither list would drop its code from both silently.
+  expect_equal(setdiff(walk$treat_vs_dist[!is.na(walk$treat_vs_dist)], listed), character())
+  expect_equal(setdiff(walk$magp_codes[is.na(walk$treat_vs_dist)], c("NO", "ND")), character())
+})
+
+test_that("the compiled specification is the one the build makes (D12.14, D12.27)", {
   # Base identical(), not expect_identical(): no index attribute may differ (D12.27).
-  expect_true(identical(build$build_magp_spec(spec_dir, config_dir), magp_spec()))
+  expect_true(identical(tree_spec(), magp_spec()))
 })

@@ -8,5 +8,7 @@ test_that("magp_spec() is a gpq_spec whose pre-flight doesn't stop (D12.39)", {
     gpq_preflight(spec),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
+  # An empty table would pass the next line vacuously.
+  expect_gt(nrow(results), 0L)
   expect_false(any(results$outcome == "stop"))
 })

@@ -5,3 +5,7 @@
 # Hand-kept MAGPlot configuration is hashed in manifest.csv too (D12.33): keep
 # its bytes exact on every OS.
 /data-raw/magp/** -text
+
+# The compiled MAGPlot specification is written with LF endings and read back identical
+# to the build's (D12.69, D12.73): keep its bytes exact on every OS.
+/inst/extdata/magp/** -text
