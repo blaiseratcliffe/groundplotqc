@@ -1,0 +1,5 @@
+data_type,r_class,date_format
+text,character,
+whole,integer,
+real,double,
+day,character,%Y-%m-%d

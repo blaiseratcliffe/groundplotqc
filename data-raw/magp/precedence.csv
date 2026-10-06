@@ -1,0 +1,5 @@
+sheet,key_col,attribute_name,winner,blank_rule,decision
+dataset,magp_dataset_id,magp_contributor_id,code_lists,wins,D12.20
+dataset,magp_dataset_id,dataset_code,code_lists,wins,D12.20
+dataset,magp_dataset_id,src_dataset_id,code_lists,wins,D12.20
+dataset,magp_dataset_id,plot_layout_fig,datasets,wins,D12.24

@@ -1,0 +1,7 @@
+data_type,role,value,allowed_in_pk,allowed_in_fk
+numeric,missing,-1,FALSE,FALSE
+numeric,not_applicable,-9,FALSE,TRUE
+character,missing,X,FALSE,FALSE
+character,not_applicable,Z,FALSE,TRUE
+date,missing,X,FALSE,FALSE
+date,not_applicable,Z,FALSE,TRUE

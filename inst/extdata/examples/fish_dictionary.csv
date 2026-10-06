@@ -1,0 +1,16 @@
+table,field,kind,key,parent,codes,notes
+stations,station_id,text,pk,,,Station code.
+stations,station_name,text,,,,Name of the station.
+stations,water_body,text,,,y,Kind of water the station is on.
+stations,depth,real,,,,Water depth at the station in metres.
+stations,first_visit,day,,,,Date of the first visit (YYYY-MM-DD).
+hauls,haul_id,text,pk,,,Haul code.
+hauls,station_id,text,fk,stations,,Station the haul was made at.
+hauls,gear,text,,,y,Gear used for the haul.
+hauls,minutes,whole,,,,Minutes the gear fished.
+hauls,haul_date,day,,,,Date of the haul (YYYY-MM-DD).
+catches,catch_id,text,pk,,,Catch code.
+catches,haul_id,text,fk,hauls,,Haul the catch came from.
+catches,species,text,,,y,Species caught.
+catches,fish_count,whole,,,,Number of fish caught.
+catches,weight,real,,,,Total weight of the catch in kilograms.

@@ -1,0 +1,5 @@
+crosswalk,attribute_name,code_col,filter_col,filter_values,decision
+species,,NFI,Veg_type,TC; TH,D12.73
+condition,,magp_codes,,,D12.73
+treatment_disturbance,disturbance_type,magp_codes,treat_vs_dist,D; TD; T/D,D12.73
+treatment_disturbance,treatment_type,magp_codes,treat_vs_dist,T; TD; T/D,D12.73

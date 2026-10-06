@@ -1,0 +1,5 @@
+defect_id,table_name,record_pk,column_name,defect,rule_id,milestone
+1,TREES,P03-T001,PLOT_ID,plot P03 is not in PLOTS,fk_orphan,M4
+2,TREE_MEAS,M004,SPECIES,SW in 2015 becomes BW in 2020,categorical_change,M12
+3,TREE_MEAS,M006,DBH,21.4 in 2015 falls to 19.0 in 2020,monotonic_decrease,M12
+4,TREE_MEAS,M008,STATUS,D in 2015 becomes L in 2020,status_transition,M12

@@ -148,6 +148,7 @@ test_that("the gate uses the engine files' lines combined", {
   expect_equal(per_file$filename, c("R/check_keys.R", "R/spec_read.R"))
   expect_equal(per_file$covered, c(10L, 9L))
   expect_equal(per_file$total, c(10L, 10L))
+  expect_equal(per_file$percent, c(100, 90))
   verdict <- cov$coverage_verdict(per_file)
   expect_true(verdict$pass)
   expect_equal(verdict$percent, 95)
@@ -169,7 +170,10 @@ test_that("with no engine files the gate passes and says so", {
   empty <- data.frame(filename = character(), line = integer(), value = numeric())
   layer_only <- coverage_lines("R/magp_run.R", list(c(0, 0)))
   for (lines in list(empty, layer_only)) {
-    verdict <- cov$coverage_verdict(cov$engine_line_coverage(lines))
+    per_file <- cov$engine_line_coverage(lines)
+    expect_equal(names(per_file), c("filename", "covered", "total", "percent"))
+    expect_equal(nrow(per_file), 0L)
+    verdict <- cov$coverage_verdict(per_file)
     expect_true(verdict$pass)
     expect_equal(verdict$message, "no engine files yet")
   }
@@ -245,4 +249,81 @@ test_that("every agent and skill file in this tree has valid frontmatter", {
   paths <- ca$agent_files(testthat::test_path("..", ".."))
   expect_gt(length(paths), 0L)
   expect_equal(ca$check_agents_files(paths), character())
+})
+
+manifest_fixture <- data.frame(
+  input = c("dictionary", "code_lists", "id_pattern", "dictionary:exceptions"),
+  file = c(
+    "20260925_magpv2_DD.xlsx", "20260925_magpv2_Lookup_Tables.xlsx", "in memory",
+    "data-raw/magp/spec_exceptions.csv"
+  ),
+  sha256 = c("aa", "bb", NA, "ee")
+)
+
+test_that("a manifest matching spec/ and the repo has no problems", {
+  mf <- load_dev_script("check_manifest.R")
+  hashes <- c("20260925_magpv2_DD.xlsx" = "aa", "20260925_magpv2_Lookup_Tables.xlsx" = "bb")
+  repo <- c("data-raw/magp/spec_exceptions.csv" = "ee")
+  expect_equal(mf$manifest_problems(manifest_fixture, hashes, repo), character())
+})
+
+test_that("the manifest check fails in both directions and on a changed hash", {
+  mf <- load_dev_script("check_manifest.R")
+  hashes <- c("20260925_magpv2_DD.xlsx" = "zz", "20261003_magpv2_A2.xlsx" = "cc")
+  expect_equal(mf$manifest_problems(manifest_fixture, hashes), c(
+    "in the manifest but not in spec/: 20260925_magpv2_Lookup_Tables.xlsx",
+    "in the manifest but not in the repo: data-raw/magp/spec_exceptions.csv",
+    "in spec/ but not in the manifest: 20261003_magpv2_A2.xlsx",
+    "hash differs: 20260925_magpv2_DD.xlsx"
+  ))
+  repo <- c("data-raw/magp/spec_exceptions.csv" = "ff")
+  expect_equal(
+    mf$manifest_problems(manifest_fixture[c(1L, 4L), ], c("20260925_magpv2_DD.xlsx" = "aa"), repo),
+    "hash differs: data-raw/magp/spec_exceptions.csv"
+  )
+})
+
+test_that("spec_hashes skips Excel's lock files (D12.34)", {
+  mf <- load_dev_script("check_manifest.R")
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, c("20260925_magpv2_DD.xlsx", "~$20260925_magpv2_DD.xlsx")))
+  expect_equal(names(mf$spec_hashes(dir)), "20260925_magpv2_DD.xlsx")
+})
+
+test_that("repo_hashes hashes the paths that exist (D12.33)", {
+  mf <- load_dev_script("check_manifest.R")
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "data-raw", "magp"), recursive = TRUE)
+  writeLines("x", file.path(root, "data-raw", "magp", "a.csv"))
+  hashes <- mf$repo_hashes(c("data-raw/magp/a.csv", "data-raw/magp/b.csv"), root)
+  expect_equal(names(hashes), "data-raw/magp/a.csv")
+  expect_equal(unname(hashes), unname(tools::sha256sum(file.path(root, "data-raw/magp/a.csv"))))
+})
+
+test_that("the manifest matches spec/ and the repo in this tree", {
+  mf <- load_dev_script("check_manifest.R")
+  root <- testthat::test_path("..", "..")
+  manifest <- file.path(root, "inst", "extdata", "magp", "manifest.csv")
+  if (!dir.exists(file.path(root, "spec")) || !file.exists(manifest)) {
+    testthat::skip("spec/ or the compiled manifest is not in this tree")
+  }
+  rows <- mf$read_manifest(manifest)
+  paths <- rows$file[grepl("/", rows$file, fixed = TRUE)]
+  problems <- mf$manifest_problems(
+    rows, mf$spec_hashes(file.path(root, "spec")), mf$repo_hashes(paths, root)
+  )
+  # The failure message carries the Excel guidance, as check_manifest.R prints it (plan 4.4,
+  # D12.34).
+  expect_equal(problems, character(), info = mf$excel_guidance)
+})
+
+test_that("the manifest check's Excel guidance says to restore the file with git (D12.34)", {
+  mf <- load_dev_script("check_manifest.R")
+  expect_equal(
+    mf$excel_guidance,
+    paste(
+      "A workbook opened in Excel can change without an edit: if you didn't mean to change a",
+      "spec file, restore it with git restore spec/<file>."
+    )
+  )
 })

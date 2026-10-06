@@ -99,8 +99,8 @@ Reviewers grade each finding Critical, Important or Minor and tag its tier.
 - Never open, read, profile or query data files (.rds, .RData, .rda, CSV or TXT data
   extracts, Excel data files, .sqlite, .gpkg, .accdb and similar), and never connect to
   a database, without my explicit consent for that file or database. Exceptions: files
-  in `spec/`, the package's own synthetic data and test fixtures. To ask: name the
-  file, say why, and wait.
+  in `spec/`, the hand-kept configuration in `data-raw/magp/`, the package's own
+  synthetic data and test fixtures. To ask: name the file, say why, and wait.
 - At most 2 agents at a time may run R on real data.
 - Tests, examples and vignettes use synthetic data only.
 

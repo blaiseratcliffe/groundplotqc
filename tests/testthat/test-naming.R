@@ -1,6 +1,7 @@
-# Package-wide naming and documentation checks (plan 17.8; D5.8, D11.5).
-# At M1 the package exports nothing, so the checks on exports pass on an empty
-# set; the helpers they use are tested on synthetic help pages below. The
+# Package-wide naming and documentation checks (plan 17.8; D5.8, D11.5, D11.19): export
+# names, help pages with a runnable example (a \dontrun{} or comment-only example counts as
+# none, D11.12, D11.19), the export-prefix linter, the pkgdown index, and name tokens against
+# NAMING.md (D12.18). The helpers are tested on synthetic help pages and lines below. The
 # rule-ID checks join with the registry at M3, the reason-code checks at M12.
 
 export_pattern <- "^(gpq|magp)_[a-z0-9_]+$"
@@ -19,8 +20,21 @@ rd_field <- function(rd, tag) {
   vapply(fields, function(x) paste(as.character(x), collapse = ""), character(1))
 }
 
+rd_example_code <- function(element) {
+  if (identical(rd_tag(element), "\\dontrun")) {
+    return(character())
+  }
+  if (is.list(element)) {
+    return(unlist(lapply(element, rd_example_code), use.names = FALSE))
+  }
+  as.character(element)
+}
+
 rd_has_examples <- function(rd) {
-  any(nzchar(trimws(rd_field(rd, "\\examples"))))
+  examples <- Filter(function(x) identical(rd_tag(x), "\\examples"), rd)
+  code <- unlist(lapply(examples, rd_example_code), use.names = FALSE)
+  lines <- trimws(unlist(strsplit(paste(code, collapse = ""), "\n", fixed = TRUE)))
+  any(nzchar(lines) & !startsWith(lines, "#"))
 }
 
 package_rd_db <- function() {
@@ -199,4 +213,73 @@ test_that("_pkgdown.yml lists every export in exactly one reference group", {
     label = "Selectors in _pkgdown.yml (write topic names out in full, D11.9)"
   )
   expect_equal(exports_not_in_one_group(package_exports(), entries, package_rd_db()), character())
+})
+
+naming_tokens <- function(section, lines = NULL) {
+  if (is.null(lines)) {
+    path <- file.path(source_root(), "NAMING.md")
+    if (!file.exists(path)) {
+      testthat::skip("NAMING.md is not in this tree")
+    }
+    lines <- readLines(path, encoding = "UTF-8", warn = FALSE)
+  }
+  start <- match(paste("##", section), lines)
+  rest <- lines[-seq_len(start)]
+  end <- match(TRUE, startsWith(rest, "## "))
+  body <- if (is.na(end)) rest else rest[seq_len(end - 1L)]
+  line <- grep("^Tokens: ", body, value = TRUE)
+  gsub("`", "", regmatches(line, gregexpr("`[^`]+`", line))[[1L]], fixed = TRUE)
+}
+
+name_tokens <- function(names) {
+  unique(unlist(strsplit(names, "[_-]")))
+}
+
+package_names <- function() {
+  exports <- package_exports()
+  arguments <- unlist(lapply(exports, function(f) {
+    names(formals(getExportedValue("groundplotqc", f)))
+  }))
+  # Component names come from the schema, so the compiled files' names are checked as the
+  # schema gives them (D12.32).
+  columns <- c(
+    names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
+    names(preflight_columns())
+  )
+  root <- source_root()
+  files <- c(
+    list.files(file.path(root, "R")),
+    list.files(file.path(root, "inst", "extdata"), recursive = TRUE)
+  )
+  stems <- tools::file_path_sans_ext(basename(files))
+  c(exports, arguments, columns, stems)
+}
+
+test_that("naming_tokens reads a section's Tokens line", {
+  lines <- c(
+    "## Abbreviations", "Prose `ignored`.", "Tokens: `id`, `pk`", "## Approved words",
+    "Tokens: `table`"
+  )
+  expect_equal(naming_tokens("Abbreviations", lines), c("id", "pk"))
+  expect_equal(naming_tokens("Approved words", lines), "table")
+})
+
+test_that("every token of an approved name is listed in NAMING.md (D12.18)", {
+  approved <- c(naming_tokens("Abbreviations"), naming_tokens("Approved words"))
+  expect_equal(setdiff(name_tokens(package_names()), approved), character())
+})
+
+test_that("a \\dontrun or comment-only example counts as none", {
+  page <- function(name, examples) {
+    parse_rd_lines(c(
+      sprintf("\\name{%s}", name), sprintf("\\alias{%s}", name), "\\title{A}",
+      "\\description{A.}", examples
+    ))
+  }
+  dontrun <- page("gpq_a", "\\examples{\\dontrun{gpq_a()}}")
+  comments <- page("gpq_b", "\\examples{# nothing runs}")
+  runs <- page("gpq_c", "\\examples{\\donttest{gpq_c()}}")
+  expect_false(rd_has_examples(dontrun))
+  expect_false(rd_has_examples(comments))
+  expect_true(rd_has_examples(runs))
 })

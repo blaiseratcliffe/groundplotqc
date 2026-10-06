@@ -3,8 +3,8 @@ BC,110.01,110,1,BC_PSP_G,RMP,GYM,N,UNK,C,NFA,2,,,,,,,,
 BC,110.02,110,2,BC_PSP_R,RMP,GYM,N,UNK,S,NFA,2,,,,,,,,
 BC,110.03,110,3,BC_CMI,RMP,FMP,Y,SYS,S,NFA,2,,,,,,,,
 BC,110.04,110,4,BC_YSM,RMP,FMP,Y,SYS,S,NFA,2,,,,,,,,
-BC,110.05,110,5,BC_SUP,MIX,FMP,Y,SYS,A,NMV,2,,,,,,,,Some visits have TMP as the visit type/code.
-BC,110.06,110,6,BC_VRI,TMP,CVV,Y,STR,A,NMV,2,,,,,,,,
+BC,110.05,110,5,BC_VRI,TMP,CVV,Y,STR,A,NMV,2,,,,,,,,
+BC,110.06,110,6,BC_SUP,MIX,FMP,Y,SYS,A,NMV,2,,,,,,,,Some visits have TMP as the visit type/code.
 BC,110.07,110,7,BC_VLT,TMP,CVV,Y,STR,A,VAR,2,,,,,,,,
 BC,110.08,110,8,BC_FLT,,,,,,,,,,,,,,,
 BC,110.09,110,9,BC_YNS,,,,,,,,,,,,,,,
@@ -22,4 +22,4 @@ QC,180.05,180,5,QC_UNLA,RMP,RPN,N,PUR,S,NFA,10,,,,,,,,
 QC,180.06,180,6,QC_SCOF,RMP,FMP,N,PUR,S,NFA,10,,,,,,,,
 QC,180.07,180,7,QC_PACA,RMP,FMP,N,PUR,S,NFA,10,,,,,,,,
 AB,100.01,100,1,AB_PGYI,RMP,GYM,N,PUR,S,NFA,10,5-20 years,,,,,,,100.01 Added 2026-09-25 from the AB translation. Evidence: GYM and PUR from the package overview; S because each AB site is one plot and the 4-plot cluster is a block. meas_cycle unknown (AB-12).
-AB,100.02,100,2,AB_MPB,RMP,RPN,N,PUR,S,NFA,10,,,,,,,,"100.02 Added 2026-09-25 from the AB translation. RPN is our reading of manual p.14, 'a short-term FGYA beetle ecology program' — confirm (AB-27). meas_cycle unknown (AB-12)."
+AB,100.02,100,2,AB_MPB,RMP,RPN,N,PUR,S,NFA,10,,,,,,,,"100.02 Added 2026-09-25 from the AB translation. RPN is our reading of manual p.14, 'a short-term FGYA beetle ecology program' â€” confirm (AB-27). meas_cycle unknown (AB-12)."
