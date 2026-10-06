@@ -13,8 +13,9 @@ and defaults.
 
 ## Status
 
-Under development. This version is the package skeleton: it has no
-checks yet. The first release will be version 0.1.0.
+Under development. This version has a specification reader and
+pre-flight checks of the specification. The first release will still be
+version 0.1.0.
 
 ## Installation
 
