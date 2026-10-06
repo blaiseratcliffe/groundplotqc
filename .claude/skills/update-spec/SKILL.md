@@ -3,7 +3,7 @@ name: update-spec
 description: Bring a new version of a groundplotqc specification file into the package (spec/, compiled configuration, manifest, matrix template, rule-set drafts). Use when the user supplies a new dated spec file.
 ---
 
-1. Ask the user to put the new dated file into `spec/` and remove the file it replaces (only the user brings files in or takes them out, D7.35; D9.30), and confirm which file it replaced.
+1. Ask the user to put the new dated file into `spec/` and remove the file it replaces (only the user brings files in or takes them out, D7.35; D9.30), and confirm which file it replaced. A committed spec file is never opened in Excel inside a checkout, since Excel can change a workbook's bytes without an edit: open a copy elsewhere, and undo a change with `git restore spec/<file>` (D12.34).
 2. Dispatch spec-reader to diff old and new: tables, attributes, types, keys, codes, datasets, A2 rows.
 3. List clashes, discrepancies and anything the precedence rule resolves for the user. Stop for answers.
 4. Add matrix rows for new attributes with status "proposed" (in the working copy in `GPQ_PLANS_DIR`, D7.26; after M9, refresh it from `spec/` first, and ask the user to bring the result into `spec/` before the build, D7.35), so the matrix checks see every DD attribute (D9.30).
