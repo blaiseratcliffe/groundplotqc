@@ -32,7 +32,7 @@ A list of class \code{gpq_column_map}, with elements \code{table}, \code{attribu
 \code{key_type}, \code{reference}, \code{lookup}, \code{description} and \code{lineage_flag}.
 }
 \description{
-Tells \code{gpq_read_spec()} which column of the data dictionary holds each piece of
+Tells \code{\link[=gpq_read_spec]{gpq_read_spec()}} which column of the data dictionary holds each piece of
 information. Each default is the column name shown in the usage above.
 }
 \examples{

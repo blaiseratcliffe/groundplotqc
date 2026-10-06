@@ -1260,3 +1260,233 @@ read_lineage_input <- function(x, origin = NULL) {
   table$data <- table$data[, columns, with = FALSE]
   table
 }
+
+#' Read a specification
+#'
+#' @description
+#' Reads a data dictionary and its companion inputs into one specification object, which
+#' `gpq_preflight()` checks and the checks of later layers read. Reading never stops on a
+#' defect in the specification: each one is recorded in the `read_findings` component,
+#' and `gpq_preflight()` decides whether it stops.
+#'
+#' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
+#'   `.xlsx` workbook, read from its first sheet. One row per table and attribute.
+#' @param code_lists `NULL`, the path of an `.xlsx` workbook (every sheet is a code list
+#'   or a reference table), or a named list of data.frames or CSV paths, named by sheet.
+#' @param non_code_sheets `NULL`, or the names of sheets that aren't code lists; the
+#'   `code_list_*` checks skip them.
+#' @param datasets `NULL`, or the datasets table (a data.frame or a CSV path), read as text.
+#' @param lineage_spec `NULL`, or the lineage spec in long form (a data.frame or a CSV
+#'   path), with columns
+#'   `contributor_label`, `table_name`, `attribute_name`, `spec_type` (`id` or
+#'   `compiled`), `source_text`, `note` and `source_cell`.
+#' @param crosswalks `NULL`, or a named list of translation tables: each a data.frame, a
+#'   CSV path, or `list(table = , code_col = , filter_col = , filter_values = )`, where
+#'   `filter_values` may be a list named by attribute.
+#' @param id_pattern `NULL`, or one regular expression marking ID attributes by name.
+#' @param id_bands `NULL`, or `list(sheet, label_col, start_col, end_col, labels_from =
+#'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands.
+#' @param precedence `NULL`, or a table (data.frame or CSV path) with columns `sheet`,
+#'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
+#'   (`yields` or `wins`), saying which input wins where the datasets table and a sheet
+#'   overlap.
+#' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
+#'   named by input (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
+#'   `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = , rows = ,
+#'   columns = )`: the file, named in findings and hashed in the manifest; a workbook's
+#'   sheet, or `NULL` for a CSV file; the file row of the first data row, later rows
+#'   following on, or the file row of every data row, or `NULL` to count rows as R counts
+#'   them; and the file column, by number or letter, of every column of the data.frame,
+#'   or `NULL` for the file's order. Findings in such an input then name the file's cells.
+#' @param column_map The dictionary's column names, from [gpq_column_map()].
+#' @param type_map The type map, from [gpq_type_map()]. What was found reading its file
+#'   joins `read_findings`.
+#' @param sentinels The sentinel table, from [gpq_sentinels()].
+#' @return An object of class `gpq_spec`: a named list of data.tables, the components
+#'   `attributes`, `keys`, `code_lists`, `code_list_sheets`, `code_list_map`, `codes`,
+#'   `non_code_sheets`,
+#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `type_map`, `sentinels`,
+#'   `clashes`, `read_findings` and `manifest`. An input not given leaves its component
+#'   empty, with its columns. A blank cell is `NA`; text is kept exactly as written.
+#' @section Components:
+#' Each component is a data.table with these columns:
+#'
+#' `r rd_spec_components()`
+#'
+#' In `clashes`, `basis` says how a clash was settled: `precedence`, by the `precedence`
+#' input; or `fixed_dictionary_placement`, where a lineage-spec row names another table
+#' for an attribute and the dictionary's table is used. `source_cell_a` and
+#' `source_cell_b` are the two sides' cells, `NA` where unknown; a side with several
+#' cells, such as every lineage-spec row behind one placement clash, lists them with ", ".
+#' @examples
+#' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
+#' fish <- gpq_read_spec(
+#'   dictionary = example("fish_dictionary.csv"),
+#'   code_lists = list(
+#'     water_body = example("fish_water_body.csv"), gear = example("fish_gear.csv"),
+#'     species = example("fish_species.csv")
+#'   ),
+#'   column_map = gpq_column_map(
+#'     table = "table", attribute = "field", type = "kind", key_type = "key",
+#'     reference = "parent", lookup = "codes", description = "notes"
+#'   ),
+#'   type_map = gpq_type_map(example("fish_types.csv")),
+#'   sentinels = gpq_sentinels(
+#'     numeric = c(missing = -99, not_applicable = -88),
+#'     character = c(missing = "?", not_applicable = "~"),
+#'     date = c(missing = "?", not_applicable = "~")
+#'   )
+#' )
+#' fish$keys
+#' subset(fish$codes, attribute_name == "gear")
+#' @export
+gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
+                          datasets = NULL, lineage_spec = NULL, crosswalks = NULL,
+                          id_pattern = NULL, id_bands = NULL, precedence = NULL,
+                          origins = NULL, column_map = gpq_column_map(),
+                          type_map = gpq_type_map(), sentinels = gpq_sentinels()) {
+  # data.table's automatic indexing would add index attributes as the reader subsets;
+  # off here and restored on exit, so the spec reloads identical() (D12.27).
+  auto_index <- options(datatable.auto.index = FALSE)
+  on.exit(options(auto_index), add = TRUE)
+  if (!inherits(column_map, "gpq_column_map")) {
+    stop("`column_map` must come from gpq_column_map().", call. = FALSE)
+  }
+  pattern_ok <- is.null(id_pattern) || is.character(id_pattern) && length(id_pattern) == 1L &&
+    !is.na(id_pattern)
+  # The pattern must compile, or grepl()'s own error would reach the caller (R10).
+  if (pattern_ok && !is.null(id_pattern)) {
+    pattern_ok <- tryCatch(
+      is.logical(grepl(id_pattern, "")),
+      error = function(e) FALSE, warning = function(w) FALSE
+    )
+  }
+  if (!pattern_ok) {
+    stop("`id_pattern` must be NULL or one regular expression.", call. = FALSE)
+  }
+  if (!is.null(non_code_sheets)) {
+    if (!is.character(non_code_sheets) || !all(validUTF8(non_code_sheets))) {
+      stop(
+        "`non_code_sheets` must be NULL or a character vector of sheet names in UTF-8.",
+        call. = FALSE
+      )
+    }
+    # A blank name is NA, as in every input form (R17).
+    non_code_sheets <- as_text(non_code_sheets)
+  }
+  # A type map read from a file brings that file's findings (D12.55).
+  type_findings <- attr(type_map, "gpq_read_findings")
+  type_map <- validate_type_map(type_map)
+  sentinels <- validate_sentinels(sentinels)
+  check_origins(origins, c(
+    "dictionary",
+    if (is.list(code_lists) && !is.data.frame(code_lists)) {
+      paste0("code_lists:", names(code_lists))
+    },
+    if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
+    if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
+    if (!is.null(precedence)) "precedence"
+  ))
+  dictionary_in <- read_input_table(dictionary, "dictionary", origins[["dictionary"]])
+  dictionary_read <- read_dictionary(dictionary_in, column_map, type_map, id_pattern)
+  lists <- read_code_lists(code_lists, origins)
+  walks <- read_crosswalks(crosswalks, origins)
+  datasets_in <- if (!is.null(datasets)) {
+    read_input_table(datasets, "datasets", origins[["datasets"]])
+  }
+  lineage_in <- if (!is.null(lineage_spec)) {
+    read_lineage_input(lineage_spec, origins[["lineage_spec"]])
+  }
+  precedence_in <- if (!is.null(precedence)) {
+    read_precedence(precedence, origins[["precedence"]])
+  }
+  attributes <- dictionary_read$attributes
+  code_list_map <- build_code_list_map(
+    attributes, lists$long, lists$sheets, walks$long, walks$declared
+  )
+  lists_file <- if (is.null(lists$manifest)) NA_character_ else lists$manifest$file[[1L]]
+  bands <- build_id_bands(id_bands, lists$long, sheet_file(lists$manifest, id_bands$sheet))
+  datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
+  # NULL when the datasets table isn't given; a given one with no rows is checked (R14).
+  clashes <- resolve_clashes(
+    datasets_in$data, lists$long, precedence_in$data,
+    list(datasets = datasets_in$where$file, code_lists = lists_file),
+    datasets_where = datasets_in$where %||% list(kind = "memory")
+  )
+  # A placement clash names the dictionary's file only where its rows are the file's
+  # (D12.33).
+  dictionary_file <- if (dictionary_in$where$kind == "memory") {
+    NA_character_
+  } else {
+    dictionary_in$where$file
+  }
+  lineage <- build_lineage_spec(
+    lineage_in$data, attributes, lineage_in$where$file, lineage_tokens(sentinels),
+    dictionary_file
+  )
+  new_gpq_spec(list(
+    attributes = attributes,
+    keys = build_keys(attributes),
+    code_lists = lists$long,
+    code_list_sheets = data.table(sheet = lists$sheets),
+    code_list_map = code_list_map,
+    codes = build_codes(code_list_map, lists$long, walks$long),
+    non_code_sheets = data.table(sheet = unique(as.character(non_code_sheets))),
+    datasets = datasets_data,
+    lineage_spec = lineage$component,
+    crosswalks = walks$long,
+    id_bands = bands$bands,
+    type_map = type_map,
+    sentinels = sentinels,
+    clashes = bind_component("clashes", list(clashes$clashes, lineage$clashes)),
+    read_findings = bind_component("read_findings", list(
+      dictionary_in$findings, dictionary_read$findings, type_findings, lists$findings,
+      walks$findings, datasets_in$findings, lineage_in$findings, precedence_in$findings,
+      bands$findings, clashes$findings, lineage$findings
+    )),
+    manifest = bind_component("manifest", list(
+      dictionary_in$manifest, lists$manifest, memory_row(non_code_sheets, "non_code_sheets"),
+      datasets_in$manifest, lineage_in$manifest, walks$manifest,
+      memory_row(id_pattern, "id_pattern"), memory_row(id_bands, "id_bands"),
+      precedence_in$manifest
+    ))
+  ))
+}
+
+#' A stop unless `origins` is NULL or a list named by inputs given (D12.33)
+#'
+#' An origin for an input given as a path is refused where that input is read.
+#' @noRd
+check_origins <- function(origins, inputs) {
+  if (is.null(origins)) {
+    return(invisible(NULL))
+  }
+  named <- is.list(origins) && !is.data.frame(origins) && !is.null(names(origins)) &&
+    all(nzchar(names(origins)))
+  if (!named) {
+    stop("`origins` must be NULL or a list named by input.", call. = FALSE)
+  }
+  unknown <- setdiff(names(origins), inputs)
+  if (length(unknown) > 0L) {
+    stop(
+      "`origins` names inputs that weren't given: ", paste(unknown, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+#' The components and their columns as markdown, for gpq_read_spec()'s help page
+#'
+#' Built from spec_schema(), so the page can't drift from it (D12.30).
+#' @noRd
+rd_spec_components <- function() {
+  schema <- spec_schema()
+  columns <- vapply(schema, function(x) {
+    if (length(x) == 0L) {
+      return("the input's own columns, all text")
+    }
+    paste0("`", names(x), "`", collapse = ", ")
+  }, character(1))
+  paste0("- `", names(schema), "`: ", columns, collapse = "\n")
+}

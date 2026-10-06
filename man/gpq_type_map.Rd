@@ -17,7 +17,7 @@ A data.table with columns \code{data_type} (the dictionary's type name), \code{r
 that non-sentinel values must parse with, or \code{NA}). Built in: \code{character}, \code{integer},
 \code{numeric} (double) and \code{date} (character, \code{"\%Y-\%m-\%d"}). A map read from a file
 carries what was found reading it, an invalid byte or a malformed line, as its
-attribute \code{gpq_read_findings}, which \code{gpq_read_spec()} adds to its \code{read_findings}.
+attribute \code{gpq_read_findings}, which \code{\link[=gpq_read_spec]{gpq_read_spec()}} adds to its \code{read_findings}.
 Nothing is signalled here: \code{gpq_preflight()} reports them, and
 \code{attr(map, "gpq_read_findings")} shows them.
 }

@@ -3,7 +3,7 @@
 #' Name the dictionary's columns
 #'
 #' @description
-#' Tells `gpq_read_spec()` which column of the data dictionary holds each piece of
+#' Tells [gpq_read_spec()] which column of the data dictionary holds each piece of
 #' information. Each default is the column name shown in the usage above.
 #'
 #' @param table,attribute,key_type,reference,lookup,description One column name each:
@@ -70,7 +70,7 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
 #'   that non-sentinel values must parse with, or `NA`). Built in: `character`, `integer`,
 #'   `numeric` (double) and `date` (character, `"%Y-%m-%d"`). A map read from a file
 #'   carries what was found reading it, an invalid byte or a malformed line, as its
-#'   attribute `gpq_read_findings`, which `gpq_read_spec()` adds to its `read_findings`.
+#'   attribute `gpq_read_findings`, which [gpq_read_spec()] adds to its `read_findings`.
 #'   Nothing is signalled here: `gpq_preflight()` reports them, and
 #'   `attr(map, "gpq_read_findings")` shows them.
 #' @examples

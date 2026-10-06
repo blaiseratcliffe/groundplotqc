@@ -1008,3 +1008,148 @@ test_that("an origin's columns give a precedence input its file's letters (D12.3
   expect_equal(read$findings$source_cell, "precedence!D2")
   expect_equal(read$findings$detail, kept("cell precedence!D2", "na<97>me"))
 })
+
+read_fish <- function(...) {
+  gpq_read_spec(
+    dictionary = example_file("fish_dictionary.csv"), code_lists = fish_lists(),
+    column_map = fish_columns(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    ),
+    ...
+  )
+}
+
+read_forest <- function() {
+  gpq_read_spec(
+    dictionary = example_file("forest_dictionary.csv"),
+    code_lists = list(
+      SPECIES = example_file("forest_species.csv"), STATUS = example_file("forest_status.csv")
+    ),
+    id_pattern = "_ID$",
+    column_map = gpq_column_map(
+      table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
+      reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+    ),
+    type_map = gpq_type_map(example_file("forest_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -7, not_applicable = -8),
+      character = c(missing = ".", not_applicable = "-"),
+      date = c(missing = "00000000", not_applicable = "99999999")
+    )
+  )
+}
+
+test_that("both toy specs read cleanly", {
+  fish <- read_fish()
+  expect_s3_class(fish, "gpq_spec")
+  expect_equal(nrow(fish$keys), 5L)
+  expect_equal(nrow(fish$read_findings), 0L)
+  expect_equal(fish$manifest$input, c(
+    "dictionary", "code_lists:water_body", "code_lists:gear", "code_lists:species"
+  ))
+  forest <- read_forest()
+  expect_equal(sort(unique(forest$codes$attribute_name)), c("SPECIES", "STATUS"))
+  expect_equal(sum(forest$attributes$id_marked), 5L)
+  expect_equal(nrow(forest$read_findings), 0L)
+})
+
+test_that("absent inputs give empty components with their columns", {
+  fish <- read_fish()
+  for (name in c("datasets", "lineage_spec", "crosswalks", "id_bands", "clashes")) {
+    expect_equal(nrow(fish[[name]]), 0L, info = name)
+  }
+  expect_named(fish$id_bands, names(spec_schema()$id_bands))
+})
+
+test_that("given inputs each get a manifest row", {
+  fish <- read_fish(non_code_sheets = "notes", id_pattern = "_id$")
+  expect_true(all(c("non_code_sheets", "id_pattern") %in% fish$manifest$input))
+  expect_equal(fish$non_code_sheets$sheet, "notes")
+})
+
+test_that("the arguments are checked", {
+  expect_error(read_fish(id_pattern = c("a", "b")), "id_pattern")
+  expect_error(read_fish(id_pattern = "("), "id_pattern")
+  expect_error(
+    gpq_read_spec(example_file("fish_dictionary.csv"), column_map = list()), "column_map"
+  )
+  expect_error(gpq_read_spec(file.path(tempdir(), "missing.csv")), "dictionary")
+  expect_error(read_fish(non_code_sheets = bad_name), "non_code_sheets")
+  blanks <- read_fish(non_code_sheets = c("notes", "  "))
+  expect_equal(blanks$non_code_sheets$sheet, c("notes", NA))
+})
+
+test_that("a type map's findings join read_findings (D12.55)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("data_type,r_class,date_format", "character,character,", "x,character,,extra"), path)
+  spec <- gpq_read_spec(
+    data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
+    type_map = gpq_type_map(path)
+  )
+  expect_equal(spec$read_findings$rule_id, "spec_csv_malformed")
+  expect_equal(spec$read_findings$input, "type_map")
+  expect_null(attr(spec$type_map, "gpq_read_findings"))
+})
+
+test_that("a type map's invalid byte reaches read_findings (D12.57)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(c(
+    charToRaw("data_type,r_class,date_format\ncharacter,character,\nte"), as.raw(0x97),
+    charToRaw("xt,character,\n")
+  ), path)
+  spec <- gpq_read_spec(
+    data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
+    type_map = gpq_type_map(path)
+  )
+  expect_equal(spec$read_findings$rule_id, "spec_encoding_invalid")
+  expect_equal(spec$read_findings$input, "type_map")
+  expect_equal(spec$read_findings$source_cell, paste0(basename(path), ":3"))
+})
+
+test_that("an in-memory dictionary with an origin is located as its workbook (D12.33)", {
+  path <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", path)
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
+  Encoding(bad) <- "UTF-8"
+  dictionary <- data.frame(
+    table_name = c("plots", "visits", "visits"),
+    attribute_name = c("plot_id", "visit_id", "src_plot_id"), key_type = c("PK", "PK", "."),
+    data_type = "character", description = c("Plot.", bad, "Source plot.")
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    lineage_spec = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      spec_type = "id", source_text = "tbl.key", note = NA, source_cell = "A2!D11"
+    ),
+    origins = list(dictionary = list(path = path, sheet = "DD", rows = 2L))
+  )
+  expect_equal(spec$attributes$source_row, 2:4)
+  expect_equal(spec$read_findings$source_cell, "DD!E3")
+  expect_equal(spec$read_findings$detail, kept("cell DD!E3", "ok<97>"))
+  expect_equal(spec$read_findings$file, basename(path))
+  dictionary_row <- spec$manifest[spec$manifest$input == "dictionary", ]
+  expect_equal(dictionary_row$file, basename(path))
+  expect_equal(dictionary_row$sha256, unname(tools::sha256sum(path)))
+  expect_equal(spec$clashes$source_cell_a, "A2!D11")
+  expect_equal(spec$clashes$source_cell_b, paste0(basename(path), ":4"))
+})
+
+test_that("origins name only inputs given as data.frames (D12.33)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines("stand-in", path)
+  origin <- list(path = path)
+  expect_error(
+    gpq_read_spec(example_file("fish_dictionary.csv"), origins = list(dictionary = origin)),
+    "given as a path"
+  )
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  expect_error(
+    gpq_read_spec(dictionary, origins = list(datasets = origin)),
+    "`origins` names inputs that weren't given: datasets.",
+    fixed = TRUE
+  )
+})
