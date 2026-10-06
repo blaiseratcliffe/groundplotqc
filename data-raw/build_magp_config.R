@@ -41,6 +41,9 @@ spec_files <- function(spec_dir = "spec") {
 }
 
 apply_spec_exceptions <- function(dictionary, exceptions) {
+  # The rows are set in a copy, so the caller's table stays as it was, a stop on a stale row
+  # included; the DD is small.
+  dictionary <- data.table::copy(dictionary)
   for (i in seq_len(nrow(exceptions))) {
     row <- exceptions[i]
     target <- which(
@@ -72,13 +75,21 @@ build_lineage_input <- function(raw, sheet = "A2") {
     stop("A2 has no header row starting with 'type'.", call. = FALSE)
   }
   header <- unlist(raw[header_row], use.names = FALSE)
-  body <- raw[-seq_len(header_row)]
-  rows <- header_row + seq_len(nrow(body))
-  keep <- !is.na(body[[1L]])
+  missing <- setdiff(c("type", "magp_table", "attribute"), header)
+  if (length(missing) > 0L) {
+    stop("A2 has no column named ", paste(missing, collapse = " or "), ".", call. = FALSE)
+  }
   sources <- grep("_src$", header)
   if (length(sources) == 0L) {
     stop("A2 has no <contributor>_src column.", call. = FALSE)
   }
+  body <- raw[-seq_len(header_row)]
+  rows <- header_row + seq_len(nrow(body))
+  # A row with a blank first cell is no attribute's: dropped once, each kept row with its
+  # own sheet row.
+  keep <- !is.na(body[[1L]])
+  body <- body[keep]
+  rows <- rows[keep]
   column <- function(name) body[[match(name, header)]]
   data.table::rbindlist(lapply(sources, function(j) {
     label <- sub("_src$", "", header[[j]])
@@ -88,13 +99,26 @@ build_lineage_input <- function(raw, sheet = "A2") {
       attribute_name = column("attribute"), spec_type = column("type"),
       source_text = body[[j]], note = if (is.na(note)) NA_character_ else body[[note]],
       source_cell = paste0(sheet, "!", column_letters(j), rows)
-    )[keep]
+    )
   }))
 }
 
 crosswalk_element <- function(path, columns) {
   if (nrow(columns) == 0L) {
     return(path)
+  }
+  # A crosswalk's rows agree on its code column and its filter column, or the build stops
+  # rather than take the first row's (D12.21).
+  name <- columns$crosswalk[[1L]]
+  one_value <- function(x, what) {
+    x <- unique(x[!is.na(x)])
+    if (length(x) > 1L) {
+      stop(sprintf(
+        "crosswalk_columns.csv gives crosswalk %s more than one %s: %s.", name, what,
+        paste(x, collapse = ", ")
+      ), call. = FALSE)
+    }
+    x
   }
   split_values <- function(x) strsplit(x, "; ", fixed = TRUE)[[1L]]
   filters <- columns[!is.na(columns$filter_values)]
@@ -106,13 +130,19 @@ crosswalk_element <- function(path, columns) {
     stats::setNames(lapply(filters$filter_values, split_values), filters$attribute_name)
   }
   element <- list(table = path)
-  code_col <- stats::na.omit(columns$code_col)
+  code_col <- one_value(columns$code_col, "code_col")
   # No declared code column: the element has none, and D5.28's names decide (D12.26).
   if (length(code_col) > 0L) {
-    element$code_col <- code_col[[1L]]
+    element$code_col <- code_col
   }
   if (!is.null(values)) {
-    element$filter_col <- stats::na.omit(filters$filter_col)[[1L]]
+    filter_col <- one_value(filters$filter_col, "filter_col")
+    if (length(filter_col) == 0L) {
+      stop(sprintf(
+        "crosswalk_columns.csv gives crosswalk %s filter_values but no filter_col.", name
+      ), call. = FALSE)
+    }
+    element$filter_col <- filter_col
     element$filter_values <- values
   }
   element
@@ -124,56 +154,95 @@ crosswalk_element <- function(path, columns) {
 # before the read and the engine doesn't know.
 record_hand_kept <- function(spec, config_dir) {
   repo_path <- function(name) paste0("data-raw/magp/", name)
-  row <- match("precedence", spec$manifest$input)
-  data.table::set(spec$manifest, i = row, j = "file", value = repo_path("precedence.csv"))
   exceptions <- manifest_row(
     "dictionary:exceptions", file.path(config_dir, "spec_exceptions.csv")
   )
   data.table::set(exceptions, j = "file", value = repo_path("spec_exceptions.csv"))
-  spec$manifest <- data.table::rbindlist(list(spec$manifest, exceptions))
+  # rbindlist() makes a new table, set here, so the caller's spec keeps its manifest.
+  manifest <- data.table::rbindlist(list(spec$manifest, exceptions))
+  row <- match("precedence", manifest$input)
+  data.table::set(manifest, i = row, j = "file", value = repo_path("precedence.csv"))
+  spec$manifest <- manifest
   new_gpq_spec(spec)
 }
 
 build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw", "magp")) {
   files <- spec_files(spec_dir)
-  config <- function(name) read_csv_text(file.path(config_dir, name))$data
+  # A hand-kept file reads clean or the build stops, naming the file and each problem: a
+  # malformed line or an invalid byte would drop or change rows with no finding, since of
+  # these files only the type map reaches pre-flight as a file (D12.58). They are all read
+  # before any spec file is opened.
+  config <- function(name) {
+    path <- file.path(config_dir, name)
+    read <- read_csv_text(path)
+    at_line <- function(line) ifelse(is.na(line), "", paste0(" on line ", line))
+    malformed <- read$malformed
+    invalid <- read$invalid
+    problems <- c(
+      paste0(
+        malformed$kind, at_line(malformed$line),
+        ifelse(is.na(malformed$value), "", paste0(" (", malformed$value, ")")),
+        recycle0 = TRUE
+      ),
+      # An invalid byte's row 0 is the header, line 1; row r starts on lines[r].
+      paste0(
+        "invalid byte", at_line(c(1L, read$lines)[invalid$row + 1L]), " (", invalid$value, ")",
+        recycle0 = TRUE
+      )
+    )
+    if (length(problems) > 0L) {
+      stop(
+        path, " doesn't read cleanly, so nothing was built: ", paste(problems, collapse = "; "),
+        ".",
+        call. = FALSE
+      )
+    }
+    read
+  }
+  exceptions <- config("spec_exceptions.csv")$data
+  non_code_sheets <- config("non_code_sheets.csv")$data$sheet
+  columns <- config("crosswalk_columns.csv")$data
+  precedence <- config("precedence.csv")
+  sentinels <- validate_sentinels(config("sentinels.csv")$data)
   dd_sheet <- workbook_sheets(files[["DD"]])[[1L]]
   dictionary <- raw_to_table(read_xlsx_raw(files[["DD"]], dd_sheet))
   # Applied in memory before the read, so findings see the corrected values; the DD's
   # origin then names its workbook's cells (D12.33).
-  dictionary <- apply_spec_exceptions(dictionary, config("spec_exceptions.csv"))
+  dictionary <- apply_spec_exceptions(dictionary, exceptions)
   translation <- setdiff(names(files), c("DD", "Lookup_Tables", "datasets", "A2"))
-  columns <- config("crosswalk_columns.csv")
   crosswalks <- lapply(translation, function(name) {
     crosswalk_element(files[[name]], columns[columns$crosswalk == name])
   })
   names(crosswalks) <- translation
-  precedence <- config("precedence.csv")
   taken <- spec_input_schema()$precedence
-  precedence_columns <- match(taken, names(precedence))
+  precedence_columns <- match(taken, names(precedence$data))
   names(precedence_columns) <- taken
+  # One sheet name for A2's read and for the cells its rows carry.
+  sheet <- "A2"
   spec <- gpq_read_spec(
     dictionary = dictionary, code_lists = files[["Lookup_Tables"]],
-    non_code_sheets = config("non_code_sheets.csv")$sheet, datasets = files[["datasets"]],
-    lineage_spec = build_lineage_input(read_xlsx_raw(files[["A2"]], "A2")),
+    non_code_sheets = non_code_sheets, datasets = files[["datasets"]],
+    lineage_spec = build_lineage_input(read_xlsx_raw(files[["A2"]], sheet), sheet),
     crosswalks = if (length(crosswalks) > 0L) crosswalks,
     id_pattern = id_pattern, id_bands = id_bands,
-    precedence = precedence[, taken, with = FALSE],
+    precedence = precedence$data[, taken, with = FALSE],
     origins = list(
       # The DD's data rows are its workbook's from row 2, the header above: no exception
       # adds or removes a row. One that did would need one file row per data row.
       dictionary = list(path = files[["DD"]], sheet = dd_sheet, rows = 2L),
       # A2's rows carry their cells in source_cell; the origin names A2's file.
       lineage_spec = list(path = files[["A2"]]),
-      # decision is dropped before the read, so columns says where each one is.
+      # decision is dropped before the read, so columns says where each one is; each row
+      # is located by the file line it starts on (D12.54), a file of no rows by its header.
       precedence = list(
-        path = file.path(config_dir, "precedence.csv"), rows = 2L,
+        path = file.path(config_dir, "precedence.csv"),
+        rows = if (length(precedence$lines) > 0L) precedence$lines else 2L,
         columns = precedence_columns
       )
     ),
     column_map = gpq_column_map(lineage_flag = lineage_flag),
     type_map = gpq_type_map(file.path(config_dir, "type_map.csv")),
-    sentinels = validate_sentinels(config("sentinels.csv"))
+    sentinels = sentinels
   )
   record_hand_kept(spec, config_dir)
 }

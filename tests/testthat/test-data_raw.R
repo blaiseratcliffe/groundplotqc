@@ -16,7 +16,11 @@ hand_kept <- function(name) {
   if (!file.exists(path)) {
     testthat::skip(paste(name, "is not in this tree"))
   }
-  read_csv_text(path)$data
+  read <- read_csv_text(path)
+  # A committed hand-kept file reads clean, or the build would stop on it (D12.58).
+  testthat::expect_equal(nrow(read$malformed), 0L)
+  testthat::expect_equal(nrow(read$invalid), 0L)
+  read$data
 }
 
 test_that("spec_files finds one file per kind and stops on two of one kind", {
@@ -28,6 +32,14 @@ test_that("spec_files finds one file per kind and stops on two of one kind", {
   expect_equal(sort(names(files)), sort(c("DD", "Lookup_Tables", "datasets", "A2", "species")))
   file.create(file.path(dir, "20261003_magpv2_DD.xlsx"))
   expect_error(build$spec_files(dir), "more than one dated file of: DD")
+})
+
+test_that("spec_files stops on a kind it needs that spec/ lacks", {
+  build <- load_data_raw("build_magp_config.R")
+  dir <- withr::local_tempdir()
+  kinds <- c("DD.xlsx", "Lookup_Tables.xlsx", "datasets.csv", "species.csv")
+  file.create(file.path(dir, paste0("20260925_magpv2_", kinds)))
+  expect_error(build$spec_files(dir), "spec/ has no A2 file.", fixed = TRUE)
 })
 
 test_that("apply_spec_exceptions applies a row and stops on a stale one", {
@@ -43,6 +55,53 @@ test_that("apply_spec_exceptions applies a row and stops on a stale one", {
   expect_equal(applied$data_type, "character")
   dictionary$data_type <- "character"
   expect_error(build$apply_spec_exceptions(dictionary, rows), "row x is stale")
+})
+
+test_that("apply_spec_exceptions leaves the caller's dictionary as it was, on a stop too", {
+  build <- load_data_raw("build_magp_config.R")
+  dictionary <- data.table::data.table(
+    table_name = "s", attribute_name = c("ec_zone", "ec_region"), data_type = "numeric"
+  )
+  given <- data.table::copy(dictionary)
+  rows <- data.table::data.table(
+    exception_id = c("x", "y"), table_name = "s", attribute_name = c("ec_zone", "ec_region"),
+    dd_column = "data_type", dd_value = c("numeric", "integer"), applied_value = "character",
+    decision = "D2.17", note = NA
+  )
+  applied <- build$apply_spec_exceptions(dictionary, rows[1L])
+  expect_equal(applied$data_type, c("character", "numeric"))
+  expect_identical(dictionary, given)
+  # Row x applies before row y is found stale.
+  expect_error(build$apply_spec_exceptions(dictionary, rows), "row y is stale")
+  expect_identical(dictionary, given)
+})
+
+test_that("apply_spec_exceptions stops on a row that names no single DD cell", {
+  build <- load_data_raw("build_magp_config.R")
+  dictionary <- data.table::data.table(
+    table_name = "s", attribute_name = c("a", "a", "b"), data_type = "numeric"
+  )
+  exception <- function(attribute_name, dd_column) {
+    data.table::data.table(
+      exception_id = "x", table_name = "s", attribute_name = attribute_name,
+      dd_column = dd_column, dd_value = "numeric", applied_value = "character",
+      decision = "D2.17", note = NA
+    )
+  }
+  no_cell <- "spec_exceptions.csv row x names no single DD cell."
+  # An attribute the DD lacks, one it holds twice, and a DD column it lacks.
+  expect_error(
+    build$apply_spec_exceptions(dictionary, exception("c", "data_type")), no_cell,
+    fixed = TRUE
+  )
+  expect_error(
+    build$apply_spec_exceptions(dictionary, exception("a", "data_type")), no_cell,
+    fixed = TRUE
+  )
+  expect_error(
+    build$apply_spec_exceptions(dictionary, exception("b", "key_type")), no_cell,
+    fixed = TRUE
+  )
 })
 
 test_that("a DD row an exception fixes gives no finding; the raw row is located (D12.33)", {
@@ -80,7 +139,10 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
     ),
     origins = list(precedence = list(path = file.path(config, "precedence.csv"), rows = 2L))
   )
+  given <- data.table::copy(spec$manifest)
   manifest <- build$record_hand_kept(spec, config)$manifest
+  # The caller's spec keeps its manifest as it was.
+  expect_identical(spec$manifest, given)
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
@@ -102,9 +164,147 @@ test_that("build_lineage_input reads A2's layout into the long lineage input", {
   )
   long <- build$build_lineage_input(raw)
   expect_named(long, spec_input_schema()$lineage_spec)
-  expect_equal(long$contributor_label, c("BC", "BC", "ON", "ON"))
-  expect_equal(long$source_cell, c("A2!D5", "A2!D6", "A2!F5", "A2!F6"))
-  expect_equal(long$note[[2L]], "a note")
+  expect_equal(long, data.table::data.table(
+    contributor_label = c("BC", "BC", "ON", "ON"),
+    table_name = c("magp_sites", "magp_plot_meas", "magp_sites", "magp_plot_meas"),
+    attribute_name = c("src_site_id", "src_dbh_cutoff", "src_site_id", "src_dbh_cutoff"),
+    spec_type = c("id", "compiled", "id", "compiled"),
+    source_text = c("faib_header.site_identifier", "faib.x", "tblPlot.plotkey", NA),
+    note = c(NA, "a note", NA, NA),
+    source_cell = c("A2!D5", "A2!D6", "A2!F5", "A2!F6")
+  ))
+})
+
+test_that("build_lineage_input drops a row with a blank first cell, the rest keeping their cells", {
+  build <- load_data_raw("build_magp_config.R")
+  raw <- data.table::data.table(
+    V1 = c("type", "id", NA, "compiled"),
+    V2 = c("magp_table", "magp_sites", "a gap", "magp_plot_meas"),
+    V3 = c("attribute", "src_site_id", NA, "src_dbh_cutoff"),
+    V4 = c("BC_src", "faib_header.site_identifier", "stray", "faib.x")
+  )
+  long <- build$build_lineage_input(raw, sheet = "sheet one")
+  expect_equal(long$attribute_name, c("src_site_id", "src_dbh_cutoff"))
+  expect_equal(long$source_cell, c("sheet one!D2", "sheet one!D4"))
+  expect_equal(long$note, c(NA_character_, NA_character_))
+})
+
+test_that("build_lineage_input stops naming what A2 lacks", {
+  build <- load_data_raw("build_magp_config.R")
+  raw <- data.table::data.table(
+    V1 = c("type", "id"), V2 = c("magp_table", "magp_sites"), V3 = c("attribute", "src_site_id"),
+    V4 = c("BC_src", "faib.x")
+  )
+  no_header <- data.table::copy(raw)
+  data.table::set(no_header, i = 1L, j = "V1", value = "kind")
+  expect_error(
+    build$build_lineage_input(no_header), "A2 has no header row starting with 'type'.",
+    fixed = TRUE
+  )
+  expect_error(
+    build$build_lineage_input(raw[, c("V1", "V2", "V3"), with = FALSE]),
+    "A2 has no <contributor>_src column.",
+    fixed = TRUE
+  )
+  expect_error(
+    build$build_lineage_input(raw[, c("V1", "V4"), with = FALSE]),
+    "A2 has no column named magp_table or attribute.",
+    fixed = TRUE
+  )
+  expect_error(
+    build$build_lineage_input(raw[, c("V1", "V2", "V4"), with = FALSE]),
+    "A2 has no column named attribute.",
+    fixed = TRUE
+  )
+})
+
+test_that("crosswalk_element builds each form of element and stops on rows that disagree", {
+  build <- load_data_raw("build_magp_config.R")
+  columns <- data.table::data.table(
+    crosswalk = "species", attribute_name = NA_character_, code_col = "code",
+    filter_col = NA_character_, filter_values = NA_character_, decision = "D12.21"
+  )
+  expect_equal(build$crosswalk_element("w.csv", columns[0L]), "w.csv")
+  expect_equal(build$crosswalk_element("w.csv", columns), list(table = "w.csv", code_col = "code"))
+  # One filter for the whole table, its values split on "; ".
+  one_filter <- data.table::copy(columns)
+  data.table::set(one_filter, j = c("code_col", "filter_col", "filter_values"), value = list(
+    NA_character_, "kind", "a; b"
+  ))
+  expect_equal(
+    build$crosswalk_element("w.csv", one_filter),
+    list(table = "w.csv", filter_col = "kind", filter_values = c("a", "b"))
+  )
+  # A filter per attribute: the values are a list named by attribute.
+  per_attribute <- data.table::data.table(
+    crosswalk = "species", attribute_name = c("x", "y"), code_col = c("code", NA),
+    filter_col = "kind", filter_values = c("a; b", "c"), decision = "D12.21"
+  )
+  expect_equal(
+    build$crosswalk_element("w.csv", per_attribute),
+    list(
+      table = "w.csv", code_col = "code", filter_col = "kind",
+      filter_values = list(x = c("a", "b"), y = "c")
+    )
+  )
+  two_codes <- data.table::copy(per_attribute)
+  data.table::set(two_codes, j = "code_col", value = c("code", "other"))
+  expect_error(
+    build$crosswalk_element("w.csv", two_codes),
+    "crosswalk_columns.csv gives crosswalk species more than one code_col: code, other.",
+    fixed = TRUE
+  )
+  two_filters <- data.table::copy(per_attribute)
+  data.table::set(two_filters, j = "filter_col", value = c("kind", "type"))
+  expect_error(
+    build$crosswalk_element("w.csv", two_filters),
+    "crosswalk_columns.csv gives crosswalk species more than one filter_col: kind, type.",
+    fixed = TRUE
+  )
+  no_filter_col <- data.table::copy(per_attribute)
+  data.table::set(no_filter_col, j = "filter_col", value = NA_character_)
+  expect_error(
+    build$crosswalk_element("w.csv", no_filter_col),
+    "crosswalk_columns.csv gives crosswalk species filter_values but no filter_col.",
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a hand-kept file that doesn't read cleanly (D12.58)", {
+  build <- load_data_raw("build_magp_config.R")
+  kept <- testthat::test_path("..", "..", "data-raw", "magp")
+  # Stand-ins: the hand-kept files are read before any spec file is opened.
+  spec_dir <- withr::local_tempdir()
+  stand_ins <- c("DD.xlsx", "Lookup_Tables.xlsx", "datasets.csv", "A2.xlsx")
+  file.create(file.path(spec_dir, paste0("20260925_magpv2_", stand_ins)))
+  config <- withr::local_tempdir()
+  file.copy(list.files(kept, full.names = TRUE), config)
+  # A note with an unquoted comma: fread() stops on line 3, and lines 3 and 4 would be lost.
+  writeLines(c(
+    "exception_id,table_name,attribute_name,dd_column,dd_value,applied_value,decision,note",
+    "x,s,a,data_type,numeric,character,D2.17,fine",
+    "y,s,b,data_type,numeric,character,D2.17,a note, with a comma",
+    "z,s,c,data_type,numeric,character,D2.17,fine"
+  ), file.path(config, "spec_exceptions.csv"))
+  expect_error(
+    build$build_magp_spec(spec_dir, config),
+    "spec_exceptions.csv doesn't read cleanly, so nothing was built: fields on line 3.",
+    fixed = TRUE
+  )
+  # An invalid byte in a later file, the earlier ones clean.
+  file.copy(file.path(kept, "spec_exceptions.csv"), config, overwrite = TRUE)
+  writeBin(c(
+    charToRaw("sheet,key_col,attribute_name,winner,blank_rule,decision\ndata"), as.raw(0xe9),
+    charToRaw("set,magp_dataset_id,dataset_code,code_lists,wins,D12.20\n")
+  ), file.path(config, "precedence.csv"))
+  expect_error(
+    build$build_magp_spec(spec_dir, config),
+    paste(
+      "precedence.csv doesn't read cleanly, so nothing was built:",
+      "invalid byte on line 2 (data<e9>set)."
+    ),
+    fixed = TRUE
+  )
 })
 
 test_that("the hand-kept files have their columns", {
@@ -123,6 +323,14 @@ test_that("the hand-kept files have their columns", {
   )
   expect_named(hand_kept("precedence.csv"), c(spec_input_schema()$precedence, "decision"))
   expect_true(all(hand_kept("non_code_sheets.csv")$reason %in% c("reference", "superseded")))
+})
+
+test_that("the hand-kept rows are valid where the build takes them", {
+  expect_no_error(validate_sentinels(hand_kept("sentinels.csv")))
+  expect_no_error(gpq_type_map(hand_kept("type_map.csv")))
+  precedence <- hand_kept("precedence.csv")
+  # The reader's own checks: winner and blank_rule from their lists, one row per key.
+  expect_no_error(read_precedence(precedence[, spec_input_schema()$precedence, with = FALSE]))
 })
 
 test_that("the reader reads the DD workbook in spec/ from its first sheet", {
