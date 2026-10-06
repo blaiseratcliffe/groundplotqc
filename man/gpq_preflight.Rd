@@ -20,7 +20,7 @@ A check with findings has one row per finding.
 }
 \description{
 Checks a specification, never the data, and stops before a run that would read it
-wrongly (plan 4.2). Each check gives one row: pass, warn, stop or not run.
+wrongly (plan 4.2). Each check gives one row per finding, or one pass or not-run row.
 }
 \section{Conditions}{
 
@@ -35,9 +35,9 @@ element holds the table. Otherwise any warn row signals one warning of class
 \code{file:line} in a CSV file, \code{file:row} for a dictionary row. A clash's finding gives
 both sides as \verb{<a>; <b>}, in the order its detail names them, an unknown side left
 empty; a side with several cells lists them with ", ", as in
-\verb{A2!D11, A2!F11; DD.xlsx:59}. A file or sheet name can itself contain "; " or ", ",
-so for exact values read the \code{source_cell_a} and \code{source_cell_b} columns of the
-specification's \code{clashes} component.
+\verb{lineage!D11, lineage!F11; dictionary.xlsx:59}. A file or sheet name can itself contain
+"; " or ", ", so for exact values read the \code{source_cell_a} and \code{source_cell_b} columns of
+the specification's \code{clashes} component.
 }
 
 \section{Checks}{

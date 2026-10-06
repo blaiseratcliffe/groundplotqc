@@ -1,20 +1,28 @@
 # The pre-flight files (plan 4.2, 9.5, 11.5; D2.11, D7.11, D12.17): metadata/preflight.csv,
-# the table as returned, and reports/preflight.html, a self-contained page for MAGPlot
-# only (13). Uncapped at M2 (D12.17).
+# the table as returned, and reports/preflight.html, a self-contained page that never goes
+# to a provider (13). Uncapped at M2 (D12.17).
 
 #' metadata/preflight.csv and reports/preflight.html under output_dir
 #' @noRd
 write_preflight_files <- function(results, spec, output_dir) {
   csv <- file.path(output_dir, "metadata", "preflight.csv")
   html <- file.path(output_dir, "reports", "preflight.html")
-  dir.create(dirname(csv), recursive = TRUE, showWarnings = FALSE)
-  dir.create(dirname(html), recursive = TRUE, showWarnings = FALSE)
+  # Both folders are made, or the call stops naming the one it couldn't, before any file.
+  for (folder in dirname(c(csv, html))) {
+    dir.create(folder, recursive = TRUE, showWarnings = FALSE)
+    if (!dir.exists(folder)) {
+      stop("Can't create the folder ", folder, " for the pre-flight files.", call. = FALSE)
+    }
+  }
   fwrite(results, csv, na = "", quote = TRUE)
+  # The page is built before its file opens, so an error in building it leaves no empty
+  # page behind.
+  page <- preflight_html(results, spec)
   # The page's text is UTF-8 already, and its bytes are written as they are, so a session
-  # in another locale doesn't turn "é" into "<U+00E9>".
+  # in another locale doesn't turn an accented letter into text such as "<U+00E9>".
   connection <- file(html, open = "wb")
   on.exit(close(connection))
-  writeLines(enc2utf8(preflight_html(results, spec)), connection, useBytes = TRUE)
+  writeLines(enc2utf8(page), connection, useBytes = TRUE)
   invisible(c(csv = csv, html = html))
 }
 

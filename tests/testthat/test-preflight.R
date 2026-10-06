@@ -518,22 +518,43 @@ test_that("gpq_preflight warns once on warnings only, and is quiet on a clean sp
   spec <- fx_fish_spec(code_lists = lists)
   gear <- spec$code_lists[spec$code_lists$sheet == "gear", ]
   expect_equal(gear$value, c("gear", "GN", "GN"))
-  expect_warning(gpq_preflight(spec), class = "gpq_preflight_warning")
+  # One warning in all, of the right class, with the count and the table (D12.16).
+  warned <- list()
+  returned <- withCallingHandlers(
+    gpq_preflight(spec),
+    warning = function(w) {
+      warned[[length(warned) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(warned, 1L)
+  expect_s3_class(warned[[1L]], "gpq_preflight_warning")
+  expect_equal(sum(returned$outcome == "warn"), 1L)
+  expect_match(conditionMessage(warned[[1L]]), "1 warning(s)", fixed = TRUE)
+  expect_identical(warned[[1L]]$preflight, returned)
   expect_no_condition(results <- gpq_preflight(fx_fish_spec()))
   expect_true(all(results$outcome %in% c("pass", "not_run")))
 })
 
 test_that("pre-flight leaves the caller's spec untouched (plan 16.2, D12.27)", {
-  spec <- fx_planted_spec()
-  before <- data.table::copy(spec)
-  tryCatch(gpq_preflight(spec), gpq_preflight_error = function(e) NULL)
-  # Base identical(): any change to the caller's object, indices included, fails.
-  expect_true(identical(spec, before))
+  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
+  dir <- withr::local_tempdir()
+  # A spec that stops and one that only warns, each with its files written.
+  for (spec in list(fx_planted_spec(), fx_fish_spec(code_lists = lists))) {
+    before <- data.table::copy(spec)
+    tryCatch(
+      suppressWarnings(gpq_preflight(spec, output_dir = dir)),
+      gpq_preflight_error = function(e) NULL
+    )
+    # Base identical(): any change to the caller's object, indices included, fails.
+    expect_true(identical(spec, before))
+  }
 })
 
 test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a folder", {
   spec <- fx_fish_spec()
   dropped <- structure(unclass(spec)[-1L], class = "gpq_spec")
+  auto_index <- getOption("datatable.auto.index")
   expect_error(gpq_preflight(dropped), "components")
   for (output_dir in list(NA_character_, "", c("a", "b"), 1)) {
     expect_error(gpq_preflight(spec, output_dir = output_dir), "output_dir")
@@ -541,4 +562,6 @@ test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a f
   file <- withr::local_tempfile()
   writeLines("x", file)
   expect_error(gpq_preflight(spec, output_dir = file), "output_dir")
+  # A refusal leaves data.table's option as the caller had it.
+  expect_identical(getOption("datatable.auto.index"), auto_index)
 })

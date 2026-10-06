@@ -18,7 +18,7 @@
 "preflight_meta_files","en","Specification files"
 "preflight_blank_value","en","(blank)"
 "preflight_outcome_pass","en","Pass"
-"preflight_outcome_warn","en","Warn"
+"preflight_outcome_warn","en","Warning"
 "preflight_outcome_stop","en","Stop"
 "preflight_outcome_not_run","en","Not run"
 "preflight_reason_no_input","en","Its input wasn't given."

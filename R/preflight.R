@@ -547,7 +547,7 @@ preflight_check_functions <- function() {
 #'
 #' @description
 #' Checks a specification, never the data, and stops before a run that would read it
-#' wrongly (plan 4.2). Each check gives one row: pass, warn, stop or not run.
+#' wrongly (plan 4.2). Each check gives one row per finding, or one pass or not-run row.
 #'
 #' @param spec A specification from [gpq_read_spec()].
 #' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
@@ -565,9 +565,9 @@ preflight_check_functions <- function() {
 #' `file:line` in a CSV file, `file:row` for a dictionary row. A clash's finding gives
 #' both sides as `<a>; <b>`, in the order its detail names them, an unknown side left
 #' empty; a side with several cells lists them with ", ", as in
-#' `A2!D11, A2!F11; DD.xlsx:59`. A file or sheet name can itself contain "; " or ", ",
-#' so for exact values read the `source_cell_a` and `source_cell_b` columns of the
-#' specification's `clashes` component.
+#' `lineage!D11, lineage!F11; dictionary.xlsx:59`. A file or sheet name can itself contain
+#' "; " or ", ", so for exact values read the `source_cell_a` and `source_cell_b` columns of
+#' the specification's `clashes` component.
 #' @section Checks:
 #' `dd_duplicate_attribute`, `dd_type_unknown`, `dd_type_column_ambiguous`,
 #' `dd_pk_missing`, `dd_fk_target_missing`, `code_list_missing`, `code_column_missing`,
@@ -603,6 +603,11 @@ gpq_preflight <- function(spec, output_dir = NULL) {
   if (!inherits(spec, "gpq_spec")) {
     stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
   }
+  # Nothing here changes the caller's tables (plan 16.2), indices included: data.table's
+  # automatic indexing is off for every step that sees them, the validator's too, and
+  # restored on exit (D12.27).
+  auto_index <- options(datatable.auto.index = FALSE)
+  on.exit(options(auto_index), add = TRUE)
   # A spec edited since it was read stops here, with the validator's message (D12.54).
   validate_gpq_spec(spec)
   dir_ok <- is.null(output_dir) || is.character(output_dir) && length(output_dir) == 1L &&
@@ -611,10 +616,6 @@ gpq_preflight <- function(spec, output_dir = NULL) {
   if (!dir_ok) {
     stop("`output_dir` must be NULL or one folder, not an existing file.", call. = FALSE)
   }
-  # Checks never change the caller's tables (plan 16.2), indices included: data.table's
-  # automatic indexing is off here and restored on exit (D12.27).
-  auto_index <- options(datatable.auto.index = FALSE)
-  on.exit(options(auto_index), add = TRUE)
   results <- preflight_checks(spec)
   if (!is.null(output_dir)) {
     write_preflight_files(results, spec, output_dir)
