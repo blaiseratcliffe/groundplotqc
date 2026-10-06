@@ -70,7 +70,7 @@ signalled as one R warning, of class `gpq_preflight_warning`, and stop rows as a
 of class `gpq_preflight_error`; each carries the table. The code below mutes the warning
 so the table can be shown. Here a code list repeats a code, which warns:
 
-```{r}
+```{r, R.options = list(width = 120)}
 repeated <- gpq_read_spec(
   dictionary = example("fish_dictionary.csv"),
   code_lists = list(
