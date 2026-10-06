@@ -44,12 +44,16 @@ fix_invalid_utf8 <- function(data) {
 
 #' A quoted field's doubled quotes undone, by reference
 #'
-#' fread() keeps them; undoing them is exact for RFC 4180 files.
+#' fread() keeps them; undoing them is exact for RFC 4180 files. Each cell of the character
+#' columns `columns` (all of `data`'s by default) has every `""` turned into `"`, an NA
+#' left as it is. `data` is changed in place, so it must be a table the caller owns, never
+#' a user's; each column named must be a character column of it. Returns `data`,
+#' invisibly.
 #' @noRd
 undo_doubled_quotes <- function(data, columns = names(data)) {
   for (column in columns) {
     x <- data[[column]]
-    hit <- which(!is.na(x) & grepl("\"\"", x, fixed = TRUE))
+    hit <- which(grepl("\"\"", x, fixed = TRUE))
     if (length(hit) > 0L) {
       set(data, i = hit, j = column, value = gsub("\"\"", "\"", x[hit], fixed = TRUE))
     }

@@ -28,7 +28,7 @@ gpq_read_spec(
 or a reference table), or a named list of data.frames or CSV paths, named by sheet.}
 
 \item{non_code_sheets}{\code{NULL}, or the names of sheets that aren't code lists; the
-\verb{code_list_*} checks skip them.}
+\verb{code_list_*} checks skip them. A blank name is dropped, as a repeated one is.}
 
 \item{datasets}{\code{NULL}, or the datasets table (a data.frame or a CSV path), read as text.}
 

@@ -1311,7 +1311,7 @@ read_lineage_input <- function(x, origin = NULL) {
 #' @param code_lists `NULL`, the path of an `.xlsx` workbook (every sheet is a code list
 #'   or a reference table), or a named list of data.frames or CSV paths, named by sheet.
 #' @param non_code_sheets `NULL`, or the names of sheets that aren't code lists; the
-#'   `code_list_*` checks skip them.
+#'   `code_list_*` checks skip them. A blank name is dropped, as a repeated one is.
 #' @param datasets `NULL`, or the datasets table (a data.frame or a CSV path), read as text.
 #' @param lineage_spec `NULL`, or the lineage spec in long form (a data.frame or a CSV
 #'   path), with exactly the columns
@@ -1409,7 +1409,8 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
         call. = FALSE
       )
     }
-    # A blank name is NA, as in every input form (R17).
+    # A blank name is NA, as in every input form (R17); the component drops it, as it drops a
+    # repeat, since an NA names no sheet (D12.69).
     non_code_sheets <- as_text(non_code_sheets)
   }
   # A type map read from a file brings that file's findings (D12.55), with
@@ -1499,7 +1500,9 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     code_list_sheets = data.table(sheet = lists$sheets),
     code_list_map = code_list_map,
     codes = build_codes(code_list_map, lists$long, walks$long),
-    non_code_sheets = data.table(sheet = unique(as.character(non_code_sheets))),
+    non_code_sheets = data.table(
+      sheet = unique(as.character(non_code_sheets[!is.na(non_code_sheets)]))
+    ),
     datasets = datasets_data,
     lineage_spec = lineage$component,
     crosswalks = walks$long,

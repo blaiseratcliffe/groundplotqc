@@ -1061,8 +1061,14 @@ test_that("the arguments are checked", {
   )
   expect_error(gpq_read_spec(file.path(tempdir(), "missing.csv")), "dictionary")
   expect_error(fx_fish_spec(non_code_sheets = bad_name), "non_code_sheets")
-  blanks <- fx_fish_spec(non_code_sheets = c("notes", "  "))
-  expect_equal(blanks$non_code_sheets$sheet, c("notes", NA))
+  # A blank name is no sheet, so it is dropped, as a repeat is (D12.69).
+  blanks <- fx_fish_spec(non_code_sheets = c("notes", "  ", "", NA, "notes"))
+  expect_equal(blanks$non_code_sheets$sheet, "notes")
+  expect_true("non_code_sheets" %in% blanks$manifest$input)
+  only_blank <- fx_fish_spec(non_code_sheets = c("", " "))
+  expect_equal(nrow(only_blank$non_code_sheets), 0L)
+  expect_named(only_blank$non_code_sheets, "sheet")
+  expect_type(only_blank$non_code_sheets$sheet, "character")
 })
 
 test_that("a type map's findings join read_findings (D12.55)", {

@@ -608,3 +608,24 @@ test_that("fix_invalid_utf8 reports a bad name and bad cells in reading order (D
   expect_equal(found$column, c(2L, 2L, 1L))
   expect_equal(found$value, c("b<97>", "p<97>", "o<97>"))
 })
+
+test_that("undo_doubled_quotes undoes doubled quotes in the columns named, in place (D12.45)", {
+  dt <- data.table::data.table(
+    a = c("say \"\"hi\"\"", NA, "plain", "\"\"\"\""), b = c("x\"\"y", "z", NA, "\"\"")
+  )
+  out <- undo_doubled_quotes(dt, "a")
+  expect_equal(dt$a, c("say \"hi\"", NA, "plain", "\"\""))
+  expect_equal(dt$b, c("x\"\"y", "z", NA, "\"\""))
+  expect_identical(data.table::address(out), data.table::address(dt))
+  expect_invisible(undo_doubled_quotes(dt))
+  expect_equal(dt$b, c("x\"y", "z", NA, "\""))
+  expect_equal(dt$a, c("say \"hi\"", NA, "plain", "\""))
+})
+
+test_that("undo_doubled_quotes leaves a table with no column or no match as it is", {
+  none <- data.table::data.table()
+  expect_identical(undo_doubled_quotes(none), none)
+  dt <- data.table::data.table(a = c("one \"quote\"", NA))
+  undo_doubled_quotes(dt)
+  expect_equal(dt$a, c("one \"quote\"", NA))
+})
