@@ -470,16 +470,9 @@ fish_dictionary <- function() {
   read_input_table(example_file("fish_dictionary.csv"), "dictionary")
 }
 
-fish_columns <- function(...) {
-  gpq_column_map(
-    table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes", ...
-  )
-}
-
 test_that("read_dictionary maps the fish dictionary's own columns and types", {
   fish_types <- gpq_type_map(example_file("fish_types.csv"))
-  dd <- read_dictionary(fish_dictionary(), fish_columns(), fish_types)
+  dd <- read_dictionary(fish_dictionary(), fx_fish_column_map(), fish_types)
   a <- dd$attributes
   expect_equal(nrow(a), 15L)
   expect_equal(a$r_class[a$attribute_name == "minutes"], "integer")
@@ -491,7 +484,7 @@ test_that("read_dictionary maps the fish dictionary's own columns and types", {
 
 test_that("the ID pattern and the lineage flag mark attributes", {
   dd <- read_dictionary(
-    fish_dictionary(), fish_columns(lineage_flag = c(column = "codes", value = "y")),
+    fish_dictionary(), fx_fish_column_map(lineage_flag = c(column = "codes", value = "y")),
     gpq_type_map(example_file("fish_types.csv")),
     id_pattern = "_id$"
   )
@@ -569,15 +562,8 @@ test_that("build_keys keeps an FK whose target has no PK, without a target colum
   expect_equal(keys$reference_attribute, NA_character_)
 })
 
-fish_lists <- function() {
-  list(
-    water_body = example_file("fish_water_body.csv"), gear = example_file("fish_gear.csv"),
-    species = example_file("fish_species.csv")
-  )
-}
-
 test_that("read_code_lists keeps every cell in long form, the header as row 1", {
-  lists <- read_code_lists(fish_lists())$long
+  lists <- read_code_lists(fx_fish_code_lists())$long
   gear <- lists[lists$sheet == "gear", ]
   expect_equal(gear$value[gear$source_row == 1L], c("gear", "description"))
   gear_code <- gear$source_row == 2L & gear$sheet_column == "gear"
@@ -600,7 +586,7 @@ test_that("code_lists and crosswalks names are unique, never blank, valid UTF-8 
 })
 
 test_that("read_code_lists lists every sheet, an empty one included (D12.29)", {
-  expect_equal(read_code_lists(fish_lists())$sheets, c("water_body", "gear", "species"))
+  expect_equal(read_code_lists(fx_fish_code_lists())$sheets, c("water_body", "gear", "species"))
   read <- read_code_lists(list(empty = data.frame(), gear = example_file("fish_gear.csv")))
   expect_equal(read$sheets, c("empty", "gear"))
   expect_false("empty" %in% read$long$sheet)
@@ -641,8 +627,8 @@ test_that("a code-list sheet's repeated column names are made unique (D12.54)", 
 
 test_that("the code-list map resolves y, named sheets and translation tables", {
   fish_types <- gpq_type_map(example_file("fish_types.csv"))
-  dd <- read_dictionary(fish_dictionary(), fish_columns(), fish_types)
-  read <- read_code_lists(fish_lists())
+  dd <- read_dictionary(fish_dictionary(), fx_fish_column_map(), fish_types)
+  read <- read_code_lists(fx_fish_code_lists())
   none <- read_crosswalks(NULL)
   map <- build_code_list_map(dd$attributes, read$long, read$sheets, none$long, none$declared)
   expect_equal(map$attribute_name, c("water_body", "gear", "species"))
@@ -1009,55 +995,22 @@ test_that("an origin's columns give a precedence input its file's letters (D12.3
   expect_equal(read$findings$detail, kept("cell precedence!D2", "na<97>me"))
 })
 
-read_fish <- function(...) {
-  gpq_read_spec(
-    dictionary = example_file("fish_dictionary.csv"), code_lists = fish_lists(),
-    column_map = fish_columns(), type_map = gpq_type_map(example_file("fish_types.csv")),
-    sentinels = gpq_sentinels(
-      numeric = c(missing = -99, not_applicable = -88),
-      character = c(missing = "?", not_applicable = "~"),
-      date = c(missing = "?", not_applicable = "~")
-    ),
-    ...
-  )
-}
-
-read_forest <- function() {
-  gpq_read_spec(
-    dictionary = example_file("forest_dictionary.csv"),
-    code_lists = list(
-      SPECIES = example_file("forest_species.csv"), STATUS = example_file("forest_status.csv")
-    ),
-    id_pattern = "_ID$",
-    column_map = gpq_column_map(
-      table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-      reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
-    ),
-    type_map = gpq_type_map(example_file("forest_types.csv")),
-    sentinels = gpq_sentinels(
-      numeric = c(missing = -7, not_applicable = -8),
-      character = c(missing = ".", not_applicable = "-"),
-      date = c(missing = "00000000", not_applicable = "99999999")
-    )
-  )
-}
-
 test_that("both toy specs read cleanly", {
-  fish <- read_fish()
+  fish <- fx_fish_spec()
   expect_s3_class(fish, "gpq_spec")
   expect_equal(nrow(fish$keys), 5L)
   expect_equal(nrow(fish$read_findings), 0L)
   expect_equal(fish$manifest$input, c(
     "dictionary", "code_lists:water_body", "code_lists:gear", "code_lists:species"
   ))
-  forest <- read_forest()
+  forest <- fx_forest_spec()
   expect_equal(sort(unique(forest$codes$attribute_name)), c("SPECIES", "STATUS"))
   expect_equal(sum(forest$attributes$id_marked), 5L)
   expect_equal(nrow(forest$read_findings), 0L)
 })
 
 test_that("absent inputs give empty components with their columns", {
-  fish <- read_fish()
+  fish <- fx_fish_spec()
   for (name in c("datasets", "lineage_spec", "crosswalks", "id_bands", "clashes")) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
@@ -1065,20 +1018,20 @@ test_that("absent inputs give empty components with their columns", {
 })
 
 test_that("given inputs each get a manifest row", {
-  fish <- read_fish(non_code_sheets = "notes", id_pattern = "_id$")
+  fish <- fx_fish_spec(non_code_sheets = "notes", id_pattern = "_id$")
   expect_true(all(c("non_code_sheets", "id_pattern") %in% fish$manifest$input))
   expect_equal(fish$non_code_sheets$sheet, "notes")
 })
 
 test_that("the arguments are checked", {
-  expect_error(read_fish(id_pattern = c("a", "b")), "id_pattern")
-  expect_error(read_fish(id_pattern = "("), "id_pattern")
+  expect_error(fx_fish_spec(id_pattern = c("a", "b")), "id_pattern")
+  expect_error(fx_fish_spec(id_pattern = "("), "id_pattern")
   expect_error(
     gpq_read_spec(example_file("fish_dictionary.csv"), column_map = list()), "column_map"
   )
   expect_error(gpq_read_spec(file.path(tempdir(), "missing.csv")), "dictionary")
-  expect_error(read_fish(non_code_sheets = bad_name), "non_code_sheets")
-  blanks <- read_fish(non_code_sheets = c("notes", "  "))
+  expect_error(fx_fish_spec(non_code_sheets = bad_name), "non_code_sheets")
+  blanks <- fx_fish_spec(non_code_sheets = c("notes", "  "))
   expect_equal(blanks$non_code_sheets$sheet, c("notes", NA))
 })
 
@@ -1204,8 +1157,11 @@ test_that("each clash finding names its own sheet's file (D12.28)", {
 })
 
 test_that("id_bands that isn't a list of names is the package's own error", {
-  expect_error(read_fish(id_bands = "bands"), "`id_bands` is list(", fixed = TRUE)
-  expect_error(read_fish(id_bands = list(sheet = c("a", "b"))), "`id_bands` is list(", fixed = TRUE)
+  expect_error(fx_fish_spec(id_bands = "bands"), "`id_bands` is list(", fixed = TRUE)
+  expect_error(
+    fx_fish_spec(id_bands = list(sheet = c("a", "b"))), "`id_bands` is list(",
+    fixed = TRUE
+  )
   # With code lists given there is a manifest, so the bands sheet's file is looked up.
   expect_error(
     gpq_read_spec(

@@ -6,8 +6,10 @@
 NULL
 
 utils::globalVariables(c(
-  "attribute_name", "code_column", "crosswalk", "crosswalk_column", "home", "i.home",
-  "i.n_home", "i.n_pk", "i.pk", "id_status", "key_part", "key_type", "lookup", "n_home", "n_pk",
-  "n_ref", "pk", "ref_pk", "reference_attribute", "reference_table", "rule_id", "sheet",
-  "sheet_column", "source_cell", "source_row", "source_type", "status", "table_name", "value"
+  "attribute_name", "blank", "code_column", "contributor_label", "crosswalk",
+  "crosswalk_column", "data_type", "filled", "header", "home", "i.home", "i.n_home", "i.n_pk",
+  "i.pk", "id_marked", "id_status", "key_part", "key_type", "lineage_flag", "lookup", "n",
+  "n_home", "n_pk", "n_ref", "part_source", "pk", "ref_pk", "reference_attribute",
+  "reference_table", "rule_id", "sheet", "sheet_column", "source_cell", "source_name",
+  "source_row", "source_type", "status", "table_name", "value"
 ))

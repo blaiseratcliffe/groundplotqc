@@ -46,6 +46,7 @@
 !/tests/testthat/fixtures/blank_cells.xlsx
 !/tests/testthat/fixtures/invalid_utf8.xlsx
 !/tests/testthat/fixtures/excel_numbers.xlsx
+!/tests/testthat/fixtures/id_bands.xlsx
 
 # Excel's lock files, after the allowlist so it can't re-include them (D12.34)
 ~$*
