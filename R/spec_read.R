@@ -148,7 +148,7 @@ validate_gpq_spec <- function(components) {
       x <- component[[column]]
       if (any(!is.na(x) & !nzchar(x))) {
         stop(sprintf(
-          "Component %s, column %s, holds an empty string; a blank is NA (D12.14).", name, column
+          "Component %s, column %s, holds an empty string; a blank is NA.", name, column
         ), call. = FALSE)
       }
     }
@@ -184,11 +184,10 @@ read_input_table <- function(x, input, origin = NULL) {
         paste(names(x)[!plain], collapse = ", ")
       ), call. = FALSE)
     }
-    # The caller's columns stay the caller's: as_text() returns a new vector for each column,
-    # since blank_to_na() always assigns into a copy, even where no cell is blank. The reader
-    # rewrites its own copy in fix_invalid_utf8() below, so it relies on that copy; a
-    # blank_to_na() that returned its argument untouched when nothing is blank would let
-    # set() change the caller's cell (D12.27).
+    # The caller's columns stay the caller's: as.data.table() copies each column of the list
+    # it is given, so fix_invalid_utf8() below, which rewrites cells with set(), changes the
+    # reader's table and never a caller's vector. Pinned by the test "a caller's table is
+    # left as it was" (D12.27).
     data <- as.data.table(lapply(x, as_text))
     # Names as a CSV file's are read: a blank one V<j>, then each unique (R7, D12.54).
     blank_header <- logical(ncol(data))

@@ -33,7 +33,12 @@ test_that("new_gpq_spec accepts the empty components and refuses bad ones", {
   expect_error(new_gpq_spec(bad), "key_part")
   blank <- empty_components()
   blank$non_code_sheets <- data.table::data.table(sheet = "")
-  expect_error(new_gpq_spec(blank), "empty string")
+  # The whole message, so a decision ID, which a caller can't look up, can't creep back in.
+  expect_error(
+    new_gpq_spec(blank),
+    "Component non_code_sheets, column sheet, holds an empty string; a blank is NA.",
+    fixed = TRUE
+  )
 })
 
 test_that("a component that isn't a data.table, or lacks the schema's columns, is refused", {
@@ -1395,10 +1400,10 @@ test_that("each clash finding names its own sheet's file (D12.28)", {
       )
     )$read_findings
   }
-  missing <- findings("code_id")
-  expect_equal(missing$rule_id, "datasets_row_missing")
-  expect_equal(missing$file, "second_list.csv")
-  expect_equal(missing$source_cell, "second_list.csv:3")
+  absent <- findings("code_id")
+  expect_equal(absent$rule_id, "datasets_row_missing")
+  expect_equal(absent$file, "second_list.csv")
+  expect_equal(absent$source_cell, "second_list.csv:3")
   unresolved <- findings("no_such_key")
   expect_equal(unresolved$rule_id, "spec_clash_unresolved")
   expect_equal(unresolved$file, "second_list.csv")

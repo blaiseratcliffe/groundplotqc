@@ -176,7 +176,7 @@ page_css <- function() {
     "table{border-collapse:collapse;margin:.5rem 0 1.5rem}",
     "caption{text-align:left;font-weight:600;padding:.25rem 0}",
     "th,td{border:1px solid #c8c8c8;padding:.25rem .5rem;text-align:left;vertical-align:top}",
-    "td,th{overflow-wrap:anywhere}",
+    "td,th{overflow-wrap:break-word}",
     ".gpq-table{overflow-x:auto}",
     "th:focus-visible{outline-offset:-2px}",
     ".gpq-js th[data-gpq-sort]{cursor:pointer;background:#f2f2f2}",

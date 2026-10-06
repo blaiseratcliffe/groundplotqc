@@ -215,7 +215,10 @@ test_that("html_page refuses bad arguments, naming the argument", {
 
 test_that("the page's CSS wraps long values and the script marks sortable headers", {
   css <- page_css()
-  expect_match(css, "td,th{overflow-wrap:anywhere}", fixed = TRUE)
+  # Table cells break a word only where it can't fit its box, so "Warning" and "Outcome" stay
+  # whole at desktop width (D12.79); "anywhere" would shrink a column to one character.
+  expect_match(css, "td,th{overflow-wrap:break-word}", fixed = TRUE)
+  expect_false(grepl("td,th{overflow-wrap:anywhere}", css, fixed = TRUE))
   # The footer's 64-character hashes sit in a <dd>, which would stretch the page sideways at
   # 360 px without a rule of its own.
   expect_match(css, "dd{overflow-wrap:anywhere}", fixed = TRUE)

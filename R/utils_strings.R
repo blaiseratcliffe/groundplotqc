@@ -15,9 +15,6 @@ is_blank <- function(x) {
 #' is returned exactly as written (D12.9).
 #' @noRd
 blank_to_na <- function(x) {
-  # The assignment copies x, even where no cell is blank, so the result never shares the
-  # caller's vector; read_input_table() relies on that to keep a caller's columns out of the
-  # spec. Don't skip it when nothing is blank.
   x[is_blank(x)] <- NA_character_
   x
 }
