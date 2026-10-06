@@ -1,9 +1,9 @@
 # The edits that make the 20261005 specification set from the 20260925 one (Y8; the
-# checklist plans/M2_spec_fixes.md, D12.72 (5) to (21), D12.73 (5a)). The edit list and the
-# names of the files it makes, nothing else: patch_workbooks.R, verify_spec_edits.R and
-# edit_csv_cell.R each source() this file from their own folder. It defines `edits`,
-# `workbooks`, `new_name()`, `csv_sources`, `csv_source_path()`, `fold_notes`, `fold_lines`
-# and `csv_cell_edits`.
+# checklist plans/M2_spec_fixes.md, D12.72 (5) to (21), D12.73 (5a), D12.74 (4)). The edit
+# list and the names of the files it makes, nothing else: patch_workbooks.R,
+# verify_spec_edits.R and edit_csv_cell.R each source() this file from their own folder. It
+# defines `edits`, `workbooks`, `new_name()`, `csv_sources`, `csv_source_path()`,
+# `fold_notes`, `fold_lines` and `csv_cell_edits`.
 #
 # Coordinates are the 20260925 files' cells (Excel column letter and row). Ops on one cell
 # apply in list order. Every op names a guard: cells that must hold the given text before the
@@ -350,9 +350,35 @@ fold_notes <- c(
   POPU.SPP = "Folded code: POPU.SPP folds the unnamed Populus hybrid (Populus X) into the genus."
 )
 fold_lines <- c(36L, 45L, 68L, 69L, 246L, 247L)
-# D12.73 (5a): one cell of the treatment/disturbance copy changes after its conversion
-# (edit_csv_cell.R).
+# Cell edits of the CSV copies, applied by edit_csv_cell.R in table order, each file written
+# once. An entry names the file, the key column and value of its row, the column, the cell's
+# text before (from) and after (to), and the row's file line (header = line 1). A blank cell is
+# NA_character_, as fread(na.strings = "") reads it. verify_spec_edits.R checks the same list.
+# D12.73 (5a): CLR's treat_vs_dist in the treatment/disturbance copy, T to TD.
 csv_cell_edits <- list(list(
   file = "20261005_magpv2_treatment_disturbance.csv", key_col = "magp_codes", key = "CLR",
   col = "treat_vs_dist", from = "T", to = "TD", line = 61L
+))
+# D12.74 (4): the datasets copy's 110.05 and 110.06 exchange their descriptors, ten cells, so
+# that 110.05 = BC_VRI and 110.06 = BC_SUP as the lookup's dataset sheet has them. The copy is
+# the 20260830 master's, which still had the swap; the owner fixed it from 20260915. The
+# master's other fills are not taken in (plan 24.1 #49).
+datasets_edit <- function(key, line, col, from, to) {
+  list(
+    file = "20261005_magpv2_datasets.csv", key_col = "magp_dataset_id", key = key, col = col,
+    from = from, to = to, line = line
+  )
+}
+swap_note <- "Some visits have TMP as the visit type/code."
+csv_cell_edits <- c(csv_cell_edits, list(
+  datasets_edit("110.05", 6L, "src_dataset_id", "BC_SUP", "BC_VRI"),
+  datasets_edit("110.05", 6L, "gp_type", "MIX", "TMP"),
+  datasets_edit("110.05", 6L, "gp_network", "FMP", "CVV"),
+  datasets_edit("110.05", 6L, "sampling_design", "SYS", "STR"),
+  datasets_edit("110.05", 6L, "comments", swap_note, NA_character_),
+  datasets_edit("110.06", 7L, "src_dataset_id", "BC_VRI", "BC_SUP"),
+  datasets_edit("110.06", 7L, "gp_type", "TMP", "MIX"),
+  datasets_edit("110.06", 7L, "gp_network", "CVV", "FMP"),
+  datasets_edit("110.06", 7L, "sampling_design", "STR", "SYS"),
+  datasets_edit("110.06", 7L, "comments", NA_character_, swap_note)
 ))

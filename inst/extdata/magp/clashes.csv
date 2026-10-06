@@ -1,3 +1,1 @@
 "rule_id","kind","key_col","key_value","column_name","source_a","value_a","source_b","value_b","winner","basis","source_cell_a","source_cell_b"
-"spec_clash_resolved","value","magp_dataset_id","110.05","src_dataset_id","datasets","BC_SUP","code_lists","BC_VRI","code_lists","precedence","20261005_magpv2_datasets.csv:6","dataset!D8"
-"spec_clash_resolved","value","magp_dataset_id","110.06","src_dataset_id","datasets","BC_VRI","code_lists","BC_SUP","code_lists","precedence","20261005_magpv2_datasets.csv:7","dataset!D9"

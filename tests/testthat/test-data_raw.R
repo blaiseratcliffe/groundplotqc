@@ -438,6 +438,33 @@ test_that("every treat_vs_dist value is in a filter list, blank only on NO and N
   expect_equal(setdiff(walk$magp_codes[is.na(walk$treat_vs_dist)], c("NO", "ND")), character())
 })
 
+test_that("the datasets copy and the lookup agree on every src_dataset_id (D12.74)", {
+  # A revert would be the owner's 20260830 datasets master, which has 110.05 and 110.06 the
+  # other way round: BC_SUP on 110.05 with MIX, FMP, SYS and the comment, BC_VRI on 110.06.
+  clashes <- tree_spec()$clashes
+  expect_equal(clashes$key_value[clashes$column_name == "src_dataset_id"], character())
+  datasets <- tree_table("datasets")
+  columns <- c("src_dataset_id", "gp_type", "gp_network", "sampling_design", "comments")
+  comment <- "Some visits have TMP as the visit type/code."
+  at <- match(c("110.05", "110.06"), datasets$magp_dataset_id)
+  expect_false(anyNA(at))
+  rows <- datasets[at, columns, with = FALSE]
+  expect_equal(
+    as.list(rows[1L]),
+    list(
+      src_dataset_id = "BC_VRI", gp_type = "TMP", gp_network = "CVV", sampling_design = "STR",
+      comments = NA_character_
+    )
+  )
+  expect_equal(
+    as.list(rows[2L]),
+    list(
+      src_dataset_id = "BC_SUP", gp_type = "MIX", gp_network = "FMP", sampling_design = "SYS",
+      comments = comment
+    )
+  )
+})
+
 test_that("the compiled specification is the one the build makes (D12.14, D12.27)", {
   # Base identical(), not expect_identical(): no index attribute may differ (D12.27).
   expect_true(identical(tree_spec(), magp_spec()))

@@ -9,9 +9,9 @@
 #      lose (validations, conditional formats, merges, comments, defined names, panes, widths)
 #      are counted and compared;
 #   3. each CSV: valid UTF-8, no BOM, CRLF kept, the same text as its source decoded (the
-#      species copy: each line plus its `comments` field; the treatment/disturbance copy: each
-#      line but the cell edit's, and that cell from -> to), and fread() reading it without a
-#      warning.
+#      species copy: each line plus its `comments` field; a copy with cell edits, the
+#      treatment/disturbance and datasets copies: each line but the edited cells' lines, and
+#      those cells from -> to), and fread() reading it without a warning.
 #
 # Usage: Rscript verify_spec_edits.R <baseline_dir> <translation_dir> <check_dir>
 #   baseline_dir     the 20260925 DD, Lookup_Tables and A2 workbooks and datasets CSV
@@ -393,8 +393,9 @@ for (name in names(csv_sources)) {
       fail(name, ": lines aren't the source plus the comments field")
     }
   } else if (name %in% vapply(csv_cell_edits, `[[`, "", "file")) {
-    # Every line as its source except each edited cell's line; the parsed tables differ in
-    # exactly the edited cells, from -> to.
+    # Every line as its source except the lines of the edited cells (several edits may share a
+    # file and a line, and a blank cell is NA); the parsed tables differ in exactly the edited
+    # cells, from -> to.
     ce <- Filter(function(e) e$file == name, csv_cell_edits)
     a <- strsplit(src_text, "\r\n", fixed = TRUE)[[1]]
     b <- strsplit(new_text, "\r\n", fixed = TRUE)[[1]]
@@ -411,8 +412,9 @@ for (name in names(csv_sources)) {
     want <- t(vapply(
       ce, function(e) c(which(ta[[e$key_col]] == e$key), match(e$col, names(ta))), c(0, 0)
     ))
-    differ <- differ[order(differ[, 1]), , drop = FALSE]
-    if (nrow(differ) != nrow(want) || any(differ != want[order(want[, 1]), , drop = FALSE])) {
+    differ <- differ[order(differ[, 1], differ[, 2]), , drop = FALSE]
+    want <- want[order(want[, 1], want[, 2]), , drop = FALSE]
+    if (nrow(differ) != nrow(want) || any(differ != want)) {
       fail(name, ": the cells that differ aren't the edited ones")
     }
     for (e in ce) {

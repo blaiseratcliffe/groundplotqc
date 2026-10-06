@@ -4,7 +4,8 @@
 # xl/workbook.xml); every other part is copied byte for byte. New text is written as inline
 # strings. The CSV copies follow: the datasets table, then each translation table converted
 # to UTF-8, the species one gaining its `comments` column. The edit list is
-# edits_20261005.R. The treatment/disturbance copy's one cell edit is edit_csv_cell.R's.
+# edits_20261005.R. The cell edits of the treatment/disturbance and datasets copies are
+# edit_csv_cell.R's.
 #
 # Usage: Rscript patch_workbooks.R <baseline_dir> <translation_dir> <output_dir>
 #   baseline_dir     the 20260925 DD, Lookup_Tables and A2 workbooks and datasets CSV
