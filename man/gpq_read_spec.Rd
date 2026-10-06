@@ -76,9 +76,9 @@ empty, with its columns. A blank cell is \code{NA}; text is kept exactly as writ
 }
 \description{
 Reads a data dictionary and its companion inputs into one specification object, which
-\code{gpq_preflight()} checks and the checks of later layers read. Reading never stops on a
+\code{\link[=gpq_preflight]{gpq_preflight()}} checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the \code{read_findings} component,
-and \code{gpq_preflight()} decides whether it stops.
+and \code{\link[=gpq_preflight]{gpq_preflight()}} decides whether it stops.
 
 It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,

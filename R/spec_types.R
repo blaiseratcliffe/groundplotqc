@@ -71,7 +71,7 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
 #'   `numeric` (double) and `date` (character, `"%Y-%m-%d"`). A map read from a file
 #'   carries what was found reading it, an invalid byte or a malformed line, as its
 #'   attribute `gpq_read_findings`, which [gpq_read_spec()] adds to its `read_findings`.
-#'   Nothing is signalled here: `gpq_preflight()` reports them, and
+#'   Nothing is signalled here: [gpq_preflight()] reports them, and
 #'   `attr(map, "gpq_read_findings")` shows them.
 #' @examples
 #' gpq_type_map()

@@ -481,3 +481,64 @@ test_that("lineage_spec_unparseable runs when no flagged attribute has a lineage
   dictionary$appendix <- NA
   expect_equal(unparseable(dictionary, lineage_row)$outcome, "pass")
 })
+
+test_that("gpq_preflight stops with a classed error carrying the table", {
+  condition <- tryCatch(gpq_preflight(fx_planted_spec()), gpq_preflight_error = function(e) e)
+  expect_s3_class(condition, "gpq_preflight_error")
+  expect_equal(nrow(condition$preflight), nrow(preflight_checks(fx_planted_spec())))
+  expect_match(conditionMessage(condition), "dd_duplicate_attribute:", fixed = TRUE)
+})
+
+test_that("a type map's malformed line or invalid byte stops pre-flight (D12.57)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"
+  )
+  ragged <- withr::local_tempfile(fileext = ".csv")
+  lines <- c("data_type,r_class,date_format", "character,character,", "x,character,,extra")
+  writeLines(lines, ragged)
+  bad_byte <- withr::local_tempfile(fileext = ".csv")
+  writeBin(c(
+    charToRaw("data_type,r_class,date_format\ncharacter,character,\nte"), as.raw(0x97),
+    charToRaw("xt,character,\n")
+  ), bad_byte)
+  for (case in list(c(ragged, "spec_csv_malformed"), c(bad_byte, "spec_encoding_invalid"))) {
+    spec <- gpq_read_spec(dictionary, type_map = gpq_type_map(case[[1L]]))
+    condition <- tryCatch(gpq_preflight(spec), gpq_preflight_error = function(e) e)
+    expect_s3_class(condition, "gpq_preflight_error")
+    rows <- condition$preflight
+    expect_true(any(rows$rule_id == case[[2L]] & rows$outcome == "stop"))
+  }
+})
+
+test_that("gpq_preflight warns once on warnings only, and is quiet on a clean spec", {
+  # fx_fish_code_lists()'s elements are CSV paths, so modifyList() replaces gear whole
+  # rather than merging into it (D12.27).
+  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
+  expect_equal(sum(names(lists) == "gear"), 1L)
+  spec <- fx_fish_spec(code_lists = lists)
+  gear <- spec$code_lists[spec$code_lists$sheet == "gear", ]
+  expect_equal(gear$value, c("gear", "GN", "GN"))
+  expect_warning(gpq_preflight(spec), class = "gpq_preflight_warning")
+  expect_no_condition(results <- gpq_preflight(fx_fish_spec()))
+  expect_true(all(results$outcome %in% c("pass", "not_run")))
+})
+
+test_that("pre-flight leaves the caller's spec untouched (plan 16.2, D12.27)", {
+  spec <- fx_planted_spec()
+  before <- data.table::copy(spec)
+  tryCatch(gpq_preflight(spec), gpq_preflight_error = function(e) NULL)
+  # Base identical(): any change to the caller's object, indices included, fails.
+  expect_true(identical(spec, before))
+})
+
+test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a folder", {
+  spec <- fx_fish_spec()
+  dropped <- structure(unclass(spec)[-1L], class = "gpq_spec")
+  expect_error(gpq_preflight(dropped), "components")
+  for (output_dir in list(NA_character_, "", c("a", "b"), 1)) {
+    expect_error(gpq_preflight(spec, output_dir = output_dir), "output_dir")
+  }
+  file <- withr::local_tempfile()
+  writeLines("x", file)
+  expect_error(gpq_preflight(spec, output_dir = file), "output_dir")
+})

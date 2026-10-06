@@ -1293,9 +1293,9 @@ read_lineage_input <- function(x, origin = NULL) {
 #'
 #' @description
 #' Reads a data dictionary and its companion inputs into one specification object, which
-#' `gpq_preflight()` checks and the checks of later layers read. Reading never stops on a
+#' [gpq_preflight()] checks and the checks of later layers read. Reading never stops on a
 #' defect in the specification: each one is recorded in the `read_findings` component,
-#' and `gpq_preflight()` decides whether it stops.
+#' and [gpq_preflight()] decides whether it stops.
 #'
 #' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 #' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,

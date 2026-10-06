@@ -542,3 +542,106 @@ preflight_check_functions <- function() {
     }
   )
 }
+
+#' Pre-flight a specification
+#'
+#' @description
+#' Checks a specification, never the data, and stops before a run that would read it
+#' wrongly (plan 4.2). Each check gives one row: pass, warn, stop or not run.
+#'
+#' @param spec A specification from [gpq_read_spec()].
+#' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
+#'   `reports/preflight.html` are written under it, whether or not pre-flight stops.
+#' @return The pre-flight table, invisibly: columns `rule_id`, `outcome` (`stop`, `warn`,
+#'   `pass`, `not_run`), `file`, `detail`, `n_findings` (the check's total on each of its
+#'   rows; 0 on a pass row, `NA` on a `not_run` row), `not_run_reason` and `source_cell`.
+#'   A check with findings has one row per finding.
+#' @section Conditions:
+#' Any stop row signals an error of class `gpq_preflight_error`, whose `preflight`
+#' element holds the table. Otherwise any warn row signals one warning of class
+#' `gpq_preflight_warning`, with the same element.
+#' @section Cells:
+#' `source_cell` is where a finding is, when the reader knows: `sheet!B3` in a workbook,
+#' `file:line` in a CSV file, `file:row` for a dictionary row. A clash's finding gives
+#' both sides as `<a>; <b>`, in the order its detail names them, an unknown side left
+#' empty; a side with several cells lists them with ", ", as in
+#' `A2!D11, A2!F11; DD.xlsx:59`. A file or sheet name can itself contain "; " or ", ",
+#' so for exact values read the `source_cell_a` and `source_cell_b` columns of the
+#' specification's `clashes` component.
+#' @section Checks:
+#' `dd_duplicate_attribute`, `dd_type_unknown`, `dd_type_column_ambiguous`,
+#' `dd_pk_missing`, `dd_fk_target_missing`, `code_list_missing`, `code_column_missing`,
+#' `code_list_duplicate_code`, `code_list_blank_row`, `code_list_unreferenced`,
+#' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
+#' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
+#' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
+#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`.
+#' @examples
+#' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
+#' forest <- gpq_read_spec(
+#'   dictionary = example("forest_dictionary.csv"),
+#'   code_lists = list(
+#'     SPECIES = example("forest_species.csv"), STATUS = example("forest_status.csv")
+#'   ),
+#'   column_map = gpq_column_map(
+#'     table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
+#'     reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+#'   ),
+#'   type_map = gpq_type_map(example("forest_types.csv"))
+#' )
+#' results <- gpq_preflight(forest)
+#' table(results$outcome)
+#'
+#' # A dictionary row written twice stops pre-flight.
+#' twice <- data.frame(
+#'   table_name = "t", attribute_name = c("id", "id"), key_type = "PK", data_type = "character"
+#' )
+#' stopped <- tryCatch(gpq_preflight(gpq_read_spec(twice)), gpq_preflight_error = function(e) e)
+#' subset(stopped$preflight, outcome == "stop")
+#' @export
+gpq_preflight <- function(spec, output_dir = NULL) {
+  if (!inherits(spec, "gpq_spec")) {
+    stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
+  }
+  # A spec edited since it was read stops here, with the validator's message (D12.54).
+  validate_gpq_spec(spec)
+  dir_ok <- is.null(output_dir) || is.character(output_dir) && length(output_dir) == 1L &&
+    !is.na(output_dir) && !is_blank(output_dir) &&
+    !(file.exists(output_dir) && !dir.exists(output_dir))
+  if (!dir_ok) {
+    stop("`output_dir` must be NULL or one folder, not an existing file.", call. = FALSE)
+  }
+  # Checks never change the caller's tables (plan 16.2), indices included: data.table's
+  # automatic indexing is off here and restored on exit (D12.27).
+  auto_index <- options(datatable.auto.index = FALSE)
+  on.exit(options(auto_index), add = TRUE)
+  results <- preflight_checks(spec)
+  if (!is.null(output_dir)) {
+    write_preflight_files(results, spec, output_dir)
+  }
+  stops <- results[outcome == "stop"]
+  if (nrow(stops) > 0L) {
+    message <- paste(c(
+      report_text(
+        "preflight_stop_message",
+        n_findings = nrow(stops), n_checks = length(unique(stops$rule_id))
+      ),
+      report_text("preflight_stop_line", rule_id = stops$rule_id, detail = stops$detail)
+    ), collapse = "\n")
+    stop(structure(
+      class = c("gpq_preflight_error", "error", "condition"),
+      list(message = message, call = NULL, preflight = results)
+    ))
+  }
+  n_warn <- sum(results$outcome == "warn")
+  if (n_warn > 0L) {
+    warning(structure(
+      class = c("gpq_preflight_warning", "warning", "condition"),
+      list(
+        message = report_text("preflight_warning_message", n_findings = n_warn), call = NULL,
+        preflight = results
+      )
+    ))
+  }
+  invisible(results)
+}

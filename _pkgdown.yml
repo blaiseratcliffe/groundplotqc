@@ -7,6 +7,7 @@ reference:
   - title: "Generic engine: specification and pre-flight"
     contents:
       - gpq_column_map
+      - gpq_preflight
       - gpq_read_spec
       - gpq_sentinels
       - gpq_type_map
