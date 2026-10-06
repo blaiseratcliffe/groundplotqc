@@ -100,8 +100,7 @@ test_that("a string marked latin1 is written as UTF-8 (D12.14)", {
   write_compiled_spec(spec, dir)
   path <- file.path(dir, "non_code_sheets.csv")
   bytes <- readBin(path, "raw", file.size(path))
-  # The line endings are D12.69's, tested apart; the bytes here are the text's.
-  bytes <- bytes[bytes != as.raw(0x0D)]
+  # LF endings (D12.69), so the bytes are the text's, UTF-8, as they are.
   expect_identical(bytes, charToRaw("\"sheet\"\n\"café\"\n"))
 })
 
@@ -123,6 +122,15 @@ test_that("a one-column datasets table with an NA cell reloads identical", {
   dir <- withr::local_tempdir()
   write_compiled_spec(spec, dir)
   expect_true(identical(read_compiled_spec(dir), spec))
+})
+
+test_that("a one-column datasets table with its NA in the first, last or only row reloads", {
+  for (id in list(c(NA, "2", "3"), c("1", "2", NA), NA_character_)) {
+    spec <- fx_fish_spec(datasets = data.frame(id = id))
+    dir <- withr::local_tempdir()
+    write_compiled_spec(spec, dir)
+    expect_true(identical(read_compiled_spec(dir), spec), info = deparse(id))
+  }
 })
 
 test_that("blank non-code sheet names are dropped, so the spec reloads identical (D12.69)", {

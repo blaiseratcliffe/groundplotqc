@@ -69,6 +69,43 @@ test_that("build_lineage_spec places rows by the dictionary and parses id rows o
   expect_true(is.na(unknown$clashes$source_cell_b))
 })
 
+test_that("a sentinel as a whole alternative or one part of a composite is unparseable", {
+  for (text in c("PSP: a.x + X | non-PSP: c.z", "PSP: a.x | non-PSP: Z")) {
+    expect_equal(parse_lineage_notation(text, tokens)$id_status, "unparseable", info = text)
+    # Without sentinels X and Z are ordinary names, so the same text parses.
+    expect_false("unparseable" %in% parse_lineage_notation(text)$id_status, info = text)
+  }
+})
+
+test_that("read_lineage_input returns the table with its columns in the schema's order", {
+  lineage <- data.frame(
+    source_cell = "A2!D5", note = NA, source_text = "t.k", spec_type = "id",
+    attribute_name = "a", table_name = "t", contributor_label = "BC"
+  )
+  read <- read_lineage_input(lineage)
+  expect_named(read$data, spec_input_schema()$lineage_spec)
+  expect_equal(read$data$source_cell, "A2!D5")
+  expect_equal(read$data$source_text, "t.k")
+  expect_true(is.na(read$data$note))
+  expect_equal(read$manifest$input, "lineage_spec")
+  expect_equal(read$manifest$file, "in memory")
+  expect_equal(nrow(read$findings), 0L)
+})
+
+test_that("a type that is neither id nor compiled is unparseable, with its own text (D12.54)", {
+  attributes <- data.table::data.table(table_name = "plots", attribute_name = "src_plot_id")
+  lineage <- data.table::data.table(
+    contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+    spec_type = "other", source_text = "tbl.key", note = NA_character_, source_cell = "A2!D5"
+  )
+  built <- build_lineage_spec(lineage, attributes, "a2.xlsx")
+  expect_equal(built$component$id_status, "unparseable")
+  expect_equal(
+    built$findings$detail, "BC plots.src_plot_id: type other is neither id nor compiled."
+  )
+  expect_equal(built$findings$source_cell, "A2!D5")
+})
+
 test_that("a lineage input names every missing and extra column at once (D12.33)", {
   lineage <- data.frame(
     contributor_label = "BC", table_name = "t", attribute_name = "a", spec_type = "id",

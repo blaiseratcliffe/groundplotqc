@@ -212,7 +212,7 @@ test_that("blank rows and repeated codes are placed as each input form counts ro
   ))
   # A data.frame from a workbook by the rows its origin gives, as Excel shows them.
   workbook <- testthat::test_path("fixtures", "blank_cells.xlsx")
-  origin <- list(`code_lists:kind` = list(path = workbook, sheet = "codes", rows = 10L))
+  origin <- list(`code_lists:kind` = list(path = workbook, sheet = "Sheet1", rows = 10L))
   expect_equal(details(list(kind = frame), origin), c(
     "Code \"B\" appears 2 times in column kind of sheet kind: rows 11, 13.",
     "Sheet kind has a blank row: row 12."
@@ -511,36 +511,34 @@ test_that("a type map's malformed line or invalid byte stops pre-flight (D12.57)
 })
 
 test_that("gpq_preflight warns once on warnings only, and is quiet on a clean spec", {
-  # fx_fish_code_lists()'s elements are CSV paths, so modifyList() replaces gear whole
-  # rather than merging into it (D12.27).
-  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
-  expect_equal(sum(names(lists) == "gear"), 1L)
-  spec <- fx_fish_spec(code_lists = lists)
+  spec <- fx_fish_gear_twice_spec()
   gear <- spec$code_lists[spec$code_lists$sheet == "gear", ]
   expect_equal(gear$value, c("gear", "GN", "GN"))
-  # One warning in all, of the right class, with the count and the table (D12.16).
-  warned <- list()
-  returned <- withCallingHandlers(
-    gpq_preflight(spec),
-    warning = function(w) {
-      warned[[length(warned) + 1L]] <<- w
-      invokeRestart("muffleWarning")
-    }
-  )
-  expect_length(warned, 1L)
-  expect_s3_class(warned[[1L]], "gpq_preflight_warning")
-  expect_equal(sum(returned$outcome == "warn"), 1L)
-  expect_match(conditionMessage(warned[[1L]]), "1 warning(s)", fixed = TRUE)
-  expect_identical(warned[[1L]]$preflight, returned)
+  # One warning in all, with and without files written, of the right class, with the count
+  # and the table (D12.16).
+  for (output_dir in list(NULL, withr::local_tempdir())) {
+    warned <- list()
+    returned <- withCallingHandlers(
+      gpq_preflight(spec, output_dir = output_dir),
+      warning = function(w) {
+        warned[[length(warned) + 1L]] <<- w
+        invokeRestart("muffleWarning")
+      }
+    )
+    expect_length(warned, 1L)
+    expect_s3_class(warned[[1L]], "gpq_preflight_warning")
+    expect_equal(sum(returned$outcome == "warn"), 1L)
+    expect_match(conditionMessage(warned[[1L]]), "1 warning(s)", fixed = TRUE)
+    expect_identical(warned[[1L]]$preflight, returned)
+  }
   expect_no_condition(results <- gpq_preflight(fx_fish_spec()))
   expect_true(all(results$outcome %in% c("pass", "not_run")))
 })
 
 test_that("pre-flight leaves the caller's spec untouched (plan 16.2, D12.27)", {
-  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
   dir <- withr::local_tempdir()
   # A spec that stops and one that only warns, each with its files written.
-  for (spec in list(fx_planted_spec(), fx_fish_spec(code_lists = lists))) {
+  for (spec in list(fx_planted_spec(), fx_fish_gear_twice_spec())) {
     before <- data.table::copy(spec)
     tryCatch(
       suppressWarnings(gpq_preflight(spec, output_dir = dir)),

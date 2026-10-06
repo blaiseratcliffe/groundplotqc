@@ -28,6 +28,15 @@ fx_fish_spec <- function(code_lists = fx_fish_code_lists(), ...) {
   )
 }
 
+# The fish spec with the `gear` code list holding "GN" twice: the one defect that only
+# warns (code_list_duplicate_code), so pre-flight signals one warning and no stop (D12.68).
+# fx_fish_code_lists()'s elements are CSV paths, so modifyList() replaces gear whole rather
+# than merging into it (D12.27).
+fx_fish_gear_twice_spec <- function() {
+  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
+  fx_fish_spec(code_lists = lists)
+}
+
 fx_forest_spec <- function() {
   gpq_read_spec(
     dictionary = example_file("forest_dictionary.csv"),

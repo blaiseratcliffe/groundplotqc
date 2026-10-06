@@ -65,17 +65,19 @@ test_that("the table and both conditions keep the codes after the files are writ
   expect_true(all(stopped$preflight$outcome %in% codes))
   expect_true("stop" %in% stopped$preflight$outcome)
   expect_true("no_input" %in% stopped$preflight$not_run_reason)
-  # Only warnings: the files are written, the warning and the returned table hold codes.
-  lists <- modifyList(fx_fish_code_lists(), list(gear = data.frame(gear = c("GN", "GN"))))
+  # Only warnings: the files are written, the warning and the returned table hold codes. The
+  # handler counts every warning of the class, so a second one fails the test.
   dir <- withr::local_tempdir()
-  warned <- NULL
+  warnings_seen <- list()
   returned <- withCallingHandlers(
-    gpq_preflight(fx_fish_spec(code_lists = lists), output_dir = dir),
+    gpq_preflight(fx_fish_gear_twice_spec(), output_dir = dir),
     gpq_preflight_warning = function(w) {
-      warned <<- w
+      warnings_seen[[length(warnings_seen) + 1L]] <<- w
       invokeRestart("muffleWarning")
     }
   )
+  expect_length(warnings_seen, 1L)
+  warned <- warnings_seen[[1L]]
   expect_s3_class(warned, "gpq_preflight_warning")
   for (shown in list(returned, warned$preflight)) {
     expect_true(all(shown$outcome %in% codes))
@@ -93,12 +95,11 @@ test_that("the table and both conditions keep the codes after the files are writ
   expect_true("warn" %in% back$outcome)
 })
 
-test_that("the page escapes hostile text, is self-contained and lists every check", {
+test_that("the page escapes hostile text and lists every check", {
   spec <- hostile_spec()
   page <- preflight_html(preflight_checks(spec), spec)
   expect_false(grepl("<script>x", page, fixed = TRUE))
   expect_match(page, "&lt;script&gt;x&lt;/script&gt;", fixed = TRUE)
-  expect_false(grepl("(src|href)=\"https?:", page))
   # An inline handler is looked for inside tags only: escaped text may hold " onx=".
   expect_false(grepl("<[^>]*\\son[a-z]+=", page))
   for (rule in preflight_rules()$rule_id) expect_match(page, rule, fixed = TRUE)

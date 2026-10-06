@@ -350,6 +350,23 @@ test_that("a caller's table is left as it was, a data.table or a data.frame (D12
   expect_identical(dt, dt_before)
 })
 
+test_that("a caller's table with an invalid byte and no blank cell is left as it was (D12.27)", {
+  # No blank cell, so fix_invalid_utf8() is the one step that rewrites a cell of the reader's
+  # copy; the caller's keeps its bad byte.
+  frame <- data.frame(id = c("1", "2"), comments = c("fine", bad_cell))
+  dt <- data.table::as.data.table(frame)
+  frame_before <- data.table::copy(frame)
+  dt_before <- data.table::copy(dt)
+  for (table in list(frame, dt)) {
+    read <- read_input_table(table, "datasets")
+    expect_equal(read$data$comments, c("fine", "ok<97>"))
+    expect_equal(read$invalid$row, 2L)
+  }
+  expect_identical(frame, frame_before)
+  expect_identical(dt, dt_before)
+  expect_false(validUTF8(frame$comments[[2L]]))
+})
+
 test_that("a long value is cut to about 40 characters around its marker (D12.28)", {
   long <- paste0(strrep("a", 50), bad_cell, strrep("b", 50))
   read <- read_input_table(data.frame(comments = long), "datasets")
@@ -556,6 +573,45 @@ test_that("a data.frame dictionary's rows are no file's rows (D12.33)", {
   expect_equal(dd$attributes$source_row, NA_integer_)
 })
 
+test_that("a dictionary's source_row follows its origin's rows (D12.33)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("a", "b", "c"), data_type = "character"
+  )
+  for (rows in list(5L, c(5L, 9L, 12L))) {
+    origin <- list(path = stand_in(".csv"), rows = rows)
+    table <- read_input_table(dictionary, "dictionary", origin)
+    dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+    expect_equal(dd$attributes$source_row, if (length(rows) == 1L) 5:7 else rows)
+  }
+})
+
+test_that("an .xlsx dictionary's source_row is its sheet's row, the header being row 1", {
+  testthat::skip_if_not_installed("readxl")
+  table <- read_input_table(testthat::test_path("fixtures", "blank_cells.xlsx"), "dictionary")
+  map <- gpq_column_map(table = "value", attribute = "value")
+  dd <- read_dictionary(table, map, gpq_type_map())
+  expect_equal(dd$attributes$source_row, 2:5)
+})
+
+test_that("a dictionary with none of the type columns is a finding, and no type is read", {
+  dictionary <- data.frame(table_name = "t", attribute_name = c("a", "b"))
+  table <- read_input_table(dictionary, "dictionary")
+  dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+  expect_equal(dd$findings$rule_id, "dd_type_column_ambiguous")
+  expect_equal(
+    dd$findings$detail, "The dictionary has none of the type columns data_type, datatype."
+  )
+  expect_equal(dd$attributes$data_type, c(NA_character_, NA_character_))
+  expect_equal(dd$attributes$r_class, c(NA_character_, NA_character_))
+})
+
+test_that("the lineage flag is NA for every row where its column isn't in the dictionary", {
+  map <- fx_fish_column_map(lineage_flag = c(column = "no_such_column", value = "y"))
+  dd <- read_dictionary(fish_dictionary(), map, gpq_type_map(example_file("fish_types.csv")))
+  expect_equal(dd$attributes$lineage_flag, rep(NA, nrow(dd$attributes)))
+  expect_equal(nrow(dd$findings), 0L)
+})
+
 test_that("build_keys numbers PK parts, reads FK targets and ignores case", {
   a <- data.table::data.table(
     table_name = c("p", "p", "c", "c"), attribute_name = c("p1", "p2", "c_id", "p1"),
@@ -579,6 +635,15 @@ test_that("build_keys keeps an FK whose target has no PK, without a target colum
   expect_equal(keys$key_type, "FK")
   expect_equal(keys$reference_table, "p")
   expect_equal(keys$reference_attribute, NA_character_)
+})
+
+test_that("build_keys gives the empty keys table where no row is a key (D12.26)", {
+  a <- data.table::data.table(
+    table_name = "t", attribute_name = c("a", "b"), key_type = c(".", NA),
+    reference_table = NA_character_
+  )
+  expect_equal(build_keys(a), empty_table(spec_schema()$keys))
+  expect_equal(build_keys(a[0L]), empty_table(spec_schema()$keys))
 })
 
 test_that("read_code_lists keeps every cell in long form, the header as row 1", {
@@ -926,6 +991,36 @@ test_that("build_id_bands finds an inverted band and an overlap, citing both ban
   expect_equal(unique(built$findings$file), "in memory")
 })
 
+test_that("a band overlapping two others is cited against the one that ends last (D12.28)", {
+  lists <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "BC", "ON"), v2_start = c("1", "50", "60"),
+      v2_end = c("100", "150", "70")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "BC", "ON"))
+  ))$long
+  built <- build_id_bands(band_spec, lists, "in memory")
+  # ON overlaps AB as well, but each band is cited once, against the band whose end is the
+  # latest so far, so only the first two pairs are named. Order isn't part of the contract.
+  expect_equal(sort(built$findings$detail), sort(c(
+    "Bands \"AB\" (row 1) and \"BC\" (row 2) overlap.",
+    "Bands \"BC\" (row 2) and \"ON\" (row 3) overlap."
+  )))
+  # Two bands inside a third that don't touch each other: each is cited against the third,
+  # which holds the latest end, not against the band before it.
+  nested <- read_code_lists(list(
+    ranges = data.frame(
+      contributor = c("AB", "BC", "ON"), v2_start = c("1", "10", "30"),
+      v2_end = c("200", "20", "40")
+    ),
+    contributor = data.frame(abbreviated_name = c("AB", "BC", "ON"))
+  ))$long
+  expect_equal(sort(build_id_bands(band_spec, nested, "in memory")$findings$detail), sort(c(
+    "Bands \"AB\" (row 1) and \"BC\" (row 2) overlap.",
+    "Bands \"AB\" (row 1) and \"ON\" (row 3) overlap."
+  )))
+})
+
 test_that("sheet_file finds a sheet's own CSV, else the workbook", {
   per_sheet <- data.table::data.table(
     input = c("code_lists:contributor", "code_lists:ranges"), file = c("c.csv", "r.csv")
@@ -1193,18 +1288,11 @@ test_that("each clash finding names its own sheet's file (D12.28)", {
 })
 
 test_that("id_bands that isn't a list of names is the package's own error", {
+  # fx_fish_spec() gives code lists, so there is a manifest; a string isn't a list, so no
+  # bands sheet is named and sheet_file() is never called: the error is the shape check's.
   expect_error(fx_fish_spec(id_bands = "bands"), "`id_bands` is list(", fixed = TRUE)
   expect_error(
     fx_fish_spec(id_bands = list(sheet = c("a", "b"))), "`id_bands` is list(",
-    fixed = TRUE
-  )
-  # With code lists given there is a manifest, so the bands sheet's file is looked up.
-  expect_error(
-    gpq_read_spec(
-      data.frame(table_name = "t", attribute_name = "a", data_type = "character"),
-      code_lists = list(a = data.frame(x = "1")), id_bands = "bands"
-    ),
-    "`id_bands` is list(",
     fixed = TRUE
   )
 })

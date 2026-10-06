@@ -101,7 +101,7 @@ test_that("read_csv_text tells a blank header cell from one written V<j> (D12.65
   expect_equal(read_csv_text(write_bytes(list(raw(0))))$blank_header, logical())
 })
 
-test_that("a header that can't be read again as one row leaves each V<j> a name (D12.65)", {
+test_that("a header that can't be read again as one row leaves its V<j> column a name (D12.65)", {
   # The open quote runs line 1's record on into the rows, so it doesn't read again as one
   # row: V2, though blank, stays a name, and the spaces-only name is still blank.
   read <- read_csv_text(write_bytes(list(
@@ -190,6 +190,17 @@ test_that("a header cell with a line break above a ragged line is read by its li
   )
 })
 
+test_that("a header cell with a line break in a clean file is one name (D12.54)", {
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("\"id"), charToRaw("x\",name"), charToRaw("1,a"), charToRaw("2,b")
+  )))
+  expect_named(read$data, c("id\nx", "name"))
+  expect_equal(read$data[["id\nx"]], c("1", "2"))
+  expect_equal(read$data$name, c("a", "b"))
+  expect_equal(read$lines, 3:4)
+  expect_equal(nrow(read$malformed), 0L)
+})
+
 test_that("an invalid byte in the line fread() discards doesn't defeat the match (D12.54)", {
   # fread() quotes the discarded line in its warning, so the warning's text is invalid too.
   expect_no_warning(ragged <- read_csv_text(write_bytes(list(
@@ -237,6 +248,21 @@ test_that("a trailing line of only spaces or tabs is ignored, as fread() ignores
   read <- read_csv_text(path)
   expect_equal(read$data$x, c("a", "b"))
   expect_equal(nrow(read$malformed), 0L)
+})
+
+test_that("a spaces-only line is a line of its own in the lines read again (D12.58)", {
+  # fread() skips to line 3, so lines 1 and 2 are read again on their own. There the spaces
+  # line counts like any other, so the finding is line 2's, the first without line 1's two
+  # fields; were it ignored as a trailing line is, it would be line 3's.
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), charToRaw("   "), charToRaw("c,d,e"), charToRaw("1,2,3")
+  )))
+  expect_named(read$data, c("a", "b"))
+  expect_equal(nrow(read$data), 0L)
+  expect_equal(
+    read$malformed[, c("kind", "line", "fields")],
+    data.table::data.table(kind = "fields", line = 2L, fields = 2L)
+  )
 })
 
 test_that("a folder is an error from the read, as a missing file is (D12.54)", {
@@ -485,6 +511,37 @@ test_that("rows only the file's read leaves out are short through the skip check
   expect_equal(read$malformed$n_read, 2L)
 })
 
+test_that("a first record over several windows is read whole by the skip check (D12.58)", {
+  real_fread <- data.table::fread
+  # As above, only the file's read loses its last row, so the skip check reads line 1 again
+  # from a window that starts at 256 bytes and doubles until it holds the record's end.
+  local_mocked_bindings(fread = function(...) {
+    out <- real_fread(...)
+    if ("file" %in% names(list(...))) out[seq_len(max(nrow(out) - 1L, 0L))] else out
+  })
+  row <- function(value, n) charToRaw(paste(rep(value, n), collapse = ","))
+  wide <- charToRaw(paste0("c", formatC(1:80, width = 3, flag = "0"), collapse = ","))
+  expect_gt(length(wide), 256L)
+  expect_no_warning(read <- read_csv_text(write_bytes(list(
+    wide, row(1, 80), row(2, 80), row(3, 80)
+  ))))
+  expect_equal(ncol(read$data), 80L)
+  expect_equal(read$lines, 2:3)
+  expect_equal(read$malformed$kind, "short")
+  expect_equal(read$malformed$n_records, 3L)
+  expect_equal(read$malformed$n_read, 2L)
+  # A quoted newline inside the first record doesn't end it: its end is past two doublings.
+  expect_no_warning(quoted <- read_csv_text(write_bytes(list(
+    charToRaw(paste0("\"", strrep("x", 300))), charToRaw(paste0(strrep("y", 700), "\",b")),
+    charToRaw("1,2"), charToRaw("3,4"), charToRaw("5,6")
+  ))))
+  expect_equal(nchar(names(quoted$data)[[1L]]), 1001L)
+  expect_equal(quoted$lines, c(3L, 4L))
+  expect_equal(quoted$malformed$kind, "short")
+  expect_equal(quoted$malformed$n_records, 3L)
+  expect_equal(quoted$malformed$n_read, 2L)
+})
+
 test_that("a warning from reading one line on its own isn't the file's (D12.58)", {
   real_fread <- data.table::fread
   local_mocked_bindings(fread = function(...) {
@@ -531,6 +588,24 @@ test_that("a title line is the header beside an encoding warning and a bad byte 
   expect_equal(nrow(no_title$malformed), 0L)
   expect_equal(no_title$invalid$row, 1L)
   expect_equal(no_title$lines, 2:3)
+})
+
+test_that("a bad byte in the title line is the header's finding, the encoding warning dropped", {
+  # The title is line 1, so the header, and its bad byte is read: spec_encoding_invalid's, on
+  # row 0. fread()'s warning about the mark is that finding's, not an unknown problem (D12.58).
+  mark <- as.raw(c(0x84, 0x31, 0x95, 0x33))
+  for (start in list(mark, raw(0))) {
+    titled <- read_csv_text(write_bytes(list(
+      c(start, charToRaw("Title"), as.raw(0x97)), charToRaw("id,name"), charToRaw("1,a"),
+      charToRaw("2,b")
+    )))
+    expect_named(titled$data, "Title<97>")
+    expect_equal(nrow(titled$data), 0L)
+    expect_equal(titled$invalid$row, 0L)
+    expect_equal(titled$invalid$value, "Title<97>")
+    expect_equal(titled$malformed$kind, "fields")
+    expect_equal(titled$malformed$line, 2L)
+  }
 })
 
 test_that("a session's warn = 2 doesn't stop the read, and its warn is put back (D12.59)", {
@@ -624,7 +699,7 @@ test_that("undo_doubled_quotes undoes doubled quotes in the columns named, in pl
 
 test_that("undo_doubled_quotes leaves a table with no column or no match as it is", {
   none <- data.table::data.table()
-  expect_identical(undo_doubled_quotes(none), none)
+  expect_identical(undo_doubled_quotes(none), data.table::data.table())
   dt <- data.table::data.table(a = c("one \"quote\"", NA))
   undo_doubled_quotes(dt)
   expect_equal(dt$a, c("one \"quote\"", NA))

@@ -79,7 +79,7 @@ test_that("html_table writes a table with no rows or no columns without phantom 
   expect_false(grepl("<td>", no_columns, fixed = TRUE))
 })
 
-test_that("html_table writes a double column through as.character", {
+test_that("html_table writes a double column's cells as text", {
   out <- html_table(data.table::data.table(x = c(0.5, 2.25)), "c")
   expect_match(out, "<td>0.5</td>", fixed = TRUE)
   expect_match(out, "<td>2.25</td>", fixed = TRUE)

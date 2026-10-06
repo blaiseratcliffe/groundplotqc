@@ -58,6 +58,22 @@ test_that("sheet keys with no datasets row are datasets_row_missing", {
   out <- resolve_clashes(inputs$datasets, inputs$code_lists, precedence_rows(), files)
   expect_equal(out$findings$rule_id, "datasets_row_missing")
   expect_match(out$findings$detail, "120.01", fixed = TRUE)
+  # The input is the datasets table's, the file the sheet's; a data.frame sheet has no cell.
+  expect_equal(out$findings$input, "datasets")
+  expect_equal(out$findings$file, "lookup.xlsx")
+  expect_true(is.na(out$findings$source_cell))
+})
+
+test_that("a datasets_row_missing finding cites the key's own cell in the sheet's file (D12.33)", {
+  sheet <- file.path(withr::local_tempdir(), "dataset.csv")
+  writeLines(c("magp_dataset_id,src_dataset_id", "110.05,BC_VRI", "120.01,MB_PSP"), sheet)
+  code_lists <- read_code_lists(list(dataset = sheet))$long
+  datasets <- data.table::data.table(magp_dataset_id = "110.05", src_dataset_id = "BC_VRI")
+  out <- resolve_clashes(datasets, code_lists, precedence_rows()[1L], files)
+  expect_equal(out$findings$rule_id, "datasets_row_missing")
+  expect_equal(out$findings$input, "datasets")
+  expect_equal(out$findings$file, "lookup.xlsx")
+  expect_equal(out$findings$source_cell, "dataset.csv:3")
 })
 
 test_that("a datasets table with no rows still has every sheet key missing (R14)", {
@@ -76,6 +92,10 @@ test_that("a precedence sheet or key that doesn't exist is unresolved", {
   rows$key_col <- "dataset_key"
   out <- resolve_clashes(inputs$datasets, inputs$code_lists, rows, files)
   expect_equal(out$findings$rule_id, "spec_clash_unresolved")
+  # The finding is the precedence input's, in its sheet's file, with no cell to point at.
+  expect_equal(out$findings$input, "precedence")
+  expect_equal(out$findings$file, "lookup.xlsx")
+  expect_true(is.na(out$findings$source_cell))
 })
 
 test_that("a precedence sheet with a header and no rows is skipped (D12.26)", {
@@ -132,6 +152,27 @@ test_that("a clash names the datasets table's cell and the sheet's (D12.33)", {
   expect_equal(cells$source_cell_b, c("dataset.csv:2", "dataset.csv:3"))
   unknown <- resolve_clashes(datasets, code_lists, precedence_rows()[1L], files)
   expect_true(all(is.na(unknown$clashes$source_cell_a)))
+})
+
+test_that("resolve_clashes leaves its callers' tables as they were (plan 16.2)", {
+  inputs <- clash_inputs()
+  precedence <- precedence_rows()
+  before <- lapply(
+    list(datasets = inputs$datasets, code_lists = inputs$code_lists, precedence = precedence),
+    data.table::copy
+  )
+  resolve_clashes(inputs$datasets, inputs$code_lists, precedence, files)
+  # data.table may index code_lists while it subsets it, which is no change to the data, and
+  # new_gpq_spec() drops it (D12.27); so the comparison leaves indices out.
+  unindexed <- function(x) {
+    x <- data.table::copy(x)
+    data.table::setindex(x, NULL)
+    x
+  }
+  expect_identical(unindexed(inputs$datasets), unindexed(before$datasets))
+  expect_identical(unindexed(inputs$code_lists), unindexed(before$code_lists))
+  expect_identical(unindexed(precedence), unindexed(before$precedence))
+  expect_named(inputs$datasets, names(before$datasets))
 })
 
 test_that("a column named like the reader's own variables is just a column", {

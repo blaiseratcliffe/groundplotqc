@@ -18,8 +18,8 @@ hand_kept <- function(name) {
   }
   read <- read_csv_text(path)
   # A committed hand-kept file reads clean, or the build would stop on it (D12.58).
-  testthat::expect_equal(nrow(read$malformed), 0L)
-  testthat::expect_equal(nrow(read$invalid), 0L)
+  testthat::expect_equal(nrow(read$malformed), 0L, info = name)
+  testthat::expect_equal(nrow(read$invalid), 0L, info = name)
   read$data
 }
 
@@ -433,6 +433,8 @@ test_that("every treat_vs_dist value is in a filter list, blank only on NO and N
   listed <- unique(unlist(strsplit(filters, "; ", fixed = TRUE)))
   expect_gt(length(listed), 0L)
   walk <- tree_table("treatment_disturbance")
+  # Both checks below pass on a table with no rows.
+  expect_gt(nrow(walk), 0L)
   # A value in neither list would drop its code from both silently.
   expect_equal(setdiff(walk$treat_vs_dist[!is.na(walk$treat_vs_dist)], listed), character())
   expect_equal(setdiff(walk$magp_codes[is.na(walk$treat_vs_dist)], c("NO", "ND")), character())
@@ -463,6 +465,17 @@ test_that("the datasets copy and the lookup agree on every src_dataset_id (D12.7
       comments = comment
     )
   )
+  # The lookup's own dataset sheet, from the build's code lists, has the same two IDs: the
+  # clash table is empty also where the sheet lost the rows, so its values are read too.
+  lists <- tree_spec()$code_lists
+  lists <- lists[lists$sheet == "dataset" & lists$source_row > 1L, ]
+  ids <- lists[lists$sheet_column == "magp_dataset_id", ]
+  sources <- lists[lists$sheet_column == "src_dataset_id", ]
+  row_of <- ids$source_row[match(c("110.05", "110.06"), ids$value)]
+  expect_false(anyNA(row_of))
+  lookup <- sources$value[match(row_of, sources$source_row)]
+  expect_equal(lookup, c("BC_VRI", "BC_SUP"))
+  expect_equal(lookup, rows$src_dataset_id)
 })
 
 test_that("the compiled specification is the one the build makes (D12.14, D12.27)", {

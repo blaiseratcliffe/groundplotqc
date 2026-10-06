@@ -29,7 +29,8 @@ test_that("validate_sentinels takes a table such as MAGPlot's hand-kept one", {
   )
   expect_equal(validate_sentinels(table)$value, "-1")
   table$data_type <- "integer"
-  expect_error(validate_sentinels(table), "data_type")
+  # Its own check's wording: the columns check's message names data_type too.
+  expect_error(validate_sentinels(table), "data_type is numeric, character or date")
 })
 
 test_that("validate_sentinels refuses what isn't one clean row per family and role (D12.54)", {
@@ -47,4 +48,26 @@ test_that("validate_sentinels refuses what isn't one clean row per family and ro
   bad <- rawToChar(as.raw(c(0x58, 0x97)))
   Encoding(bad) <- "UTF-8"
   expect_error(gpq_sentinels(character = c(missing = bad)), "UTF-8")
+})
+
+test_that("validate_sentinels refuses a blank role or value, and takes a table with no rows", {
+  row <- function(role = "missing", value = "-1") {
+    data.frame(
+      data_type = "numeric", role = role, value = value, allowed_in_pk = FALSE,
+      allowed_in_fk = FALSE
+    )
+  }
+  for (blank in c("", "   ", NA_character_)) {
+    expect_error(
+      validate_sentinels(row(role = blank)), "a role missing or not_applicable and no blank cell",
+      info = paste("role", deparse(blank))
+    )
+    expect_error(
+      validate_sentinels(row(value = blank)), "a role missing or not_applicable and no blank cell",
+      info = paste("value", deparse(blank))
+    )
+  }
+  none <- validate_sentinels(row()[0L, ])
+  expect_equal(nrow(none), 0L)
+  expect_named(none, c("data_type", "role", "value", "allowed_in_pk", "allowed_in_fk"))
 })
