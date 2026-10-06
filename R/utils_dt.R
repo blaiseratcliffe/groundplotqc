@@ -42,6 +42,21 @@ fix_invalid_utf8 <- function(data) {
   out
 }
 
+#' A quoted field's doubled quotes undone, by reference
+#'
+#' fread() keeps them; undoing them is exact for RFC 4180 files.
+#' @noRd
+undo_doubled_quotes <- function(data, columns = names(data)) {
+  for (column in columns) {
+    x <- data[[column]]
+    hit <- which(!is.na(x) & grepl("\"\"", x, fixed = TRUE))
+    if (length(hit) > 0L) {
+      set(data, i = hit, j = column, value = gsub("\"\"", "\"", x[hit], fixed = TRUE))
+    }
+  }
+  invisible(data)
+}
+
 #' A CSV file read as text, exactly as written
 #'
 #' Read as comma-separated text with a header, every warning fread() gives collected
@@ -375,13 +390,7 @@ read_csv_text <- function(path) {
       set(data, i = blank, j = j, value = NA_character_)
     }
   }
-  for (j in seq_along(data)) {
-    x <- data[[j]]
-    hit <- which(!is.na(x) & grepl("\"\"", x, fixed = TRUE))
-    if (length(hit) > 0L) {
-      set(data, i = hit, j = j, value = gsub("\"\"", "\"", x[hit], fixed = TRUE))
-    }
-  }
+  undo_doubled_quotes(data)
   # Each finding's value as kept, after the names and cells changed above (D12.45).
   is_name <- which(invalid$row == 0L)
   if (length(is_name) > 0L) {
