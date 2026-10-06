@@ -33,7 +33,7 @@ or a reference table), or a named list of data.frames or CSV paths, named by she
 \item{datasets}{\code{NULL}, or the datasets table (a data.frame or a CSV path), read as text.}
 
 \item{lineage_spec}{\code{NULL}, or the lineage spec in long form (a data.frame or a CSV
-path), with columns
+path), with exactly the columns
 \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type} (\code{id} or
 \code{compiled}), \code{source_text}, \code{note} and \code{source_cell}.}
 
@@ -45,13 +45,14 @@ CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}
 
 \item{id_bands}{\code{NULL}, or \code{list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)} naming the code-list sheet of ID bands.}
 
-\item{precedence}{\code{NULL}, or a table (data.frame or CSV path) with columns \code{sheet},
+\item{precedence}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{sheet},
 \code{key_col}, \code{attribute_name}, \code{winner} (\code{datasets} or \code{code_lists}) and \code{blank_rule}
 (\code{yields} or \code{wins}), saying which input wins where the datasets table and a sheet
 overlap.}
 
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
-named by input (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
+named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
 \verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of \code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in the manifest; a workbook's
 sheet, or \code{NULL} for a CSV file; the file row of the first data row, later rows
 following on, or the file row of every data row, or \code{NULL} to count rows as R counts
@@ -78,6 +79,15 @@ Reads a data dictionary and its companion inputs into one specification object, 
 \code{gpq_preflight()} checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the \code{read_findings} component,
 and \code{gpq_preflight()} decides whether it stops.
+
+It does stop, with an error, on a mistake in the call: an argument in the wrong form;
+a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
+unless it is a translation table, which is then a finding; a
+dictionary without its table or attribute column; a \code{precedence} or \code{lineage_spec}
+table without exactly its columns; a \code{precedence} table with an unknown \code{winner} or
+\code{blank_rule}, or with two rows for one sheet, key and attribute; a name given in R
+that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
+values for an attribute that uses it; or an origin that doesn't fit its input.
 }
 \section{Components}{
 

@@ -9,7 +9,8 @@
 #'
 #' Also the datasets_row_missing findings, and spec_clash_unresolved for a precedence
 #' sheet or key that doesn't exist (D12.24). `datasets` is NULL when not given; a given
-#' table with no rows is still checked (R14).
+#' table with no rows is still checked (R14). `files$code_lists` is the code-list file of
+#' each precedence sheet, named by sheet, so each finding names its sheet's file (D12.28).
 #' @noRd
 resolve_clashes <- function(datasets, code_lists, precedence, files,
                             datasets_where = list(kind = "memory")) {
@@ -25,10 +26,11 @@ resolve_clashes <- function(datasets, code_lists, precedence, files,
   for (group in split(precedence, by = c("sheet", "key_col"))) {
     sheet_name <- group$sheet[[1L]]
     key <- group$key_col[[1L]]
+    list_file <- unname(files$code_lists[match(sheet_name, names(files$code_lists))])
     headers <- code_lists[sheet == sheet_name & source_row == 1L, value]
     if (!key %in% headers || !key %in% names(datasets)) {
       findings[[length(findings) + 1L]] <- data.table(
-        rule_id = "spec_clash_unresolved", input = "precedence", file = files$code_lists,
+        rule_id = "spec_clash_unresolved", input = "precedence", file = list_file,
         detail = report_text(
           "preflight_detail_spec_clash_unresolved_setup",
           sheet = sheet_name, key_col = key
@@ -53,7 +55,7 @@ resolve_clashes <- function(datasets, code_lists, precedence, files,
     missing <- key_cells[!is.na(value) & !value %chin% datasets[[key]]]
     if (nrow(missing) > 0L) {
       findings[[length(findings) + 1L]] <- data.table(
-        rule_id = "datasets_row_missing", input = "datasets", file = files$code_lists,
+        rule_id = "datasets_row_missing", input = "datasets", file = list_file,
         detail = report_text(
           "preflight_detail_datasets_row_missing",
           key_col = key, key_value = missing$value, sheet = sheet_name
@@ -66,8 +68,12 @@ resolve_clashes <- function(datasets, code_lists, precedence, files,
     # of rows (R13).
     left <- datasets[, shared, with = FALSE]
     set(left, j = ".gpq_datasets_row", value = seq_len(nrow(left)))
-    left <- left[!is.na(left[[key]])]
-    sheet_wide <- sheet_wide[!is.na(sheet_wide[[key]])]
+    # Each index is made outside `[`, where a column named key, left or sheet_wide
+    # would hide the variable of that name.
+    keep <- !is.na(left[[key]])
+    left <- left[keep]
+    keep <- !is.na(sheet_wide[[key]])
+    sheet_wide <- sheet_wide[keep]
     joined <- merge(
       left, sheet_wide[, c(".gpq_source_row", shared), with = FALSE],
       by = key, suffixes = c(".a", ".b"), allow.cartesian = TRUE

@@ -1153,3 +1153,84 @@ test_that("origins name only inputs given as data.frames (D12.33)", {
     fixed = TRUE
   )
 })
+
+test_that("origins refuse a repeated name and say why an input takes none (D12.62)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines("stand-in", path)
+  origin <- list(path = path)
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  expect_error(
+    gpq_read_spec(dictionary, origins = list(dictionary = origin, dictionary = origin)),
+    "`origins` names an input more than once: dictionary.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_read_spec(dictionary, id_pattern = "_id$", origins = list(id_pattern = origin)),
+    "`origins` names inputs that take no origin: id_pattern.",
+    fixed = TRUE
+  )
+  workbook <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", workbook)
+  expect_error(
+    gpq_read_spec(dictionary, code_lists = workbook, origins = list(`code_lists:gear` = origin)),
+    "given as a path"
+  )
+})
+
+test_that("each clash finding names its own sheet's file (D12.28)", {
+  dir <- withr::local_tempdir()
+  first <- file.path(dir, "first_list.csv")
+  second <- file.path(dir, "second_list.csv")
+  writeLines(c("first_list", "A"), first)
+  writeLines(c("code_id,label", "k1,One", "k2,Two"), second)
+  findings <- function(key_col) {
+    gpq_read_spec(
+      data.frame(table_name = "t", attribute_name = "a", data_type = "character"),
+      code_lists = list(first_list = first, dataset = second),
+      datasets = data.frame(code_id = "k1", label = "Uno"),
+      precedence = data.frame(
+        sheet = "dataset", key_col = key_col, attribute_name = "label", winner = "datasets",
+        blank_rule = "wins"
+      )
+    )$read_findings
+  }
+  missing <- findings("code_id")
+  expect_equal(missing$rule_id, "datasets_row_missing")
+  expect_equal(missing$file, "second_list.csv")
+  expect_equal(missing$source_cell, "second_list.csv:3")
+  unresolved <- findings("no_such_key")
+  expect_equal(unresolved$rule_id, "spec_clash_unresolved")
+  expect_equal(unresolved$file, "second_list.csv")
+})
+
+test_that("id_bands that isn't a list of names is the package's own error", {
+  expect_error(read_fish(id_bands = "bands"), "`id_bands` is list(", fixed = TRUE)
+  expect_error(read_fish(id_bands = list(sheet = c("a", "b"))), "`id_bands` is list(", fixed = TRUE)
+})
+
+test_that("a type map's findings attribute must have the read_findings columns", {
+  types <- gpq_type_map()
+  attr(types, "gpq_read_findings") <- data.frame(rule_id = "x", note = "y")
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  expect_error(gpq_read_spec(dictionary, type_map = types), "gpq_read_findings")
+})
+
+test_that("a caller's tables come back unchanged, sharing no column with the spec", {
+  dictionary <- data.table::data.table(
+    table_name = "t", attribute_name = c("a", "b"), key_type = c("PK", NA),
+    data_type = "character", description = c(bad_cell, "fine")
+  )
+  data.table::setindex(dictionary, table_name)
+  types <- gpq_type_map()
+  dictionary_before <- data.table::copy(dictionary)
+  types_before <- data.table::copy(types)
+  spec <- gpq_read_spec(dictionary, type_map = types)
+  expect_identical(dictionary, dictionary_before)
+  expect_identical(types, types_before)
+  expect_false(is.null(attr(dictionary, "index")))
+  caller <- c(
+    vapply(dictionary, data.table::address, ""), vapply(types, data.table::address, "")
+  )
+  in_spec <- unlist(lapply(spec, function(x) vapply(x, data.table::address, "")))
+  expect_length(intersect(caller, in_spec), 0L)
+})

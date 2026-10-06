@@ -24,7 +24,8 @@ precedence_rows <- function(blank_rule = "wins") {
   )
 }
 
-files <- list(datasets = "datasets.csv", code_lists = "lookup.xlsx")
+# The code-list file of each sheet, named by sheet (D12.28).
+files <- list(datasets = "datasets.csv", code_lists = c(dataset = "lookup.xlsx"))
 
 test_that("clashes follow precedence; a blank on the losing side never clashes", {
   inputs <- clash_inputs()
@@ -131,4 +132,21 @@ test_that("a clash names the datasets table's cell and the sheet's (D12.33)", {
   expect_equal(cells$source_cell_b, c("dataset.csv:2", "dataset.csv:3"))
   unknown <- resolve_clashes(datasets, code_lists, precedence_rows()[1L], files)
   expect_true(all(is.na(unknown$clashes$source_cell_a)))
+})
+
+test_that("a column named like the reader's own variables is just a column", {
+  # data.frame(), since data.table() takes `key` as its own argument.
+  datasets <- data.table::as.data.table(data.frame(
+    key = c("1", "2"), left = "a", sheet_wide = "b", keep = "k"
+  ))
+  sheet <- data.frame(key = c("1", "3"), left = "c", sheet_wide = "b", keep = "k")
+  code_lists <- read_code_lists(list(dataset = sheet))$long
+  rules <- data.table::data.table(
+    sheet = "dataset", key_col = "key", attribute_name = "left", winner = "datasets",
+    blank_rule = "wins"
+  )
+  out <- resolve_clashes(datasets, code_lists, rules, files)
+  expect_equal(paste(out$clashes$column_name, out$clashes$key_value), "left 1")
+  expect_equal(out$findings$rule_id, "datasets_row_missing")
+  expect_equal(out$findings$file, "lookup.xlsx")
 })

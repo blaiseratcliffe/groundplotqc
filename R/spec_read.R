@@ -1269,6 +1269,15 @@ read_lineage_input <- function(x, origin = NULL) {
 #' defect in the specification: each one is recorded in the `read_findings` component,
 #' and `gpq_preflight()` decides whether it stops.
 #'
+#' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
+#' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
+#' unless it is a translation table, which is then a finding; a
+#' dictionary without its table or attribute column; a `precedence` or `lineage_spec`
+#' table without exactly its columns; a `precedence` table with an unknown `winner` or
+#' `blank_rule`, or with two rows for one sheet, key and attribute; a name given in R
+#' that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
+#' values for an attribute that uses it; or an origin that doesn't fit its input.
+#'
 #' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
 #'   `.xlsx` workbook, read from its first sheet. One row per table and attribute.
 #' @param code_lists `NULL`, the path of an `.xlsx` workbook (every sheet is a code list
@@ -1277,7 +1286,7 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   `code_list_*` checks skip them.
 #' @param datasets `NULL`, or the datasets table (a data.frame or a CSV path), read as text.
 #' @param lineage_spec `NULL`, or the lineage spec in long form (a data.frame or a CSV
-#'   path), with columns
+#'   path), with exactly the columns
 #'   `contributor_label`, `table_name`, `attribute_name`, `spec_type` (`id` or
 #'   `compiled`), `source_text`, `note` and `source_cell`.
 #' @param crosswalks `NULL`, or a named list of translation tables: each a data.frame, a
@@ -1286,12 +1295,13 @@ read_lineage_input <- function(x, origin = NULL) {
 #' @param id_pattern `NULL`, or one regular expression marking ID attributes by name.
 #' @param id_bands `NULL`, or `list(sheet, label_col, start_col, end_col, labels_from =
 #'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands.
-#' @param precedence `NULL`, or a table (data.frame or CSV path) with columns `sheet`,
+#' @param precedence `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `sheet`,
 #'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
 #'   (`yields` or `wins`), saying which input wins where the datasets table and a sheet
 #'   overlap.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
-#'   named by input (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
+#'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
 #'   `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = , rows = ,
 #'   columns = )`: the file, named in findings and hashed in the manifest; a workbook's
 #'   sheet, or `NULL` for a CSV file; the file row of the first data row, later rows
@@ -1374,19 +1384,38 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     # A blank name is NA, as in every input form (R17).
     non_code_sheets <- as_text(non_code_sheets)
   }
-  # A type map read from a file brings that file's findings (D12.55).
+  # A type map read from a file brings that file's findings (D12.55), with
+  # read_findings' columns; a hand-set attribute without them is a caller's error.
   type_findings <- attr(type_map, "gpq_read_findings")
+  finding_columns <- names(spec_schema()$read_findings)
+  findings_ok <- is.null(type_findings) || is.data.frame(type_findings) &&
+    setequal(names(type_findings), finding_columns) && anyDuplicated(names(type_findings)) == 0L
+  if (!findings_ok) {
+    stop(
+      "`type_map`'s attribute `gpq_read_findings` must be a table with the columns ",
+      paste(finding_columns, collapse = ", "), ", as gpq_type_map() makes it.",
+      call. = FALSE
+    )
+  }
   type_map <- validate_type_map(type_map)
   sentinels <- validate_sentinels(sentinels)
-  check_origins(origins, c(
-    "dictionary",
-    if (is.list(code_lists) && !is.data.frame(code_lists)) {
-      paste0("code_lists:", names(code_lists))
-    },
-    if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
-    if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
-    if (!is.null(precedence)) "precedence"
-  ))
+  check_origins(
+    origins,
+    c(
+      "dictionary",
+      if (is.list(code_lists) && !is.data.frame(code_lists)) {
+        paste0("code_lists:", names(code_lists))
+      },
+      if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
+      if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
+      if (!is.null(precedence)) "precedence"
+    ),
+    no_origin = c(
+      if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
+      if (!is.null(id_bands)) "id_bands"
+    ),
+    workbook = is.character(code_lists) && length(code_lists) == 1L
+  )
   dictionary_in <- read_input_table(dictionary, "dictionary", origins[["dictionary"]])
   dictionary_read <- read_dictionary(dictionary_in, column_map, type_map, id_pattern)
   lists <- read_code_lists(code_lists, origins)
@@ -1404,13 +1433,24 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   code_list_map <- build_code_list_map(
     attributes, lists$long, lists$sheets, walks$long, walks$declared
   )
-  lists_file <- if (is.null(lists$manifest)) NA_character_ else lists$manifest$file[[1L]]
-  bands <- build_id_bands(id_bands, lists$long, sheet_file(lists$manifest, id_bands$sheet))
+  # build_id_bands() checks id_bands' shape; until then only a list's sheet is read.
+  bands_sheet <- if (is.list(id_bands)) id_bands[["sheet"]]
+  bands_file <- if (is.character(bands_sheet) && length(bands_sheet) == 1L) {
+    sheet_file(lists$manifest, bands_sheet)
+  } else {
+    NA_character_
+  }
+  bands <- build_id_bands(id_bands, lists$long, bands_file)
   datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
+  # Each precedence sheet's own file, its CSV or the workbook, named by sheet (D12.28).
+  list_files <- vapply(
+    unique(precedence_in$data$sheet), sheet_file, character(1),
+    manifest = lists$manifest
+  )
   # NULL when the datasets table isn't given; a given one with no rows is checked (R14).
   clashes <- resolve_clashes(
     datasets_in$data, lists$long, precedence_in$data,
-    list(datasets = datasets_in$where$file, code_lists = lists_file),
+    list(datasets = datasets_in$where$file, code_lists = list_files),
     datasets_where = datasets_in$where %||% list(kind = "memory")
   )
   # A placement clash names the dictionary's file only where its rows are the file's
@@ -1455,9 +1495,11 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
 
 #' A stop unless `origins` is NULL or a list named by inputs given (D12.33)
 #'
-#' An origin for an input given as a path is refused where that input is read.
+#' Each name once (D12.62). An input given that takes no origin (`no_origin`), or a sheet
+#' of a code-list workbook given as a path, is refused saying why (D12.62); an origin for
+#' any other input given as a path is refused where that input is read.
 #' @noRd
-check_origins <- function(origins, inputs) {
+check_origins <- function(origins, inputs, no_origin = character(), workbook = FALSE) {
   if (is.null(origins)) {
     return(invisible(NULL))
   }
@@ -1466,7 +1508,31 @@ check_origins <- function(origins, inputs) {
   if (!named) {
     stop("`origins` must be NULL or a list named by input.", call. = FALSE)
   }
-  unknown <- setdiff(names(origins), inputs)
+  given <- names(origins)
+  # A repeated name would leave one origin unused, as for code_lists' names (R11).
+  twice <- unique(given[duplicated(given)])
+  if (length(twice) > 0L) {
+    stop(
+      "`origins` names an input more than once: ", paste(twice, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  none <- intersect(given, no_origin)
+  if (length(none) > 0L) {
+    stop(
+      "`origins` names inputs that take no origin: ", paste(none, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  sheets <- if (workbook) given[startsWith(given, "code_lists:")] else character()
+  if (length(sheets) > 0L) {
+    stop(
+      "`code_lists` is given as a path, so its sheets take no origin: ",
+      paste(sheets, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  unknown <- setdiff(given, inputs)
   if (length(unknown) > 0L) {
     stop(
       "`origins` names inputs that weren't given: ", paste(unknown, collapse = ", "), ".",
