@@ -1250,3 +1250,13 @@ read_precedence <- function(x, origin = NULL) {
   }
   list(data = data, manifest = table$manifest, findings = table$findings)
 }
+
+#' The lineage-spec input, its columns checked
+#' @noRd
+read_lineage_input <- function(x, origin = NULL) {
+  table <- read_input_table(x, "lineage_spec", origin)
+  columns <- spec_input_schema()$lineage_spec
+  check_input_columns(table$data, columns, "lineage_spec")
+  table$data <- table$data[, columns, with = FALSE]
+  table
+}
