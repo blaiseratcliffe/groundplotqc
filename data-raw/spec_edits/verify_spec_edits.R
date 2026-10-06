@@ -53,9 +53,9 @@ letters_of <- function(j) {
   s
 }
 cell_pos <- function(ref) {
-  letters <- strsplit(sub("[0-9]+$", "", ref), "")[[1]]
+  cell_letters <- strsplit(sub("[0-9]+$", "", ref), "")[[1]]
   j <- 0L
-  for (ch in letters) {
+  for (ch in cell_letters) {
     j <- j * 26L + match(ch, LETTERS)
   }
   c(row = as.integer(sub("^[A-Z]+", "", ref)), col = j)
@@ -133,7 +133,9 @@ tag_counts <- function(dir) {
   text <- vapply(files, function(f) {
     paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "")
   }, "")
-  vapply(tags, function(t) sum(lengths(regmatches(text, gregexpr(t, text, fixed = TRUE)))), 0L)
+  vapply(
+    tags, function(tag) sum(lengths(regmatches(text, gregexpr(tag, text, fixed = TRUE)))), 0L
+  )
 }
 
 cat("Folder:", folder, "\n")
@@ -289,12 +291,12 @@ for (kind in names(workbooks)) {
     x <- rawToChar(slurp_raw(file.path(td_new, r)))
     rel_tags <- regmatches(x, gregexpr("<Relationship [^>]*>", x))[[1]]
     for (tag in rel_tags[!grepl('TargetMode="External"', rel_tags)]) {
-      t <- sub('.*Target="([^"]*)".*', "\\1", tag)
+      target <- sub('.*Target="([^"]*)".*', "\\1", tag)
       owner_dir <- dirname(dirname(r))
-      full <- if (startsWith(t, "/")) {
-        sub("^/", "", t)
+      full <- if (startsWith(target, "/")) {
+        sub("^/", "", target)
       } else {
-        from_root <- file.path(if (owner_dir == ".") "" else owner_dir, t)
+        from_root <- file.path(if (owner_dir == ".") "" else owner_dir, target)
         pieces <- strsplit(from_root, "/", fixed = TRUE)[[1]]
         out <- character()
         for (p in pieces[nzchar(pieces)]) {
@@ -307,7 +309,7 @@ for (kind in names(workbooks)) {
         paste(out, collapse = "/")
       }
       if (!(full %in% parts_new)) {
-        fail(kind, ": ", r, " points to a missing part: ", t)
+        fail(kind, ": ", r, " points to a missing part: ", target)
       }
     }
   }
@@ -350,7 +352,7 @@ read_checked <- function(...) {
     strip.white = FALSE
   )
 }
-crlf_count <- function(t) lengths(regmatches(t, gregexpr("\r\n", t, fixed = TRUE)))
+crlf_count <- function(text) lengths(regmatches(text, gregexpr("\r\n", text, fixed = TRUE)))
 for (name in names(csv_sources)) {
   src <- csv_source_path(name, baseline_dir, translation_dir)
   path <- file.path(folder, name)
@@ -378,6 +380,15 @@ for (name in names(csv_sources)) {
     fail(name, ": CRLF count differs")
   }
   if (name == "20261005_magpv2_species.csv") {
+    # The expected lines below add each note as a plain field, so a note that needs CSV
+    # quoting is a failure of the list, as patch_workbooks.R stops on it.
+    needs_quotes <- grepl('[,"\r\n]', fold_notes)
+    if (any(needs_quotes)) {
+      fail(
+        name, ": a fold note holds a comma, a quote or a line break: ",
+        paste(names(fold_notes)[needs_quotes], collapse = ", ")
+      )
+    }
     a <- strsplit(src_text, "\r\n", fixed = TRUE)[[1]]
     b <- strsplit(new_text, "\r\n", fixed = TRUE)[[1]]
     notes <- rep("", length(a))
@@ -422,7 +433,13 @@ for (name in names(csv_sources)) {
       right_cell <- length(i) == 1L && i + 1L == e$line &&
         identical(ta[[e$col]][i], e$from) && identical(tb[[e$col]][i], e$to)
       if (!right_cell) {
-        fail(name, ": ", e$key, "'s ", e$col, " isn't ", e$from, " -> ", e$to, " on line ", e$line)
+        # A blank cell (NA) shows as "(blank)", not "NA".
+        from_text <- if (is.na(e$from)) "(blank)" else e$from
+        to_text <- if (is.na(e$to)) "(blank)" else e$to
+        fail(
+          name, ": ", e$key, "'s ", e$col, " isn't ", from_text, " -> ", to_text, " on line ",
+          e$line
+        )
       }
     }
   } else if (!identical(src_text, new_text)) {
@@ -430,7 +447,7 @@ for (name in names(csv_sources)) {
   }
   warnings_seen <- NULL
   d <- withCallingHandlers(
-    read_checked(path),
+    read_checked(file = path),
     warning = function(cond) {
       warnings_seen <<- c(warnings_seen, conditionMessage(cond))
       invokeRestart("muffleWarning")

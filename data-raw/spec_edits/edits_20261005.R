@@ -3,7 +3,7 @@
 # list and the names of the files it makes, nothing else: patch_workbooks.R,
 # verify_spec_edits.R and edit_csv_cell.R each source() this file from their own folder. It
 # defines `edits`, `workbooks`, `new_name()`, `csv_sources`, `csv_source_path()`,
-# `fold_notes`, `fold_lines` and `csv_cell_edits`.
+# `fold_notes`, `fold_lines`, `csv_cell_edits`, `datasets_edit()` and `swap_note`.
 #
 # Coordinates are the 20260925 files' cells (Excel column letter and row). Ops on one cell
 # apply in list order. Every op names a guard: cells that must hold the given text before the
@@ -219,7 +219,7 @@ lk(
   "visit_type", "set", "C11",
   paste0(
     "Use for young-stand monitoring remeasurements on a standardized intensified NFI grid, ",
-    "generally 5 km × 10 km, in the young-stand population the VegCompR1 inventory ",
+    "generally 5 km \u{00d7} 10 km, in the young-stand population the VegCompR1 inventory ",
     "defines as stands 15 to 50 years old. In BC it can be used for the CMI, SUP and YSM ",
     "programs."
   ),
@@ -339,8 +339,10 @@ csv_sources <- list(
   "20261005_magpv2_severity.csv" = list(from = "translation", file = "MAGPlot_severity.csv")
 )
 csv_source_path <- function(name, baseline_dir, translation_dir) {
-  source <- csv_sources[[name]]
-  file.path(if (source$from == "baseline") baseline_dir else translation_dir, source$file)
+  source_entry <- csv_sources[[name]]
+  file.path(
+    if (source_entry$from == "baseline") baseline_dir else translation_dir, source_entry$file
+  )
 }
 # The species copy gains a last column, `comments`, filled on the six fold rows only
 # (D12.72 (13), (21)); every other byte of the master is kept.

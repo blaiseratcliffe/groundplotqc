@@ -75,9 +75,9 @@ build_lineage_input <- function(raw, sheet = "A2") {
     stop("A2 has no header row starting with 'type'.", call. = FALSE)
   }
   header <- unlist(raw[header_row], use.names = FALSE)
-  missing <- setdiff(c("type", "magp_table", "attribute"), header)
-  if (length(missing) > 0L) {
-    stop("A2 has no column named ", paste(missing, collapse = " or "), ".", call. = FALSE)
+  absent <- setdiff(c("type", "magp_table", "attribute"), header)
+  if (length(absent) > 0L) {
+    stop("A2 has no column named ", paste(absent, collapse = " or "), ".", call. = FALSE)
   }
   sources <- grep("_src$", header)
   if (length(sources) == 0L) {
@@ -170,20 +170,29 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   files <- spec_files(spec_dir)
   # A hand-kept file reads clean or the build stops, naming the file and each problem: a
   # malformed line or an invalid byte would drop or change rows with no finding, since of
-  # these files only the type map reaches pre-flight as a file (D12.58). They are all read
-  # before any spec file is opened.
+  # these files only the type map reaches pre-flight as a file (D12.58). The five read
+  # through config() are all read before any spec file is opened; type_map.csv is read last,
+  # through gpq_type_map(path), which carries its findings on to pre-flight.
   config <- function(name) {
     path <- file.path(config_dir, name)
     read <- read_csv_text(path)
     at_line <- function(line) ifelse(is.na(line), "", paste0(" on line ", line))
     malformed <- read$malformed
     invalid <- read$invalid
+    # A "fields" problem gives the header's number of fields, a "short" one its record count
+    # and the rows read; any other the text fread() gave, where it gave one.
+    counts <- ifelse(
+      malformed$kind == "fields", paste0(" (the header has ", malformed$fields, " fields)"),
+      ifelse(
+        malformed$kind == "short",
+        paste0(
+          " (", malformed$n_records, " records after the header, ", malformed$n_read, " read)"
+        ),
+        ifelse(is.na(malformed$value), "", paste0(" (", malformed$value, ")"))
+      )
+    )
     problems <- c(
-      paste0(
-        malformed$kind, at_line(malformed$line),
-        ifelse(is.na(malformed$value), "", paste0(" (", malformed$value, ")")),
-        recycle0 = TRUE
-      ),
+      paste0(malformed$kind, at_line(malformed$line), counts, recycle0 = TRUE),
       # An invalid byte's row 0 is the header, line 1; row r starts on lines[r].
       paste0(
         "invalid byte", at_line(c(1L, read$lines)[invalid$row + 1L]), " (", invalid$value, ")",

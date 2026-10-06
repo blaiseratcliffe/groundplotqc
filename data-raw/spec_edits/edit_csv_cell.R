@@ -5,8 +5,9 @@
 # quotes and every other byte of the file staying as they were; the result is checked by reading
 # both files back (the edited lines change only in their edited fields, every other line is
 # byte-identical, and the parsed tables differ in exactly the edited cells, each from -> to);
-# and it is written once to <output_dir>. A blank cell is NA in an entry, the empty field in the
-# file. It never overwrites a file.
+# every file is checked in a temporary file before any is written, once, to <output_dir>, so a
+# stop leaves nothing there, and a failing check names the file, key and column. A blank cell is
+# NA in an entry, the empty field in the file. It never overwrites a file.
 #
 # Usage: Rscript edit_csv_cell.R <input_dir> <output_dir>
 #   input_dir   the folder holding the converted copies, as patch_workbooks.R wrote them
@@ -47,7 +48,7 @@ split_record <- function(s) {
 }
 read_table <- function(path) {
   data.table::fread(
-    path,
+    file = path,
     sep = ",", header = TRUE, colClasses = "character", na.strings = "", strip.white = FALSE
   )
 }
@@ -58,9 +59,10 @@ same_cells <- function(a, b) {
 raw_text <- function(x) if (is.na(x)) "" else x
 shown <- function(x) if (is.na(x)) "(blank)" else x
 
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir)
-}
+# Every file is checked and staged in a temporary file first; the output folder is made, and
+# the files copied into it, only once all have passed, so a stop leaves nothing there. A failed
+# check stops with a message that names its file and, for an entry, its key and column.
+staged <- list()
 for (name in unique(vapply(csv_cell_edits, `[[`, "", "file"))) {
   ce <- Filter(function(e) e$file == name, csv_cell_edits)
   path <- file.path(input_dir, name)
@@ -71,65 +73,121 @@ for (name in unique(vapply(csv_cell_edits, `[[`, "", "file"))) {
   if (file.exists(target)) {
     stop("The output file exists already: ", target, call. = FALSE)
   }
-  bytes <- readBin(path, "raw", file.info(path)$size)
-  x <- rawToChar(bytes)
-  Encoding(x) <- "UTF-8"
-  original <- strsplit(x, "\r\n", fixed = TRUE)[[1]]
-  # The file is whole CRLF-ended lines, so putting its lines back gives its bytes.
-  stopifnot(identical(charToRaw(paste0(paste(original, collapse = "\r\n"), "\r\n")), bytes))
-  tab <- read_table(path)
-  stopifnot(!anyDuplicated(vapply(ce, function(e) paste(e$key_col, e$key, e$col), "")))
-  lines <- original
-  rows <- integer()
-  cols <- integer()
-  for (e in ce) {
-    i <- which(tab[[e$key_col]] == e$key)
-    j <- match(e$col, names(tab))
-    stopifnot(
-      length(i) == 1L, !is.na(j), i + 1L == e$line, same_cells(tab[[e$col]][i], e$from),
-      !identical(e$from, e$to), !grepl('[,"\r\n]', e$to)
-    )
-    fields <- split_record(lines[e$line])
-    stopifnot(length(fields) == ncol(tab), identical(fields[j], raw_text(e$from)))
-    fields[j] <- raw_text(e$to)
-    lines[e$line] <- paste(fields, collapse = ",")
-    rows <- c(rows, i)
-    cols <- c(cols, j)
-  }
-  # Every other line is as it was; an edited line differs in its edited fields only.
-  edited <- unique(vapply(ce, `[[`, 0L, "line"))
-  stopifnot(length(lines) == length(original), identical(lines[-edited], original[-edited]))
-  for (l in edited) {
-    before <- split_record(original[l])
-    after <- split_record(lines[l])
-    stopifnot(
-      length(before) == length(after),
-      setequal(which(before != after), cols[rows + 1L == l])
-    )
-  }
-  out <- charToRaw(enc2utf8(paste0(paste(lines, collapse = "\r\n"), "\r\n")))
-  # Checked in a temporary file first, so a failed check leaves nothing in the output folder.
-  staged <- tempfile(fileext = ".csv")
-  writeBin(out, staged)
-  new_tab <- read_table(staged)
-  stopifnot(identical(dim(tab), dim(new_tab)), identical(names(tab), names(new_tab)))
-  differ <- which(!same_cells(as.matrix(tab), as.matrix(new_tab)), arr.ind = TRUE)
-  stopifnot(
-    nrow(differ) == length(rows), setequal(paste(differ[, 1], differ[, 2]), paste(rows, cols))
+  tryCatch(
+    {
+      bytes <- readBin(path, "raw", file.info(path)$size)
+      x <- rawToChar(bytes)
+      Encoding(x) <- "UTF-8"
+      original <- strsplit(x, "\r\n", fixed = TRUE)[[1]]
+      # The file is whole CRLF-ended lines, so putting its lines back gives its bytes.
+      stopifnot(
+        "The file isn't whole CRLF-ended lines" =
+          identical(charToRaw(paste0(paste(original, collapse = "\r\n"), "\r\n")), bytes)
+      )
+      tab <- read_table(path)
+      entry_cells <- vapply(ce, function(e) paste(e$key_col, e$key, e$col), "")
+      if (anyDuplicated(entry_cells)) {
+        stop(
+          "A cell is named by two entries: ",
+          paste(unique(entry_cells[duplicated(entry_cells)]), collapse = "; "),
+          call. = FALSE
+        )
+      }
+      lines <- original
+      rows <- integer()
+      cols <- integer()
+      for (e in ce) {
+        tryCatch(
+          {
+            i <- which(tab[[e$key_col]] == e$key)
+            j <- match(e$col, names(tab))
+            stopifnot(
+              "The key matches no row, or several" = length(i) == 1L,
+              "The table has no such column" = !is.na(j),
+              "The row isn't on the entry's line" = i + 1L == e$line,
+              "The cell doesn't hold the entry's from" = same_cells(tab[[e$col]][i], e$from),
+              "The entry's from and to are the same" = !identical(e$from, e$to),
+              "The entry's to needs CSV quoting" = !grepl('[,"\r\n]', e$to)
+            )
+            fields <- split_record(lines[e$line])
+            stopifnot(
+              "The line has another number of fields than the header" =
+                length(fields) == ncol(tab),
+              "The line's field isn't the entry's from" = identical(fields[j], raw_text(e$from))
+            )
+            fields[j] <- raw_text(e$to)
+            lines[e$line] <- paste(fields, collapse = ",")
+            rows <- c(rows, i)
+            cols <- c(cols, j)
+          },
+          error = function(err) {
+            stop(
+              conditionMessage(err), " (", e$key_col, " = ", e$key, ", column ", e$col, ")",
+              call. = FALSE
+            )
+          }
+        )
+      }
+      # Every other line is as it was; an edited line differs in its edited fields only.
+      edited <- unique(vapply(ce, `[[`, 0L, "line"))
+      stopifnot(
+        "A line other than an edited one changed" =
+          length(lines) == length(original) && identical(lines[-edited], original[-edited])
+      )
+      for (l in edited) {
+        before <- split_record(original[l])
+        after <- split_record(lines[l])
+        same_fields <- length(before) == length(after) &&
+          setequal(which(before != after), cols[rows + 1L == l])
+        stopifnot("An edited line changed in more than its edited fields" = same_fields)
+      }
+      out <- charToRaw(enc2utf8(paste0(paste(lines, collapse = "\r\n"), "\r\n")))
+      staged_path <- tempfile(fileext = ".csv")
+      writeBin(out, staged_path)
+      new_tab <- read_table(staged_path)
+      stopifnot(
+        "The edited table's shape or header changed" =
+          identical(dim(tab), dim(new_tab)) && identical(names(tab), names(new_tab))
+      )
+      differ <- which(!same_cells(as.matrix(tab), as.matrix(new_tab)), arr.ind = TRUE)
+      edited_only <- nrow(differ) == length(rows) &&
+        setequal(paste(differ[, 1], differ[, 2]), paste(rows, cols))
+      stopifnot("The cells that differ aren't the edited ones" = edited_only)
+      for (e in ce) {
+        i <- which(tab[[e$key_col]] == e$key)
+        if (!identical(new_tab[[e$col]][i], e$to)) {
+          stop(
+            "The edited cell doesn't hold the entry's to (", e$key_col, " = ", e$key,
+            ", column ", e$col, ")",
+            call. = FALSE
+          )
+        }
+      }
+      staged[[name]] <- list(path = staged_path, ce = ce, edited = edited, n_bytes = length(out))
+    },
+    error = function(err) {
+      stop(conditionMessage(err), " in file ", name, ".", call. = FALSE)
+    }
   )
-  for (e in ce) {
-    i <- which(tab[[e$key_col]] == e$key)
-    stopifnot(identical(new_tab[[e$col]][i], e$to))
+}
+if (!dir.exists(output_dir) && !dir.create(output_dir)) {
+  stop("Can't create the output folder: ", output_dir, call. = FALSE)
+}
+for (name in names(staged)) {
+  one <- staged[[name]]
+  target <- file.path(output_dir, name)
+  if (!file.copy(one$path, target)) {
+    stop("The file couldn't be copied: ", target, call. = FALSE)
   }
-  stopifnot(file.copy(staged, target))
   cat(sprintf(
     "Wrote %s: %d cell(s) on %d line(s) changed, no other cell differs; %d bytes\n",
-    target, length(ce), length(edited), length(out)
+    target, length(one$ce), length(one$edited), one$n_bytes
   ))
-  for (e in ce) {
+  for (e in one$ce) {
     cat(sprintf(
       "  line %d, %s = %s, %s: %s -> %s\n", e$line, e$key_col, e$key, e$col, shown(e$from),
       shown(e$to)
     ))
   }
 }
+unlink(vapply(staged, `[[`, "", "path"))

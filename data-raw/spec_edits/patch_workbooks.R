@@ -37,11 +37,26 @@ if (!all(file.exists(inputs))) {
 if (file.exists(output_dir)) {
   stop("The output folder exists already: ", output_dir, call. = FALSE)
 }
-dir.create(output_dir)
+# The fold notes are written as plain fields, so one that needs CSV quoting stops the run
+# before anything is made.
+needs_quotes <- grepl('[,"\r\n]', fold_notes)
+if (any(needs_quotes)) {
+  stop(
+    "A fold note holds a comma, a quote or a line break: ",
+    paste(names(fold_notes)[needs_quotes], collapse = ", "),
+    call. = FALSE
+  )
+}
+if (!dir.create(output_dir, showWarnings = FALSE)) {
+  stop("Can't create the output folder: ", output_dir, call. = FALSE)
+}
+# Absolute from here on: zip::zip() works from its `root` folder, where a relative path to the
+# output file would point somewhere else.
+output_dir <- normalizePath(output_dir, winslash = "/", mustWork = TRUE)
 
-col_index <- function(letters) {
+col_index <- function(column_text) {
   j <- 0L
-  for (ch in strsplit(letters, "")[[1]]) {
+  for (ch in strsplit(column_text, "")[[1]]) {
     j <- j * 26L + match(ch, LETTERS)
   }
   j

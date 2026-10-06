@@ -327,8 +327,34 @@ test_that("the build stops on a hand-kept file that doesn't read cleanly (D12.58
   ), file.path(config, "spec_exceptions.csv"))
   expect_error(
     build$build_magp_spec(spec_dir, config),
-    "spec_exceptions.csv doesn't read cleanly, so nothing was built: fields on line 3.",
+    paste(
+      "spec_exceptions.csv doesn't read cleanly, so nothing was built:",
+      "fields on line 3 (the header has 8 fields)."
+    ),
     fixed = TRUE
+  )
+  # Rows the read leaves out without a warning: the stop gives the file's records and the
+  # rows read.
+  writeLines(c(
+    "exception_id,table_name,attribute_name,dd_column,dd_value,applied_value,decision,note",
+    "x,s,a,data_type,numeric,character,D2.17,fine",
+    "y,s,b,data_type,numeric,character,D2.17,fine",
+    "z,s,c,data_type,numeric,character,D2.17,fine"
+  ), file.path(config, "spec_exceptions.csv"))
+  real_fread <- data.table::fread
+  testthat::with_mocked_bindings(
+    expect_error(
+      build$build_magp_spec(spec_dir, config),
+      paste(
+        "spec_exceptions.csv doesn't read cleanly, so nothing was built:",
+        "short (3 records after the header, 2 read)."
+      ),
+      fixed = TRUE
+    ),
+    fread = function(...) {
+      out <- real_fread(...)
+      if ("file" %in% names(list(...))) out[seq_len(max(nrow(out) - 1L, 0L))] else out
+    }
   )
   # An invalid byte in a later file, the earlier ones clean.
   file.copy(file.path(kept, "spec_exceptions.csv"), config, overwrite = TRUE)
