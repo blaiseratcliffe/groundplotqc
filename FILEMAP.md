@@ -112,6 +112,7 @@ row per file (D7.10):
 | tests/testthat/test-preflight_report.R | Tests for the pre-flight files: both written on a stop, the CSV, the returned table and the conditions keeping codes where the page shows texts, hostile text with `&` and quotes escaped, the page self-contained and uncapped, an invalid byte in a cell or a column name, both files UTF-8 in a C locale, no empty page when it can't be built, a file in the way of a folder, the footer's files (plan 4.2, 11.5, 18.4; D2.11, D7.11, D12.17, D12.24, D12.28, D12.56, D12.67) | none exported; hostile_spec() | R/preflight_report.R, R/preflight.R, tests/testthat/helper-toy_specs.R, withr |
 | tests/testthat/test-spec_compiled.R | Tests for the compiled specification's writer and reader: a planted-defect spec with tricky text, a toy spec with empty components and one-column components with long whole numbers reloaded identical, a missing file, a file that doesn't read cleanly (also under warn = 2) and a ragged datasets file, LF endings and UTF-8 on write, NA doubles, the caller's spec left as it was, a spec that doesn't validate refused, and blank non-code sheet names dropped (plan 3.6, 4.4; D12.14, D12.15, D12.20, D12.36, D12.54, D12.59, D12.69) | none exported; has_index() | R/spec_compiled.R, R/spec_read.R, tests/testthat/helper-toy_specs.R, withr |
 | tests/testthat/test-spec_precedence.R | Tests for precedence and clashes: winners, blanks, missing datasets rows, repeated and blank keys, both cells, columns named like the reader's variables (plan 2.2, 3.6; D12.13, D12.14, D12.24, D12.28, D12.33) | none exported; clash_inputs(), precedence_rows(), files | R/spec_precedence.R, R/spec_read.R |
+| tests/testthat/test-data_raw.R | Tests for the scripts in `data-raw/`: one spec file per kind and the stop on two of one kind, an exception applied and the stop on a stale one, a DD row an exception fixes giving no finding with the raw row located, the manifest's hand-kept files by repo path, A2's layout as the long lineage input, the hand-kept files' columns, and the DD workbook in `spec/` read from its first sheet; run from the source tree and skipped in a built package (D12.22, D12.23, D12.25, D12.33) | none exported; load_data_raw(), hand_kept() | data-raw/build_magp_config.R, data-raw/magp/, spec/, R/spec_read.R, R/preflight.R, withr, readxl |
 
 ## tests/testthat/fixtures/
 
@@ -142,6 +143,23 @@ row per file (D7.10):
 | .github/workflows/lint.yaml | Lints the package and `.github/scripts/`, runs the tests that need the source tree, the FILEMAP check, the agent and skill frontmatter check and the tracked-data check (plan 19.4; D11.2, D11.8, D11.19, D12.46) | none | DESCRIPTION, .lintr, tests/testthat/, .github/scripts/check_filemap.R, .github/scripts/check_agents.R, .gitignore, lintr, testthat, yaml |
 | .github/workflows/pkgdown.yaml | Builds the site on pull requests; builds and deploys it to `gh-pages` with `pkgdown::deploy_to_branch()` on pushes to `main`; deletes CLAUDE.md, FILEMAP.md and NAMING.md from the runner's checkout first, committing that deletion on the runner before a deploy, so the site leaves them out (plan 19.4; D11.1, D11.7, D11.17, D11.19) | none | DESCRIPTION, _pkgdown.yml, pkgdown, CLAUDE.md, FILEMAP.md, NAMING.md |
 | .github/workflows/test-coverage.yaml | Runs the coverage gate and uploads covr's HTML report as an artifact (plan 19.4; D11.2, D11.7) | none | .github/scripts/check_coverage.R, DESCRIPTION |
+
+## data-raw/
+
+| Path | Purpose | Key functions (exported; internal) | Depends on |
+|---|---|---|---|
+| data-raw/build_magp_config.R | Compiles MAGPlot's specification from spec/ and data-raw/magp/ into inst/extdata/magp/ when pre-flight doesn't stop (plan 4.4; D12.15, D12.20, D12.22, D12.25) | none exported; spec_files(), apply_spec_exceptions(), build_lineage_input(), crosswalk_element(), record_hand_kept(), build_magp_spec(), main(), the settings id_pattern, id_bands and lineage_flag, and the constant spec_file_pattern | spec/, data-raw/magp/, R/, pkgload, readxl |
+
+## data-raw/magp/
+
+| Path | Purpose | Key functions (exported; internal) | Depends on |
+|---|---|---|---|
+| data-raw/magp/spec_exceptions.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: the DD cells the build corrects before the read, each with the DD's value and the value applied; a row the DD no longer matches stops the build (plan 2.2; D2.17, D2.18, D12.22) | none | none |
+| data-raw/magp/non_code_sheets.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: the code-list workbook's sheets that aren't code lists, each a reference table or superseded (D7.22, D8.9, D12.2) | none | none |
+| data-raw/magp/crosswalk_columns.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: each translation table's code column and filter; the header only until the translation tables arrive (D12.13, D12.21) | none | none |
+| data-raw/magp/type_map.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: the DD's data types, with the R class and date format each expects (D2.15, D12.19) | none | none |
+| data-raw/magp/sentinels.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: the missing and not-applicable codes of each data type, and whether each is allowed in a primary or foreign key (D1.8, D1.8e, D2.31) | none | none |
+| data-raw/magp/precedence.csv | Hand-kept MAGPlot configuration, read by the build, never written by it: which of the datasets table and the dataset sheet wins for each attribute they share, and how a blank cell counts (D1.4a, D12.20, D12.24, D12.35) | none | none |
 
 ## spec/
 
