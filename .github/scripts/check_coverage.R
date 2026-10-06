@@ -17,14 +17,16 @@ is_engine_file <- function(paths) {
 engine_line_coverage <- function(lines) {
   engine <- lines[is_engine_file(lines$filename), c("filename", "value"), drop = FALSE]
   if (nrow(engine) == 0L) {
-    return(data.frame(filename = character(), covered = integer(), total = integer()))
+    return(data.frame(
+      filename = character(), covered = integer(), total = integer(), percent = numeric()
+    ))
   }
   files <- sort(unique(engine$filename))
+  covered <- vapply(files, function(f) sum(engine$value[engine$filename == f] > 0), integer(1))
+  total <- vapply(files, function(f) sum(engine$filename == f), integer(1))
   data.frame(
-    filename = files,
-    covered = vapply(files, function(f) sum(engine$value[engine$filename == f] > 0), integer(1)),
-    total = vapply(files, function(f) sum(engine$filename == f), integer(1)),
-    row.names = NULL
+    filename = files, covered = covered, total = total,
+    percent = round(100 * covered / total, 1), row.names = NULL
   )
 }
 

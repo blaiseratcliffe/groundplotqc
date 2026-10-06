@@ -148,6 +148,7 @@ test_that("the gate uses the engine files' lines combined", {
   expect_equal(per_file$filename, c("R/check_keys.R", "R/spec_read.R"))
   expect_equal(per_file$covered, c(10L, 9L))
   expect_equal(per_file$total, c(10L, 10L))
+  expect_equal(per_file$percent, c(100, 90))
   verdict <- cov$coverage_verdict(per_file)
   expect_true(verdict$pass)
   expect_equal(verdict$percent, 95)
@@ -169,7 +170,10 @@ test_that("with no engine files the gate passes and says so", {
   empty <- data.frame(filename = character(), line = integer(), value = numeric())
   layer_only <- coverage_lines("R/magp_run.R", list(c(0, 0)))
   for (lines in list(empty, layer_only)) {
-    verdict <- cov$coverage_verdict(cov$engine_line_coverage(lines))
+    per_file <- cov$engine_line_coverage(lines)
+    expect_equal(names(per_file), c("filename", "covered", "total", "percent"))
+    expect_equal(nrow(per_file), 0L)
+    verdict <- cov$coverage_verdict(per_file)
     expect_true(verdict$pass)
     expect_equal(verdict$message, "no engine files yet")
   }
