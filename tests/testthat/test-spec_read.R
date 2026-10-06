@@ -72,6 +72,25 @@ test_that("a data.frame's names are read as a CSV's; a matrix or list column sto
   expect_error(read_input_table(list_column, "datasets"), "l doesn't")
 })
 
+test_that("read_input_table marks each blank header, and a CSV's of spaces is V<j> (D12.65)", {
+  frame <- data.frame("1", "2", "3", "4")
+  names(frame) <- c("code", "", "V3", "  ")
+  from_frame <- read_input_table(frame, "datasets")
+  from_csv <- read_input_table(csv_file(c("code,,V3,  ", "1,2,3,4")), "datasets")
+  for (read in list(from_frame, from_csv)) {
+    expect_named(read$data, c("code", "V2", "V3", "V4"))
+    expect_equal(read$blank_header, c(FALSE, TRUE, FALSE, TRUE))
+  }
+  expect_equal(read_input_table(data.frame(), "datasets")$blank_header, logical())
+  testthat::local_mocked_bindings(
+    workbook_sheets = function(path) "dictionary",
+    read_xlsx_raw = function(...) data.table::data.table(V1 = c("a", "1"), V2 = c(NA, "2"))
+  )
+  workbook <- read_input_table(testthat::test_path("fixtures", "blank_cells.xlsx"), "dictionary")
+  expect_named(workbook$data, c("a", "V2"))
+  expect_equal(workbook$blank_header, c(FALSE, TRUE))
+})
+
 test_that("read_input_table reads a CSV with its text as written and a manifest row", {
   path <- csv_file(c("id,name", "01,\" NT_PSP\"", "NA,café"))
   read <- read_input_table(path, "datasets")
@@ -736,7 +755,7 @@ test_that("a data.frame translation table with an origin is located as its file 
   expect_equal(walks$manifest$file, basename(path))
 })
 
-test_that("a blank workbook header cell is named V<j>, as in the other input forms (D12.61)", {
+test_that("a blank workbook header is named V<j>, its cell left NA, as in other forms (D12.64)", {
   testthat::skip_if_not_installed("readxl")
   raw <- data.table::data.table(
     V1 = c("a", "x"), V2 = c(NA, "y"), V3 = c("c", "z")
@@ -744,7 +763,8 @@ test_that("a blank workbook header cell is named V<j>, as in the other input for
   testthat::local_mocked_bindings(read_xlsx_raw = function(...) data.table::copy(raw))
   workbook <- read_code_lists(testthat::test_path("fixtures", "blank_cells.xlsx"))
   from_csv <- read_code_lists(list(Sheet1 = csv_file(c("a,,c", "x,y,z"))))
-  expect_equal(workbook$long$value[workbook$long$source_row == 1L], c("a", "V2", "c"))
+  expect_equal(workbook$long$value[workbook$long$source_row == 1L], c("a", NA, "c"))
+  expect_equal(workbook$long$value, from_csv$long$value)
   expect_equal(workbook$long$sheet_column, from_csv$long$sheet_column)
   expect_equal(workbook$long$sheet_column[1:3], c("a", "a", "V2"))
 })

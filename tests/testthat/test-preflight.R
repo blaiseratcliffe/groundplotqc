@@ -1,4 +1,4 @@
-# Tests for the pre-flight checks (plan 4.2, 9.5; D8.16, D12.15 to D12.25, D12.54).
+# Tests for the pre-flight checks (plan 4.2, 9.5; D8.16, D12.15 to D12.25, D12.54, D12.64).
 
 summarise_checks <- function(results) {
   first <- results[!duplicated(results$rule_id), ]
@@ -9,17 +9,24 @@ summarise_checks <- function(results) {
 
 test_that("the checks run in 4.2's order with the approved outcomes", {
   rules <- preflight_rules()
-  expect_equal(nrow(rules), 22L)
   expect_named(preflight_check_functions(), rules$rule_id)
-  expect_equal(rules$on_failure[rules$rule_id == "code_list_empty_column"], "warn")
-  expect_equal(rules$on_failure[rules$rule_id == "spec_encoding_invalid"], "stop")
-  expect_equal(rules$on_failure[rules$rule_id == "spec_csv_malformed"], "stop")
-  expect_equal(rules$on_failure[rules$rule_id == "datasets_row_missing"], "warn")
+  on_failure <- rules$on_failure
+  names(on_failure) <- rules$rule_id
+  expect_equal(on_failure, c(
+    dd_duplicate_attribute = "stop", dd_type_unknown = "stop", dd_type_column_ambiguous = "stop",
+    dd_pk_missing = "stop", dd_fk_target_missing = "stop", code_list_missing = "stop",
+    code_column_missing = "stop", code_list_duplicate_code = "warn", code_list_blank_row = "warn",
+    code_list_unreferenced = "stop", code_list_empty_column = "warn", spec_clash_resolved = "warn",
+    spec_clash_unresolved = "stop", datasets_row_missing = "warn", spec_encoding_invalid = "stop",
+    spec_csv_malformed = "stop", site_id_range_invalid = "stop", lineage_spec_unparseable = "stop",
+    lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
+    lineage_id_unflagged = "warn", crosswalk_unreadable = "stop"
+  ))
 })
 
 test_that("each planted defect gives its check's findings", {
   results <- preflight_checks(fx_planted_spec())
-  expect_named(results, names(preflight_columns()))
+  expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
     dd_duplicate_attribute = "stop 1", dd_type_unknown = "stop 1",
     dd_type_column_ambiguous = "pass 0", dd_pk_missing = "stop 1",
@@ -40,7 +47,8 @@ test_that("each planted defect gives its check's findings", {
 
 test_that("the toy specs pass, and absent inputs are not_run with their reason", {
   fish <- preflight_checks(fx_fish_spec())
-  # Zero findings on a clean spec: every check is tested for false positives (D12.31).
+  # The toy specs give no findings, but they lack inputs, so the checks of those inputs
+  # don't run on them; the clean spec with every input, below, runs all 22 (D12.31).
   expect_false(any(fish$outcome %in% c("stop", "warn")))
   expect_equal(sum(fish$n_findings, na.rm = TRUE), 0L)
   reasons <- fish$not_run_reason
@@ -52,6 +60,50 @@ test_that("the toy specs pass, and absent inputs are not_run with their reason",
   forest <- preflight_checks(fx_forest_spec())
   expect_false(any(forest$outcome %in% c("stop", "warn")))
   expect_equal(forest$not_run_reason[forest$rule_id == "lineage_id_unflagged"], "no_dd_column")
+})
+
+test_that("a clean spec with every input runs all 22 checks, each without a finding (D12.31)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "kind", "src_plot_id", "tree_id", "plot_id", "status"),
+    key_type = c("PK", ".", ".", "PK", "FK", "."),
+    reference_table = c(NA, NA, NA, NA, "plots", NA),
+    lookup_table = c(NA, "Y", NA, NA, NA, "cond"),
+    appendix = c(NA, NA, "A2", NA, NA, NA),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    code_lists = list(
+      kind = data.frame(kind = c("A", "B"), description = c("a", "b")),
+      ranges = data.frame(
+        contributor = c("AA", "BB"), v2_start = c("1", "101"), v2_end = c("100", "200")
+      ),
+      contributor = data.frame(name = c("AA", "BB")),
+      ds = data.frame(id = c("1", "2"), name = c("a", "b"))
+    ),
+    non_code_sheets = c("ranges", "contributor", "ds"),
+    datasets = data.frame(id = c("1", "2"), name = c("a", "b")),
+    lineage_spec = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      spec_type = "id", source_text = "tbl.key", note = NA, source_cell = "A2!D5"
+    ),
+    crosswalks = list(cond = data.frame(status = c("L", "D"))),
+    id_pattern = "^src_.*_id$",
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "name"), reserved_pattern = NULL
+    ),
+    precedence = data.frame(
+      sheet = "ds", key_col = "id", attribute_name = "name", winner = "datasets",
+      blank_rule = "wins"
+    ),
+    column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+  )
+  results <- preflight_checks(spec)
+  # One row per check, none not_run, stop or warn: every check met clean input.
+  expect_equal(results$rule_id, preflight_rules()$rule_id)
+  expect_false(any(results$outcome %in% c("not_run", "stop", "warn")))
 })
 
 test_that("dictionary findings point to <file>:<row>", {
@@ -131,7 +183,120 @@ test_that("a code repeats within one code column, not across a sheet's columns (
   results <- preflight_checks(spec)
   expect_equal(
     results$detail[results$rule_id == "code_list_duplicate_code"],
-    "Code \"B\" appears 2 times in column kind of sheet pairs, rows 3, 4."
+    "Code \"B\" appears 2 times in column kind of sheet pairs: rows 2, 3 as R counts rows."
+  )
+})
+
+test_that("blank rows and repeated codes are placed as each input form counts rows (D12.64)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", "kind"), key_type = c("PK", "."),
+    lookup_table = c(NA, "Y"), data_type = "character"
+  )
+  details <- function(code_lists, origins = NULL) {
+    spec <- gpq_read_spec(dictionary, code_lists = code_lists, origins = origins)
+    results <- preflight_checks(spec)
+    results$detail[results$rule_id %in% c("code_list_duplicate_code", "code_list_blank_row")]
+  }
+  # A CSV by its lines: the header is line 1, and a cell over two lines counts both.
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("kind,description", "A,\"first", "second\"", "B,b", ",", "B,again"), path)
+  expect_equal(details(list(kind = path)), c(
+    "Code \"B\" appears 2 times in column kind of sheet kind: lines 4, 6.",
+    "Sheet kind has a blank row: line 5."
+  ))
+  # A data.frame by its rows as R counts them, df[N, ].
+  frame <- data.frame(kind = c("A", "B", NA, "B"), description = c("a", "b", NA, "again"))
+  expect_equal(details(list(kind = frame)), c(
+    "Code \"B\" appears 2 times in column kind of sheet kind: rows 2, 4 as R counts rows.",
+    "Sheet kind has a blank row: row 3 as R counts rows."
+  ))
+  # A data.frame from a workbook by the rows its origin gives, as Excel shows them.
+  origin <- list(`code_lists:kind` = list(path = path, sheet = "codes", rows = 10L))
+  expect_equal(details(list(kind = frame), origin), c(
+    "Code \"B\" appears 2 times in column kind of sheet kind: rows 11, 13.",
+    "Sheet kind has a blank row: row 12."
+  ))
+  # A workbook by its rows as Excel shows them, the header row 1.
+  raw <- data.table::data.table(
+    V1 = c("kind", "A", "B", NA, "B"), V2 = c("description", "a", "b", NA, "again")
+  )
+  testthat::local_mocked_bindings(
+    workbook_sheets = function(path) "kind", read_xlsx_raw = function(...) data.table::copy(raw)
+  )
+  expect_equal(details(testthat::test_path("fixtures", "blank_cells.xlsx")), c(
+    "Code \"B\" appears 2 times in column kind of sheet kind: rows 3, 5.",
+    "Sheet kind has a blank row: row 4."
+  ))
+})
+
+test_that("a blank header is headerless in every input form; a header V2 isn't (D12.64, D12.65)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", "kind"), key_type = c("PK", "."),
+    lookup_table = c(NA, "Y"), data_type = "character"
+  )
+  # Each form holds sheet kind whose column 2 has a blank header and no values.
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c("kind,,description", "A,,a", "B,,b"), path)
+  frame <- data.frame(kind = c("A", "B"), x = NA, description = c("a", "b"))
+  names(frame)[[2L]] <- ""
+  raw <- data.table::data.table(
+    V1 = c("kind", "A", "B"), V2 = NA_character_, V3 = c("description", "a", "b")
+  )
+  testthat::local_mocked_bindings(
+    workbook_sheets = function(path) "kind", read_xlsx_raw = function(...) data.table::copy(raw)
+  )
+  forms <- list(
+    csv = list(kind = path), workbook = testthat::test_path("fixtures", "blank_cells.xlsx"),
+    data.frame = list(kind = frame)
+  )
+  for (form in names(forms)) {
+    spec <- gpq_read_spec(dictionary, code_lists = forms[[form]])
+    header <- spec$code_lists[spec$code_lists$source_row == 1L, ]
+    expect_equal(header$sheet_column, c("kind", "V2", "description"), info = form)
+    expect_equal(header$value, c("kind", NA, "description"), info = form)
+    results <- preflight_checks(spec)
+    expect_equal(results$outcome[results$rule_id == "code_list_empty_column"], "pass", info = form)
+  }
+  # A header written V2 is a header, whatever fread() names a blank one.
+  writeLines(c("kind,V2,description", "A,,a", "B,,b"), path)
+  results <- preflight_checks(gpq_read_spec(dictionary, code_lists = list(kind = path)))
+  expect_equal(
+    results$detail[results$rule_id == "code_list_empty_column"],
+    "Column V2 of sheet kind has a header but no values."
+  )
+})
+
+test_that("code_list_empty_column skips a column without its header cell, never stops", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", "kind"), key_type = c("PK", "."),
+    lookup_table = c(NA, "Y"), data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary, code_lists = list(kind = data.frame(kind = "A", note = NA)))
+  # The reader always writes a header cell; a spec without one is made by hand here.
+  cells <- spec$code_lists
+  spec$code_lists <- cells[!(cells$sheet_column == "note" & cells$source_row == 1L), ]
+  empty_column <- preflight_check_functions()$code_list_empty_column
+  expect_equal(empty_column(spec), no_findings())
+})
+
+test_that("code_list_empty_column checks every referenced sheet but non-code ones (D12.65)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", "kind", "remark"), key_type = c("PK", ".", "."),
+    lookup_table = c(NA, "Y", "memo"), data_type = "character"
+  )
+  # Sheet kind has no kind column, so its code column isn't found (code_column_missing);
+  # memo, though referenced, is declared as not a code list, so its empty spare is skipped.
+  spec <- gpq_read_spec(
+    dictionary,
+    code_lists = list(
+      kind = data.frame(code = c("A", "B"), note = NA), memo = data.frame(text = "x", spare = NA)
+    ),
+    non_code_sheets = "memo"
+  )
+  results <- preflight_checks(spec)
+  expect_equal(
+    results$detail[results$rule_id == "code_list_empty_column"],
+    "Column note of sheet kind has a header but no values."
   )
 })
 
@@ -149,8 +314,16 @@ test_that("empty and header-only sheets are seen, and only the right checks fire
   )
   results <- preflight_checks(spec)
   fired <- results[results$outcome %in% c("stop", "warn"), ]
-  # No cell-level check, code_list_blank_row in particular, fires on these sheets.
-  expect_equal(sort(unique(fired$rule_id)), c("code_column_missing", "code_list_unreferenced"))
+  # No cell-level check, code_list_blank_row in particular, fires on these sheets, except
+  # code_list_empty_column on the referenced header-only sheet (D12.65).
+  expect_equal(
+    sort(unique(fired$rule_id)),
+    c("code_column_missing", "code_list_empty_column", "code_list_unreferenced")
+  )
+  expect_equal(
+    fired$detail[fired$rule_id == "code_list_empty_column"],
+    "Column code of sheet palette has a header but no values."
+  )
   expect_equal(fired$detail[fired$rule_id == "code_list_unreferenced"], c(
     "Sheet unused_empty isn't used by any attribute and isn't declared as not a code list.",
     "Sheet unused_header isn't used by any attribute and isn't declared as not a code list."
@@ -278,4 +451,32 @@ test_that("lineage_id_unflagged runs without a lineage spec; the other three don
   for (rule in reading_lineage) {
     expect_equal(reasons[[rule]], "no_input", info = rule)
   }
+})
+
+test_that("lineage_spec_unparseable runs when no flagged attribute has a lineage row (R110)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "src_t_id"), key_type = c("PK", "."),
+    data_type = "character", appendix = c(NA, "A2")
+  )
+  lineage_row <- data.frame(
+    contributor_label = "BC", table_name = "t", attribute_name = "src_t_id", spec_type = "id",
+    source_text = "tbl.key", note = NA, source_cell = "A2!D5"
+  )
+  unparseable <- function(dictionary, lineage_spec) {
+    spec <- gpq_read_spec(
+      dictionary,
+      lineage_spec = lineage_spec,
+      column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+    )
+    results <- preflight_checks(spec)
+    results[results$rule_id == "lineage_spec_unparseable", ]
+  }
+  # A lineage spec with no rows beside a flagged attribute: that attribute's finding.
+  empty <- unparseable(dictionary, lineage_row[0L, ])
+  expect_equal(
+    empty$detail, "t.src_t_id is flagged for the lineage spec but has no row in it."
+  )
+  # A flag column that flags nothing beside one lineage-spec row: nothing to cover.
+  dictionary$appendix <- NA
+  expect_equal(unparseable(dictionary, lineage_row)$outcome, "pass")
 })

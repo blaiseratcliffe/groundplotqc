@@ -260,16 +260,33 @@ preflight_check_functions <- function() {
       cells <- spec$code_lists[used, on = list(sheet, sheet_column), nomatch = NULL]
       cells <- cells[source_row > 1L & !is.na(value)]
       # A list is one code column of a sheet, so a code repeats within a column (D12.34).
+      # Each cell is placed as its input form counts rows (D12.28, D12.64): a CSV's line or a
+      # workbook's row, the number its cell ends in, origins applied; a data.frame's row as
+      # R counts it, its cell NA.
       dups <- cells[, list(
-        n = .N, rows = paste(source_row, collapse = ", "), cell = source_cell[min(2L, .N)]
+        n = .N,
+        rows = paste(fifelse(
+          is.na(source_cell), as.character(source_row - 1L), sub("^.*[^0-9]", "", source_cell)
+        ), collapse = ", "),
+        cell = source_cell[min(2L, .N)]
       ), by = list(sheet, sheet_column, value)]
       dups <- dups[n > 1L]
+      # A sheet's cells share one form: a workbook's cell is sheet!<letters><row>, which a
+      # CSV's file:<line> can't end like. A repeated code always has more than one row.
+      form <- fifelse(
+        is.na(dups$cell), "memory", fifelse(grepl("![A-Z]+[0-9]+$", dups$cell), "xlsx", "csv")
+      )
+      where <- character(nrow(dups))
+      for (one_form in unique(form)) {
+        hit <- form == one_form
+        where[hit] <- report_text(paste0("position_", one_form, "_many"), rows = dups$rows[hit])
+      }
       findings_of(
         lists_file(spec, dups$sheet),
         report_text(
           "preflight_detail_code_list_duplicate_code",
           code = dups$value, n = dups$n, column = dups$sheet_column, sheet = dups$sheet,
-          rows = dups$rows
+          where = where
         ),
         dups$cell
       )
@@ -288,12 +305,22 @@ preflight_check_functions <- function() {
         blank = all(is.na(value)), cell = source_cell[[1L]]
       ), by = list(sheet, source_row)]
       rows <- rows[blank == TRUE]
+      # Each blank row, one per finding, placed as its input form counts rows, as for
+      # code_list_duplicate_code (D12.28, D12.64).
+      position <- fifelse(
+        is.na(rows$cell), as.character(rows$source_row - 1L), sub("^.*[^0-9]", "", rows$cell)
+      )
+      form <- fifelse(
+        is.na(rows$cell), "memory", fifelse(grepl("![A-Z]+[0-9]+$", rows$cell), "xlsx", "csv")
+      )
+      where <- character(nrow(rows))
+      for (one_form in unique(form)) {
+        hit <- form == one_form
+        where[hit] <- report_text(paste0("position_", one_form, "_one"), rows = position[hit])
+      }
       findings_of(
         lists_file(spec, rows$sheet),
-        report_text(
-          "preflight_detail_code_list_blank_row",
-          row = rows$source_row, sheet = rows$sheet
-        ),
+        report_text("preflight_detail_code_list_blank_row", sheet = rows$sheet, where = where),
         rows$cell
       )
     },
@@ -315,17 +342,22 @@ preflight_check_functions <- function() {
       if (!given(spec, "code_lists")) {
         return("no_input")
       }
-      sheets <- unique(sheet_columns_used(spec)$sheet)
-      cells <- spec$code_lists[sheet %chin% sheets]
-      # No sheet in use: no columns to check (D12.26). Each column has its header cell in
-      # row 1, so [[1L]] below never meets an empty group.
+      # Every referenced sheet, its code column found or not, non-code sheets left out (4.2,
+      # D12.65).
+      map <- spec$code_list_map
+      referenced <- map$source_type %chin% "sheet" &
+        !map$source_name %chin% spec$non_code_sheets$sheet
+      cells <- spec$code_lists[sheet %chin% unique(map$source_name[referenced])]
+      # No sheet referenced: no columns to check (D12.26). A column without a header cell in
+      # row 1, which the reader never makes, gets an NA header and is skipped, as a blank
+      # header is (D12.64).
       if (nrow(cells) == 0L) {
         return(no_findings())
       }
       columns <- cells[, list(
-        header = value[source_row == 1L][[1L]],
+        header = value[source_row == 1L][1L],
         filled = any(!is.na(value[source_row > 1L])),
-        cell = source_cell[source_row == 1L][[1L]]
+        cell = source_cell[source_row == 1L][1L]
       ), by = list(sheet, sheet_column)]
       empty <- columns[!is.na(header) & !filled]
       findings_of(
@@ -387,7 +419,9 @@ preflight_check_functions <- function() {
       read_findings_of(spec, "spec_encoding_invalid")
     },
     spec_csv_malformed = function(spec) {
-      # The reader makes every finding of this check, from fread()'s warnings (D12.54).
+      # The reader makes every finding of this check: from fread()'s warnings (D12.54), a
+      # shortfall of rows against the file's records (D12.58) and fread()'s stop on a quote
+      # in a file of one column (D12.59).
       read_findings_of(spec, "spec_csv_malformed")
     },
     site_id_range_invalid = function(spec) {

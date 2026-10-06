@@ -159,7 +159,9 @@ validate_gpq_spec <- function(components) {
 #' One table input read as text
 #'
 #' A data.frame (with its origin, D12.33), a CSV path, or for the dictionary an `.xlsx`
-#' path (its first sheet); returns `list(data, where, manifest, invalid, findings)`.
+#' path (its first sheet); returns `list(data, where, manifest, invalid, findings,
+#' blank_header)`, `blank_header` TRUE for each column whose header is blank, which `data`
+#' names V<j> in every form (D12.65).
 #' @noRd
 read_input_table <- function(x, input, origin = NULL) {
   path <- NA_character_
@@ -184,10 +186,11 @@ read_input_table <- function(x, input, origin = NULL) {
     }
     data <- as.data.table(lapply(x, as_text))
     # Names as a CSV file's are read: a blank one V<j>, then each unique (R7, D12.54).
+    blank_header <- logical(ncol(data))
     if (ncol(data) > 0L) {
       names_in <- names(x)
-      blank <- is.na(names_in) | is_blank(names_in)
-      names_in[blank] <- paste0("V", which(blank))
+      blank_header <- is.na(names_in) | is_blank(names_in)
+      names_in[blank_header] <- paste0("V", which(blank_header))
       setnames(data, make.unique(names_in))
     }
     invalid <- fix_invalid_utf8(data)
@@ -198,6 +201,14 @@ read_input_table <- function(x, input, origin = NULL) {
     read <- read_csv_text(x)
     data <- read$data
     invalid <- read$invalid
+    blank_header <- read$blank_header
+    # A header of spaces only is blank too: named V<j>, as fread() names an empty one, then
+    # each name made unique, as a data.frame's are (R7, D12.65).
+    if (any(blank_header)) {
+      names_in <- names(data)
+      names_in[blank_header] <- paste0("V", which(blank_header))
+      setnames(data, make.unique(names_in))
+    }
     # Rows are located by the file line each starts on (D12.54).
     where <- list(kind = "csv", file = basename(x), row_map = c(1L, read$lines))
     malformed <- malformed_findings(read$malformed, input, basename(x))
@@ -211,6 +222,7 @@ read_input_table <- function(x, input, origin = NULL) {
     # count as fix_invalid_utf8() counts them, the header as row 0 (D12.28).
     invalid <- fix_invalid_utf8(raw)
     set(invalid, j = "row", value = invalid$row - 1L)
+    blank_header <- if (nrow(raw) > 0L) is.na(unlist(raw[1L], use.names = FALSE)) else logical()
     data <- raw_to_table(raw)
     where <- list(kind = "xlsx", file = basename(x), sheet = sheet)
     malformed <- NULL
@@ -225,7 +237,8 @@ read_input_table <- function(x, input, origin = NULL) {
     data = data, where = where, manifest = manifest_row(input, path), invalid = invalid,
     findings = bind_component("read_findings", list(
       encoding_findings(invalid, names(data), input, where), malformed
-    ))
+    )),
+    blank_header = blank_header
   )
 }
 
@@ -674,7 +687,8 @@ read_code_lists <- function(x, origins = NULL) {
       set(invalid, j = "row", value = invalid$row - 1L)
       header <- if (nrow(raw) > 0L) unlist(raw[1L], use.names = FALSE) else character()
       # A blank header cell is named V<j> and the names made unique, as in every input form
-      # (D12.54, D12.61).
+      # (D12.54, D12.61); its row-1 cell is then put back to NA, so pre-flight sees a column
+      # without a header (D12.64).
       blank <- which(is.na(header))
       unique_header <- header
       unique_header[blank] <- paste0("V", blank)
@@ -682,10 +696,13 @@ read_code_lists <- function(x, origins = NULL) {
       for (j in which(is.na(header) | unique_header != header)) {
         set(raw, i = 1L, j = j, value = unique_header[[j]])
       }
-      header <- unique_header
+      long <- sheet_cells(raw, sheet, where)
+      if (length(blank) > 0L) {
+        long[source_row == 1L & sheet_column %chin% unique_header[blank], value := NA_character_]
+      }
       list(
-        long = sheet_cells(raw, sheet, where),
-        findings = encoding_findings(invalid, header, "code_lists", where)
+        long = long,
+        findings = encoding_findings(invalid, unique_header, "code_lists", where)
       )
     })
     return(list(
@@ -715,10 +732,14 @@ read_code_lists <- function(x, origins = NULL) {
     sheet <- sheets[[k]]
     input <- paste0("code_lists:", sheet)
     table <- read_input_table(x[[k]], input, origins[[input]])
-    list(
-      long = sheet_cells(with_header(table$data), sheet, table$where),
-      manifest = table$manifest, findings = table$findings
-    )
+    long <- sheet_cells(with_header(table$data), sheet, table$where)
+    # A blank header keeps its V<j> as sheet_column, its row-1 cell NA, as in a workbook
+    # (D12.64, D12.65).
+    if (any(table$blank_header)) {
+      blank <- names(table$data)[table$blank_header]
+      long[source_row == 1L & sheet_column %chin% blank, value := NA_character_]
+    }
+    list(long = long, manifest = table$manifest, findings = table$findings)
   })
   list(
     long = bind_component("code_lists", lapply(parts, `[[`, "long")), sheets = names(x),

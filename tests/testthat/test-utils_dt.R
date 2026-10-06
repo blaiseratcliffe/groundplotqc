@@ -81,6 +81,26 @@ test_that("header names have quotes undone and are made unique (D12.54)", {
   expect_named(read$data, c("code", "code.1", "say \"hi\"", "V4", "x"))
 })
 
+test_that("read_csv_text tells a blank header cell from one written V<j> (D12.65)", {
+  # Empty, quoted empty and spaces only are blank; V5 in column 5 and V2 in column 6 are
+  # written, though fread() names a blank cell V<j> itself.
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("a,,\"\",  ,V5,V2"), charToRaw("1,2,3,4,5,6")
+  )))
+  expect_named(read$data, c("a", "V2", "V3", "  ", "V5", "V2.1"))
+  expect_equal(read$blank_header, c(FALSE, TRUE, TRUE, TRUE, FALSE, FALSE))
+  expect_equal(nrow(read$malformed), 0L)
+  # A byte-order mark before a blank first cell, CRLF line ends and a header cell over two
+  # lines.
+  marked <- read_csv_text(write_bytes(list(
+    c(as.raw(c(0xEF, 0xBB, 0xBF)), charToRaw(",\"x")), charToRaw("y\",\r"), charToRaw("1,2,3\r")
+  )))
+  expect_named(marked$data, c("V1", "x\ny", "V3"))
+  expect_equal(marked$blank_header, c(TRUE, FALSE, TRUE))
+  expect_equal(marked$lines, 3L)
+  expect_equal(read_csv_text(write_bytes(list(raw(0))))$blank_header, logical())
+})
+
 test_that("a ragged line, a blank line, an empty file and a stray quote are malformed (D12.54)", {
   ragged <- read_csv_text(write_bytes(list(
     charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")

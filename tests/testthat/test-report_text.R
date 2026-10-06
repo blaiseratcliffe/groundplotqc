@@ -27,15 +27,18 @@ test_that("no placeholder can be taken for text_id or lang, and every slot list 
 
 test_that("report_text fills placeholders, vectorised", {
   expect_equal(
-    report_text("preflight_detail_code_list_blank_row", row = c(13L, 14L), sheet = "visit_type"),
-    c("Row 13 of sheet visit_type is blank.", "Row 14 of sheet visit_type is blank.")
+    report_text(
+      "preflight_detail_code_list_blank_row",
+      where = report_text("position_csv_one", rows = c(13L, 14L)), sheet = "visit_type"
+    ),
+    c("Sheet visit_type has a blank row: line 13.", "Sheet visit_type has a blank row: line 14.")
   )
   expect_equal(report_text("preflight_title"), "Pre-flight report")
 })
 
 test_that("report_text stops on a missing row, an unfilled placeholder or a bad id", {
   expect_error(report_text("no_such_text"), "no_such_text")
-  expect_error(report_text("preflight_detail_code_list_blank_row", row = 1L), "sheet")
+  expect_error(report_text("preflight_detail_code_list_blank_row", where = "line 1"), "sheet")
   expect_error(report_text(NA_character_), "text_id")
   expect_error(report_text("preflight_title", lang = c("en", "fr")), "lang")
 })
@@ -55,11 +58,14 @@ test_that("values read from the specification are quoted, a blank shown as (blan
 
 test_that("an NA in another slot stops, and so do values of two lengths (D12.45)", {
   expect_error(
-    report_text("preflight_detail_code_list_blank_row", row = NA_integer_, sheet = "s"),
-    "row"
+    report_text("preflight_detail_code_list_blank_row", where = NA_character_, sheet = "s"),
+    "where"
   )
   expect_error(
-    report_text("preflight_detail_code_list_blank_row", row = 1:2, sheet = c("a", "b", "c")),
+    report_text(
+      "preflight_detail_code_list_blank_row",
+      where = c("line 1", "line 2"), sheet = c("a", "b", "c")
+    ),
     "common length"
   )
 })

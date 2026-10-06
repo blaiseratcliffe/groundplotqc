@@ -53,13 +53,13 @@ fx_forest_spec <- function() {
 #   plots.plot_id twice: dd_duplicate_attribute 1; trees.tree_id typed "text":
 #   dd_type_unknown 1; trees without a PK: dd_pk_missing 1; trees.plot_id to "stands":
 #   dd_fk_target_missing 1; soils: code_list_missing 1; cover's sheet without a cover
-#   column: code_column_missing 1; shape's repeated SQ, blank row 4 and empty use_when:
-#   code_list_duplicate_code, code_list_blank_row and code_list_empty_column 1 each;
-#   sheet extra: code_list_unreferenced 1; ds against datasets: spec_clash_resolved 1
-#   (name), spec_clash_unresolved 1 (kind), datasets_row_missing 1 (id 3); the bad byte
-#   in shape's description: spec_encoding_invalid 1; the non-code sheet notes, a CSV
-#   whose line 3 has a field too many: spec_csv_malformed 1; cond's bad byte:
-#   crosswalk_unreadable 1.
+#   column: code_column_missing 1; shape's repeated SQ, blank row 3 (as R counts rows)
+#   and empty use_when: code_list_duplicate_code, code_list_blank_row and
+#   code_list_empty_column 1 each; sheet extra: code_list_unreferenced 1; ds against
+#   datasets: spec_clash_resolved 1 (name), spec_clash_unresolved 1 (kind),
+#   datasets_row_missing 1 (id 3); the bad byte in shape's description:
+#   spec_encoding_invalid 1; the non-code sheet notes, a CSV whose line 3 has a field too
+#   many: spec_csv_malformed 1; cond's bad byte: crosswalk_unreadable 1.
 # Intended overlaps, each counted: site_id_range_invalid 2 (ZZ unknown, and AA and ZZ
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD

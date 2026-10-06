@@ -47,16 +47,19 @@ fix_invalid_utf8 <- function(data) {
 #' Read as comma-separated text with a header, every warning fread() gives collected
 #' rather than shown. Every column character, blanks NA, spaces kept, doubled quotes undone
 #' in cells and names, names made unique, invalid bytes kept as `<xx>`. Returns
-#' `list(data, invalid, malformed, lines)`: `invalid` what fix_invalid_utf8() changed, each
-#' value as kept; `malformed` one row per problem met, `kind` ("fields", "empty", "quote",
-#' "unknown" or "short"), the file `line` where known, the header's `fields`, for "short"
-#' the file's `n_records` after its header and the `n_read` rows read, and for "unknown"
-#' fread()'s warning as `value`, a bad byte as `<xx>`; `lines` the file line each data row
-#' starts on, the header being line 1. Line 1 is the header even where fread() would skip
-#' it; a file with no bytes, or only blank lines or spaces, is "empty" (D12.9, D12.14,
-#' D12.24, D12.27, D12.45, D12.54, D12.56). fread() runs with English messages, whatever
-#' the session's language, since its warnings are recognised by their text, matched as
-#' bytes because a warning can quote a line that isn't valid UTF-8, and with the option
+#' `list(data, invalid, malformed, lines, blank_header)`: `invalid` what fix_invalid_utf8()
+#' changed, each value as kept; `malformed` one row per problem met, `kind` ("fields",
+#' "empty", "quote", "unknown" or "short"), the file `line` where known, the header's
+#' `fields`, for "short" the file's `n_records` after its header and the `n_read` rows read,
+#' and for "unknown" fread()'s warning as `value`, a bad byte as `<xx>`; `lines` the file
+#' line each data row starts on, the header being line 1; `blank_header` TRUE for each
+#' column whose header cell is blank in the file (empty, quoted empty or spaces only), which
+#' fread() names V<j> where empty, so a header written V<j> isn't taken for one (D12.65).
+#' Line 1 is the header even where fread() would skip it; a file with no bytes, or only
+#' blank lines or spaces, is "empty" (D12.9, D12.14, D12.24, D12.27, D12.45, D12.54,
+#' D12.56). fread() runs with English messages, whatever the session's language, since its
+#' warnings are recognised by their text, matched as bytes because a warning can quote a
+#' line that isn't valid UTF-8, and with the option
 #' `warn` at 1, the caller's value put back after, so a session's `warn = 2` doesn't make
 #' them errors. In a file of one column, fread()'s error on a quote it can't read is a
 #' "quote" problem, no rows read, as an empty file returns; every other error stops the
@@ -97,7 +100,8 @@ read_csv_text <- function(path) {
   no_rows <- function(kind, unknown = character()) {
     list(
       data = data.table(), invalid = fix_invalid_utf8(data.table()),
-      malformed = rbindlist(list(problem(kind), unknown_problems(unknown))), lines = integer()
+      malformed = rbindlist(list(problem(kind), unknown_problems(unknown))), lines = integer(),
+      blank_header = logical()
     )
   }
   # A file with no bytes, or only blank lines or spaces, is empty: fread() stops on it. A
@@ -307,6 +311,36 @@ read_csv_text <- function(path) {
   }
   lines <- as.integer(ends - row_lines + 1L)
   ended_early <- length(stopped) > 0L || footer
+  # Which of line 1's cells are blank (D12.65). One of spaces only keeps its spaces as its
+  # name; an empty or quoted-empty one fread() names V<j> itself, so where column j is named
+  # V<j>, line 1's record is read again as a row, under a plain header of as many fields
+  # (fread() can't read a header cell over two lines with no plain line to go by), a blank
+  # cell NA. What that read meets isn't the file's (D12.58, D12.59); a read that doesn't
+  # give one row of the file's columns leaves each V<j> a name, as written.
+  blank_header <- is_blank(names(data))
+  if (any(names(data) == paste0("V", seq_along(data)))) {
+    breaks <- record_breaks(bytes)
+    record <- bytes[seq_len(if (length(breaks) > 0L) breaks[[1L]] - 1L else length(bytes))]
+    if (length(record) >= 3L && all(record[1:3] == as.raw(c(0xEF, 0xBB, 0xBF)))) {
+      record <- record[-(1:3)]
+    }
+    record <- record[record != as.raw(0x00)]
+    if (length(record) > 0L && record[[length(record)]] == as.raw(0x0D)) {
+      record <- record[-length(record)]
+    }
+    if (any(record > as.raw(0x20))) {
+      met_before <- list(warned, unknown, quote_stop)
+      text <- paste0(paste0("V", seq_along(data), collapse = ","), "\n", rawToChar(record))
+      row <- tryCatch(read(text = text), error = function(e) NULL)
+      warned <- met_before[[1L]]
+      unknown <- met_before[[2L]]
+      quote_stop <- met_before[[3L]]
+      if (!is.null(row) && nrow(row) == 1L && ncol(row) == ncol(data)) {
+        cells <- unlist(row, use.names = FALSE)
+        blank_header <- is.na(cells) | is_blank(cells)
+      }
+    }
+  }
   invalid <- fix_invalid_utf8(data)
   # A warning about the text's encoding is spec_encoding_invalid's where the file has
   # invalid bytes; any other the reader doesn't recognise is an "unknown" problem (D12.58).
@@ -355,5 +389,8 @@ read_csv_text <- function(path) {
     cells <- which(invalid$row > 0L & invalid$column == j)
     set(invalid, i = cells, j = "value", value = data[[j]][invalid$row[cells]])
   }
-  list(data = data, invalid = invalid, malformed = malformed, lines = lines)
+  list(
+    data = data, invalid = invalid, malformed = malformed, lines = lines,
+    blank_header = blank_header
+  )
 }
