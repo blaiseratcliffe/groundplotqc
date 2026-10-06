@@ -36,6 +36,19 @@ test_that("new_gpq_spec accepts the empty components and refuses bad ones", {
   expect_error(new_gpq_spec(blank), "empty string")
 })
 
+test_that("a component that isn't a data.table, or lacks the schema's columns, is refused", {
+  frame <- empty_components()
+  frame$keys <- as.data.frame(frame$keys)
+  expect_error(validate_gpq_spec(frame), "Component keys must be a data.table.", fixed = TRUE)
+  other <- empty_components()
+  other$keys <- data.table::data.table(x = 1)
+  columns <- paste(names(spec_schema()$keys), collapse = ", ")
+  expect_error(
+    validate_gpq_spec(other), paste0("Component keys has the columns ", columns, "."),
+    fixed = TRUE
+  )
+})
+
 test_that("validate_gpq_spec checks without dropping an index (D12.54)", {
   components <- empty_components()
   data.table::setindex(components$keys, table_name)
@@ -89,6 +102,15 @@ test_that("read_input_table marks each blank header, and a CSV's of spaces is V<
   workbook <- read_input_table(testthat::test_path("fixtures", "blank_cells.xlsx"), "dictionary")
   expect_named(workbook$data, c("a", "V2"))
   expect_equal(workbook$blank_header, c(FALSE, TRUE))
+})
+
+test_that("reading a workbook without readxl is a classed error naming the package", {
+  # base::requireNamespace() stands in for a library without readxl, for this test only.
+  testthat::local_mocked_bindings(requireNamespace = function(...) FALSE, .package = "base")
+  expect_error(
+    workbook_sheets("any.xlsx"), "needs the readxl package; install it or pass data.frames.",
+    class = "gpq_missing_package_error", fixed = TRUE
+  )
 })
 
 test_that("read_input_table reads a CSV with its text as written and a manifest row", {
@@ -673,6 +695,30 @@ test_that("read_code_lists keeps every cell in long form, the header as row 1", 
   expect_error(read_code_lists(list(example_file("fish_gear.csv"))), "named list")
 })
 
+test_that("code_lists and crosswalks of the wrong shape are a caller's error (D12.54)", {
+  # One string that isn't the path of an existing .xlsx: a CSV, a missing workbook.
+  for (x in list("a.csv", "none.xlsx", example_file("fish_gear.csv"))) {
+    expect_error(
+      read_code_lists(x), "`code_lists` names no existing .xlsx file.",
+      fixed = TRUE, info = x
+    )
+  }
+  # Not a named list: a string, an unnamed list, a data.frame.
+  for (x in list("x", list(data.frame(code = "A")), data.frame(code = "A"))) {
+    expect_error(
+      read_crosswalks(x), "`crosswalks` must be a named list.",
+      fixed = TRUE, info = class(x)[[1L]]
+    )
+  }
+  # A table that is neither a data.frame nor one path: a number, a list around one, two paths.
+  for (x in list(5, list(table = 5), c("a.csv", "b.csv"))) {
+    expect_error(
+      read_crosswalks(list(td = x)), "Crosswalk td's table must be a data.frame or a CSV path.",
+      fixed = TRUE, info = class(x)[[1L]]
+    )
+  }
+})
+
 test_that("code_lists and crosswalks names are unique, never blank, valid UTF-8 (R11, D12.54)", {
   twice <- list(kind = data.frame(kind = "A"), kind = data.frame(kind = "C"))
   expect_error(read_code_lists(twice), "unique")
@@ -803,6 +849,27 @@ test_that("a translation table that isn't UTF-8 or isn't there is crosswalk_unre
   expect_true(all(validUTF8(walks$long$value)))
 })
 
+test_that("a CSV in UTF-16 stops a read, but is a finding as a translation table (R109)", {
+  # UTF-16LE with its byte-order mark, built by hand from ASCII text: a zero byte after each
+  # letter, so no locale or iconv is involved. fread() refuses it.
+  utf16 <- function(text) {
+    c(as.raw(c(0xFF, 0xFE)), as.vector(rbind(charToRaw(text), as.raw(0L))))
+  }
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(utf16("code,name\nA,x\n"), path)
+  expect_error(read_input_table(path, "dictionary"), "UTF-16")
+  expect_error(gpq_read_spec(path), "UTF-16")
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  spec <- gpq_read_spec(dictionary, crosswalks = list(cond = path))
+  expect_equal(spec$read_findings$rule_id, "crosswalk_unreadable")
+  expect_equal(
+    spec$read_findings$detail, "Translation table cond can't be read as a CSV file."
+  )
+  expect_equal(nrow(spec$crosswalks), 0L)
+  hashed <- spec$manifest$sha256[spec$manifest$input == "crosswalks:cond"]
+  expect_equal(hashed, unname(tools::sha256sum(path)))
+})
+
 test_that("a malformed translation table is unreadable, and the next read is quiet (R12)", {
   ragged <- csv_file(c("code,name", "A,x", "B,y,z", "C,w"))
   walks <- read_crosswalks(list(td = ragged))
@@ -818,6 +885,17 @@ test_that("a data.frame translation table's invalid byte names the table (D12.28
   expect_equal(walks$findings$detail, paste0(
     "Text at translation table cond, row 2, column code, isn't valid UTF-8; it is kept as ",
     "\"caf<e9>\"", hex_note
+  ))
+})
+
+test_that("a data.frame translation table's invalid column name names its column (D12.28)", {
+  frame <- data.frame(code = c("A", "B"), other = c("p", "q"))
+  names(frame)[[2L]] <- bad_name
+  walks <- read_crosswalks(list(cond = frame))
+  expect_equal(walks$findings$rule_id, "crosswalk_unreadable")
+  expect_equal(walks$findings$detail, paste0(
+    "The name of column 2 of translation table cond isn't valid UTF-8; it is kept as ",
+    "\"na<97>me\"", hex_note
   ))
 })
 
@@ -1276,6 +1354,28 @@ test_that("origins refuse a repeated name and say why an input takes none (D12.6
     gpq_read_spec(dictionary, code_lists = workbook, origins = list(`code_lists:gear` = origin)),
     "given as a path"
   )
+})
+
+test_that("an origin, or origins, of the wrong shape is a caller's error (D12.33)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines("stand-in", path)
+  dictionary <- data.frame(table_name = "t", attribute_name = "a", data_type = "character")
+  # An origin that isn't a named list of path, sheet, rows and columns only.
+  for (origin in list("x", list(1), list(path = path, extra = 1), data.frame(path = path))) {
+    expect_error(
+      gpq_read_spec(dictionary, origins = list(dictionary = origin)),
+      "The origin of dictionary must be list(path = , sheet = , rows = , columns = ).",
+      fixed = TRUE, info = class(origin)[[1L]]
+    )
+  }
+  # origins that isn't a list with every element named.
+  for (origins in list("x", list(1), list(dictionary = list(path = path), 2), data.frame(a = 1))) {
+    expect_error(
+      gpq_read_spec(dictionary, origins = origins),
+      "`origins` must be NULL or a list named by input.",
+      fixed = TRUE, info = class(origins)[[1L]]
+    )
+  }
 })
 
 test_that("each clash finding names its own sheet's file (D12.28)", {

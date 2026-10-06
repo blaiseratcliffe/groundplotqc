@@ -191,11 +191,11 @@ preflight_check_functions <- function() {
     },
     dd_pk_missing = function(spec) {
       a <- spec$attributes
-      missing <- setdiff(unique(a$table_name), spec$keys[key_type == "PK", table_name])
+      absent <- setdiff(unique(a$table_name), spec$keys[key_type == "PK", table_name])
       findings_of(
         input_file(spec, "dictionary"),
-        report_text("preflight_detail_dd_pk_missing", table_name = missing),
-        dictionary_cell(spec, a$source_row[match(missing, a$table_name)])
+        report_text("preflight_detail_dd_pk_missing", table_name = absent),
+        dictionary_cell(spec, a$source_row[match(absent, a$table_name)])
       )
     },
     dd_fk_target_missing = function(spec) {

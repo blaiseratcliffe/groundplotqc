@@ -66,10 +66,10 @@ fill_placeholders <- function(template, values, lang = "en") {
   }
   slots <- seq(2L, length(pieces), by = 2L)
   wanted <- substr(pieces[slots], 2L, nchar(pieces[slots]) - 1L)
-  missing <- setdiff(wanted, names(values))
-  if (length(missing) > 0L) {
+  absent <- setdiff(wanted, names(values))
+  if (length(absent) > 0L) {
     stop(sprintf(
-      "Report text needs a value for %s.", paste(missing, collapse = ", ")
+      "Report text needs a value for %s.", paste(absent, collapse = ", ")
     ), call. = FALSE)
   }
   used <- unique(wanted)

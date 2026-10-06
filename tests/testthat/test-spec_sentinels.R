@@ -29,8 +29,12 @@ test_that("validate_sentinels takes a table such as MAGPlot's hand-kept one", {
   )
   expect_equal(validate_sentinels(table)$value, "-1")
   table$data_type <- "integer"
-  # Its own check's wording: the columns check's message names data_type too.
-  expect_error(validate_sentinels(table), "data_type is numeric, character or date")
+  # Its own check's wording: the columns check's message names data_type too. The whole
+  # message is matched, so a decision ID, which a caller can't look up, can't creep back in.
+  expect_error(
+    validate_sentinels(table), "A sentinel row's data_type is numeric, character or date.",
+    fixed = TRUE
+  )
 })
 
 test_that("validate_sentinels refuses what isn't one clean row per family and role (D12.54)", {
@@ -44,7 +48,10 @@ test_that("validate_sentinels refuses what isn't one clean row per family and ro
     data_type = "character", role = "missing", value = c("X", "Y"), allowed_in_pk = FALSE,
     allowed_in_fk = FALSE
   )
-  expect_error(validate_sentinels(twice), "one row for each")
+  expect_error(
+    validate_sentinels(twice), "A sentinel table has one row for each data_type and role.",
+    fixed = TRUE
+  )
   bad <- rawToChar(as.raw(c(0x58, 0x97)))
   Encoding(bad) <- "UTF-8"
   expect_error(gpq_sentinels(character = c(missing = bad)), "UTF-8")

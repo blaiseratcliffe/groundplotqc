@@ -5,6 +5,13 @@
 # memory" are skipped.
 # Run from the repo root: Rscript .github/scripts/check_manifest.R
 
+# A hash can differ with no edit at all (D12.34). main() prints this after a problem, and the
+# manifest test carries it as its failure message (plan 4.4).
+excel_guidance <- paste(
+  "A workbook opened in Excel can change without an edit: if you didn't mean to change a",
+  "spec file, restore it with git restore spec/<file>."
+)
+
 read_manifest <- function(path) {
   utils::read.csv(path, colClasses = "character", na.strings = "", encoding = "UTF-8")
 }
@@ -50,11 +57,7 @@ main <- function() {
   problems <- manifest_problems(rows, spec_hashes("spec"), repo_hashes(paths))
   if (length(problems) > 0L) {
     cat(problems, sep = "\n")
-    # A hash can differ with no edit at all (D12.34).
-    cat(
-      "A workbook opened in Excel can change without an edit: if you didn't mean to",
-      "change a spec file, restore it with git restore spec/<file>.\n"
-    )
+    cat(excel_guidance, "\n", sep = "")
     quit(save = "no", status = 1L)
   }
   cat("The manifest matches spec/.\n")

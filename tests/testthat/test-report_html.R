@@ -215,7 +215,10 @@ test_that("html_page refuses bad arguments, naming the argument", {
 
 test_that("the page's CSS wraps long values and the script marks sortable headers", {
   css <- page_css()
-  expect_match(css, "overflow-wrap:anywhere", fixed = TRUE)
+  expect_match(css, "td,th{overflow-wrap:anywhere}", fixed = TRUE)
+  # The footer's 64-character hashes sit in a <dd>, which would stretch the page sideways at
+  # 360 px without a rule of its own.
+  expect_match(css, "dd{overflow-wrap:anywhere}", fixed = TRUE)
   expect_match(css, ".gpq-table{overflow-x:auto}", fixed = TRUE)
   # The scroll box would clip a focus ring drawn outside the first header, so it is drawn
   # inside, which keeps the layout as it is.

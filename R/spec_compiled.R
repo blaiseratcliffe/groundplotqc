@@ -16,7 +16,15 @@ write_compiled_spec <- function(spec, dir) {
   # Reads only; a spec that doesn't validate stops here, before anything is written.
   validate_gpq_spec(spec)
   component_names <- names(spec_schema())
+  # The folder is made, or the call stops naming it, before any file is written.
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(dir)) {
+    stop(
+      "Can't create the folder ", dir, " for the compiled specification; a file of that name ",
+      "may be in the way.",
+      call. = FALSE
+    )
+  }
   paths <- file.path(dir, paste0(component_names, ".csv"))
   for (k in seq_along(paths)) {
     component <- spec[[component_names[[k]]]]

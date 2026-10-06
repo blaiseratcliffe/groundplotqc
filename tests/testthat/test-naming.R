@@ -240,8 +240,8 @@ package_names <- function() {
   arguments <- unlist(lapply(exports, function(f) {
     names(formals(getExportedValue("groundplotqc", f)))
   }))
-  # Component names come from the schema, so the compiled files' names are checked before
-  # task 18 writes them (D12.32).
+  # Component names come from the schema, so the compiled files' names are checked as the
+  # schema gives them (D12.32).
   columns <- c(
     names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
     names(preflight_columns())

@@ -83,7 +83,7 @@ validate_sentinels <- function(sentinels) {
     allowed_in_fk = as_flag(sentinels$allowed_in_fk)
   )
   if (!all(out$data_type %in% c("numeric", "character", "date"))) {
-    stop("A sentinel row's data_type is numeric, character or date (D12.19).", call. = FALSE)
+    stop("A sentinel row's data_type is numeric, character or date.", call. = FALSE)
   }
   if (anyNA(out$allowed_in_pk) || anyNA(out$allowed_in_fk)) {
     stop("A sentinel row's allowed_in_pk and allowed_in_fk are TRUE or FALSE.", call. = FALSE)
@@ -92,7 +92,7 @@ validate_sentinels <- function(sentinels) {
     stop("A sentinel row has a role missing or not_applicable and no blank cell.", call. = FALSE)
   }
   if (anyDuplicated(out, by = c("data_type", "role")) > 0L) {
-    stop("A sentinel table has one row for each data_type and role (D12.54).", call. = FALSE)
+    stop("A sentinel table has one row for each data_type and role.", call. = FALSE)
   }
   # A file's bad bytes are already <xx>; one given in R is a caller's error (D12.54).
   if (!all(validUTF8(out$value))) {

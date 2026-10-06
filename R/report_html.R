@@ -186,6 +186,7 @@ page_css <- function() {
     "[hidden]{display:none}",
     "footer{margin-top:2rem;font-size:.9rem;color:#444}",
     "dt{font-weight:600}",
+    "dd{overflow-wrap:anywhere}",
     sep = "\n"
   )
 }

@@ -312,5 +312,18 @@ test_that("the manifest matches spec/ and the repo in this tree", {
   problems <- mf$manifest_problems(
     rows, mf$spec_hashes(file.path(root, "spec")), mf$repo_hashes(paths, root)
   )
-  expect_equal(problems, character())
+  # The failure message carries the Excel guidance, as check_manifest.R prints it (plan 4.4,
+  # D12.34).
+  expect_equal(problems, character(), info = mf$excel_guidance)
+})
+
+test_that("the manifest check's Excel guidance says to restore the file with git (D12.34)", {
+  mf <- load_dev_script("check_manifest.R")
+  expect_equal(
+    mf$excel_guidance,
+    paste(
+      "A workbook opened in Excel can change without an edit: if you didn't mean to change a",
+      "spec file, restore it with git restore spec/<file>."
+    )
+  )
 })

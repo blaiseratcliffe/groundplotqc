@@ -13,7 +13,7 @@
 "preflight_column_detail","en","Detail"
 "preflight_column_n_findings","en","Findings"
 "preflight_column_not_run_reason","en","Not run because"
-"preflight_column_source_cell","en","Cell"
+"preflight_column_source_cell","en","Location"
 "preflight_meta_package","en","Package version"
 "preflight_meta_files","en","Specification files"
 "preflight_blank_value","en","(blank)"

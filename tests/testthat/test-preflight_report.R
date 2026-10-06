@@ -43,6 +43,10 @@ test_that("the page shows outcomes and reasons as text, the CSV keeps their code
   )
   expect_false(grepl("<td>not_run</td>", page, fixed = TRUE))
   expect_false(grepl("<td>no_input</td>", page, fixed = TRUE))
+  # The rows table's last column holds sheet!A1, file:line or file:row, so it is headed
+  # "Location", not "Cell" (D12.78).
+  expect_match(page, "<th scope=\"col\" data-gpq-sort>Location</th></tr></thead>", fixed = TRUE)
+  expect_false(grepl(">Cell<", page, fixed = TRUE))
   back <- read_csv_text(file.path(dir, "metadata", "preflight.csv"))$data
   expect_true(all(back$outcome %in% c("pass", "warn", "stop", "not_run")))
   expect_true("no_input" %in% back$not_run_reason)
@@ -175,7 +179,7 @@ test_that("an invalid byte in a column name is located and escaped on the page (
 test_that("both files are written as UTF-8 whatever the session's locale", {
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
-    code_lists = setNames(list(data.frame(a = "x")), "café")
+    code_lists = list("café" = data.frame(a = "x"))
   )
   dir <- withr::local_tempdir()
   withr::with_locale(

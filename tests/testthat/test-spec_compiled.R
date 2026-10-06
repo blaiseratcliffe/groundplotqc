@@ -148,3 +148,23 @@ test_that("the writer refuses a spec that doesn't validate, writing nothing (D12
   expect_error(write_compiled_spec(spec, dir), "has the components")
   expect_false(dir.exists(dir))
 })
+
+test_that("a folder that can't be made is a caller's error naming it, before any file", {
+  # A file where the folder should go, so dir.create() fails.
+  parent <- withr::local_tempdir()
+  blocked <- file.path(parent, "compiled")
+  writeLines("x", blocked)
+  expect_error(
+    write_compiled_spec(fx_fish_spec(), blocked),
+    paste0("Can't create the folder ", blocked, " for the compiled specification"),
+    fixed = TRUE
+  )
+  expect_equal(readLines(blocked), "x")
+  # The same under a file, where recursive creation fails a level up.
+  expect_error(
+    write_compiled_spec(fx_fish_spec(), file.path(blocked, "inner")),
+    "Can't create the folder .* for the compiled specification"
+  )
+  # A folder that already exists is not an error.
+  expect_no_error(write_compiled_spec(fx_fish_spec(), parent))
+})

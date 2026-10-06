@@ -184,6 +184,11 @@ read_input_table <- function(x, input, origin = NULL) {
         paste(names(x)[!plain], collapse = ", ")
       ), call. = FALSE)
     }
+    # The caller's columns stay the caller's: as_text() returns a new vector for each column,
+    # since blank_to_na() always assigns into a copy, even where no cell is blank. The reader
+    # rewrites its own copy in fix_invalid_utf8() below, so it relies on that copy; a
+    # blank_to_na() that returned its argument untouched when nothing is blank would let
+    # set() change the caller's cell (D12.27).
     data <- as.data.table(lapply(x, as_text))
     # Names as a CSV file's are read: a blank one V<j>, then each unique (R7, D12.54).
     blank_header <- logical(ncol(data))
@@ -1250,15 +1255,15 @@ sheet_file <- function(manifest, sheet) {
 #' for run inputs.
 #' @noRd
 check_input_columns <- function(data, columns, input) {
-  missing <- setdiff(columns, names(data))
+  absent <- setdiff(columns, names(data))
   extra <- setdiff(names(data), columns)
-  if (length(missing) == 0L && length(extra) == 0L) {
+  if (length(absent) == 0L && length(extra) == 0L) {
     return(invisible(NULL))
   }
   stop(sprintf(
     "`%s` must have exactly the columns %s; %s.", input, paste(columns, collapse = ", "),
     paste(c(
-      if (length(missing) > 0L) paste("missing:", paste(missing, collapse = ", ")),
+      if (length(absent) > 0L) paste("missing:", paste(absent, collapse = ", ")),
       if (length(extra) > 0L) paste("not taken:", paste(extra, collapse = ", "))
     ), collapse = "; ")
   ), call. = FALSE)
