@@ -170,7 +170,7 @@ for (name in unique(vapply(csv_cell_edits, `[[`, "", "file"))) {
     }
   )
 }
-if (!dir.exists(output_dir) && !dir.create(output_dir)) {
+if (!dir.exists(output_dir) && !dir.create(output_dir, showWarnings = FALSE)) {
   stop("Can't create the output folder: ", output_dir, call. = FALSE)
 }
 for (name in names(staged)) {

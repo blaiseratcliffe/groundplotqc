@@ -20,7 +20,7 @@ A check with findings has one row per finding.
 }
 \description{
 Checks a specification, never the data, and stops before a run that would read it
-wrongly (plan 4.2). Each check gives one row per finding, or one pass or not-run row.
+wrongly. Each check gives one row per finding, or one pass or not-run row.
 }
 \section{Conditions}{
 

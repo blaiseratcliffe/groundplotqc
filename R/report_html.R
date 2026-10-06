@@ -42,7 +42,8 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL) {
     if (is.null(csv_name)) {
       stop("`row_cap` needs `csv_name`, the file that holds the full list.", call. = FALSE)
     }
-    ok <- is.character(csv_name) && length(csv_name) == 1L && !is.na(csv_name)
+    ok <- is.character(csv_name) && length(csv_name) == 1L && !is.na(csv_name) &&
+      !is_blank(csv_name)
     if (!ok) {
       stop("`csv_name` must be one string.", call. = FALSE)
     }

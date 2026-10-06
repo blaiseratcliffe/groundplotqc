@@ -55,9 +55,10 @@ test_that("html_table needs csv_name whenever row_cap is given, capped or not", 
 
 test_that("html_table needs csv_name to be one string wherever row_cap gives it a use", {
   dt <- data.table::data.table(rule = c("a", "b", "c"))
-  # Capped or not: two names would make two notes, none an empty note, NA the lookup's error.
+  # Capped or not: two names would make two notes, none an empty note, NA the lookup's error,
+  # and a blank name an empty note or that same error.
   for (cap in c(2L, 10L)) {
-    for (bad in list(c("a.csv", "b.csv"), character(0), NA_character_, 1)) {
+    for (bad in list(c("a.csv", "b.csv"), character(0), NA_character_, 1, "", "  ")) {
       expect_error(
         html_table(dt, "c", row_cap = cap, csv_name = bad), "`csv_name` must be one string",
         info = paste(cap, deparse(bad))

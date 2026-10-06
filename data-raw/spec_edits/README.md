@@ -7,8 +7,10 @@ copies after a refresh from their masters (plan 24.1 #46).
 
 The scripts are tools for whoever runs `update-spec`. They are not part of the package
 (`data-raw/` is build-ignored), and they take every folder as an argument: no path to a
-machine is written in them. Give them an output folder outside the tree, or a temporary one:
-nothing in them stops an output folder named `spec/`. Give folders as absolute paths.
+machine is written in them. `patch_workbooks.R` refuses any existing output folder, `spec/`
+included; `edit_csv_cell.R` refuses only an existing file, so it would write a missing one
+into `spec/`: give both an output folder outside the tree, or a temporary one. Give folders
+as absolute paths.
 `patch_workbooks.R` makes its output folder absolute itself, since `zip::zip()` works from
 the folder it packs and would look for a relative path there; `edit_csv_cell.R` writes where
 it is told. `zip` (patching a workbook's package) and `xml2` (the well-formedness check) are

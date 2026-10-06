@@ -71,8 +71,9 @@ test_that("a key flag is a logical or the text TRUE or FALSE, nothing else (D12.
   expect_equal(c(from_logical$allowed_in_pk, from_logical$allowed_in_fk), c(FALSE, TRUE))
   from_text <- validate_sentinels(row("FALSE", "TRUE"))
   expect_equal(c(from_text$allowed_in_pk, from_text$allowed_in_fk), c(FALSE, TRUE))
-  # as.logical() would take 0, 1, "T" and "true" for flags, which the message doesn't say.
-  for (bad in list(0, 1, "0", "1", "T", "F", "true", "false", "yes", "", NA)) {
+  # as.logical() would take 0, 1, "T", "true" and "True" for flags, which the message doesn't
+  # say.
+  for (bad in list(0, 1, "0", "1", "T", "F", "true", "false", "True", "False", "yes", "", NA)) {
     expect_error(
       validate_sentinels(row(bad, FALSE)), "TRUE or FALSE",
       info = paste("pk", deparse(bad))

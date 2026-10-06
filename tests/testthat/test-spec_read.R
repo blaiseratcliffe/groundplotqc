@@ -593,6 +593,7 @@ test_that("a dictionary's source_row follows its origin's rows (D12.33)", {
 test_that("an .xlsx dictionary's source_row is its sheet's row, the header being row 1", {
   testthat::skip_if_not_installed("readxl")
   table <- read_input_table(testthat::test_path("fixtures", "blank_cells.xlsx"), "dictionary")
+  # The fixture has one column, so the table and attribute roles share it.
   map <- gpq_column_map(table = "value", attribute = "value")
   dd <- read_dictionary(table, map, gpq_type_map())
   expect_equal(dd$attributes$source_row, 2:5)

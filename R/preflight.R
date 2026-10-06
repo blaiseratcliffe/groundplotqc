@@ -549,7 +549,7 @@ preflight_check_functions <- function() {
 #'
 #' @description
 #' Checks a specification, never the data, and stops before a run that would read it
-#' wrongly (plan 4.2). Each check gives one row per finding, or one pass or not-run row.
+#' wrongly. Each check gives one row per finding, or one pass or not-run row.
 #'
 #' @param spec A specification from [gpq_read_spec()].
 #' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
