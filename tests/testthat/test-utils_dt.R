@@ -608,6 +608,23 @@ test_that("a bad byte in the title line is the header's finding, the encoding wa
   }
 })
 
+test_that("a NUL byte in a file doesn't stop the byte checks; an invalid byte beside it is found", {
+  # rawToChar() can't hold a NUL, so the byte check drops it first, and only where there is one.
+  nul <- as.raw(0x00)
+  clean <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), c(charToRaw("1,x"), nul, charToRaw("y"))
+  )))
+  expect_equal(clean$data$b, "xy")
+  expect_equal(nrow(clean$invalid), 0L)
+  expect_equal(nrow(clean$malformed), 0L)
+  bad <- read_csv_text(write_bytes(list(
+    charToRaw("a,b"), c(charToRaw("1,x"), nul, as.raw(0x97), charToRaw("y"))
+  )))
+  expect_equal(bad$data$b, "x<97>y")
+  expect_equal(bad$invalid$row, 1L)
+  expect_equal(nrow(bad$malformed), 0L)
+})
+
 test_that("a session's warn = 2 doesn't stop the read, and its warn is put back (D12.59)", {
   withr::local_options(warn = 2)
   expect_no_error(ragged <- read_csv_text(write_bytes(list(

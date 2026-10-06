@@ -32,8 +32,9 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
     table = table, attribute = attribute, key_type = key_type,
     reference = reference, lookup = lookup, description = description
   )
-  # A name given in R is valid UTF-8 text, never blank (D12.54).
-  names_ok <- function(x) is.character(x) && !anyNA(x) && all(nzchar(x)) && all(validUTF8(x))
+  # A name given in R is valid UTF-8 text, never blank: empty after trimming, as D12.27's
+  # blank cells are, since such a name can never match (D12.54).
+  names_ok <- function(x) is.character(x) && !anyNA(x) && !any(is_blank(x)) && all(validUTF8(x))
   for (role in names(single)) {
     value <- single[[role]]
     if (length(value) != 1L || !names_ok(value)) {
@@ -60,7 +61,7 @@ gpq_column_map <- function(table = "table_name", attribute = "attribute_name",
 #'
 #' @description
 #' The type map says which R class each type of the data dictionary expects, and which
-#' types hold dates (D2.15).
+#' types hold dates.
 #'
 #' @param map `NULL` for the four built-in rows, or a data.frame or the path of a CSV file,
 #'   ending in `.csv`, with columns `data_type`, `r_class` and `date_format`, which replaces
@@ -114,6 +115,14 @@ validate_type_map <- function(map) {
   columns <- c("data_type", "r_class", "date_format")
   if (!setequal(names(map), columns)) {
     stop("A type map has the columns data_type, r_class and date_format.", call. = FALSE)
+  }
+  # A repeated name would have its first copy used and the rest dropped silently (D12.54).
+  repeated <- unique(names(map)[duplicated(names(map))])
+  if (length(repeated) > 0L) {
+    stop(
+      "A type map's column names must not repeat: ", paste(repeated, collapse = ", "), ".",
+      call. = FALSE
+    )
   }
   map <- as.data.table(lapply(as.list(map)[columns], as_text))
   # A file's bad bytes are already <xx>; one given in R is a caller's error (D12.54).

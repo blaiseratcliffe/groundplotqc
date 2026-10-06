@@ -50,6 +50,40 @@ test_that("validate_sentinels refuses what isn't one clean row per family and ro
   expect_error(gpq_sentinels(character = c(missing = bad)), "UTF-8")
 })
 
+test_that("validate_sentinels refuses a data.frame with a repeated column, naming it (D12.54)", {
+  repeated <- data.frame(
+    data_type = "numeric", role = "missing", value = "-1", allowed_in_pk = FALSE,
+    allowed_in_fk = FALSE, value = "-9", check.names = FALSE
+  )
+  expect_error(
+    validate_sentinels(repeated), "A sentinel table's column names must not repeat: value.",
+    fixed = TRUE
+  )
+})
+
+test_that("a key flag is a logical or the text TRUE or FALSE, nothing else (D12.19)", {
+  row <- function(pk, fk) {
+    data.frame(
+      data_type = "numeric", role = "missing", value = "-1", allowed_in_pk = pk, allowed_in_fk = fk
+    )
+  }
+  from_logical <- validate_sentinels(row(FALSE, TRUE))
+  expect_equal(c(from_logical$allowed_in_pk, from_logical$allowed_in_fk), c(FALSE, TRUE))
+  from_text <- validate_sentinels(row("FALSE", "TRUE"))
+  expect_equal(c(from_text$allowed_in_pk, from_text$allowed_in_fk), c(FALSE, TRUE))
+  # as.logical() would take 0, 1, "T" and "true" for flags, which the message doesn't say.
+  for (bad in list(0, 1, "0", "1", "T", "F", "true", "false", "yes", "", NA)) {
+    expect_error(
+      validate_sentinels(row(bad, FALSE)), "TRUE or FALSE",
+      info = paste("pk", deparse(bad))
+    )
+    expect_error(
+      validate_sentinels(row(FALSE, bad)), "TRUE or FALSE",
+      info = paste("fk", deparse(bad))
+    )
+  }
+})
+
 test_that("validate_sentinels refuses a blank role or value, and takes a table with no rows", {
   row <- function(role = "missing", value = "-1") {
     data.frame(

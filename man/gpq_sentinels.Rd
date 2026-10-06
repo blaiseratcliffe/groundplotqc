@@ -16,15 +16,15 @@ A data.table with columns \code{data_type} (the family), \code{role}, \code{valu
 }
 \description{
 Builds the table of sentinel values: the codes a column holds when a value is missing
-or doesn't apply. The engine has none built in (D7.4).
+or doesn't apply. The engine has none built in.
 }
 \details{
-Each row belongs to a family, not to one dictionary type (D12.19): \code{numeric} rows
+Each row belongs to a family, not to one dictionary type: \code{numeric} rows
 cover every type the type map gives R class integer or double; \code{date} rows every type
 whose type-map row has a \code{date_format}; \code{character} rows every other type of R class
 character. A type no row covers has no sentinels, and the rules that need them record
 \code{not_run} for its columns. A primary key never holds a sentinel; a foreign key may hold
-the not-applicable one (D8.8).
+the not-applicable one.
 }
 \examples{
 gpq_sentinels(

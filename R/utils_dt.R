@@ -254,11 +254,13 @@ read_csv_text <- function(path) {
   # text after it, as fread() reads it; the mark holds no newline, so lines count as they
   # did. Where that text has invalid bytes, a warning about the encoding is taken for
   # spec_encoding_invalid's, as below, so it doesn't stop the skip check (D12.58). A NUL is
-  # valid UTF-8, and rawToChar() can't hold one.
+  # valid UTF-8, and rawToChar() can't hold one, so the bytes are copied without them only
+  # where the file has one.
   if (length(bytes) >= 4L && all(bytes[1:4] == as.raw(c(0x84, 0x31, 0x95, 0x33)))) {
     bytes <- bytes[-(1:4)]
   }
-  invalid_bytes <- !validUTF8(rawToChar(bytes[bytes != as.raw(0x00)]))
+  has_nul <- length(grepRaw(as.raw(0x00), bytes, fixed = TRUE)) > 0L
+  invalid_bytes <- !validUTF8(rawToChar(if (has_nul) bytes[bytes != as.raw(0x00)] else bytes))
   unknown_before <- 0L
   header_line <- NA_integer_
   repeat {

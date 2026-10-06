@@ -449,6 +449,11 @@ test_that("an origin's rows are file rows inside the integer range, with no warn
   refused(1e10)
   # The last data row would pass the integer maximum.
   refused(.Machine$integer.max)
+  # The message says where rows stop.
+  expect_error(
+    read_input_table(frame, "datasets", list(path = csv, rows = 1e10)),
+    "no row can pass the integer maximum, 2147483647."
+  )
   # One data row ends at the maximum, which is allowed.
   one <- data.frame(a = "1")
   edge <- list(path = csv, sheet = "s", rows = .Machine$integer.max)
@@ -635,6 +640,17 @@ test_that("build_keys keeps an FK whose target has no PK, without a target colum
   expect_equal(keys$key_type, "FK")
   expect_equal(keys$reference_table, "p")
   expect_equal(keys$reference_attribute, NA_character_)
+})
+
+test_that("build_keys doesn't match an NA table name to an FK with no reference table", {
+  # A blank table name is no table, and a blank reference names none: no target for the FK.
+  a <- data.table::data.table(
+    table_name = c(NA, "c"), attribute_name = c("id", "fk"), key_type = c("PK", "FK"),
+    reference_table = NA_character_
+  )
+  keys <- build_keys(a)
+  expect_equal(keys$key_type, c("PK", "FK"))
+  expect_equal(keys$reference_attribute, c(NA_character_, NA_character_))
 })
 
 test_that("build_keys gives the empty keys table where no row is a key (D12.26)", {

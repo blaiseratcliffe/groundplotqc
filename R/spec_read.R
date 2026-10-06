@@ -291,10 +291,13 @@ origin_where <- function(origin, x, input) {
       all(rows == round(rows) & rows >= 2 & rows <= .Machine$integer.max)
     fits <- !whole || length(rows) != 1L || rows + (n - 1) <= .Machine$integer.max
     if (!whole || !fits || !(length(rows) == 1L || length(rows) == n)) {
-      stop(sprintf(paste(
-        "The origin of %s must give its rows as NULL, the file row of the first data row",
-        "(2 or more), or one file row per data row."
-      ), input), call. = FALSE)
+      stop(sprintf(
+        paste(
+          "The origin of %s must give its rows as NULL, the file row of the first data row",
+          "(2 or more), or one file row per data row; no row can pass the integer maximum, %d."
+        ),
+        input, .Machine$integer.max
+      ), call. = FALSE)
     }
   }
   col_map <- origin_columns(origin$columns, names(x), input)
@@ -620,7 +623,9 @@ build_keys <- function(attributes) {
   pk_rows <- keyed[key_type == "PK"]
   # An FK whose target table has no PK keeps its row with reference_attribute empty;
   # dd_pk_missing reports the table and dd_fk_target_missing the FK (D12.26). With no
-  # PK anywhere there is nothing to look up.
+  # PK anywhere there is nothing to look up. A PK row with no table name isn't left in the
+  # lookup, or an FK with no reference table would join to it, NA to NA.
+  pk_rows <- pk_rows[!is.na(table_name)]
   if (nrow(pk_rows) > 0L) {
     pk <- pk_rows[, list(n_pk = .N, pk = attribute_name[[1L]]), by = table_name]
     keyed[pk, on = list(reference_table = table_name), `:=`(n_ref = i.n_pk, ref_pk = i.pk)]
@@ -954,7 +959,7 @@ build_code_list_map <- function(attributes, code_lists, sheets, crosswalks, decl
           "Crosswalk %s's filter_col %s isn't a column of the table.", name, d$filter_col
         ), call. = FALSE)
       }
-      code_column <- resolve_code_column(attribute, name, table_headers[[name]], d$code_col)
+      code_column <- resolve_code_column(attribute, name, headers, d$code_col)
       return(list(
         "crosswalk", name, code_column,
         if (is.null(values)) NA_character_ else d$filter_col,
@@ -1107,10 +1112,12 @@ build_id_bands <- function(id_bands, code_lists, file) {
     end = "preflight_detail_site_id_range_invalid_blank_end"
   )
   bounds <- list(start = start, end = end)
+  # The bands' bounds as read above, each band's own, so as_bound() runs once per column.
+  bound_values <- list(start = bands$band_start, end = bands$band_end)
   bound_findings <- do.call(c, lapply(names(bounds), function(side) {
     cells <- bounds[[side]]
     blank <- which(labelled & is.na(cells$value))
-    not_whole <- which(labelled & !is.na(cells$value) & is.na(as_bound(cells$value)))
+    not_whole <- which(labelled & !is.na(cells$value) & is.na(bound_values[[side]]))
     list(
       if (length(blank) > 0L) {
         finding(

@@ -114,7 +114,10 @@ build_lineage_spec <- function(lineage, attributes, file, tokens = NULL,
   moved <- rep(FALSE, nrow(data))
   # An empty dictionary gives no table to place a row in (D12.26).
   if (nrow(attributes) > 0L) {
-    homes <- attributes[, list(n_home = .N, home = table_name[[1L]]), by = attribute_name]
+    # A home is a table, so an attribute on two rows of one table has one.
+    homes <- attributes[, list(n_home = uniqueN(table_name), home = table_name[[1L]]),
+      by = attribute_name
+    ]
     data[homes, on = "attribute_name", `:=`(n_home = i.n_home, home = i.home)]
     moved <- !in_dictionary & !is.na(data$n_home) & data$n_home == 1L
   }

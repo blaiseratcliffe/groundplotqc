@@ -5,15 +5,15 @@
 #'
 #' @description
 #' Builds the table of sentinel values: the codes a column holds when a value is missing
-#' or doesn't apply. The engine has none built in (D7.4).
+#' or doesn't apply. The engine has none built in.
 #'
 #' @details
-#' Each row belongs to a family, not to one dictionary type (D12.19): `numeric` rows
+#' Each row belongs to a family, not to one dictionary type: `numeric` rows
 #' cover every type the type map gives R class integer or double; `date` rows every type
 #' whose type-map row has a `date_format`; `character` rows every other type of R class
 #' character. A type no row covers has no sentinels, and the rules that need them record
 #' `not_run` for its columns. A primary key never holds a sentinel; a foreign key may hold
-#' the not-applicable one (D8.8).
+#' the not-applicable one.
 #'
 #' @param numeric,character,date `NULL`, or a named vector with names `missing` and
 #'   `not_applicable`, for example `c(missing = -1, not_applicable = -9)`.
@@ -65,11 +65,22 @@ validate_sentinels <- function(sentinels) {
   if (!setequal(names(sentinels), columns)) {
     stop("A sentinel table has the columns ", paste(columns, collapse = ", "), ".", call. = FALSE)
   }
+  # A repeated name would have its first copy used and the rest dropped silently (D12.54).
+  repeated <- unique(names(sentinels)[duplicated(names(sentinels))])
+  if (length(repeated) > 0L) {
+    stop(
+      "A sentinel table's column names must not repeat: ", paste(repeated, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  # A key flag is a logical or the text TRUE or FALSE, as a file holds it; as.logical() would
+  # also take 0, 1, "T" and "true", which the message below doesn't offer.
+  as_flag <- function(x) c(TRUE, FALSE)[match(as_text(x), c("TRUE", "FALSE"))]
   out <- data.table(
     data_type = as_text(sentinels$data_type), role = as_text(sentinels$role),
     value = as_text(sentinels$value),
-    allowed_in_pk = as.logical(sentinels$allowed_in_pk),
-    allowed_in_fk = as.logical(sentinels$allowed_in_fk)
+    allowed_in_pk = as_flag(sentinels$allowed_in_pk),
+    allowed_in_fk = as_flag(sentinels$allowed_in_fk)
   )
   if (!all(out$data_type %in% c("numeric", "character", "date"))) {
     stop("A sentinel row's data_type is numeric, character or date (D12.19).", call. = FALSE)

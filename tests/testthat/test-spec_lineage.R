@@ -69,6 +69,28 @@ test_that("build_lineage_spec places rows by the dictionary and parses id rows o
   expect_true(is.na(unknown$clashes$source_cell_b))
 })
 
+test_that("an attribute is placed by the tables that hold it, not by the rows (D1.15b)", {
+  lineage <- data.table::data.table(
+    contributor_label = "BC", table_name = "magp_plot_meas", attribute_name = "src_plot_id",
+    spec_type = "id", source_text = "t.k", note = NA_character_, source_cell = "A2!D5"
+  )
+  # Two dictionary rows of one table are one home: the row is placed there.
+  twice <- data.table::data.table(
+    table_name = "plots", attribute_name = "src_plot_id", source_row = c(10L, 11L)
+  )
+  built <- build_lineage_spec(lineage, twice, "a2.xlsx", dictionary_file = "dd.xlsx")
+  expect_equal(built$component$table_name, "plots")
+  expect_equal(built$clashes$value_b, "plots")
+  expect_equal(built$clashes$source_cell_b, "dd.xlsx:10")
+  # Two tables are two homes: the row stays where A2 puts it, with no clash.
+  two_tables <- data.table::data.table(
+    table_name = c("plots", "visits"), attribute_name = "src_plot_id", source_row = c(10L, 20L)
+  )
+  kept <- build_lineage_spec(lineage, two_tables, "a2.xlsx", dictionary_file = "dd.xlsx")
+  expect_equal(kept$component$table_name, "magp_plot_meas")
+  expect_equal(nrow(kept$clashes), 0L)
+})
+
 test_that("a sentinel as a whole alternative or one part of a composite is unparseable", {
   for (text in c("PSP: a.x + X | non-PSP: c.z", "PSP: a.x | non-PSP: Z")) {
     expect_equal(parse_lineage_notation(text, tokens)$id_status, "unparseable", info = text)

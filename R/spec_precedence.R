@@ -52,15 +52,15 @@ resolve_clashes <- function(datasets, code_lists, precedence, files,
       value.var = "value", fun.aggregate = function(x) x[[1L]], fill = NA_character_
     )
     key_cells <- body[sheet_column == key]
-    missing <- key_cells[!is.na(value) & !value %chin% datasets[[key]]]
-    if (nrow(missing) > 0L) {
+    absent <- key_cells[!is.na(value) & !value %chin% datasets[[key]]]
+    if (nrow(absent) > 0L) {
       findings[[length(findings) + 1L]] <- data.table(
         rule_id = "datasets_row_missing", input = "datasets", file = list_file,
         detail = report_text(
           "preflight_detail_datasets_row_missing",
-          key_col = key, key_value = missing$value, sheet = sheet_name
+          key_col = key, key_value = absent$value, sheet = sheet_name
         ),
-        source_cell = missing$source_cell
+        source_cell = absent$source_cell
       )
     }
     # Each side keeps its row, so a clash can cite both cells (D12.33). A blank key is no

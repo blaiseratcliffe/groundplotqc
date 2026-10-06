@@ -207,7 +207,8 @@ test_that("an output_dir whose metadata or reports is a file is refused, naming 
     dir <- withr::local_tempdir()
     writeLines("x", file.path(dir, name))
     expect_error(
-      gpq_preflight(spec, output_dir = dir), paste0("Can't create the folder .*", name),
+      gpq_preflight(spec, output_dir = dir),
+      paste0("Can't create the folder .*", name, ".*; a file of that name may be in the way\\."),
       info = name
     )
   }

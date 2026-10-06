@@ -29,7 +29,7 @@ row per file (D7.10):
 | README.md | What the package does, its status, installing from GitHub, links to the site and the issues page (D11.4) | none | none |
 | NEWS.md | Changes per version, one bullet per user-visible change (D11.5, D11.6) | none | none |
 | .lintr | lintr settings: tidyverse style, line length 100, snake_case names, `object_usage_linter` off, and the export-prefix linter (plan 17.8; D11.4, D11.7) | none exported; export_prefix_linter (defined inline) | lintr |
-| _pkgdown.yml | pkgdown site settings: the site's address, Bootstrap 5, and the reference index, one group per family as exports arrive, the MAGPlot 2.0 layer's among them (plan 19.5; D11.6, D11.9, D12.36) | none | R/options.R |
+| _pkgdown.yml | pkgdown site settings: the site's address, Bootstrap 5, and the reference index, one group per family as exports arrive, the MAGPlot 2.0 layer's among them (plan 19.5; D11.6, D11.9, D12.36) | none | R/options.R, R/spec_types.R, R/spec_sentinels.R, R/spec_read.R, R/preflight.R, R/magp_spec.R (the files of the exports the index names) |
 
 ## R/
 

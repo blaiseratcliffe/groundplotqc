@@ -263,14 +263,16 @@ preflight_check_functions <- function() {
       # Each cell is placed as its input form counts rows (D12.28, D12.64): a CSV's line or a
       # workbook's row, the number its cell ends in, origins applied; a data.frame's row as
       # R counts it, its cell NA.
-      dups <- cells[, list(
-        n = .N,
-        rows = paste(fifelse(
-          is.na(source_cell), as.character(source_row - 1L), sub("^.*[^0-9]", "", source_cell)
-        ), collapse = ", "),
-        cell = source_cell[min(2L, .N)]
+      # The position is worked out once for every cell, and only the codes that repeat get
+      # their rows joined.
+      set(cells, j = "position", value = fifelse(
+        is.na(cells$source_cell), as.character(cells$source_row - 1L),
+        sub("^.*[^0-9]", "", cells$source_cell)
+      ))
+      cells[, n := .N, by = list(sheet, sheet_column, value)]
+      dups <- cells[n > 1L, list(
+        n = .N, rows = paste(position, collapse = ", "), cell = source_cell[2L]
       ), by = list(sheet, sheet_column, value)]
-      dups <- dups[n > 1L]
       # A sheet's cells share one form: a workbook's cell is sheet!<letters><row>, which a
       # CSV's file:<line> can't end like. A repeated code always has more than one row.
       form <- fifelse(

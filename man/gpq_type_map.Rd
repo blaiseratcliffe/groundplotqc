@@ -23,7 +23,7 @@ Nothing is signalled here: \code{\link[=gpq_preflight]{gpq_preflight()}} reports
 }
 \description{
 The type map says which R class each type of the data dictionary expects, and which
-types hold dates (D2.15).
+types hold dates.
 }
 \examples{
 gpq_type_map()

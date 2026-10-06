@@ -11,7 +11,11 @@ write_preflight_files <- function(results, spec, output_dir) {
   for (folder in dirname(c(csv, html))) {
     dir.create(folder, recursive = TRUE, showWarnings = FALSE)
     if (!dir.exists(folder)) {
-      stop("Can't create the folder ", folder, " for the pre-flight files.", call. = FALSE)
+      stop(
+        "Can't create the folder ", folder, " for the pre-flight files; a file of that name ",
+        "may be in the way.",
+        call. = FALSE
+      )
     }
   }
   fwrite(results, csv, na = "", quote = TRUE)

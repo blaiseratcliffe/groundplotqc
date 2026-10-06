@@ -53,6 +53,19 @@ test_that("html_table needs csv_name whenever row_cap is given, capped or not", 
   expect_error(html_table(dt, "c", row_cap = 3L), "`row_cap` needs `csv_name`")
 })
 
+test_that("html_table needs csv_name to be one string wherever row_cap gives it a use", {
+  dt <- data.table::data.table(rule = c("a", "b", "c"))
+  # Capped or not: two names would make two notes, none an empty note, NA the lookup's error.
+  for (cap in c(2L, 10L)) {
+    for (bad in list(c("a.csv", "b.csv"), character(0), NA_character_, 1)) {
+      expect_error(
+        html_table(dt, "c", row_cap = cap, csv_name = bad), "`csv_name` must be one string",
+        info = paste(cap, deparse(bad))
+      )
+    }
+  }
+})
+
 test_that("html_table adds no note when row_cap reaches the row count", {
   dt <- data.table::data.table(rule = c("a", "b", "c"))
   for (cap in c(3L, 10L)) {
@@ -203,6 +216,9 @@ test_that("the page's CSS wraps long values and the script marks sortable header
   css <- page_css()
   expect_match(css, "overflow-wrap:anywhere", fixed = TRUE)
   expect_match(css, ".gpq-table{overflow-x:auto}", fixed = TRUE)
+  # The scroll box would clip a focus ring drawn outside the first header, so it is drawn
+  # inside, which keeps the layout as it is.
+  expect_match(css, "th:focus-visible{outline-offset:-2px}", fixed = TRUE)
   # A header looks clickable only once the script has run.
   expect_match(css, ".gpq-js th[data-gpq-sort]{cursor:pointer", fixed = TRUE)
   expect_false(grepl("(^|\n)th\\[data-gpq-sort\\]", css))

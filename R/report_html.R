@@ -25,7 +25,7 @@ html_escape <- function(x) {
 #' A sortable, filterable HTML table
 #'
 #' Every cell escaped; a `row_cap` caps the rows shown, with a note naming `csv_name`, which
-#' a `row_cap` always needs, whether or not the table reaches it.
+#' a `row_cap` always needs, as one string, whether or not the table reaches it.
 #' @noRd
 html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL) {
   if (!is.data.frame(dt)) {
@@ -41,6 +41,10 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL) {
     }
     if (is.null(csv_name)) {
       stop("`row_cap` needs `csv_name`, the file that holds the full list.", call. = FALSE)
+    }
+    ok <- is.character(csv_name) && length(csv_name) == 1L && !is.na(csv_name)
+    if (!ok) {
+      stop("`csv_name` must be one string.", call. = FALSE)
     }
   }
   total <- nrow(dt)
@@ -173,6 +177,7 @@ page_css <- function() {
     "th,td{border:1px solid #c8c8c8;padding:.25rem .5rem;text-align:left;vertical-align:top}",
     "td,th{overflow-wrap:anywhere}",
     ".gpq-table{overflow-x:auto}",
+    "th:focus-visible{outline-offset:-2px}",
     ".gpq-js th[data-gpq-sort]{cursor:pointer;background:#f2f2f2}",
     "th[aria-sort=ascending]::after{content:' \\25B2'}",
     "th[aria-sort=descending]::after{content:' \\25BC'}",
