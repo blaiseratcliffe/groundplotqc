@@ -211,7 +211,8 @@ test_that("blank rows and repeated codes are placed as each input form counts ro
     "Sheet kind has a blank row: row 3 as R counts rows."
   ))
   # A data.frame from a workbook by the rows its origin gives, as Excel shows them.
-  origin <- list(`code_lists:kind` = list(path = path, sheet = "codes", rows = 10L))
+  workbook <- testthat::test_path("fixtures", "blank_cells.xlsx")
+  origin <- list(`code_lists:kind` = list(path = workbook, sheet = "codes", rows = 10L))
   expect_equal(details(list(kind = frame), origin), c(
     "Code \"B\" appears 2 times in column kind of sheet kind: rows 11, 13.",
     "Sheet kind has a blank row: row 12."

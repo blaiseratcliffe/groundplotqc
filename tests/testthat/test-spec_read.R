@@ -755,6 +755,16 @@ test_that("a data.frame translation table with an origin is located as its file 
   expect_equal(walks$manifest$file, basename(path))
 })
 
+test_that("a translation table's header of spaces is V<j> as a CSV and a data.frame (D12.66)", {
+  frame <- data.frame(code = c("A", "B"), x = c("p", "q"), y = c("r", "s"))
+  names(frame) <- c("code", "  ", "V2")
+  from_frame <- read_crosswalks(list(td = frame))$long
+  from_csv <- read_crosswalks(list(td = csv_file(c("code,  ,V2", "A,p,r", "B,q,s"))))$long
+  expect_equal(unique(from_csv$crosswalk_column), c("code", "V2", "V2.1"))
+  expect_equal(from_csv$crosswalk_column, from_frame$crosswalk_column)
+  expect_equal(from_csv$value, from_frame$value)
+})
+
 test_that("a blank workbook header is named V<j>, its cell left NA, as in other forms (D12.64)", {
   testthat::skip_if_not_installed("readxl")
   raw <- data.table::data.table(

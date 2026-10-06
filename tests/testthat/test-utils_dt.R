@@ -101,6 +101,23 @@ test_that("read_csv_text tells a blank header cell from one written V<j> (D12.65
   expect_equal(read_csv_text(write_bytes(list(raw(0))))$blank_header, logical())
 })
 
+test_that("a header that can't be read again as one row leaves each V<j> a name (D12.65)", {
+  # The open quote runs line 1's record on into the rows, so it doesn't read again as one
+  # row: V2, though blank, stays a name, and the spaces-only name is still blank.
+  read <- read_csv_text(write_bytes(list(
+    charToRaw("a,,  ,\"b"), charToRaw("1,2,3,4"), charToRaw("5,6,7,8")
+  )))
+  expect_named(read$data, c("a", "V2", "  ", "\"b"))
+  expect_equal(read$blank_header, c(FALSE, FALSE, TRUE, FALSE))
+  # The second read keeps none of its problems: the file's are those of its twin, whose
+  # header has no V<j> name to read again for.
+  twin <- read_csv_text(write_bytes(list(
+    charToRaw("a,x,  ,\"b"), charToRaw("1,2,3,4"), charToRaw("5,6,7,8")
+  )))
+  expect_equal(read$malformed, twin$malformed)
+  expect_equal(read$malformed$kind, "quote")
+})
+
 test_that("a ragged line, a blank line, an empty file and a stray quote are malformed (D12.54)", {
   ragged <- read_csv_text(write_bytes(list(
     charToRaw("id,comments"), charToRaw("1,ok"), charToRaw("2,has, a comma"), charToRaw("3,x")

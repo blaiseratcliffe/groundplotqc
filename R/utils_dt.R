@@ -54,7 +54,9 @@ fix_invalid_utf8 <- function(data) {
 #' and for "unknown" fread()'s warning as `value`, a bad byte as `<xx>`; `lines` the file
 #' line each data row starts on, the header being line 1; `blank_header` TRUE for each
 #' column whose header cell is blank in the file (empty, quoted empty or spaces only), which
-#' fread() names V<j> where empty, so a header written V<j> isn't taken for one (D12.65).
+#' fread() names V<j> where empty, so a header written V<j> isn't taken for one, except
+#' where line 1 can't be read again as one row of the file's columns: an empty cell fread()
+#' named V<j> is then FALSE, a name as written (D12.65).
 #' Line 1 is the header even where fread() would skip it; a file with no bytes, or only
 #' blank lines or spaces, is "empty" (D12.9, D12.14, D12.24, D12.27, D12.45, D12.54,
 #' D12.56). fread() runs with English messages, whatever the session's language, since its

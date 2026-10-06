@@ -879,6 +879,13 @@ read_one_crosswalk <- function(name, element, origin = NULL) {
       findings = unreadable(file, "preflight_detail_crosswalk_unreadable_file")
     ))
   }
+  # A header of spaces only is blank too: named V<j>, as fread() names an empty one, then
+  # each name made unique, as read_input_table() names a data.frame's (R7, D12.65, D12.66).
+  if (any(read$blank_header)) {
+    names_in <- names(read$data)
+    names_in[read$blank_header] <- paste0("V", which(read$blank_header))
+    setnames(read$data, make.unique(names_in))
+  }
   lines <- readLines(table, warn = FALSE, encoding = "UTF-8")
   bad <- which(!validUTF8(lines))
   # Cells are located by the file line each row starts on (D12.54).
