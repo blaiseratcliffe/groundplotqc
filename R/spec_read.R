@@ -1414,7 +1414,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
       if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
       if (!is.null(id_bands)) "id_bands"
     ),
-    workbook = is.character(code_lists) && length(code_lists) == 1L
+    code_lists_workbook = is.character(code_lists) && length(code_lists) == 1L
   )
   dictionary_in <- read_input_table(dictionary, "dictionary", origins[["dictionary"]])
   dictionary_read <- read_dictionary(dictionary_in, column_map, type_map, id_pattern)
@@ -1496,10 +1496,12 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
 #' A stop unless `origins` is NULL or a list named by inputs given (D12.33)
 #'
 #' Each name once (D12.62). An input given that takes no origin (`no_origin`), or a sheet
-#' of a code-list workbook given as a path, is refused saying why (D12.62); an origin for
-#' any other input given as a path is refused where that input is read.
+#' of a code-list workbook given as a path (`code_lists_workbook`, D12.63), is refused
+#' saying why (D12.62); an origin for any other input given as a path is refused where
+#' that input is read.
 #' @noRd
-check_origins <- function(origins, inputs, no_origin = character(), workbook = FALSE) {
+check_origins <- function(origins, inputs, no_origin = character(),
+                          code_lists_workbook = FALSE) {
   if (is.null(origins)) {
     return(invisible(NULL))
   }
@@ -1524,7 +1526,7 @@ check_origins <- function(origins, inputs, no_origin = character(), workbook = F
       call. = FALSE
     )
   }
-  sheets <- if (workbook) given[startsWith(given, "code_lists:")] else character()
+  sheets <- if (code_lists_workbook) given[startsWith(given, "code_lists:")] else character()
   if (length(sheets) > 0L) {
     stop(
       "`code_lists` is given as a path, so its sheets take no origin: ",

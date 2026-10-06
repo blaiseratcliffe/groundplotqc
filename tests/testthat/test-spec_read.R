@@ -1206,6 +1206,15 @@ test_that("each clash finding names its own sheet's file (D12.28)", {
 test_that("id_bands that isn't a list of names is the package's own error", {
   expect_error(read_fish(id_bands = "bands"), "`id_bands` is list(", fixed = TRUE)
   expect_error(read_fish(id_bands = list(sheet = c("a", "b"))), "`id_bands` is list(", fixed = TRUE)
+  # With code lists given there is a manifest, so the bands sheet's file is looked up.
+  expect_error(
+    gpq_read_spec(
+      data.frame(table_name = "t", attribute_name = "a", data_type = "character"),
+      code_lists = list(a = data.frame(x = "1")), id_bands = "bands"
+    ),
+    "`id_bands` is list(",
+    fixed = TRUE
+  )
 })
 
 test_that("a type map's findings attribute must have the read_findings columns", {
