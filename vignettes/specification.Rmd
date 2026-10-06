@@ -1,6 +1,9 @@
 ---
 title: "Specification files and configuration"
-output: rmarkdown::html_vignette
+output:
+  rmarkdown::html_vignette:
+    md_extensions: -smart
+    math_method: null
 vignette: >
   %\VignetteIndexEntry{Specification files and configuration}
   %\VignetteEngine{knitr::rmarkdown}
@@ -19,7 +22,8 @@ It grows with later versions.
 ## Reading a specification
 
 The fish survey example names its dictionary columns and types its own way, so
-`gpq_column_map()` and `gpq_type_map()` say what they mean.
+`gpq_column_map()` and `gpq_type_map()` say what they mean, and `gpq_sentinels()`
+gives the codes the fish tables use for a missing or not-applicable value.
 
 ```{r}
 library(groundplotqc)
@@ -61,8 +65,10 @@ results <- gpq_preflight(fish)
 results[, c("rule_id", "outcome", "not_run_reason")]
 ```
 
-A defect in the specification is a finding, not a failure to read. Here a code list
-repeats a code, which warns:
+A defect in the specification is a finding, not a failure to read. Warn rows are also
+signalled as one R warning, of class `gpq_preflight_warning`, and stop rows as an error,
+of class `gpq_preflight_error`; each carries the table. The code below mutes the warning
+so the table can be shown. Here a code list repeats a code, which warns:
 
 ```{r}
 repeated <- gpq_read_spec(
@@ -82,11 +88,11 @@ warned <- withCallingHandlers(
   gpq_preflight(repeated),
   gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
 )
-subset(warned, outcome == "warn")
+subset(warned, outcome == "warn", c(rule_id, detail))
 ```
 
 ## MAGPlot's specification
 
 The MAGPlot 2.0 layer compiles its specification files into the package with
-`data-raw/build_magp_config.R`, which pre-flights them first and writes nothing if
-pre-flight stops.
+`data-raw/build_magp_config.R`, which pre-flights them first. If pre-flight stops, it
+writes nothing into the package and leaves its report in `runs/build_magp_config/`.
