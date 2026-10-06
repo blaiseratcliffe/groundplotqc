@@ -1,0 +1,88 @@
+damage condition or agent,damage_agents,severity_code,revisedcode,Code description and classification,Remarks/Citation,severity_level
+Mortality conditions for all agents (nominal),all,SR,SR,Standing — Recent dead,,H
+,all,SO,SO,Standing — Old dead,,H
+,all,WR,WR,Windthrow — Root and butt rot,,H
+,all,WS,WS,Windthrow — Soil failure,,H
+,all,WA,WA,Windthrow- Management/soil related,,H
+,all,BD,BD,Breakage — Stem decay (stubs and snags),,H
+,all,BS,BS,Breakage — Stem shear,,H
+Bark beetles (nominal),IB,FA,FA,Failed Attack,,L
+,IB,GR,GR,Current (Green) attack,Green attack refers to new or recently attacked trees containing brood and generally still retaining their green foliage colour.,L
+,IB,RA,RA,Red Attack,Red attack applies to trees with recently faded foliage. Red attack trees may still have brood under the bark or the beetles may have just emerged.,M
+,IB,GY,GY,Grey Attack,"Trees containing no brood, that have been dead for more than a year, and have lost most or all of their foliage are referred to as grey attack.",H
+"Defoliators, needle rusts and blights (general use) (total crown rating scale; past and present attack) (continuous)",ID,"Record % defoliated, discoloured, or infected", ,Enter % (100% = – – ),,
+Defoliators – Western Spruce Budworm (current foliage only) (continuous),ID,Record % of current year’s foliage defoliated, ,Enter % (100% = – – ) (100% is a shell of missing foliage [all of the current year’s foliage] on the outside of the tree), ,
+Defoliators – Elytroderma needle cast (ordinal),ID,1,1,,The Hawksworth 6-class rating system: light infection is a rating of 1 to 2; moderate is 3 to 4; and severe is 5 to 6. ],L
+,ID,2,2,,,L
+,ID,3,3,,,M
+,ID,4,4,,,M
+,ID,5,5,,,H
+,ID,6,6,,,H
+Terminal weevils (nominal) (data collected 2014 onward),IW,C,C,Current attack only (no previous attack),,
+,IW,O,O,Old attack (may also be current attack),,
+,IW,M,M,Major crook,,L
+,IW,N,N,Minor crook,,L
+,IW,F,F,Forking,,M
+,IW,S,S,Staghead,,H
+,IW,S,OM,Major crook;  only for Old attack 'O',,L
+,IW,S,ON,Minor crook; only for Old attack 'O',,L
+,IW,S,OF,Forking; only for Old attack 'O',,M
+,IW,S,OS,Staghead; only for Old attack 'O',,H
+,IW,M,1M,Major crook; one year of attack,,L
+,IW,M,2M,Major crook; two years of attacks,,L
+,IW,M,3M,Major crook; three years of attacks,,L
+,IW,M,4M,Major crook; four years of attacks,,L
+,IW,M,5M,Major crook; five years of attacks,,L
+,IW,M,6M,Major crook; six years of attacks,,L
+,IW,M,7M,Major crook; seven years of attacks,,L
+,IW,M,8M,Major crook; eight years of attacks,,L
+,IW,M,9M,Major crook; nine years of attacks,,L
+,IW,N,1N,Minor crook; one year of attack,,L
+,IW,N,2N,Minor crook; two years of attacks,,L
+,IW,N,3N,Minor crook; three years of attacks,,L
+,IW,N,4N,Minor crook; four years of attacks,,L
+,IW,N,5N,Minor crook; five years of attacks,,L
+,IW,N,6N,Minor crook; six years of attacks,,L
+,IW,N,7N,Minor crook; seven years of attacks,,L
+,IW,N,8N,Minor crook; eight years of attacks,,L
+,IW,N,9N,Minor crook; nine years of attacks,,L
+,IW,F,1F,Forking; one year of attack,,M
+,IW,F,2F,Forking; two years of attacks,,M
+,IW,F,3F,Forking; three years of attacks,,M
+,IW,F,4F,Forking; four years of attacks,,M
+,IW,F,5F,Forking; five years of attacks,,M
+,IW,F,6F,Forking; six years of attacks,,M
+,IW,F,7F,Forking; seven years of attacks,,M
+,IW,F,8F,Forking; eight years of attacks,,M
+,IW,F,9F,Forking; nine years of attacks,,M
+,IW,S,1S,Staghead; one year of attack,,S
+,IW,S,2S,Staghead; two years of attacks,,S
+,IW,S,3S,Staghead; three years of attacks,,S
+,IW,S,4S,Staghead; four years of attacks,,S
+,IW,S,5S,Staghead; five years of attacks,,S
+,IW,S,6S,Staghead; six years of attacks,,S
+,IW,S,7S,Staghead; seven years of attacks,,S
+,IW,S,8S,Staghead; eight years of attacks,,S
+,IW,S,9S,Staghead; nine years of attacks,,S
+Stem rusts (nominal),,BC,BC,Branch Canker(s),,
+,,SC,SC,Stem Canker(s),,
+,,TK,TK,Top-Kill,,
+Root Rots (nominal) (data collected 2014 onward),DR,SC,SC,Crown symptoms,,
+,DR,BR,BR,Basal reinosis,,
+,DR,CS,CS,"Confirmatory symptoms (stain, decay, mycelia, rhizomorphs, or sporophores)", ,
+Root Rots (nominal) (data collected 2014 onward),DR,W5,W5,Within 5 m of A. Ostoyae infection source,,
+,DR,LC,LC,Light Crown symptoms,,L
+,DR,SC,SC,Severe Crown symptoms,,H
+,DR,RL,RL,Basal resinosis (Light) > 50% circumference,,L
+,DR,RS,RS,Basal resinosis (Severe) > 50% circumference,,H
+,DR,BR,BR,Butt Rot,,
+,DR,CS,CS,"Confirmatory Symptoms; stain, decay, mycelia, rhizomorphs, or sporophores", ,
+Dwarf Mistletoes (branch infection) (for all species) (ordinal)                              ---------------------------------------------  For coastal western hemlock Stem swelling defect classes (nominal),DM,1,1,,The Hawksworth 6-class rating system: light infection is a rating of 1 to 2; moderate is 3 to 4; and severe is 5 to 6. ,L
+,DM,2,2,,,L
+,DM,3,3,,,M
+,DM,4,4,,,M
+,DM,5,5,,,H
+,DM,6,6,,,H
+,DM,N,N,For coastal western hemlock Stem swelling defect classes (nominal): N - >= minor stem swelling per tree , ,
+,DM,M,M,For coastal western hemlock Stem swelling defect classes (nominal): M -  >= major stem swelling per tree, ,
+"Mammals, birds, and root collar weevil (girdlers) (continuous)",,Record % girdled,,,,

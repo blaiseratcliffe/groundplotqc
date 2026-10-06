@@ -1,0 +1,5 @@
+"data_type","r_class","date_format"
+"character","character",
+"integer","integer",
+"numeric","double",
+"date","character","%Y-%m-%d"

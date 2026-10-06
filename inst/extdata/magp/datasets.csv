@@ -1,0 +1,25 @@
+"jurisdiction","magp_dataset_id","magp_contributor_id","dataset_code","src_dataset_id","gp_type","gp_network","probability_sampling","sampling_design","site_design","plot_design","plot_layout_fig","meas_interval","temporal_extent","meas_cycle","n_sites","n_plots","n_trees","n_treemeas","comments"
+"BC","110.01","110","1","BC_PSP_G","RMP","GYM","N","UNK","C","NFA","2",,,,,,,,
+"BC","110.02","110","2","BC_PSP_R","RMP","GYM","N","UNK","S","NFA","2",,,,,,,,
+"BC","110.03","110","3","BC_CMI","RMP","FMP","Y","SYS","S","NFA","2",,,,,,,,
+"BC","110.04","110","4","BC_YSM","RMP","FMP","Y","SYS","S","NFA","2",,,,,,,,
+"BC","110.05","110","5","BC_SUP","MIX","FMP","Y","SYS","A","NMV","2",,,,,,,,"Some visits have TMP as the visit type/code."
+"BC","110.06","110","6","BC_VRI","TMP","CVV","Y","STR","A","NMV","2",,,,,,,,
+"BC","110.07","110","7","BC_VLT","TMP","CVV","Y","STR","A","VAR","2",,,,,,,,
+"BC","110.08","110","8","BC_FLT",,,,,,,,,,,,,,,
+"BC","110.09","110","9","BC_YNS",,,,,,,,,,,,,,,
+"BC","110.10","110","10","BC_CNS",,,,,,,,,,,,,,,
+"BC","110.11","110","11","BC_EYSM",,,,,,,,,,,,,,,
+"BC","110.12","110","12","BC_FHYSM",,,,,,,,,,,,,,,
+"ON","170.01","170","1","ON_PSP","RMP",,"M","MIX","C","NFA","8",,,,,,,,
+"ON","170.02","170","2","ON_PGP","RMP",,"M","MIX","S","NFA","8",,,,,,,,
+"ON","170.03","170","3","ON_PGP_PIP","RMP",,"Y","SYS","S","NFA","8",,,,,,,,
+"QC","180.01","180","1","QC_BAS1","RMP","FMM","Y","STR","S","NFA","10",,,,,,,,
+"QC","180.02","180","2","QC_BAS2","RMP","FMM","Y","STR","S","NFA","10",,,,,,,,
+"QC","180.03","180","3","QC_SPIM","RMP","FMP","N","PUR","S","NFA","10",,,,,,,,
+"QC","180.04","180","4","QC_FEDE","RMP","FMM","Y","UNK","S","NFA","10",,,,,,,,
+"QC","180.05","180","5","QC_UNLA","RMP","RPN","N","PUR","S","NFA","10",,,,,,,,
+"QC","180.06","180","6","QC_SCOF","RMP","FMP","N","PUR","S","NFA","10",,,,,,,,
+"QC","180.07","180","7","QC_PACA","RMP","FMP","N","PUR","S","NFA","10",,,,,,,,
+"AB","100.01","100","1","AB_PGYI","RMP","GYM","N","PUR","S","NFA","10","5-20 years",,,,,,,"100.01 Added 2026-09-25 from the AB translation. Evidence: GYM and PUR from the package overview; S because each AB site is one plot and the 4-plot cluster is a block. meas_cycle unknown (AB-12)."
+"AB","100.02","100","2","AB_MPB","RMP","RPN","N","PUR","S","NFA","10",,,,,,,,"100.02 Added 2026-09-25 from the AB translation. RPN is our reading of manual p.14, 'a short-term FGYA beetle ecology program' — confirm (AB-27). meas_cycle unknown (AB-12)."

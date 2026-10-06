@@ -1,6 +1,1 @@
 exception_id,table_name,attribute_name,dd_column,dd_value,applied_value,decision,note
-ec_zone_type,magp_sites,ec_zone,data_type,numeric,character,D2.17,Typed character until the DD says so (4.3 #2)
-ec_province_type,magp_sites,ec_province,data_type,numeric,character,D2.17,Typed character until the DD says so (4.3 #2)
-ec_region_type,magp_sites,ec_region,data_type,numeric,character,D2.17,Typed character until the DD says so (4.3 #2)
-ec_district_type,magp_sites,ec_district,data_type,numeric,character,D2.17,Typed character until the DD says so (4.3 #2)
-datasets_contributor_key,magp_datasets,magp_contributor_id,key_type,PK,FK,D2.18,An FK to magp_contributors until the DD says so (4.3 #4)

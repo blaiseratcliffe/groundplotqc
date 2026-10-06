@@ -1,6 +1,6 @@
-# Lint, the source-tree tests, the FILEMAP check, the agent and skill frontmatter
-# check and the tracked-data check (plan 19.4; D5.15, D8.22, D11.2, D11.8, D11.19,
-# D12.46). check_manifest.R joins at M2.
+# Lint, the source-tree tests, the FILEMAP check, the manifest check, the agent and
+# skill frontmatter check and the tracked-data check (plan 19.4; D5.15, D8.22, D11.2,
+# D11.8, D11.19, D12.20, D12.46).
 name: lint
 
 on:
@@ -51,6 +51,9 @@ jobs:
 
       - name: FILEMAP check
         run: Rscript .github/scripts/check_filemap.R
+
+      - name: Manifest check
+        run: Rscript .github/scripts/check_manifest.R
 
       - name: Agent and skill frontmatter check
         run: Rscript .github/scripts/check_agents.R

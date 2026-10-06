@@ -344,3 +344,48 @@ test_that("the reader reads the DD workbook in spec/ from its first sheet", {
   expect_true(all(c("table_name", "attribute_name", "data_type") %in% names(dd$data)))
   expect_equal(dd$where$sheet, "DD")
 })
+
+test_that("the build reads the tree's spec/ without a stale exception (D12.22)", {
+  testthat::skip_if_not_installed("readxl")
+  build <- load_data_raw("build_magp_config.R")
+  spec_dir <- testthat::test_path("..", "..", "spec")
+  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
+  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
+    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
+  }
+  # A row of spec_exceptions.csv the dated DD no longer matches stops the build.
+  expect_no_error(build$build_magp_spec(spec_dir, config_dir))
+})
+
+test_that("the species code list is the table's NFI codes less UNKN.SPP (D2.22, D12.73)", {
+  testthat::skip_if_not_installed("readxl")
+  build <- load_data_raw("build_magp_config.R")
+  spec_dir <- testthat::test_path("..", "..", "spec")
+  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
+  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
+    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
+  }
+  table <- read_csv_text(build$spec_files(spec_dir)[["species"]])$data
+  # The Veg_type filter is how UNKN.SPP, which has no Veg_type, leaves the list. The table
+  # lists it, so a later table where the two stop coinciding fails here.
+  expect_true("UNKN.SPP" %in% table$NFI)
+  expected <- setdiff(unique(table$NFI[!is.na(table$NFI)]), "UNKN.SPP")
+  spec <- build$build_magp_spec(spec_dir, config_dir)
+  listed <- spec$codes[spec$codes$attribute_name == "species", ]
+  expect_gt(length(unique(listed$table_name)), 0L)
+  for (name in unique(listed$table_name)) {
+    expect_setequal(listed$code[listed$table_name == name], expected)
+  }
+})
+
+test_that("the compiled specification is the one the build makes (D12.14, D12.27)", {
+  testthat::skip_if_not_installed("readxl")
+  build <- load_data_raw("build_magp_config.R")
+  spec_dir <- testthat::test_path("..", "..", "spec")
+  config_dir <- testthat::test_path("..", "..", "data-raw", "magp")
+  if (!dir.exists(spec_dir) || !dir.exists(config_dir)) {
+    testthat::skip("spec/ or data-raw/magp/ is not in this tree")
+  }
+  # Base identical(), not expect_identical(): no index attribute may differ (D12.27).
+  expect_true(identical(build$build_magp_spec(spec_dir, config_dir), magp_spec()))
+})

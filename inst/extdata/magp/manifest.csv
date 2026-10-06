@@ -1,0 +1,14 @@
+"input","file","file_date","sha256"
+"dictionary","20261005_magpv2_DD.xlsx","20261005","e3656b48fe7dd3b4f7dd5fdc4c2987d6b1d2dc0c53aee1999357b7bc7261f4fe"
+"code_lists","20261005_magpv2_Lookup_Tables.xlsx","20261005","70464946857a6164980deec2da28001cd7ca13565aadba05a8c14632d7ceb71c"
+"non_code_sheets","in memory",,
+"datasets","20261005_magpv2_datasets.csv","20261005","570cfc487f88bf23d658db83ce92ef90f230d31b33aafb5a10118ac01d773560"
+"lineage_spec","20261005_magpv2_A2.xlsx","20261005","86bd28ff57baf5371a51900c393e655de25be008ac5753ce456f27e27e006b70"
+"crosswalks:condition","20261005_magpv2_condition.csv","20261005","38ae9975a1becad2eb01122ff5497407f6ec5d22b74b4b4d4faa9e5b075cac7c"
+"crosswalks:severity","20261005_magpv2_severity.csv","20261005","c70841da3a74e8e6f5ea1a2f80734f1a3506c242dc86552ed873c5705cb17675"
+"crosswalks:species","20261005_magpv2_species.csv","20261005","8c87871f8d6c9e9a8233eed78879ab33228e6a46b0f2d8079793248ce246c618"
+"crosswalks:treatment_disturbance","20261005_magpv2_treatment_disturbance.csv","20261005","4e9cb223ab103d80e24e99e432347e470f06213fd797c869a2195da3b83c5afe"
+"id_pattern","in memory",,
+"id_bands","in memory",,
+"precedence","data-raw/magp/precedence.csv",,"f3844fe37149405cca45a4d2eb055081d2d582eb8fe705d1ff15c01de87806b3"
+"dictionary:exceptions","data-raw/magp/spec_exceptions.csv",,"73ba517c7d450d8bd17e0d7630e6080f6bea4ec0e5ff3e034257bd04066e5975"

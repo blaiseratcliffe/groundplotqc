@@ -11,6 +11,9 @@ reference:
       - gpq_read_spec
       - gpq_sentinels
       - gpq_type_map
+  - title: MAGPlot 2.0 layer
+    contents:
+      - magp_spec
   - title: Configuration and data
     contents:
       - groundplotqc_options

@@ -1,0 +1,307 @@
+"table_name","attribute_name","data_type","r_class","key_type","reference_table","lookup","description","lineage_flag","id_marked","source_row"
+"magp_contributors","magp_contributor_id","character","character","PK",,"contributor","MAGPlot unique identifier for the data contributor. Primary key in magp_contributors.",FALSE,FALSE,2
+"magp_contributors","abbreviated_name","character","character",".",,,"Standardized abbreviated contributor name. This may be a jurisdiction code or project/program abbreviation.",FALSE,FALSE,3
+"magp_contributors","full_name","character","character",".",,,"Full name of the data contributor. This may be a jurisdictional agency, organization, or project/program name.",FALSE,FALSE,4
+"magp_contributors","src_database_name","character","character",".",,,"Source database name as provided or commonly used by the contributor.",FALSE,FALSE,5
+"magp_contributors","magp_database_name","character","character",".",,,"Standardized MAGPlot database name assigned to the contributor-provided database.",FALSE,FALSE,6
+"magp_contributors","n_datasets","integer","integer",".",,,"Number of datasets or programs provided by the same contributor. A single contributor may provide more than one dataset/program.",FALSE,FALSE,7
+"magp_datasets","magp_dataset_id","character","character","PK",,"dataset","MAGPlot unique identifier for each dataset/program. A single contributor may provide more than one dataset/program.",FALSE,FALSE,8
+"magp_datasets","magp_contributor_id","character","character","FK","magp_contributors","contributor","MAGPlot unique identifier for the data contributor. Primary key in magp_contributors.",FALSE,FALSE,9
+"magp_datasets","src_dataset_id","character","character",".",,"dataset","Source dataset/program name as reported by the data contributor or assigned during MAGPlot processing.",TRUE,TRUE,10
+"magp_datasets","gp_type","character","character",".",,"Y","Ground plot program type, distinguishing repeated-measurement programs from temporary or one-time measurement programs.",FALSE,FALSE,11
+"magp_datasets","gp_network","character","character",".",,"Y","Standardized MAGPlot code describing the primary dataset/program purpose or network type.",FALSE,FALSE,12
+"magp_datasets","probability_sampling","character","character",".",,"Y","Indicator describing whether the dataset/program used probability-based sampling to select sites or plots.",FALSE,FALSE,13
+"magp_datasets","sampling_design","character","character",".",,"Y","Standardized code describing the main sampling-design structure used to select sites, plots, or plot clusters in the dataset/program. This field describes the design structure, while probability_sampling describes whether selection was probability-based.",FALSE,FALSE,14
+"magp_datasets","site_design","character","character",".",,"Y","Standardized code describing whether each inventory site is represented by a single plot or by multiple plots/subplots/sampling points arranged as a site-level cluster.",FALSE,FALSE,15
+"magp_datasets","plot_design","character","character",".",,"Y","Standardized code describing the plot-level measurement design used to select or measure trees within a plot, such as fixed-area, variable-radius, or mixed plot designs.",FALSE,FALSE,16
+"magp_datasets","plot_layout_fig","numeric","double",".",,,"Figure number identifying the dataset/program-specific schematic arrangement of plots, subplots, or sampling points within each site, including the translation of source plot layouts and plot types into MAGPlot plot and subplot terminology.",FALSE,FALSE,17
+"magp_datasets","temporal_extent","character","character",".",,,"Range of measurement years represented in the dataset, reported as the earliest to latest measurement year.",FALSE,FALSE,18
+"magp_datasets","meas_cycle","character","character",".",,,"Range of measurement-cycle counts per dataset/program. The same dataset/program may include different numbers of measurement cycles across sites.",FALSE,FALSE,19
+"magp_datasets","meas_interval","character","character",".",,,"Nominal remeasurement interval in years, as stated by the contributor's programme documentation. A range where the programme states one. This is the INTENDED interval and may differ from the intervals observed in the delivered measurements.",FALSE,FALSE,20
+"magp_datasets","n_sites","integer","integer",".",,,"Total number of unique MAGPlot sites represented in the dataset.",FALSE,FALSE,21
+"magp_datasets","n_plots","integer","integer",".",,,"Total number of unique MAGPlot plots represented in the dataset.",FALSE,FALSE,22
+"magp_datasets","n_trees","integer","integer",".",,,"Total number of unique MAGPlot trees represented in the dataset.",FALSE,FALSE,23
+"magp_datasets","n_treemeas","integer","integer",".",,,"Total number of MAGPlot tree measurement records represented in the dataset.",FALSE,FALSE,24
+"magp_datasets","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,25
+"magp_sites","magp_site_id","integer","integer","PK",,,"MAGPlot unique ID for each site. Primary key (unique row ID) in magp_sites, and a foreign key in other tables linking records to magp_sites.",FALSE,FALSE,26
+"magp_sites","magp_dataset_id","character","character","FK","magp_datasets",,"MAGPlot unique identifier for each dataset or program. A single contributor may provide more than one dataset/program. Primary key in magp_datasets and foreign key in related MAGPlot tables.",FALSE,FALSE,27
+"magp_sites","src_site_id","character","character",".",,,"Source unique ID for each site, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,28
+"magp_sites","src_block","character","character",".",,,"Source block or grouping identifier used by the data contributor to group related sites, plots, or field routes, when available.",FALSE,FALSE,29
+"magp_sites","jurisdiction","character","character",".",,"Y","Jurisdiction 2-letter code.",FALSE,FALSE,30
+"magp_sites","site_shape","character","character",".",,"shape","Site shape code.",FALSE,FALSE,31
+"magp_sites","site_radius","numeric","double",".",,,"Radius for circular fixed-radius plots.",FALSE,FALSE,32
+"magp_sites","site_status","character","character",".",,"Y","Site status recorded at the most recent measurement cycle.",FALSE,FALSE,33
+"magp_sites","site_protection","character","character",".",,"Y","Standardized site protection code.",FALSE,FALSE,34
+"magp_sites","ownership","character","character",".",,"Y","Site ownership type.",FALSE,FALSE,35
+"magp_sites","estab_date","date","character",".",,,"Establishment date (YYYY-MM-DD), if given.",FALSE,FALSE,36
+"magp_sites","n_visits","integer","integer",".",,,"Highest visit number recorded for this site across all cycles and visit purposes.",FALSE,FALSE,37
+"magp_sites","n_cycles","integer","integer",".",,,"Highest measurement cycle number recorded for this site across all measurements. Represents the number of distinct remeasurement occasions.",FALSE,FALSE,38
+"magp_sites","stand_origin","character","character",".",,"Y","Standardized code for stand origin at establishment or first measurement.",FALSE,FALSE,39
+"magp_sites","utm_e","numeric","double",".",,,"UTM easting coordinate of site.",FALSE,FALSE,40
+"magp_sites","utm_n","numeric","double",".",,,"UTM northing coordinate of site.",FALSE,FALSE,41
+"magp_sites","utm_zone","numeric","double",".",,,"UTM zone.",FALSE,FALSE,42
+"magp_sites","datum","character","character",".",,,"Coordinate datum associated with UTM/lat-long.",FALSE,FALSE,43
+"magp_sites","utm_n_accuracy","numeric","double",".",,,"UTM northing accuracy / uncertainty, when available.",FALSE,FALSE,44
+"magp_sites","utm_e_accuracy","numeric","double",".",,,"UTM easting accuracy / uncertainty, when available.",FALSE,FALSE,45
+"magp_sites","utm_src","character","character",".",,"location_src","Source of the UTM coordinates: contributor-provided or calculated.",FALSE,FALSE,46
+"magp_sites","latitude","numeric","double",".",,,"Latitude of site centre in decimal degrees.",FALSE,FALSE,47
+"magp_sites","longitude","numeric","double",".",,,"Longitude of site centre in decimal degrees.",FALSE,FALSE,48
+"magp_sites","lat_long_src","character","character",".",,"location_src","Source of the latitude and longitude values: contributor-provided or calculated.",FALSE,FALSE,49
+"magp_sites","elevation","numeric","double",".",,,"Elevation of site centre (m).",FALSE,FALSE,50
+"magp_sites","elevation_src","character","character",".",,"location_src","Source of the elevation value: contributor-provided or calculated.",FALSE,FALSE,51
+"magp_sites","slope","numeric","double",".",,,"Slope percent at site level.",FALSE,FALSE,52
+"magp_sites","slope_src","character","character",".",,"location_src","Source of the slope value: contributor-provided or calculated.",FALSE,FALSE,53
+"magp_sites","slope_class","character","character",".",,"Y","Standardized slope class at site level, derived from slope percent.",FALSE,FALSE,54
+"magp_sites","slope_position","character","character",".",,"Y","Standardized slope position class.",FALSE,FALSE,55
+"magp_sites","aspect","numeric","double",".",,,"Slope aspect (degrees) at site.",FALSE,FALSE,56
+"magp_sites","aspect_src","character","character",".",,"location_src","Source of the aspect value: contributor-provided or calculated.",FALSE,FALSE,57
+"magp_sites","aspect_class","character","character",".",,"Y","Standardized aspect class at site level.",FALSE,FALSE,58
+"magp_sites","coord_src","character","character",".",,"Y","Standardized coordinate-source code describing how the site/plot coordinates were obtained, such as GPS, map-derived, GIS-derived, previous measurement, intended location, or generalized location.",FALSE,FALSE,59
+"magp_sites","coord_acc","character","character",".",,"Y","Standardized coordinate-accuracy code indicating the source-reported or interpreted reliability of the coordinates.",FALSE,FALSE,60
+"magp_sites","src_ec_unit","character","character",".",,,"Source ecological classification zone code as reported by the data contributor.",TRUE,FALSE,61
+"magp_sites","src_mgmt_unit","character","character",".",,,"Source forest management unit code as reported by the data contributor.",TRUE,FALSE,62
+"magp_sites","ec_zone","character","character",".",,,"Ecozone code.",FALSE,FALSE,63
+"magp_sites","ec_province","character","character",".",,,"Ecological province code.",FALSE,FALSE,64
+"magp_sites","ec_region","character","character",".",,,"Ecological region code.",FALSE,FALSE,65
+"magp_sites","ec_district","character","character",".",,,"Ecological district code.",FALSE,FALSE,66
+"magp_sites","drainage","character","character",".",,"Y","Describes how quickly or slowly water is removed from the soil under normal site conditions.",FALSE,FALSE,67
+"magp_sites","exposure","character","character",".",,"Y","Describes site conditions that increase environmental exposure or limit tree growth, such as wind, sun, coastal influence, shallow soils, rock, sand, barren conditions, or tundra conditions.",FALSE,FALSE,68
+"magp_sites","site_index","numeric","double",".",,,"Site index value (productivity indicator) as provided by data contributor.",FALSE,FALSE,69
+"magp_sites","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,70
+"magp_site_dist","magp_dist_id","character","character","PK",,,"MAGPlot unique ID for each site-disturbance record, derived by concatenating magp_site_id and dist_num. Primary key (unique row ID) in magp_site_dist. Parts joined with '_', no zero padding.",FALSE,FALSE,71
+"magp_site_dist","magp_dataset_id","character","character","FK","magp_datasets",,"MAGPlot unique identifier for each dataset or program. A single contributor may provide more than one dataset/program. Primary key in magp_datasets and foreign key in related MAGPlot tables.",FALSE,FALSE,72
+"magp_site_dist","src_dist_id","character","character",".",,,"Source unique ID for each site-disturbance record, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,73
+"magp_site_dist","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique ID for each site. Primary key (unique row ID) in magp_sites, and a foreign key in other tables linking records to magp_sites.",FALSE,FALSE,74
+"magp_site_dist","dist_num","integer","integer",".",,,"Disturbance sequence number within a magp_site_id (1..n disturbances per site, after ordering by date).",FALSE,FALSE,75
+"magp_site_dist","disturbance_type","character","character",".",,"treatment_disturbance","Standardized MAGPlot code describing the type of disturbance a site was exposed to.",FALSE,FALSE,76
+"magp_site_dist","disturbance_year","numeric","double",".",,,"Year when plot disturbance was detected.",FALSE,FALSE,77
+"magp_site_dist","disturbance_month","numeric","double",".",,,"Month when plot disturbance was detected.",FALSE,FALSE,78
+"magp_site_dist","mortality_basis","character","character",".",,"Y","Basis for determining extent of mortality.",FALSE,FALSE,79
+"magp_site_dist","disturbance_pct","numeric","double",".",,,"Extent of disturbance, as % of total site area.",FALSE,FALSE,80
+"magp_site_dist","mortality_pct","numeric","double",".",,,"Extent of tree mortality within the disturbed area.",FALSE,FALSE,81
+"magp_site_dist","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,82
+"magp_site_treat","magp_treat_id","character","character","PK",,,"MAGPlot unique ID for each site-treatment record, derived by concatenating magp_site_id and treat_num. Primary key (unique row ID) in magp_site_treat. Parts joined with '_', no zero padding.",FALSE,FALSE,83
+"magp_site_treat","magp_dataset_id","character","character","FK","magp_datasets",,"MAGPlot unique identifier for each dataset or program. A single contributor may provide more than one dataset/program. Primary key in magp_datasets and foreign key in related MAGPlot tables.",FALSE,FALSE,84
+"magp_site_treat","src_treat_id","character","character",".",,,"Source unique ID for each site-treatment record, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,85
+"magp_site_treat","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique ID for each site. Primary key (unique row ID) in magp_sites, and a foreign key in other tables linking records to magp_sites.",FALSE,FALSE,86
+"magp_site_treat","treat_num","integer","integer",".",,,"Treatment sequence number within magp_site_id (1..n treatments per site, after ordering by date).",FALSE,FALSE,87
+"magp_site_treat","treatment_type","character","character",".",,"treatment_disturbance","Standardized MAGPlot code describing the type of the applied treatment.",FALSE,FALSE,88
+"magp_site_treat","treatment_year","numeric","double",".",,,"Year when plot treatment was applied (YYYY).",FALSE,FALSE,89
+"magp_site_treat","treatment_month","numeric","double",".",,,"Month when plot treatment was applied (MM).",FALSE,FALSE,90
+"magp_site_treat","treatment_pct","numeric","double",".",,,"Extent of treatment, as % of total site area.",FALSE,FALSE,91
+"magp_site_treat","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,92
+"magp_site_visits","magp_visit_id","character","character","PK",,,"MAGPlot unique identifier for each site-visit record, derived by concatenating magp_site_id and visit_num. Primary key in magp_site_visits and foreign key in related tables. Parts joined with '_', no zero padding.",FALSE,FALSE,93
+"magp_site_visits","src_visit_id","character","character",".",,,"Source identifier for the site-visit record, provided by the contributor or derived from source attributes. See appendix.",TRUE,TRUE,94
+"magp_site_visits","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique identifier for each site.",FALSE,FALSE,95
+"magp_site_visits","sample_type","character","character",".",,"Y","Sample type used during the site visit. In the BC non-PSP dataset, a site may include both fixed and random samples on the same date; these are recorded as separate visit numbers.",FALSE,FALSE,96
+"magp_site_visits","meas_date","date","character",".",,,"Measurement date for the site visit.",FALSE,FALSE,97
+"magp_site_visits","visit_type","character","character",".",,"Y","Visit purpose for the site visit.",FALSE,FALSE,98
+"magp_site_visits","meas_type","character","character",".",,"Y","Type of measurement collected during the visit. This is mainly used for ON, where age, stand, tree, vegetation, and height measurements may be recorded on the same or different dates. For other contributors, measurements are generally collected during the same visit date.",FALSE,FALSE,99
+"magp_site_visits","visit_num","integer","integer",".",,,"Sequential visit number within a site. Records from the same date may have different visit_num values if they represent different visit or measurement types, as observed in ON and BC datasets.",FALSE,FALSE,100
+"magp_site_visits","meas_num","integer","integer",".",,,"Sequential measurement number within a site. Measurements collected in the same year are assigned the same meas_num.",FALSE,FALSE,101
+"magp_site_visits","cycle_num","integer","integer",".",,,"Sequential measurement-cycle number within a site. A cycle may span multiple years and include multiple visits. For example, in ON, one measurement cycle may take 1–6 years to complete.",FALSE,FALSE,102
+"magp_site_visits","n_plots","integer","integer",".",,,"Number of distinct plots measured during the site visit.",FALSE,FALSE,103
+"magp_site_visits","meas_plots","character","character",".",,,"Comma-separated list of plot numbers measured within the site visit. Example: a site may have three plots, but meas_plots = 1,3 if only plots 1 and 3 were measured. This may occur because the third plot has no recorded trees or for another reason.",FALSE,FALSE,104
+"magp_site_visits","site_status","character","character",".",,"Y","Site status at time of visit.",FALSE,FALSE,105
+"magp_site_visits","stand_origin","character","character",".",,"Y","Standardized code for stand origin recorded at the site visit. For example, ON reports stand origin at establishment and at each subsequent visit, so the value may change over time.",FALSE,FALSE,106
+"magp_site_visits","maincanopy_origin","character","character",".",,"Y","Origin of the trees forming the current main canopy.",FALSE,FALSE,107
+"magp_site_visits","meas_frames","character","character",".",,,"Comma-separated list of frame types measured during the site visit.",FALSE,FALSE,108
+"magp_site_visits","comments","character","character",".",,,"Additional remarks for the site-visit record. Example: a site visit may have no tree measurements in the tree measurement table.",FALSE,FALSE,109
+"magp_plots","magp_plot_id","character","character","PK",,,"MAGPlot unique ID for each plot, derived by concatenating magp_site_id and plot. Primary key (unique row ID) in magp_plots, and a foreign key in other tables linking records to magp_plots. Parts joined with '_', no zero padding.",FALSE,FALSE,110
+"magp_plots","src_plot_id","character","character",".",,,"Source unique ID for each plot, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,111
+"magp_plots","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique ID for each site.",FALSE,FALSE,112
+"magp_plots","plot","integer","integer",".",,"Y","Identifies the plot unit within a site. The value is 1 for single-plot sites; typically 1–3 for BC-PSP and ON-PSP multi-plot designs, where plots generally have similar area and measured attributes; and 1–5 for BC non-PSP datasets such as VRI, where a site may include one integrated plot (I) with full measurements and up to four auxiliary plots (N, E, S, W) with partial measurements, mainly for tree or basal-area information. 0 = outside the plot (a tree measured outside the plot boundary).",FALSE,FALSE,113
+"magp_plots","plot_elevation","numeric","double",".",,,"Elevation at plot centre (m) in multi-plot sites.",FALSE,FALSE,114
+"magp_plots","plot_slope","numeric","double",".",,,"Slope percent at plot level in multi-plot sites.",FALSE,FALSE,115
+"magp_plots","plot_aspect","numeric","double",".",,,"Slope aspect (degrees) at plot level in multi-plot sites.",FALSE,FALSE,116
+"magp_plots","slope_class","character","character",".",,"Y","Standardized slope class at plot level in multi-plot sites, derived from slope percent.",FALSE,FALSE,117
+"magp_plots","aspect_class","character","character",".",,"Y","Standardized aspect class at plot level in multi-plot sites.",FALSE,FALSE,118
+"magp_plots","design_change","character","character",".",,"yes_no","Yes/No indicator of whether the plot design changed across measurements.",FALSE,FALSE,119
+"magp_plots","comments","character","character",".",,,"Additional remarks for the plot record.",FALSE,FALSE,120
+"magp_subplots","magp_subplot_id","character","character","PK",,,"MAGPlot unique ID for each subplot, derived by concatenating magp_plot_id and subplot. Primary key (unique row ID) in magp_subplots, and a foreign key in other tables linking records to magp_subplots. Parts joined with '_', no zero padding.",FALSE,FALSE,121
+"magp_subplots","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique ID for each site.",FALSE,FALSE,122
+"magp_subplots","magp_plot_id","character","character","FK","magp_plots",,"MAGPlot unique ID for each plot.",FALSE,FALSE,123
+"magp_subplots","src_subplot_id","character","character",".",,,"Source unique ID for each subplot, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,124
+"magp_subplots","plot","integer","integer",".",,"Y","Identifies the plot unit within a site. The value is 1 for single-plot sites; typically 1–3 for BC-PSP and ON-PSP multi-plot designs, where plots generally have similar area and measured attributes; and 1–5 for BC non-PSP datasets such as VRI, where a site may include one integrated plot (I) with full measurements and up to four auxiliary plots (N, E, S, W) with partial measurements, mainly for tree or basal-area information. 0 = outside the plot (a tree measured outside the plot boundary).",FALSE,FALSE,125
+"magp_subplots","frame_type","character","character",".",,"Y","Subplot type code.",FALSE,FALSE,126
+"magp_subplots","frame_num","integer","integer",".",,,"Sequence number used to distinguish frames of the same frame_type within a plot. The number may represent repeated or equivalent frames, such as R1–Rn, or different measurement rules applied to the same frame type, such as M1 and M2 in QC or S1 and S2 in AB, BC, and QC.",FALSE,FALSE,127
+"magp_subplots","subplot","character","character",".",,,"Subplot label within a plot, formed by concatenating frame_type and frame_num with no separator.",FALSE,FALSE,128
+"magp_subplots","ef_change","character","character",".",,"yes_no","Expansion factor change across measurements. Yes/No indicator of whether the subplot area changed across measurements.",FALSE,FALSE,129
+"magp_subplots","comments","character","character",".",,,"Additional remarks for the subplot record.",FALSE,FALSE,130
+"magp_designs","magp_design_id","character","character","PK",,,"MAGPlot unique identifier for each plot design or field manual within a contributor, formed by concatenating magp_contributor_id, main_design, and frame_design. A different design is assigned when the main plot area, plot shape, minimum DBH, maximum DBH, height limits, or sampling-frame/subplot configuration differs across measurements within the same contributor’s data. Parts joined with '.'.",FALSE,FALSE,131
+"magp_designs","magp_contributor_id","character","character","FK","magp_contributors","contributor","MAGPlot unique identifier for the data contributor. Primary key in magp_contributors.",FALSE,FALSE,132
+"magp_designs","main_design","numeric","double",".",,,"Sequential identifier, unique within each contributor, describing the main plot design based on main plot area and shape. The same main_design value represents the same main plot design across datasets from the same contributor.",FALSE,FALSE,133
+"magp_designs","frame_design","numeric","double",".",,,"Sequential identifier, unique within each main_design, describing the sampling-frame/subplot configuration used within the plot.",FALSE,FALSE,134
+"magp_designs","n_subplots","integer","integer",".",,,"Number of frames in the design: the count of magp_design_frames rows for this magp_design_id.",FALSE,FALSE,135
+"magp_designs","meas_subplots","character","character",".",,,"Comma-separated list of the subplot labels of the design's frames (magp_design_frames), for example M1,S1,R1.",FALSE,FALSE,136
+"magp_designs","bdry_meth","character","character",".",,"Y","Plot boundary slopover correction method.",FALSE,FALSE,137
+"magp_designs","slope_adj","character","character",".",,"yes_no","Indicator of whether plot or subplot dimensions were adjusted to account for ground slope.",FALSE,FALSE,138
+"magp_design_frames","magp_frame_id","character","character","PK",,,"MAGPlot unique identifier for each sampling frame/subplot within a plot design, formed by concatenating 'magp_design_id' and 'subplot'. Parts joined with '_', no zero padding.",FALSE,FALSE,139
+"magp_design_frames","magp_design_id","character","character","FK","magp_designs",,"MAGPlot unique identifier for the plot design this frame belongs to. Foreign key to magp_designs.",FALSE,FALSE,140
+"magp_design_frames","src_frame_name","character","character",".",,"Y","Source-equivalent sampling-frame name provided by the data contributor or derived from the contributor’s terminology.",FALSE,FALSE,141
+"magp_design_frames","frame_type","character","character",".",,"Y","Subplot type code.",FALSE,FALSE,142
+"magp_design_frames","frame_num","integer","integer",".",,,"Sequence number used to distinguish frames of the same frame_type within a plot. The number may represent repeated or equivalent frames, such as R1–Rn, or different measurement rules applied to the same frame type, such as M1 and M2 in QC or S1 and S2 in AB, BC, and QC.",FALSE,FALSE,143
+"magp_design_frames","subplot","character","character",".",,,"Subplot label within a plot, formed by concatenating frame_type and frame_num with no separator.",FALSE,FALSE,144
+"magp_design_frames","plot_area","numeric","double",".",,,"Plot area in hectares.",FALSE,FALSE,145
+"magp_design_frames","plot_shape","character","character",".",,"shape","Plot shape.",FALSE,FALSE,146
+"magp_design_frames","radius","numeric","double",".",,,"Plot radius (m), if circular.",FALSE,FALSE,147
+"magp_design_frames","length","numeric","double",".",,,"Plot length (m), if rectangular or square.",FALSE,FALSE,148
+"magp_design_frames","width","numeric","double",".",,,"Plot width (m), if rectangular or square.",FALSE,FALSE,149
+"magp_design_frames","min_dbh","numeric","double",".",,,"Minimum DBH threshold (cm) recorded for this subplot measurement.",FALSE,FALSE,150
+"magp_design_frames","max_dbh","numeric","double",".",,,"Maximum DBH threshold (cm) recorded for this subplot measurement.",FALSE,FALSE,151
+"magp_design_frames","min_ht","numeric","double",".",,,"Minimum height threshold (m) recorded for this subplot measurement.",FALSE,FALSE,152
+"magp_design_frames","max_ht","numeric","double",".",,,"Maximum height threshold (m) recorded for this subplot measurement.",FALSE,FALSE,153
+"magp_design_frames","baf","numeric","double",".",,,"Basal area factor (BAF) associated with the site-visit, if variable-radius sampling is used.",FALSE,FALSE,154
+"magp_design_frames","meas_meth","character","character",".",,"Y","Measurement method permitted by the sampling frame. CM indicates that count/tally records, individually measured records, or both may occur within the same frame.",FALSE,FALSE,155
+"magp_design_frames","tag_type","character","character",".",,"Y","Indicates whether tree numbers identify the same individual across measurements.",FALSE,FALSE,156
+"magp_design_frames","census","character","character",".",,"yes_no","Indicator of whether all eligible trees within the plot or subplot were measured.",FALSE,FALSE,157
+"magp_design_frames","standing_dead","character","character",".",,"yes_no","Indicator of whether standing dead trees were included in the sample.",FALSE,FALSE,158
+"magp_design_frames","comments","character","character",".",,,"Additional remarks for the design record.",FALSE,FALSE,159
+"magp_plot_meas","magp_plotmeas_id","character","character","PK",,,"MAGPlot unique ID for one plot-measurement record (one plot × visit), derived by concatenating magp_plot_id and visit_num. Primary key in magp_plot_meas. Parts joined with '_', no zero padding.",FALSE,FALSE,160
+"magp_plot_meas","magp_visit_id","character","character","FK","magp_site_visits",,"MAGPlot unique ID for the site visit containing this plot measurement.",FALSE,FALSE,161
+"magp_plot_meas","magp_plot_id","character","character","FK","magp_plots",,"MAGPlot unique ID for the plot measured in this plot-measurement record.",FALSE,FALSE,162
+"magp_plot_meas","magp_design_id","character","character","FK","magp_designs",,"MAGPlot unique ID for the plot design in effect for this plot measurement. Foreign key to magp_designs.",FALSE,FALSE,163
+"magp_plot_meas","visit_num","integer","integer",".",,,"Sequential visit number within a site for this plot measurement.",FALSE,FALSE,164
+"magp_plot_meas","crown_closure","numeric","double",".",,,"Visual estimate of percent canopy closure over the plot, based on the proportion of sky obscured by tree crowns.",FALSE,FALSE,165
+"magp_plot_meas","canopy_structure","character","character",".",,"Y","Describes the canopy structural class of the plot.",FALSE,FALSE,166
+"magp_plot_meas","nrow_sph1_tree","numeric","double",".",,,"Total number of tree records contributing to 'sph1_tree'. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,167
+"magp_plot_meas","sph1_tree","numeric","double",".",,,"MAGPlot estimated plot-level live trees per hectare (trees/ha) for trees with DBH ≥ 1 cm, calculated as the sum of 'tree_ef_adj' in 'magp_tree_meas' within each plot measurement. This is often referred to as stand density. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,168
+"magp_plot_meas","baph1_tree","numeric","double",".",,,"MAGPlot estimated plot-level basal area per hectare (m²/ha) for live trees with DBH ≥ 1 cm, calculated as the sum of 'tree_baph_adj' in 'magp_tree_meas' within each plot measurement. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,169
+"magp_plot_meas","nrow_sph9_tree","numeric","double",".",,,"Total number of tree records contributing to 'sph9_tree'. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,170
+"magp_plot_meas","sph9_tree","numeric","double",".",,,"MAGPlot estimated plot-level live trees per hectare (trees/ha) for live trees with DBH ≥ 9 cm, calculated as the sum of 'tree_ef_adj' in 'magp_tree_meas' within each plot measurement. This is often referred to as stand density. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,171
+"magp_plot_meas","baph9_tree","numeric","double",".",,,"MAGPlot estimated plot-level basal area per hectare (m²/ha) for live trees with DBH ≥ 9 cm, calculated as the sum of 'tree_baph_adj' in 'magp_tree_meas' within each plot measurement. Excludes trees in frame_type O (outside-plot) frames.",FALSE,FALSE,172
+"magp_plot_meas","nrow_sph_tally","numeric","double",".",,,"Total number of regeneration records contributing to 'sph_tally'. When regeneration is represented by both individually tagged R stems and tally rows, this is the number of contributing tagged R records plus contributing tally records.",FALSE,FALSE,173
+"magp_plot_meas","sph_tally","numeric","double",".",,,"MAGPlot estimated plot-level regeneration stems per hectare (stems/ha). When regeneration is represented by tagged R stems and/or tally rows, counts are combined first and divided by the total area of the distinct represented R frames; each physical R frame contributes its area once. For tally-only designs, this reduces to the usual tally expansion.",FALSE,FALSE,174
+"magp_plot_meas","baph_tally","numeric","double",".",,,"MAGPlot estimated plot-level basal area per hectare (m²/ha) from tally records only, calculated as the sum of 'tally_baph_adj' in 'magp_tally_trees' within each plot measurement.",FALSE,FALSE,175
+"magp_plot_meas","src_nrow_sph_tree","numeric","double",".",,,"Total number of tree records contributing to 'src_sph_tree'. See Appendix A2 for methodology.",TRUE,FALSE,176
+"magp_plot_meas","src_sph_tree","numeric","double",".",,,"Source-provided 'sph_tree' at a specified DBH cutoff, which may differ from the MAGPlot DBH threshold. See Appendix A2 for methodology.",TRUE,FALSE,177
+"magp_plot_meas","src_baph_tree","numeric","double",".",,,"Source-provided 'baph_tree' at a specified DBH cutoff, which may differ from the MAGPlot DBH threshold. See Appendix A2 for methodology.",TRUE,FALSE,178
+"magp_plot_meas","src_dbh_cutoff","numeric","double",".",,,"Source DBH cutoff used to estimate 'src_sph_tree' and 'src_baph_tree'.",TRUE,FALSE,179
+"magp_plot_meas","src_sph_tally","numeric","double",".",,,"Source-provided 'sph_tally'. See Appendix A2 for methodology.",TRUE,FALSE,180
+"magp_plot_meas","src_baph_tally","numeric","double",".",,,"Source-provided 'baph_tally'. See Appendix A2 for methodology.",TRUE,FALSE,181
+"magp_plot_meas","src_age","numeric","double",".",,,"Source-provided stand age. See Appendix A2 for methodology.",TRUE,FALSE,182
+"magp_plot_meas","src_top_ht","numeric","double",".",,,"Source-provided stand height. See Appendix A2 for methodology.",TRUE,FALSE,183
+"magp_plot_meas","src_lorey_ht","numeric","double",".",,,"Source-provided stand Lorey’s height, or its best available proxy. See Appendix A2 for methodology.",TRUE,FALSE,184
+"magp_plot_meas","src_leadgenus","character","character",".",,,"Source-provided leading species/genus.",FALSE,FALSE,185
+"magp_plot_meas","src_qmd","numeric","double",".",,,"Source-provided quadratic mean diameter (QMD) for live trees. See Appendix A2 for methodology.",TRUE,FALSE,186
+"magp_plot_meas","src_nmer_volume","numeric","double",".",,,"Source-provided stand net merchantable volume per hectare (m³/ha) for live trees, excluding 30 cm stump height and 10 cm top DIB. See Appendix A2 for methodology.",TRUE,FALSE,187
+"magp_plot_meas","src_gmer_volume","numeric","double",".",,,"Source-provided stand gross merchantable volume per hectare (m³/ha) for live trees, excluding 30 cm stump height and 10 cm top DIB. See Appendix A2 for methodology.",TRUE,FALSE,188
+"magp_plot_meas","src_wsv_volume","numeric","double",".",,,"Source-provided stand whole-stem volume per hectare (m³/ha) for live trees. See Appendix A2 for methodology.",TRUE,FALSE,189
+"magp_plot_meas","src_biomass","numeric","double",".",,,"Source-provided stand biomass. See Appendix A2 for methodology.",TRUE,FALSE,190
+"magp_plot_meas","n_species","integer","integer",".",,,"Number of live tree species recorded across all frames of this plot measurement, excluding frame_type O trees.",FALSE,FALSE,191
+"magp_plot_meas","comments","character","character",".",,,"Additional remarks for the plot-measurement record. Where relevant, regeneration coverage may be summarized here as ALL, PARTIAL, or NONE.",FALSE,FALSE,192
+"magp_subplot_meas","magp_subpmeas_id","character","character","PK",,,"MAGPlot unique ID for one subplot-measurement record, derived by concatenating magp_subplot_id and visit_num. Primary key in magp_subplot_meas. Parts joined with '_', no zero padding. One row per frame measured at the visit, empty frames included.",FALSE,FALSE,193
+"magp_subplot_meas","src_subpmeas_id","character","character",".",,,"Source unique ID for the subplot-measurement record, given or derived from source attributes. See appendix.",TRUE,TRUE,194
+"magp_subplot_meas","magp_plotmeas_id","character","character","FK","magp_plot_meas",,"MAGPlot unique ID for the parent plot-measurement record. Foreign key to magp_plot_meas.",FALSE,FALSE,195
+"magp_subplot_meas","magp_visit_id","character","character","FK","magp_site_visits",,"MAGPlot unique ID for the site visit containing this subplot measurement.",FALSE,FALSE,196
+"magp_subplot_meas","magp_subplot_id","character","character","FK","magp_subplots",,"MAGPlot unique ID for the physical subplot represented by this measurement record.",FALSE,FALSE,197
+"magp_subplot_meas","magp_frame_id","character","character","FK","magp_design_frames",,"MAGPlot unique ID for the design frame used for this subplot measurement.",FALSE,FALSE,198
+"magp_subplot_meas","visit_num","integer","integer",".",,,"Sequential visit number within a site for this subplot measurement.",FALSE,FALSE,199
+"magp_subplot_meas","comments","character","character",".",,,"Additional remarks for the subplot-measurement record. For regeneration frames, the observed recording method may be documented here as TAGGED, TALLY, or MIXED; an explicit nil tally may also be noted.",FALSE,FALSE,200
+"magp_trees","magp_tree_id","character","character","PK",,,"MAGPlot unique ID for each tree, derived by concatenating magp_site_id, plot, and tree_num. Primary key (unique row ID) in magp_trees, and a foreign key in other tables linking records to magp_trees. Parts joined with '_', no zero padding.",FALSE,FALSE,201
+"magp_trees","src_tree_id","character","character",".",,,"Source unique ID for each tree, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,202
+"magp_trees","magp_site_id","integer","integer","FK","magp_sites",,"MAGPlot unique ID for each site.",FALSE,FALSE,203
+"magp_trees","magp_subplot_id","character","character","FK","magp_subplots",,"MAGPlot unique ID for each subplot.",FALSE,FALSE,204
+"magp_trees","plot","integer","integer",".",,"Y","Identifies the plot unit within a site. The value is 1 for single-plot sites; typically 1–3 for BC-PSP and ON-PSP multi-plot designs, where plots generally have similar area and measured attributes; and 1–5 for BC non-PSP datasets such as VRI, where a site may include one integrated plot (I) with full measurements and up to four auxiliary plots (N, E, S, W) with partial measurements, mainly for tree or basal-area information. 0 = outside the plot (a tree measured outside the plot boundary).",FALSE,FALSE,205
+"magp_trees","tree_num","integer","integer",".",,,"Unique tree number within a plot. In most cases, this is the source-provided tree number; in specific cases, it is derived during MAGPlot processing.",FALSE,FALSE,206
+"magp_trees","src_tree_num","character","character",".",,,"Source-provided tree_num.",TRUE,FALSE,207
+"magp_trees","subplot","character","character",".",,,"Subplot label within a plot, formed by concatenating frame_type and frame_num with no separator.",FALSE,FALSE,208
+"magp_trees","subplot_history","character","character",".",,,"Ordered sequence of distinct consecutive observed subplot assignments across available tree measurements, ordered by numeric visit number. Consecutive repeats are collapsed. X identifies an unresolved, ambiguous, or unmeasured history. The sequence records observed assignments and does not establish physical movement or biological change.",FALSE,FALSE,209
+"magp_trees","tree_origin","character","character",".",,"Y","Tree origin code.",FALSE,FALSE,210
+"magp_trees","tree_loc","character","character",".",,"Y","Tree location relative to the plot.",FALSE,FALSE,211
+"magp_trees","tree_dist","numeric","double",".",,,"Tree location distance from the main plot centre; may differ by measurement.",FALSE,FALSE,212
+"magp_trees","tree_azi","numeric","double",".",,,"Tree location azimuth from the main plot centre; may differ by measurement.",FALSE,FALSE,213
+"magp_trees","tree_section","numeric","double",".",,,"Plot section or quadrant where the tree is located.",FALSE,FALSE,214
+"magp_trees","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,215
+"magp_tree_meas","magp_treemeas_id","character","character","PK",,,"MAGPlot unique ID for each tree-measurement record, derived by concatenating magp_tree_id and visit_num. Primary key (unique row ID) in magp_tree_meas, and a foreign key in related tables. Parts joined with '_', no zero padding.",FALSE,FALSE,216
+"magp_tree_meas","magp_subpmeas_id","character","character","FK","magp_subplot_meas",,"MAGPlot unique ID for the parent subplot-measurement record, derived by concatenating magp_subplot_id and visit_num. Foreign key to magp_subplot_meas. Parts joined with '_', no zero padding.",FALSE,FALSE,217
+"magp_tree_meas","magp_tree_id","character","character","FK","magp_trees",,"MAGPlot unique ID for each tree, derived by concatenating magp_site_id, plot, and tree_num. Primary key (unique row ID) in magp_trees, and a foreign key in related tables. Parts joined with '_', no zero padding.",FALSE,FALSE,218
+"magp_tree_meas","src_treemeas_id","character","character",".",,,"Source unique ID for each tree-measurement record, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,219
+"magp_tree_meas","magp_frame_id","character","character","FK","magp_design_frames",,"MAGPlot unique identifier for each sampling frame/subplot within a plot design, formed by concatenating 'magp_design_id' and 'subplot'. Foreign key to magp_design_frames. Parts joined with '_', no zero padding.",FALSE,FALSE,220
+"magp_tree_meas","visit_num","integer","integer",".",,,"Sequential visit number within a site.",FALSE,FALSE,221
+"magp_tree_meas","tree_dist","numeric","double",".",,,"Tree location distance from the main plot centre at the time of measurement (may differ by measurement).",FALSE,FALSE,222
+"magp_tree_meas","tree_azi","numeric","double",".",,,"Tree location azimuth from the main plot centre at the time of measurement (may differ by measurement).",FALSE,FALSE,223
+"magp_tree_meas","tree_type","character","character",".",,"Y","Tree type.",FALSE,FALSE,224
+"magp_tree_meas","tree_change_class","character","character",".",,"Y","Tree-level change classification between consecutive measurements for remeasured plots.",FALSE,FALSE,225
+"magp_tree_meas","tree_stance","character","character",".",,"Y","Tree stance or physical position code.",FALSE,FALSE,226
+"magp_tree_meas","tree_status","character","character",".",,"Y","Tree status code.",FALSE,FALSE,227
+"magp_tree_meas","dead_cause","character","character",".",,"Y","Cause of mortality for dead trees.",FALSE,FALSE,228
+"magp_tree_meas","stem_cond","character","character",".",,"Y","Stem condition code.",FALSE,FALSE,229
+"magp_tree_meas","crown_class","character","character",".",,"Y","Crown position class code describing the relative canopy position of a tree.",FALSE,FALSE,230
+"magp_tree_meas","crown_cond","integer","integer",".",,"Y","Crown condition code describing the presence or loss of foliage, twigs, branches, and branch stubs.",FALSE,FALSE,231
+"magp_tree_meas","wood_cond","integer","integer",".",,"Y","Wood condition code indicating the soundness, decay level, and structural condition of the stem wood.",FALSE,FALSE,232
+"magp_tree_meas","species","character","character",".",,"species","NFI species code GENUS.SPE[.VAR] from the species translation table. UNKN.SPP is not valid; a code with a component equal to NA is invalid; X = not recorded.",FALSE,FALSE,233
+"magp_tree_meas","dbh","numeric","double",".",,,"Diameter at breast height (cm).",FALSE,FALSE,234
+"magp_tree_meas","height","numeric","double",".",,,"Total height (m).",FALSE,FALSE,235
+"magp_tree_meas","ht_sampling_meth","character","character",".",,"Y","Method used to select trees for height measurement within the plot or subplot.",FALSE,FALSE,236
+"magp_tree_meas","meas_est_height","character","character",".",,"Y","Indicator of whether the HEIGHT was measured, estimated, or calculated.",FALSE,FALSE,237
+"magp_tree_meas","meas_est_dbh","character","character",".",,"Y","Indicator of whether the DBH was measured or estimated.",FALSE,FALSE,238
+"magp_tree_meas","crown_length","numeric","double",".",,,"Live crown length (m) - the vertical length of the live crown, measured from the base of the live crown to the top of the tree.",FALSE,FALSE,239
+"magp_tree_meas","lcr","numeric","double",".",,,"Live crown ratio, expressed as a percentage: crown_length / height * 100",FALSE,FALSE,240
+"magp_tree_meas","lcr_meas_meth","character","character",".",,"Y","Note describing how live crown ratio was obtained",FALSE,FALSE,241
+"magp_tree_meas","hlc","numeric","double",".",,,"Height to base of live crown (m)- the distance along the bole from the high side ground level to the base of the live crown.",FALSE,FALSE,242
+"magp_tree_meas","hlc_meas_meth","character","character",".",,"Y","Note describing how height-to-live-crown was obtained.",FALSE,FALSE,243
+"magp_tree_meas","cw","numeric","double",".",,,"Crown width (m), recorded directly or estimated from crown radii.",FALSE,FALSE,244
+"magp_tree_meas","cw_meas_meth","character","character",".",,"Y","Note describing how crown width was obtained.",FALSE,FALSE,245
+"magp_tree_meas","plot_wt","numeric","double",".",,,"Plot weight used in per-hectare expansion for this tree-measurement record.",FALSE,FALSE,246
+"magp_tree_meas","tree_wt","numeric","double",".",,,"Tree weight used in per-hectare expansion for this tree-measurement record.",FALSE,FALSE,247
+"magp_tree_meas","tree_ef_unadj","numeric","double",".",,,"Unadjusted tree expansion factor at the plot level, used to convert a sampled tree to a per-hectare basis before applying weights or area adjustments. For fixed-area plots/subplots, it is calculated as (1 / 'plot_area'), where plot_area is in hectares. For variable-radius plots, it is calculated as ('baf' / 'tree_ba').",FALSE,FALSE,248
+"magp_tree_meas","tree_ef_adj","numeric","double",".",,,"Adjusted tree expansion factor at the plot level, calculated as ('tree_ef_unadj' × 'tree_wt' × 'plot_wt').",FALSE,FALSE,249
+"magp_tree_meas","tree_ba","numeric","double",".",,,"Unadjusted basal area of an individual tree, expressed in square metres (m²), calculated as (pi * dbh^2 / 40000), where dbh is in cm.",FALSE,FALSE,250
+"magp_tree_meas","tree_baph_adj","numeric","double",".",,,"Adjusted tree basal area per hectare at the plot level, calculated as ('tree_ba' × 'tree_ef_adj').",FALSE,FALSE,251
+"magp_tree_meas","src_tree_ef_unadj","numeric","double",".",,,"Source-provided 'tree_ef_unadj'. See Appendix A2 for methodology.",TRUE,FALSE,252
+"magp_tree_meas","src_tree_ef_adj","numeric","double",".",,,"Source-provided 'tree_ef_adj'. See Appendix A2 for methodology.",TRUE,FALSE,253
+"magp_tree_meas","src_tree_ba","numeric","double",".",,,"Source-provided 'tree_ba'. See Appendix A2 for methodology.",TRUE,FALSE,254
+"magp_tree_meas","src_baph_adj","numeric","double",".",,,"Source-provided 'tree_baph_adj'. See Appendix A2 for methodology.",TRUE,FALSE,255
+"magp_tree_meas","src_biomass","numeric","double",".",,,"Source-provided tree biomass. See Appendix A2 for methodology.",TRUE,FALSE,256
+"magp_tree_meas","src_vol_nmer","numeric","double",".",,,"Source-provided tree net merchantable volume (m³) for standing trees, live or dead; not applicable to cut or gone trees. See Appendix A2 for methodology.",TRUE,FALSE,257
+"magp_tree_meas","src_vol_gmer","numeric","double",".",,,"Source-provided tree gross merchantable volume (m³) for standing trees, live or dead; not applicable to cut or gone trees. See Appendix A2 for methodology.",TRUE,FALSE,258
+"magp_tree_meas","src_vol_wsv","numeric","double",".",,,"Source-provided tree whole-stem volume (m³) for standing trees, live or dead; not applicable to cut or gone trees. See Appendix A2 for methodology.",TRUE,FALSE,259
+"magp_tree_meas","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,260
+"magp_tree_cond","magp_cond_id","character","character","PK",,,"MAGPlot unique ID for each tree-measurement condition record, derived by concatenating magp_treemeas_id and cond_num. Parts joined with '_', no zero padding.",FALSE,FALSE,261
+"magp_tree_cond","src_cond_id","character","character",".",,,"Source unique ID for each tree-measurement condition record, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,262
+"magp_tree_cond","magp_treemeas_id","character","character","FK","magp_tree_meas",,"MAGPlot unique ID for each tree-measurement record, derived by concatenating magp_tree_id and visit_num. Primary key (unique row ID) in magp_tree_meas, and a foreign key in related tables. Parts joined with '_', no zero padding.",FALSE,FALSE,263
+"magp_tree_cond","cond_num","integer","integer",".",,,"Condition sequence number within a tree measurement (1..n).",FALSE,FALSE,264
+"magp_tree_cond","deformity_type","character","character",".",,"Y","Tree deformity type code.",FALSE,FALSE,265
+"magp_tree_cond","damage_agent","character","character",".",,"condition","Tree damage/condition cause code. Examples: animal, disease, insects, etc.",FALSE,FALSE,266
+"magp_tree_cond","severity","character","character",".",,"Y","Severity level of the tree condition or damage.",FALSE,FALSE,267
+"magp_tree_cond","condition_location","character","character",".",,"Y","General location of the tree condition or damage.",FALSE,FALSE,268
+"magp_tree_cond","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,269
+"magp_tree_age","magp_age_id","character","character","PK",,,"MAGPlot unique ID for each tree-age measurement record, derived by concatenating magp_treemeas_id and sample_num. Parts joined with '_', no zero padding.",FALSE,FALSE,270
+"magp_tree_age","src_age_id","character","character",".",,,"Source unique ID for each tree-age measurement record, given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,271
+"magp_tree_age","magp_treemeas_id","character","character","FK","magp_tree_meas",,"MAGPlot unique ID for each tree-measurement record, derived by concatenating magp_tree_id and visit_num. Primary key (unique row ID) in magp_tree_meas, and a foreign key in related tables. Parts joined with '_', no zero padding.",FALSE,FALSE,272
+"magp_tree_age","sample_num","integer","integer",".",,,"Age sample number within magp_treemeas_id. The same tree measurement can have multiple samples (e.g., DBH and base).",FALSE,FALSE,273
+"magp_tree_age","age_sample_type","character","character",".",,"Y","Age sample type (e.g., core, disk, cookie, etc.).",FALSE,FALSE,274
+"magp_tree_age","bore_dob","numeric","double",".",,,"Diameter outside bark at the sampling height (core/cookie). Enter -1 if missing.",FALSE,FALSE,275
+"magp_tree_age","bore_ht","character","character",".",,,"Height of the sampling point (core/cookie), in metres. Where the height was not measured, a code is used instead: B = bored at the base, D = bored at DBH. X = missing, Z = not applicable.",FALSE,FALSE,276
+"magp_tree_age","ring_count","integer","integer",".",,,"Ring count at the sampling height.",FALSE,FALSE,277
+"magp_tree_age","ring_count_src","character","character",".",,"Y","Source of the ring count.",FALSE,FALSE,278
+"magp_tree_age","pith_status","character","character",".",,"Y","Indicates whether the sampled tree core reached or contained the pith.",FALSE,FALSE,279
+"magp_tree_age","missed_ring_count","integer","integer",".",,,"Estimated number of rings missing between the innermost visible ring and the pith when the sampled tree core did not reach the pith.",FALSE,FALSE,280
+"magp_tree_age","missed_ring_count_meth","character","character",".",,"Y","Method used to estimate the number of missing rings when the sampled tree core did not reach the pith.",FALSE,FALSE,281
+"magp_tree_age","dbh_age","numeric","double",".",,,"Age at breast height / DBH-age measurement (years), when the age sample is taken near 1.3 m.",FALSE,FALSE,282
+"magp_tree_age","age_corr_years","numeric","double",".",,,"MAGPLot estimated number of full years of growth below the sampling height",FALSE,FALSE,283
+"magp_tree_age","total_age","numeric","double",".",,,"Estimated total tree age from the germination point.",FALSE,FALSE,284
+"magp_tree_age","total_age_src","character","character",".",,"Y","Source/method used to obtain or estimate total_age.",FALSE,FALSE,285
+"magp_tree_age","meas_est_age","character","character",".",,"Y","Indicator of how tree age was obtained: measured, calculated from previous measurement, adjusted in lab, or unknown.",FALSE,FALSE,286
+"magp_tree_age","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,287
+"magp_tally_trees","magp_tally_id","character","character","PK",,,"MAGPlot unique ID for each regeneration/tally record (row), derived by concatenating magp_subpmeas_id and reg_meas_num. Primary key (unique row ID) in magp_tally_trees. Parts joined with '_', no zero padding.",FALSE,FALSE,288
+"magp_tally_trees","src_tally_id","character","character",".",,,"Source unique ID for each regeneration/tally record (row), given or derived by concatenating source attributes. See appendix.",TRUE,TRUE,289
+"magp_tally_trees","magp_subpmeas_id","character","character","FK","magp_subplot_meas",,"MAGPlot unique ID for the parent subplot-measurement record, derived by concatenating magp_subplot_id and visit_num. Foreign key to magp_subplot_meas. Parts joined with '_', no zero padding.",FALSE,FALSE,290
+"magp_tally_trees","reg_meas_num","integer","integer",".",,,"Sequence number of regeneration/tally records within the same magp_subpmeas_id.",FALSE,FALSE,291
+"magp_tally_trees","magp_frame_id","character","character","FK","magp_design_frames",,"MAGPlot unique identifier for each sampling frame/subplot within a plot design, formed by concatenating 'magp_design_id' and 'subplot'. Foreign key to magp_design_frames. Parts joined with '_', no zero padding.",FALSE,FALSE,292
+"magp_tally_trees","tally_type","character","character",".",,"Y","Regeneration stem type.",FALSE,FALSE,293
+"magp_tally_trees","ht_class","character","character",".",,,"Height class assigned from tally_type (seedling: 0–49.9 cm; regeneration: 50–129.9 cm; sapling: ≥130 cm).",FALSE,FALSE,294
+"magp_tally_trees","dbh_class","character","character",".",,,"DBH class assigned to the tally row.",FALSE,FALSE,295
+"magp_tally_trees","dbh_midpoint","numeric","double",".",,,"Midpoint DBH of the assigned DBH class, expressed in cm.",FALSE,FALSE,296
+"magp_tally_trees","species","character","character",".",,"species","NFI species code GENUS.SPE[.VAR] from the species translation table. UNKN.SPP is not valid; a code with a component equal to NA is invalid; X = not recorded.",FALSE,FALSE,297
+"magp_tally_trees","count","integer","integer",".",,,"Count of individual regenerating stems for this combination of tally_type and species within the subplot.",FALSE,FALSE,298
+"magp_tally_trees","src_cover_pct","numeric","double",".",,,"Source given percent cover of the regeneration species within the subplot. See Appendix A2 for methodology.",TRUE,FALSE,299
+"magp_tally_trees","src_tally_ef_unadj","numeric","double",".",,,"Source-provided 'tally_ef_unadj'.",FALSE,FALSE,300
+"magp_tally_trees","src_tally_ef_adj","numeric","double",".",,,"Source-provided 'tally_ef_adj'.",FALSE,FALSE,301
+"magp_tally_trees","src_tally_baph_adj","numeric","double",".",,,"Source-provided 'tally_baph_adj'.",FALSE,FALSE,302
+"magp_tally_trees","tally_ef_unadj","numeric","double",".",,,"Unadjusted tally expansion factor at the plot level, calculated as (1 / 'plot_area').",FALSE,FALSE,303
+"magp_tally_trees","tally_ef_adj","numeric","double",".",,,"Adjusted tally expansion factor at the plot level, calculated as ('tally_ef_unadj' × 'count').",FALSE,FALSE,304
+"magp_tally_trees","tally_ba","numeric","double",".",,,"Unadjusted basal area assigned to an individual tally row, expressed in square metres (m²), calculated as (pi * dbh_midpoint^2 / 40000), where dbh_midpoint is in cm.",FALSE,FALSE,305
+"magp_tally_trees","tally_baph_adj","numeric","double",".",,,"Adjusted tally basal area per hectare at the plot level, calculated as ('tally_ba' × 'tally_ef_adj').",FALSE,FALSE,306
+"magp_tally_trees","comments","character","character",".",,,"Additional remarks.",FALSE,FALSE,307
