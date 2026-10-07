@@ -2,7 +2,8 @@
 # D13.1 to D13.5): one national row per dictionary attribute, rows seeded from A2, from the
 # pipeline scripts' registers, frame rules and absent links, and from the AB mapping workbook,
 # and a review guide. It writes applicability_working.csv and review_guide.md to the output
-# folder, never over an existing file, and never writes spec/.
+# folder, never over an existing file. The default output folder is outside the repo, and the
+# output folder must never be spec/.
 # Run from the repo root, with the paths given in the session and never committed (D5.31):
 #   Rscript data-raw/build_matrix_template.R "--pipeline-dir=<folder>" "--workbook=<file>"
 # Without --output-dir the folder is matrix/ in GPQ_PLANS_DIR. Without --pipeline-dir or
@@ -890,11 +891,13 @@ guide_text <- c(
   "",
   paste(
     "A row gives one attribute's applicability for the records its four keys match:",
-    "`jurisdiction`, `magp_dataset_id`, `frame_type` and `meas_type`, where \"\\*\" matches every",
+    "`jurisdiction`, `magp_dataset_id`, `frame_type` and `meas_type`, where `*` matches every",
     "record. `applicability` is R (required), O (optional) or N (not applicable). Every DD",
-    "attribute has one national row, its four keys \"\\*\". Where several rows match a record,",
-    "the most specific wins, and `meas_type` rows that still disagree combine as R over O over N",
-    "(plan 5.4). Every row starts with `status` \"proposed\"."
+    "attribute has one national row, its four keys `*`. Where several rows match a record,",
+    "the most specific wins, and `meas_type` rows that still disagree combine as R beats O beats",
+    "N (plan 5.4). Two rows that neither is more specific than the other and that disagree are",
+    "an error (plan 5.4), e.g. one keyed (BC, `*`) and one keyed (`*`, 110.05) on the same",
+    "attribute with different values. Every row starts with `status` \"proposed\"."
   ),
   "",
   "## Where a value comes from",
@@ -935,48 +938,59 @@ guide_text <- c(
   "## What to do",
   "",
   paste(
-    "1. Check the seeded rows against what you know of each contributor. Change",
-    "`applicability` where it's wrong, and set `status` to \"confirmed\" on each row you've",
-    "settled."
+    "1. Check the seeded rows against what you know of each contributor, and change",
+    "`applicability` where it's wrong. You can set `status` to \"confirmed\" on a row you've",
+    "settled, to track your progress; sign-off doesn't require it."
   ),
   "2. Go through the national O rows: an attribute every record must carry becomes R.",
   paste(
     "3. Add a row where a dataset, a frame type or a component differs from the national value,",
     "its keys spelled as the lookup spells them."
   ),
-  "4. Decide the rows listed under \"For your review\": the build didn't seed them.",
+  paste(
+    "4. Decide each item listed under \"For your review\". The build left most of them out; a",
+    "clash is a row it did write, with A2's value. If a source is listed under \"Not seeded:",
+    "sources not given\", rebuild with its `--pipeline-dir` or `--workbook` before you start",
+    "editing (move both files away first). Once you have edits, don't rebuild: set the",
+    "frame-rule and link rows by hand from their notes; register and workbook rows can't be",
+    "recovered that way and need a rebuild into a separate folder (`--output-dir`) to copy from."
+  ),
   paste(
     "5. Edit the file in a text editor, or in Excel through Data > From Text/CSV with every",
     "column set to Text, and save it as CSV UTF-8 with the same ten columns in the same order.",
-    "Opened with a double-click, Excel reads dataset 110.10 as the number 110.1 and saves it so."
+    "Opened with a double-click, Excel reads dataset 110.10 as the number 110.1 and saves it as",
+    "110.1."
   ),
   "",
   paste(
     "At M9 the matrix checks run on the file (plan 5.7): every attribute is a DD attribute with",
     "one national row, every key and value is valid, no key repeats, primary keys are R, and",
-    "the combinations the spec knows resolve to one value. Once you sign it off, it enters",
-    "`spec/` through `update-spec`."
+    "the combinations the spec knows resolve to one value. Sign-off marks the matrix confirmed",
+    "(plan 21 M9): every item under \"For your review\" is decided, and seeded rows are accepted",
+    "on their evidence unless you change them. Once you sign it off, it enters `spec/` through",
+    "`update-spec`."
   )
 )
 
 # The kind of a row's first evidence, for the guide's counts.
 evidence_kind <- function(evidence) {
   data.table::fcase(
-    is.na(evidence), "none, the default",
-    startsWith(evidence, "DD key_type"), "DD key",
+    is.na(evidence), "no evidence (the default O)",
+    startsWith(evidence, "DD key_type"), "DD key_type",
     startsWith(evidence, "A2 "), "A2",
-    startsWith(evidence, "AB mapping"), "AB mapping workbook",
+    startsWith(evidence, "AB mapping"), "AB mapping",
     startsWith(evidence, "not seeded"), "not seeded",
-    grepl("^pipeline: [^;]*reg_unavailable", evidence), "pipeline register",
-    grepl("^pipeline: [^;]*set_design_sentinels", evidence), "pipeline frame rule",
-    grepl("^pipeline: [^;]*absent by design", evidence), "pipeline absent link",
+    grepl("^pipeline: [^;]*reg_unavailable", evidence), "pipeline: reg_unavailable",
+    grepl("^pipeline: [^;]*set_design_sentinels", evidence), "pipeline: set_design_sentinels()",
+    grepl("^pipeline: [^;]*absent by design", evidence), "pipeline: absent by design",
     default = "other"
   )
 }
 
-# Text as Markdown shows it: the characters Markdown reads as markup escaped.
+# Text as Markdown shows it: runs of whitespace folded to one space, so a line break can't start
+# a list item or a heading, and the characters Markdown reads as markup escaped.
 markdown_text <- function(x) {
-  gsub("([\\\\`*_{}\\[\\]<>|#])", "\\\\\\1", x, perl = TRUE)
+  gsub("([\\\\`*_{}\\[\\]<>|#&])", "\\\\\\1", gsub("[[:space:]]+", " ", x), perl = TRUE)
 }
 
 # Text in a code span, or escaped where it holds a backtick, which would end the span.
@@ -989,9 +1003,18 @@ run_lines <- function(template) {
   matrix <- template$matrix
   review <- template$review
   sources <- template$sources
+  stray <- setdiff(unique(review$topic), names(review_topics))
+  if (length(stray) > 0L) {
+    stop(
+      "The review rows hold topics the guide doesn't list: ", paste(stray, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  # The evidence list's names, in its order, with evidence_kind()'s other last.
   kinds <- c(
-    "DD key", "A2", "pipeline register", "AB mapping workbook", "pipeline frame rule",
-    "pipeline absent link", "not seeded", "none, the default", "other"
+    "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
+    "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
+    "other"
   )
   counts <- table(
     factor(evidence_kind(matrix$evidence), levels = kinds),
@@ -1003,6 +1026,9 @@ run_lines <- function(template) {
   }
   national <- matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
     matrix$frame_type == "*" & matrix$meas_type == "*"
+  # A row holds two sources where a "; " is followed by the start of a source's evidence; a
+  # script's own reason may hold a "; " too.
+  joined <- grepl("; (DD key_type|A2 |pipeline: |AB mapping: |not seeded: )", matrix$evidence)
   lines <- c(
     "## This run", "", "Sources:", "",
     source_line(sources$spec$file, sources$spec$sha256),
@@ -1021,8 +1047,10 @@ run_lines <- function(template) {
     "",
     sprintf(
       "Rows: %d, %d of them national; %d hold two sources.", nrow(matrix), sum(national),
-      sum(grepl("; ", matrix$evidence, fixed = TRUE))
+      sum(joined)
     ),
+    "",
+    "Rows by first evidence and applicability (a row with two sources counts under its first):",
     "", "| Evidence | R | O | N |", "|---|---|---|---|",
     sprintf("| %s | %d | %d | %d |", rownames(counts), counts[, "R"], counts[, "O"], counts[, "N"]),
     "", "## For your review"
@@ -1031,25 +1059,38 @@ run_lines <- function(template) {
     # Picked outside the brackets, since review has a column named topic.
     picked <- review$topic == heading
     rows <- if (heading == "pipeline_rule") code_notes else review[picked]
-    if (nrow(rows) == 0L) {
+    count <- nrow(rows)
+    noun <- if (count == 1L) "item" else "items"
+    lines <- c(lines, "", sprintf("### %s, %d %s", review_topics[[heading]], count, noun), "")
+    if (count == 0L) {
+      lines <- c(lines, "None.")
       next
+    }
+    if (heading == "pipeline_rule") {
+      scripts <- c(
+        "AB v7.7 = `magpv2_blocks_1-4_AB_2026data_v7.7_candidate.R` (contributor AB)",
+        "BC v7.3 = `magpv2_blocks_1-4_BC_2026data_v7.3_candidate.R` (contributor BC)",
+        "ON v7.3 = `magpv2_blocks_1-4_ON_2026data_v7.3_candidate.R` (contributor ON)",
+        "QUE v7.3 = `magpv2_blocks_1-4_QUE_2026data_v7.3_candidate.R` (contributor QC)"
+      )
+      lines <- c(lines, paste0("Scripts: ", paste(scripts, collapse = "; "), "."), "")
     }
     items <- if (heading == "not_seeded") {
       paste0("- ", markdown_text(rows$detail))
     } else if (heading == "pipeline_rule") {
       paste0(
-        "- `", rows$table_name, "` ", markdown_text(rows$attribute_name), ": ",
-        markdown_text(rows$what), " (", rows$where, ")"
+        "- ", code_span(rows$table_name), " ", code_span(rows$attribute_name), ": ",
+        markdown_text(rows$what), " (", code_span(rows$where), ")"
       )
     } else {
       paste0(
         "- `", rows$table_name, ".", rows$attribute_name, "`, ", rows$contributor,
-        ifelse(is.na(rows$detail), "", paste0(": ", markdown_text(rows$detail))),
+        data.table::fifelse(is.na(rows$detail), "", paste0(": ", markdown_text(rows$detail))),
         ". Evidence: ", code_span(rows$evidence),
-        ifelse(is.na(rows$note), "", paste0(". Note: ", markdown_text(rows$note)))
+        data.table::fifelse(is.na(rows$note), "", paste0(". Note: ", markdown_text(rows$note)))
       )
     }
-    lines <- c(lines, "", sprintf("### %s (%d)", review_topics[[heading]], nrow(rows)), "", items)
+    lines <- c(lines, items)
   }
   lines
 }
@@ -1080,25 +1121,29 @@ refuse_existing <- function(paths) {
     stop(
       paste(present, collapse = " and "),
       if (length(present) == 1L) " already exists" else " already exist",
-      ", so nothing was written (D13.5 (3)); move or delete it to build again.",
+      ", so nothing was written (D13.5 (3)); move or delete ",
+      if (length(present) == 1L) "it" else "them", " to build again.",
       call. = FALSE
     )
   }
   invisible(TRUE)
 }
 
-# The working copy and the guide, UTF-8 with LF line ends, the output folder made if missing.
+# The working copy and the guide, UTF-8 with LF line ends, the output folder made if missing; the
+# paths come back named as output_files is.
 write_template <- function(template, guide, output_dir) {
   paths <- file.path(output_dir, output_files)
+  names(paths) <- names(output_files)
   refuse_existing(paths)
-  if (!dir.exists(output_dir) && !dir.create(output_dir, recursive = TRUE)) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  if (!dir.exists(output_dir)) {
     stop("Couldn't create the output folder ", output_dir, ".", call. = FALSE)
   }
   data.table::fwrite(
-    template$matrix, paths[[1L]],
+    template$matrix, paths[["matrix"]],
     na = "", quote = TRUE, eol = "\n", encoding = "UTF-8"
   )
-  writeBin(charToRaw(enc2utf8(paste0(paste(guide, collapse = "\n"), "\n"))), paths[[2L]])
+  writeBin(charToRaw(enc2utf8(paste0(paste(guide, collapse = "\n"), "\n"))), paths[["guide"]])
   invisible(paths)
 }
 
@@ -1141,10 +1186,19 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   spec <- magp_spec()
   template <- build_template(spec, given$pipeline_dir, given$workbook)
   guide <- review_guide(template)
-  check_template(template, spec$attributes, unlist(given, use.names = FALSE), guide)
+  # Absolute forms only, so a short relative folder can't match the guide's own words.
+  given_paths <- normalizePath(unlist(given, use.names = FALSE), winslash = "/", mustWork = FALSE)
+  check_template(template, spec$attributes, given_paths, guide)
   paths <- write_template(template, guide, given$output_dir)
+  # The console says what wasn't seeded, in the guide's own words (D13.5 (1)).
+  review <- template$review
+  not_seeded <- review$detail[review$topic %chin% "not_seeded"]
+  if (length(not_seeded) > 0L) {
+    message(paste(not_seeded, collapse = "\n"))
+  }
   cat(sprintf(
-    "Wrote %d rows to %s, and the review guide beside it.\n", nrow(template$matrix), paths[[1L]]
+    "Wrote %d rows to %s, and the review guide beside it.\n", nrow(template$matrix),
+    paths[["matrix"]]
   ))
 }
 

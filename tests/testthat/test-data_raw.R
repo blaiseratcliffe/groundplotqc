@@ -1300,31 +1300,174 @@ test_that("build_template seeds and merges every source, no path reaching its te
   expect_false(any(grepl("pipe dir", unlist(template$matrix), fixed = TRUE)))
 })
 
-test_that("review_guide lists each topic once with its count and escapes Markdown (D13.5 (2))", {
+test_that("review_guide lists all nine topics with their counts and escapes Markdown (D13.5 (2))", {
   build <- load_data_raw("build_matrix_template.R")
-  template <- build$build_template(magp_spec())
+  spec <- magp_spec()
+  template <- build$build_template(spec)
   template$review <- rbind(template$review, data.table::data.table(
     topic = "open", contributor = "QC", table_name = "magp_sites", attribute_name = "aspect",
     detail = NA, evidence = "pipeline: a `b` c", note = "x_y *z* | w"
   ), fill = TRUE)
   guide <- build$review_guide(template, as.Date("2026-10-06"))
   expect_match(guide[[3L]], "on 2026-10-06 beside `applicability_working.csv`")
-  expect_equal(sum(grepl("^### ", guide)), 3L)
-  expect_true(any(guide == "### Not seeded: sources not given (D13.5 (1)) (2)"))
-  heading <- paste(
-    "### Not seeded: rules seen in the pipeline code beyond plan 5.6's list (D13.4 (4))", "(9)"
-  )
-  expect_true(any(guide == heading))
-  expect_true(any(
-    guide == "- `magp_design_frames` max\\_dbh: -9 on BC's M frames (BC v7.3 lines 3219, 5491)"
+  computed <- "\"computed later\" in a register (D13.3 (2)), 0 items"
+  expect_equal(guide[startsWith(guide, "### ")], c(
+    "### Clashes: A2 kept over a register (D13.2 (2)), 0 items",
+    "### Not seeded: keys, R nationally (D13.3 (4)), 0 items",
+    "### Not seeded: tables that take no dataset rows (D13.4 (1)), 0 items",
+    "### Not seeded: pairs the DD doesn't have, 0 items",
+    "### Not seeded: \"open\" in a register (D13.3 (2)), 1 item",
+    "### Not seeded: \"question\" in the AB workbook (D13.3 (3)), 0 items",
+    paste("### Not seeded: computed by MAGPlot,", computed),
+    "### Not seeded: sources not given (D13.5 (1)), 2 items",
+    "### Not seeded: rules seen in the pipeline code beyond plan 5.6's list (D13.4 (4)), 9 items"
   ))
+  empty <- which(endsWith(guide, ", 0 items"))
+  expect_equal(guide[empty + 1L], rep("", 6L))
+  expect_equal(guide[empty + 2L], rep("None.", 6L))
+  scripts <- paste(
+    "Scripts: AB v7.7 = `magpv2_blocks_1-4_AB_2026data_v7.7_candidate.R` (contributor AB);",
+    "BC v7.3 = `magpv2_blocks_1-4_BC_2026data_v7.3_candidate.R` (contributor BC);",
+    "ON v7.3 = `magpv2_blocks_1-4_ON_2026data_v7.3_candidate.R` (contributor ON);",
+    "QUE v7.3 = `magpv2_blocks_1-4_QUE_2026data_v7.3_candidate.R` (contributor QC)."
+  )
+  rules <- which(startsWith(guide, "### Not seeded: rules seen"))
+  expect_equal(guide[rules + 1L:3L], c("", scripts, ""))
+  expect_true(any(
+    guide == "- `magp_design_frames` `max_dbh`: -9 on BC's M frames (`BC v7.3 lines 3219, 5491`)"
+  ))
+  expect_true(any(guide == paste0(
+    "- `magp_design_frames` `min_dbh, max_dbh, min_ht`: -9 on QC's R frames' min\\_dbh, M frames' ",
+    "max\\_dbh, and S and M frames' min\\_ht (`QUE v7.3 lines 751-753`)"
+  )))
   expect_true(any(guide == "- pipeline scripts: not given"))
   item <- guide[startsWith(guide, "- `magp_sites.aspect`, QC")]
   expect_equal(
     item, "- `magp_sites.aspect`, QC. Evidence: pipeline: a \\`b\\` c. Note: x\\_y \\*z\\* \\| w"
   )
-  expect_true(any(grepl("110.10 as the number 110.1", guide, fixed = TRUE)))
+  expect_true(any(guide == paste(
+    "Rows by first evidence and applicability",
+    "(a row with two sources counts under its first):"
+  )))
+  expect_true(any(startsWith(guide, "| DD key_type | ")))
+  expect_true(any(startsWith(guide, "| no evidence (the default O) | ")))
+  expect_true(any(grepl("110.10 as the number 110.1 and saves it as 110.1", guide, fixed = TRUE)))
   expect_true(any(grepl("primary keys are R", guide, fixed = TRUE)))
+  expect_true(any(grepl("combine as R beats O beats N", guide, fixed = TRUE)))
+  expect_true(any(grepl("where `*` matches every", guide, fixed = TRUE)))
+  expect_true(any(grepl("one keyed (BC, `*`) and one keyed (`*`, 110.05)", guide, fixed = TRUE)))
+  expect_true(any(startsWith(guide, "1. Check the seeded rows against what you know")))
+  expect_true(any(grepl("sign-off doesn't require it.", guide, fixed = TRUE)))
+  expect_true(any(startsWith(guide, "4. Decide each item listed under \"For your review\". The")))
+  expect_true(any(grepl("rebuild with its `--pipeline-dir` or `--workbook`", guide, fixed = TRUE)))
+  expect_true(any(grepl("(`--output-dir`) to copy from.", guide, fixed = TRUE)))
+  expect_true(any(grepl("Sign-off marks the matrix confirmed (plan 21 M9)", guide, fixed = TRUE)))
+  expect_equal(build$markdown_text("a\n- b  &c"), "a - b \\&c")
+  stray <- template
+  stray$review <- rbind(template$review, data.table::data.table(topic = "other_topic"), fill = TRUE)
+  expect_error(build$review_guide(stray), "topics the guide doesn't list: other_topic")
+  # A short relative folder trips the gate as typed and passes it as main() normalises it.
+  expect_error(build$check_template(template, spec$attributes, "matrix", guide), "a machine path")
+  folder <- normalizePath("matrix", winslash = "/", mustWork = FALSE)
+  expect_true(build$check_template(template, spec$attributes, folder, guide))
+})
+
+test_that("evidence_kind names the first source of each form of evidence (D13.6 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  evidence <- c(
+    "DD key_type PK (20261005_magpv2_DD.xlsx:2)",
+    "A2 X (20261005_magpv2_A2.xlsx, A2!D16)",
+    "pipeline: f.R v7.3 sha256:ab line 3 (reg_unavailable: not collected)",
+    "pipeline: f.R v7.2 sha256:ab line 4 (set_design_sentinels(): -9)",
+    "pipeline: f.R v7.3 sha256:ab line 5 (absent by design)",
+    "AB mapping: unavailable (20260928_magpv2_mapping_AB.xlsx, Mapping, row 3)",
+    "not seeded: pipeline scripts not given",
+    NA,
+    paste0(
+      "A2 Z (20261005_magpv2_A2.xlsx, A2!D17); ",
+      "pipeline: f.R v7.3 sha256:ab line 3 (reg_unavailable: x)"
+    ),
+    "something else"
+  )
+  expect_equal(build$evidence_kind(evidence), c(
+    "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
+    "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
+    "A2", "other"
+  ))
+})
+
+test_that("run_lines counts a row as holding two sources by its join, not by a bare semicolon", {
+  build <- load_data_raw("build_matrix_template.R")
+  template <- list(
+    matrix = data.table::data.table(
+      jurisdiction = "*", magp_dataset_id = "*", frame_type = "*", meas_type = "*",
+      applicability = c("R", "O", "O", "N"),
+      evidence = c(
+        "DD key_type PK (d.xlsx:2)",
+        "A2 X (a.xlsx, A2!D16); pipeline: s.R v1 sha256:ab line 3 (reg_unavailable: none)",
+        "pipeline: s.R v1 sha256:ab line 4 (reg_unavailable: no source; not asked)",
+        NA
+      )
+    ),
+    review = data.table::data.table(topic = character()),
+    sources = list(spec = data.table::data.table(file = "d.xlsx", sha256 = "ab"))
+  )
+  lines <- build$run_lines(template)
+  expect_true("Rows: 4, 4 of them national; 1 hold two sources." %in% lines)
+  expect_true("| pipeline: reg_unavailable | 0 | 1 | 0 |" %in% lines)
+  expect_true("- pipeline scripts: not given" %in% lines)
+  expect_true("- AB mapping workbook: not given" %in% lines)
+})
+
+test_that("review_guide names its sources and counts every row once (D13.5 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  spec <- magp_spec()
+  dir <- pipeline_folder(build)
+  trees <- sum(spec$attributes$table_name == "magp_trees")
+  build$pipeline_files$register_rows <- c(trees + 3L, 1L, 1L, NA)
+  build$read_mapping <- function(path) mapping_sheet()
+  build$mapping_file$register_rows <- 4L
+  workbook <- file.path(dir, build$mapping_file$file)
+  writeLines("not a workbook", workbook)
+  template <- build$build_template(spec, dir, workbook)
+  guide <- build$review_guide(template, as.Date("2026-10-06"))
+  pipeline <- template$sources$pipeline
+  pipeline_lines <- sprintf(
+    "- `%s` %s, SHA-256 `%s`", pipeline$file, pipeline$version, pipeline$sha256
+  )
+  expect_true(all(pipeline_lines %in% guide))
+  workbook_source <- template$sources$workbook
+  expect_true(
+    sprintf("- `%s`, SHA-256 `%s`", workbook_source$file, workbook_source$sha256) %in% guide
+  )
+  expect_false(any(grepl(": not given$", guide)))
+  expect_true("### Not seeded: sources not given (D13.5 (1)), 0 items" %in% guide)
+  matrix <- template$matrix
+  national <- sum(
+    matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
+      matrix$frame_type == "*" & matrix$meas_type == "*"
+  )
+  two <- sum(grepl("; ", matrix$evidence, fixed = TRUE))
+  expect_true(sprintf(
+    "Rows: %d, %d of them national; %d hold two sources.", nrow(matrix), national, two
+  ) %in% guide)
+  table_rows <- guide[grepl("^\\| .+ \\| [0-9]+ \\| [0-9]+ \\| [0-9]+ \\|$", guide)]
+  cells <- strsplit(sub(" \\|$", "", sub("^\\| ", "", table_rows)), " \\| ")
+  counts <- do.call(rbind, lapply(cells, function(cell) as.integer(cell[2:4])))
+  labels <- vapply(cells, function(cell) cell[[1L]], character(1L))
+  expect_equal(sum(counts), nrow(matrix))
+  kinds <- c(
+    "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
+    "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
+    "other"
+  )
+  expect_equal(labels, kinds[kinds %in% labels])
+  expect_true(all(
+    c("pipeline: reg_unavailable", "pipeline: set_design_sentinels()", "AB mapping") %in% labels
+  ))
+  register <- sum(grepl("^pipeline: [^;]*reg_unavailable", matrix$evidence))
+  expect_equal(sum(counts[labels == "pipeline: reg_unavailable", ]), register)
+  expect_false("other" %in% labels)
 })
 
 test_that("write_template writes what read_csv_text reads back, never over a file (D13.5 (3))", {
@@ -1337,12 +1480,32 @@ test_that("write_template writes what read_csv_text reads back, never over a fil
   expect_equal(nrow(read$malformed), 0L)
   expect_equal(nrow(read$invalid), 0L)
   expect_equal(as.data.frame(read$data), as.data.frame(template$matrix))
-  bytes <- readBin(paths[[1L]], "raw", file.size(paths[[1L]]))
-  expect_false(any(bytes == as.raw(13L)))
-  expect_equal(readLines(paths[[2L]], encoding = "UTF-8"), c("# guide", "\u00e9"))
-  expect_error(build$write_template(template, "x", dir), "already exist, so nothing was written")
-  file.remove(paths[[1L]])
-  expect_error(build$write_template(template, "x", dir), "review_guide.md already exists")
+  expect_named(paths, names(build$output_files))
+  bytes_of <- function(path) readBin(path, "raw", file.size(path))
+  csv <- bytes_of(paths[["matrix"]])
+  guide <- bytes_of(paths[["guide"]])
+  expect_false(any(csv == as.raw(13L)))
+  expect_false(any(guide == as.raw(13L)))
+  expect_equal(readLines(paths[["guide"]], encoding = "UTF-8"), c("# guide", "\u00e9"))
+  expect_error(
+    build$write_template(template, "x", dir),
+    "already exist, so nothing was written \\(D13.5 \\(3\\)\\); move or delete them to build again"
+  )
+  expect_equal(bytes_of(paths[["matrix"]]), csv)
+  expect_equal(bytes_of(paths[["guide"]]), guide)
+  file.remove(paths[["matrix"]])
+  expect_error(
+    build$write_template(template, "x", dir),
+    "review_guide.md already exists, so nothing was written \\(D13.5 \\(3\\)\\); move or delete it"
+  )
+  expect_false(file.exists(paths[["matrix"]]))
+  expect_equal(bytes_of(paths[["guide"]]), guide)
+  # An output folder that is a file stops with the message, without R's own warning.
+  blocked <- file.path(withr::local_tempdir(), "a file")
+  writeLines("x", blocked)
+  expect_no_warning(
+    expect_error(build$write_template(template, "x", blocked), "Couldn't create the output folder")
+  )
 })
 
 test_that("parse_args reads the three arguments and never guesses the output folder", {
