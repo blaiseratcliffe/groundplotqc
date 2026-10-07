@@ -312,14 +312,14 @@ absent_links <- data.table::data.table(
   )
 )
 
-# A file's parse data, keyed so a node's children come in source order; nothing is run. A script
-# that doesn't parse stops with R's message, the file named by its base name, not its path.
+# A file's parse data, keyed so a node's children come in source order; nothing is run. The
+# lines are parsed under the file's base name, so R's message for a script that doesn't parse
+# never holds the folder (R cuts a longer file name in a message, so a swap wouldn't be safe).
 parse_data <- function(path) {
-  exprs <- tryCatch(
-    parse(file = path, keep.source = TRUE, encoding = "UTF-8"),
-    error = function(error) {
-      stop(gsub(path, basename(path), conditionMessage(error), fixed = TRUE), call. = FALSE)
-    }
+  lines <- readLines(path, encoding = "UTF-8", warn = FALSE)
+  exprs <- parse(
+    text = lines, keep.source = TRUE, srcfile = srcfilecopy(basename(path), lines),
+    encoding = "UTF-8"
   )
   data <- data.table::as.data.table(utils::getParseData(exprs, includeText = TRUE))
   data.table::setkeyv(data, c("parent", "line1", "col1"))
@@ -1212,7 +1212,7 @@ parse_args <- function(args, plans_dir = Sys.getenv("GPQ_PLANS_DIR")) {
 
 # Paths made absolute: one with no drive letter, slash, backslash or tilde gets getwd() first.
 absolute_paths <- function(paths) {
-  # normalizePath() leaves a missing relative path as it is off Windows, hence the join.
+  # normalizePath() leaves a missing relative path as it is off Windows, hence the join (D13.12).
   paths <- data.table::fifelse(
     grepl("^([A-Za-z]:|[/\\\\~])", paths), paths, file.path(getwd(), paths)
   )

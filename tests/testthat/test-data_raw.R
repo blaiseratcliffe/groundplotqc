@@ -509,7 +509,7 @@ test_that("the compiled specification is the one the build makes (D12.14, D12.27
   expect_true(identical(tree_spec(), magp_spec()))
 })
 
-# ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.5) ----
+# ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.6, D13.12) ----
 
 # A code_lists component holding a contributor sheet and a dataset sheet (D13.2 (1), (4)).
 matrix_code_lists <- function(labels = c("AB", "BC"), ids = c("100", "110")) {
@@ -1211,16 +1211,29 @@ test_that("anchor_line compares bytes, so a Latin-1 line neither warns nor hides
 
 test_that("parse_data names a script that doesn't parse by its base name, never its folder", {
   build <- load_data_raw("build_matrix_template.R")
-  dir <- file.path(withr::local_tempdir(), "pipe dir")
-  dir.create(dir)
-  path <- pipeline_script(dir, "bad.R", c("x <- 1", "y <- 2 3"))
-  shown <- tryCatch(build$parse_data(path), error = conditionMessage)
-  expect_match(shown, "^bad\\.R:2:[0-9]+: unexpected numeric constant")
-  expect_false(grepl("pipe dir", shown, fixed = TRUE))
-  expect_false(grepl(dir, shown, fixed = TRUE))
-  # A script that parses is read as before.
-  fine <- pipeline_script(dir, "fine.R", "x <- 1")
+  root <- withr::local_tempdir()
+  # R cuts a file name at 125 characters in a parse error, so a path over that is tried too.
+  folders <- c("pipe dir", paste0(strrep("long pipe dir ", 9L), "end"))
+  for (folder in folders) {
+    dir <- file.path(root, folder)
+    dir.create(dir)
+    path <- pipeline_script(dir, "bad.R", c("x <- 1", "y <- 2 3"))
+    shown <- tryCatch(build$parse_data(path), error = conditionMessage)
+    expect_match(shown, "^bad\\.R:2:[0-9]+: unexpected numeric constant", info = folder)
+    expect_false(grepl("pipe dir", shown, fixed = TRUE), info = folder)
+    expect_false(grepl(basename(root), shown, fixed = TRUE), info = folder)
+  }
+  expect_gt(nchar(path), 125L)
+  # A script that parses is read as before, a CRLF one with the same lines.
+  fine <- pipeline_script(dir, "fine.R", c("x <- 1", "y <- \"a\""))
+  crlf <- file.path(dir, "crlf.R")
+  writeBin(charToRaw("x <- 1\r\ny <- \"a\"\r\n"), crlf)
   expect_s3_class(build$parse_data(fine), "data.table")
+  for (script in c(fine, crlf)) {
+    data <- build$parse_data(script)
+    expect_equal(data$line1[data$token == "STR_CONST"], 2L, info = script)
+    expect_equal(data$text[data$token == "STR_CONST"], "\"a\"", info = script)
+  }
 })
 
 # A Mapping sheet as read_mapping() returns it, no row of it touched by the AB corrections.
@@ -1375,7 +1388,8 @@ test_that("build_template stops when the spec gives no frame types for the desig
     spec$codes$table_name == "magp_design_frames" & spec$codes$attribute_name == "frame_type"
   )
   expect_gt(length(frame_codes), 0L)
-  spec$codes <- spec$codes[-frame_codes]
+  kept <- setdiff(seq_len(nrow(spec$codes)), frame_codes)
+  spec$codes <- spec$codes[kept]
   expect_error(build$build_template(spec), "no codes for magp_design_frames.frame_type")
 })
 
@@ -1408,7 +1422,7 @@ test_that("build_template seeds and merges every source, no path reaching its te
   expect_match(template$sources$workbook$sha256, "^[0-9a-f]{64}$")
 })
 
-test_that("build_template merges A2 with a register row first, and guards A2's rows", {
+test_that("build_template merges A2 with a clashing register row, A2's text first, and guards A2", {
   build <- load_data_raw("build_matrix_template.R")
   spec <- magp_spec()
   a2_file <- spec$manifest$file[spec$manifest$input == "lineage_spec"]
@@ -1427,9 +1441,11 @@ test_that("build_template merges A2 with a register row first, and guards A2's r
   }
   template <- build$build_template(spec)
   matrix <- template$matrix
+  # The rows of that contributor's own datasets, not another contributor's on the same key.
+  own <- build$datasets_of(build$contributor_datasets(spec$code_lists), a2$contributor[[one]])
   at <- which(
     matrix$table_name == a2$table_name[[one]] & matrix$attribute_name == a2$attribute_name[[one]] &
-      matrix$magp_dataset_id != "*"
+      matrix$magp_dataset_id %in% own
   )
   expect_gt(length(at), 0L)
   # A2's value, evidence and note come first, the register's after.
