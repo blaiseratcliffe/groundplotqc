@@ -566,6 +566,15 @@ test_that("contributor_datasets maps abbreviated names to datasets (D13.2 (1), (
     build$contributor_datasets(lists[lists$sheet_column != "abbreviated_name"]),
     "contributor sheet lacks abbreviated_name"
   )
+  # A dataset of a contributor id the contributor sheet lacks, and a repeated contributor id.
+  expect_error(
+    build$contributor_datasets(matrix_code_lists(ids = c("100", "120"))),
+    "lacks the contributor id of datasets 110.01 \\(110\\), 110.10 \\(110\\)"
+  )
+  expect_error(
+    build$contributor_datasets(matrix_code_lists(c("AB", "BC", "BD"), c("100", "110", "110"))),
+    "repeats the contributor id 110"
+  )
 })
 
 test_that("national_rows gives keys R with the DD's row, the rest the default O (D8.10)", {
@@ -575,6 +584,13 @@ test_that("national_rows gives keys R with the DD's row, the rest the default O 
   expect_equal(rows$evidence[[1L]], "DD key_type PK (20261005_magpv2_DD.xlsx:2)")
   expect_true(all(is.na(rows$evidence[rows$applicability == "O"])))
   expect_true(all(is.na(rows$contributor) & rows$frame_type == "*" & rows$meas_type == "*"))
+  # A foreign key is R as well, with its own key type in the evidence.
+  attributes <- matrix_attributes()
+  data.table::set(attributes, 3L, "key_type", "FK")
+  foreign <- build$national_rows(attributes, "dd.xlsx")
+  expect_equal(foreign$applicability, c("R", "O", "R", "R", "O", "O"))
+  expect_equal(foreign$evidence[[3L]], "DD key_type FK (dd.xlsx:4)")
+  expect_true(is.na(foreign$evidence[[2L]]))
 })
 
 test_that("a2_rows reads X and -1 as O, Z and -9 as N, once per attribute (D13.2 (3))", {
@@ -595,25 +611,77 @@ test_that("a2_rows reads X and -1 as O, Z and -9 as N, once per attribute (D13.2
   expect_equal(rows$evidence[[1L]], "A2 X (20261005_magpv2_A2.xlsx, A2!D5)")
   expect_equal(rows$note[[1L]], "A2: Not in \"BC\"'s source.")
   expect_true(is.na(rows$note[[2L]]))
+  # A second contributor marked on the same attribute keeps its own row.
+  second <- data.table::data.table(
+    contributor_label = "ON", table_name = "magp_sites", attribute_name = "aspect",
+    source_text = "Z", note = NA_character_, source_cell = "A2!E5"
+  )
+  both <- build$a2_rows(rbind(lineage, second), "20261005_magpv2_A2.xlsx")
+  expect_equal(both$contributor, c("BC", "BC", "BC", "BC", "ON"))
+  expect_equal(both$applicability[c(1L, 5L)], c("O", "N"))
+  expect_equal(both$evidence[[5L]], "A2 Z (20261005_magpv2_A2.xlsx, A2!E5)")
+})
+
+test_that("placement names why a row can't be seeded, design tables first (D13.3 (4), D13.4 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  attributes <- rbind(matrix_attributes(), data.table::data.table(
+    table_name = "magp_designs", attribute_name = "magp_design_id", key_type = "PK", source_row = 8L
+  ))
+  rows <- data.table::data.table(
+    table_name = c("magp_designs", "magp_design_frames", "magp_sites", "magp_sites", "magp_sites"),
+    attribute_name = c("magp_design_id", "slope", "slope", "magp_site_id", "aspect")
+  )
+  # A design table's key and its pair the DD lacks are design_table, ahead of key and not_in_dd.
+  expect_equal(
+    build$placement(rows, attributes),
+    c("design_table", "design_table", "not_in_dd", "key", NA)
+  )
 })
 
 test_that("merge_rows keeps A2's value on a clash and joins evidence and notes (D13.2 (2))", {
   build <- load_data_raw("build_matrix_template.R")
+  # In the first clash the register row comes before A2's, so only the A2 rule keeps "N"; the
+  # second clash has no contributor, a key with NA; slope agrees, with two notes to join.
   rows <- data.table::data.table(
-    table_name = "magp_sites", attribute_name = c("aspect", "aspect", "slope", "slope"),
-    contributor = "BC", frame_type = "*", meas_type = "*",
-    applicability = c("N", "O", "O", "O"), evidence = c("A2 Z", "register", "A2 X", "register"),
-    note = c("A2: none.", NA, NA, "BC register, no source"),
-    source = c("a2", "register", "a2", "register")
+    table_name = "magp_sites",
+    attribute_name = c("aspect", "aspect", "slope", "slope", "elevation", "elevation"),
+    contributor = c("BC", "BC", "BC", "BC", NA, NA), frame_type = "*", meas_type = "*",
+    applicability = c("O", "N", "O", "O", "N", "O"),
+    evidence = c("register", "A2 Z", "A2 X", "register", "A2 Z", "register"),
+    note = c(NA, "A2: none.", "A2: gone.", "BC register, no source", NA, NA),
+    source = c("register", "a2", "a2", "register", "a2", "register")
   )
   merged <- build$merge_rows(rows)
-  expect_equal(merged$rows$applicability, c("N", "O"))
-  expect_equal(merged$rows$evidence, c("A2 Z; register", "A2 X; register"))
-  expect_equal(merged$rows$note, c("A2: none.", "BC register, no source"))
-  expect_equal(merged$review$topic, "clash")
-  expect_equal(merged$review$detail, "A2 N, register O; A2 kept")
+  expect_equal(merged$rows$applicability, c("N", "O", "N"))
+  expect_equal(merged$rows$evidence, c("register; A2 Z", "A2 X; register", "A2 Z; register"))
+  expect_equal(
+    merged$rows$note, c("A2: none.", "A2: gone. | BC register, no source", NA_character_)
+  )
+  expect_equal(merged$review$topic, c("clash", "clash"))
+  expect_equal(merged$review$attribute_name, c("aspect", "elevation"))
+  expect_equal(merged$review$contributor, c("BC", NA))
+  expect_equal(
+    merged$review$detail, c("register O, A2 N; A2 kept", "A2 N, register O; A2 kept")
+  )
+  expect_equal(merged$review$evidence, c("register; A2 Z", "A2 Z; register"))
   rows$source <- "register"
   expect_error(build$merge_rows(rows), "sources other than A2 disagree")
+})
+
+test_that("merge_rows gives an empty review where no sources disagree (D13.2 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  rows <- data.table::data.table(
+    table_name = "magp_sites", attribute_name = "slope", contributor = "BC", frame_type = "*",
+    meas_type = "*", applicability = "O", evidence = c("A2 X", "register"), note = NA_character_,
+    source = c("a2", "register")
+  )
+  merged <- build$merge_rows(rows)
+  expect_equal(nrow(merged$rows), 1L)
+  expect_equal(nrow(merged$review), 0L)
+  expect_named(
+    merged$review,
+    c("topic", "contributor", "table_name", "attribute_name", "detail", "evidence", "note")
+  )
 })
 
 test_that("dataset_rows gives one row per dataset, '*' for a national row (D13.2 (1))", {
@@ -624,9 +692,26 @@ test_that("dataset_rows gives one row per dataset, '*' for a national row (D13.2
     frame_type = "*", meas_type = "*", applicability = "O", evidence = c(NA, "A2 X"),
     note = NA_character_
   )
+  before <- data.table::copy(rows)
   out <- build$dataset_rows(rows, datasets)
   expect_equal(out$magp_dataset_id, c("*", "110.01", "110.10"))
   expect_true(all(out$jurisdiction == "*" & out$status == "proposed"))
+  # The caller's rows keep their own columns and values.
+  expect_equal(rows, before)
+  # Each row takes its own contributor's datasets, in row order, a repeated label included.
+  mixed <- data.table::data.table(
+    table_name = "magp_sites", attribute_name = "aspect", contributor = c("BC", NA, "AB", "BC"),
+    frame_type = "*", meas_type = "*", applicability = "O", evidence = NA_character_,
+    note = NA_character_
+  )
+  expect_equal(
+    build$dataset_rows(mixed, datasets)$magp_dataset_id,
+    c("110.01", "110.10", "*", "100.01", "110.01", "110.10")
+  )
+  # No rows give no rows, with the dataset column still there.
+  none <- build$dataset_rows(rows[0L], datasets)
+  expect_equal(nrow(none), 0L)
+  expect_true(is.character(none$magp_dataset_id))
   rows$contributor[[2L]] <- "ON"
   expect_error(build$dataset_rows(rows, datasets), "no dataset of contributor ON")
 })
@@ -672,4 +757,38 @@ test_that("check_template stops on each break of the M2a gate and passes a sound
   expect_error(build$check_template(given, attributes, paths = "pipe dir"), "a machine path in")
   url <- broken(function(m) m[2L, note := "https://x.org"])
   expect_true(build$check_template(url, attributes))
+  # Each other form of machine path: a drive with a slash, a UNC share, a home folder.
+  for (written in c("D:/data/x.csv", "\\\\server\\share\\x", "see /Users/me/x", "see ~/x")) {
+    expect_error(
+      build$check_template(
+        broken(function(m) data.table::set(m, 2L, "note", written)), attributes
+      ),
+      "a machine path in"
+    )
+  }
+  # The review rows' text is searched too, in each of its three columns.
+  review <- data.table::data.table(
+    topic = "open", contributor = "QC", table_name = "magp_sites", attribute_name = "aspect",
+    detail = NA_character_, evidence = NA_character_, note = NA_character_
+  )
+  expect_true(build$check_template(list(matrix = sound$matrix, review = review), attributes))
+  for (column in c("detail", "evidence", "note")) {
+    with_path <- data.table::copy(review)
+    data.table::set(with_path, 1L, column, "see C:\\pipe\\x.R")
+    expect_error(
+      build$check_template(list(matrix = sound$matrix, review = with_path), attributes),
+      "a machine path in: see C:"
+    )
+  }
+  # A path given with one kind of slash is found in text written with the other.
+  forward <- broken(function(m) data.table::set(m, 2L, "note", "from \\srv\\pipe dir\\x.R"))
+  expect_error(build$check_template(forward, attributes, paths = "/srv/pipe dir"), "a machine path")
+  back <- broken(function(m) data.table::set(m, 2L, "note", "from /srv/pipe dir/x.R"))
+  expect_error(build$check_template(back, attributes, paths = "\\srv\\pipe dir"), "a machine path")
+  # An NA in a level column makes the row not national, so it needs evidence.
+  open_level <- broken(function(m) data.table::set(m, 2L, "jurisdiction", NA_character_))
+  expect_error(build$check_template(open_level, attributes), "row 2 has no evidence")
+  # A pair the DD repeats is counted once.
+  repeated_dd <- rbind(attributes, attributes[1L])
+  expect_true(build$check_template(sound, repeated_dd))
 })

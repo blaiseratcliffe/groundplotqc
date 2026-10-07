@@ -65,6 +65,23 @@ contributor_datasets <- function(code_lists) {
       call. = FALSE
     )
   }
+  repeated_ids <- unique(contributors$contributor_id[duplicated(contributors$contributor_id)])
+  if (length(repeated_ids) > 0L) {
+    stop(
+      "The lookup's contributor sheet repeats the contributor id ",
+      paste(repeated_ids, collapse = ", "), " (D13.2 (4)).",
+      call. = FALSE
+    )
+  }
+  lost <- !datasets$contributor_id %chin% contributors$contributor_id
+  if (any(lost)) {
+    named <- paste0(datasets$magp_dataset_id[lost], " (", datasets$contributor_id[lost], ")")
+    stop(
+      "The lookup's contributor sheet lacks the contributor id of datasets ",
+      paste(named, collapse = ", "), " (D13.2 (4)).",
+      call. = FALSE
+    )
+  }
   datasets <- contributors[datasets, on = "contributor_id", nomatch = NULL]
   datasets[, c("contributor", "magp_dataset_id"), with = FALSE]
 }
@@ -84,15 +101,16 @@ datasets_of <- function(datasets, contributor) {
 # row, and the default O without evidence for every other attribute (D8.10).
 national_rows <- function(attributes, dd_file) {
   keyed <- attributes$key_type %chin% c("PK", "FK")
+  # The evidence is formatted for the keyed rows only.
+  at <- which(keyed)
+  evidence <- rep(NA_character_, nrow(attributes))
+  evidence[at] <- sprintf(
+    "DD key_type %s (%s:%d)", attributes$key_type[at], dd_file, attributes$source_row[at]
+  )
   data.table::data.table(
     table_name = attributes$table_name, attribute_name = attributes$attribute_name,
     contributor = NA_character_, frame_type = "*", meas_type = "*",
-    applicability = data.table::fifelse(keyed, "R", "O"),
-    evidence = data.table::fifelse(
-      keyed,
-      sprintf("DD key_type %s (%s:%d)", attributes$key_type, dd_file, attributes$source_row),
-      NA_character_
-    ),
+    applicability = data.table::fifelse(keyed, "R", "O"), evidence = evidence,
     note = NA_character_, source = "dd"
   )
 }
@@ -103,13 +121,16 @@ a2_rows <- function(lineage_spec, a2_file) {
     lineage_spec[lineage_spec$source_text %chin% names(a2_markers)],
     by = c("contributor_label", "table_name", "attribute_name")
   )
+  # The note is formatted where A2 gives one only.
+  noted <- which(!is.na(marked$note))
+  note <- rep(NA_character_, nrow(marked))
+  note[noted] <- paste0("A2: ", marked$note[noted])
   data.table::data.table(
     table_name = marked$table_name, attribute_name = marked$attribute_name,
     contributor = marked$contributor_label, frame_type = "*", meas_type = "*",
     applicability = unname(a2_markers[marked$source_text]),
     evidence = sprintf("A2 %s (%s, %s)", marked$source_text, a2_file, marked$source_cell),
-    note = data.table::fifelse(is.na(marked$note), NA_character_, paste0("A2: ", marked$note)),
-    source = "a2"
+    note = note, source = "a2"
   )
 }
 
@@ -139,15 +160,24 @@ merge_rows <- function(rows) {
     if (any(source == "a2")) value[source == "a2"][[1L]] else value[[1L]]
   }
   groups <- rows[, list(
-    n_values = data.table::uniqueN(applicability), has_a2 = any(source == "a2"),
-    applicability = kept(applicability, source),
-    evidence = joined(evidence, "; "), note = joined(note, " | "),
-    detail = paste(source_labels[source], applicability, collapse = ", ")
+    has_a2 = any(source == "a2"), applicability = kept(applicability, source),
+    evidence = joined(evidence, "; "), note = joined(note, " | ")
   ), by = key_cols]
+  # The distinct values of a key are counted from the distinct pairs of key and value.
+  distinct <- unique(rows[, c(key_cols, "applicability"), with = FALSE])
+  counts <- distinct[, list(n_values = .N), by = key_cols]
+  groups[counts, n_values := i.n_values, on = key_cols]
   if (any(groups$n_values > 1L & !groups$has_a2)) {
     stop("Internal error: sources other than A2 disagree on a matrix key.", call. = FALSE)
   }
   clash <- groups[groups$n_values > 1L]
+  # The sources' values are written out for the clashing keys only, in the rows' order.
+  clashing <- rows[clash[, key_cols, with = FALSE], on = key_cols, nomatch = NULL]
+  details <- clashing[, list(
+    detail = paste(source_labels[source], applicability, collapse = ", ")
+  ), by = key_cols]
+  clash[, detail := NA_character_]
+  clash[details, on = key_cols, detail := i.detail]
   list(
     rows = groups[, c(key_cols, "applicability", "evidence", "note"), with = FALSE],
     review = clash[, list(
@@ -160,12 +190,14 @@ merge_rows <- function(rows) {
 # Contributor rows as dataset rows (D13.2 (1)): jurisdiction "*", one row per dataset; the
 # national rows get dataset "*". Every row is "proposed".
 dataset_rows <- function(rows, datasets) {
-  ids <- lapply(rows$contributor, function(label) {
-    if (is.na(label)) "*" else datasets_of(datasets, label)
-  })
+  # Each distinct label is looked up once; a row with no contributor takes "*", the last entry.
+  labels <- unique(rows$contributor[!is.na(rows$contributor)])
+  found <- c(lapply(labels, datasets_of, datasets = datasets), list("*"))
+  ids <- found[match(rows$contributor, labels, nomatch = length(labels) + 1L)]
   rows <- rows[rep(seq_len(nrow(rows)), lengths(ids))]
   rows[, `:=`(
-    jurisdiction = "*", magp_dataset_id = unlist(ids, use.names = FALSE), status = "proposed"
+    jurisdiction = "*", magp_dataset_id = as.character(unlist(ids, use.names = FALSE)),
+    status = "proposed"
   )]
   rows[]
 }
@@ -176,11 +208,12 @@ dataset_rows <- function(rows, datasets) {
 # machine path. Problems stop the build before anything is written.
 check_template <- function(template, attributes, paths = character(), guide = character()) {
   matrix <- template$matrix
-  national <- matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
-    matrix$frame_type == "*" & matrix$meas_type == "*"
+  # An NA in a level column is not "*", so that row isn't national.
+  national <- matrix$jurisdiction %chin% "*" & matrix$magp_dataset_id %chin% "*" &
+    matrix$frame_type %chin% "*" & matrix$meas_type %chin% "*"
   dd_pairs <- paste(attributes$table_name, attributes$attribute_name)
   pairs <- paste(matrix$table_name, matrix$attribute_name)
-  counts <- table(factor(pairs[national], levels = dd_pairs))
+  counts <- table(factor(pairs[national], levels = unique(dd_pairs)))
   bad_value <- which(!matrix$applicability %chin% c("R", "O", "N"))
   bare <- which(!(national & matrix$applicability %chin% "O") & is.na(matrix$evidence))
   repeated <- which(duplicated(matrix, by = c("table_name", "attribute_name", matrix_levels)))
