@@ -41,6 +41,18 @@ test_that("preflight_rules() reads the registry: error stops, warning warns (D14
   expect_equal(rules$on_failure, ifelse(severity == "error", "stop", "warn"))
 })
 
+test_that("preflight_rules() follows the registry it is given, not a fixed list (D14.5)", {
+  stand_in <- data.table::data.table(
+    rule_id = c("check_a", "plain_rule", "check_b"),
+    check_type = c("preflight", "structure", "preflight"),
+    default_severity = c("warning", "error", "error")
+  )
+  testthat::local_mocked_bindings(rule_registry = function() stand_in)
+  rules <- preflight_rules()
+  expect_equal(rules$rule_id, c("check_a", "check_b"))
+  expect_equal(rules$on_failure, c("warn", "stop"))
+})
+
 test_that("allowed_overrides gives each kind of rule its choices, a pre-flight check none", {
   registry <- data.table::data.table(
     rule_id = c("conform", "plaus", "info_rule", "check"),
@@ -61,4 +73,16 @@ test_that("allowed_overrides gives each kind of rule its choices, a pre-flight c
     conform = "source harmonization depends", plaus = "source harmonization depends",
     info_rule = "none", check = ""
   ))
+})
+
+test_that("a registry of pre-flight checks gives empty tables that keep their columns (D14.5)", {
+  registry <- rule_registry()
+  allowed <- allowed_overrides(registry[registry$check_type == "preflight", ])
+  for (kind in c("severity", "class")) {
+    expect_named(allowed[[kind]], c("rule_id", "value"))
+    expect_equal(nrow(allowed[[kind]]), 0L)
+  }
+  full <- allowed_overrides(registry)
+  expect_named(full$severity, c("rule_id", "value"))
+  expect_named(full$class, c("rule_id", "value"))
 })
