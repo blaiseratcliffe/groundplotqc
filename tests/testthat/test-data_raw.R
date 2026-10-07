@@ -1190,3 +1190,112 @@ test_that("anchor_line compares bytes, so a Latin-1 line neither warns nor hides
   expect_silent(found <- build$anchor_line(lines, "b := -9", "f.R"))
   expect_equal(found, 2L)
 })
+
+# A Mapping sheet as read_mapping() returns it, no row of it touched by the AB corrections.
+mapping_sheet <- function() {
+  data.table::data.table(
+    table_name = c(
+      "magp_sites", "magp_sites", "magp_trees", "magp_plot_meas", "magp_design_frames", NA
+    ),
+    attribute_name = c("aspect", "src_site_id", "comments", "src_age", "baf", NA),
+    status = c("unavailable", "question", "unavailable", "mapped", "question", NA),
+    rule = c("not recorded\nby AB", NA, NA, "compiled", NA, NA),
+    sheet_row = 2:7
+  )
+}
+
+test_that("mapping_register stops on rows the AB corrections would change (D13.6 (3))", {
+  build <- load_data_raw("build_matrix_template.R")
+  register <- build$mapping_register(mapping_sheet())
+  expect_equal(register$attribute_name, c("aspect", "src_site_id", "comments", "baf"))
+  corrected <- rbind(mapping_sheet(), data.table::data.table(
+    table_name = c("magp_plot_meas", "magp_plot_meas", "magp_trees"),
+    attribute_name = c("src_subpmeas_id", "src_age", "n_species"),
+    status = c("unavailable", "question", "unavailable"), rule = NA, sheet_row = 8:10
+  ))
+  expect_error(
+    build$mapping_register(corrected),
+    paste(
+      "row 8 magp_plot_meas.src_subpmeas_id \\(moved\\), row 9 magp_plot_meas.src_age",
+      "\\(dropped\\), row 10 magp_trees.n_species \\(dropped\\)"
+    )
+  )
+})
+
+test_that("mapping_seed seeds unavailable as O and lists question rows (D13.3 (3))", {
+  build <- load_data_raw("build_matrix_template.R")
+  seed <- build$mapping_seed(
+    build$mapping_register(mapping_sheet()), "w.xlsx", matrix_attributes()
+  )
+  expect_equal(seed$rows$attribute_name, c("aspect", "comments"))
+  expect_equal(seed$rows$evidence[[1L]], "AB mapping: unavailable (w.xlsx, Mapping, row 2)")
+  expect_equal(
+    seed$rows$note, c("AB mapping, unavailable: not recorded by AB", "AB mapping, unavailable")
+  )
+  expect_equal(seed$review$topic, c("question", "design_table"))
+})
+
+test_that("workbook_seed reads only the verified workbook, its count checked (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  attributes <- matrix_attributes()
+  build$read_mapping <- function(path) mapping_sheet()
+  dir <- withr::local_tempdir()
+  workbook <- file.path(dir, build$mapping_file$file)
+  writeLines("not a workbook", workbook)
+  build$mapping_file$register_rows <- 4L
+  seed <- build$workbook_seed(workbook, attributes)
+  expect_equal(seed$source$file, build$mapping_file$file)
+  build$mapping_file$register_rows <- 55L
+  expect_error(build$workbook_seed(workbook, attributes), "gives 4 register rows where 55")
+  expect_error(
+    build$workbook_seed(file.path(dir, "other.xlsx"), attributes),
+    "No register row count is recorded for other.xlsx"
+  )
+  none <- build$workbook_seed(NULL, attributes)
+  expect_equal(none$review[[1L]]$topic, "not_seeded")
+})
+
+test_that("build_template without files passes the gate on MAGPlot's spec (D7.16, D13.5 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  spec <- magp_spec()
+  template <- build$build_template(spec)
+  matrix <- template$matrix
+  national <- matrix[
+    jurisdiction == "*" & magp_dataset_id == "*" & frame_type == "*" & meas_type == "*"
+  ]
+  expect_equal(nrow(national), nrow(spec$attributes))
+  expect_equal(
+    sum(national$applicability == "R"), sum(spec$attributes$key_type %in% c("PK", "FK"))
+  )
+  expect_equal(unique(matrix$status), "proposed")
+  expect_equal(sum(grepl("^not seeded", matrix$evidence)), 26L)
+  expect_equal(template$review$topic, c("not_seeded", "not_seeded"))
+  expect_true(build$check_template(template, spec$attributes))
+  expect_named(matrix, build$matrix_columns)
+})
+
+test_that("build_template seeds and merges every source, no path reaching its text", {
+  build <- load_data_raw("build_matrix_template.R")
+  spec <- magp_spec()
+  dir <- pipeline_folder(build)
+  trees <- sum(spec$attributes$table_name == "magp_trees")
+  build$pipeline_files$register_rows <- c(trees + 3L, 1L, 1L, NA)
+  build$read_mapping <- function(path) mapping_sheet()
+  build$mapping_file$register_rows <- 4L
+  workbook <- file.path(dir, build$mapping_file$file)
+  writeLines("not a workbook", workbook)
+  template <- build$build_template(spec, dir, workbook)
+  matrix <- template$matrix
+  expect_true(build$check_template(template, spec$attributes, c(dir, workbook)))
+  aspect <- matrix[table_name == "magp_sites" & attribute_name == "aspect"]
+  expect_equal(aspect$magp_dataset_id[[1L]], "*")
+  expect_true(all(c("100.01", "100.02", "180.01") %in% aspect$magp_dataset_id))
+  on <- matrix[
+    table_name == "magp_sites" & attribute_name == "src_site_id" & magp_dataset_id == "170.01"
+  ]
+  expect_equal(on$note, "ON register, not collected: say \"none\", d\u00e9j\u00e0")
+  links <- matrix[meas_type == "AGE"]
+  expect_equal(sort(unique(links$magp_dataset_id)), c("170.01", "170.02", "170.03"))
+  expect_equal(unique(links$applicability), "N")
+  expect_false(any(grepl("pipe dir", unlist(template$matrix), fixed = TRUE)))
+})

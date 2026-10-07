@@ -657,3 +657,176 @@ pipeline_seed <- function(pipeline_dir, attributes, frame_codes) {
   }
   list(rows = rows, review = review, sources = sources)
 }
+
+# ---- The AB mapping workbook (task 3) ----
+
+# The AB mapping workbook (D13.1, D13.3 (3)): the sheet read, the status that seeds O, the status
+# listed for review, and the register's row count verified on 2026-10-06 for this file.
+mapping_file <- list(
+  file = "20260928_magpv2_mapping_AB.xlsx", contributor = "AB", sheet = "Mapping",
+  seed_status = "unavailable", review_status = "question", register_rows = 55L
+)
+
+# The AB script v7.7's four corrections to its register (its lines 1139-1190), as data
+# (D13.3 (1), (3)): rows moved to another table, then rows dropped (a blank table is any table).
+# None may touch a register row, or the row would cite the workbook alone (D13.6 (3)).
+mapping_moves <- data.table::data.table(
+  from = "magp_plot_meas", to = "magp_subplot_meas",
+  attribute_name = c(
+    "magp_subpmeas_id", "src_subpmeas_id", "magp_subplot_id", "magp_frame_id", "comments"
+  )
+)
+mapping_drops <- data.table::data.table(
+  table_name = c(
+    NA, "magp_plot_meas", "magp_subplot_meas", "magp_tally_trees", rep("magp_plot_meas", 10L)
+  ),
+  attribute_name = c(
+    "n_species", "comments", "comments", "comments", "src_sph_tree", "src_dbh_cutoff",
+    "src_sph_tally", "src_wsv_volume", "src_baph_tree", "src_gmer_volume", "src_biomass",
+    "src_lorey_ht", "src_age", "src_leadgenus"
+  )
+)
+
+# The Mapping sheet's rows (D13.3 (3)): table, attribute, status and rule, with each row's sheet
+# row.
+read_mapping <- function(path) {
+  sheet <- raw_to_table(read_xlsx_raw(path, mapping_file$sheet))
+  wanted <- c("table_name", "attribute_name", "status", "rule")
+  absent <- setdiff(wanted, names(sheet))
+  if (length(absent) > 0L) {
+    stop(
+      basename(path), "'s ", mapping_file$sheet, " sheet lacks ", paste(absent, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+  sheet <- sheet[, wanted, with = FALSE]
+  sheet[, sheet_row := seq_len(.N) + 1L]
+  sheet[]
+}
+
+# The AB register: the Mapping rows of the seed and review statuses (D13.3 (1), (3)), or a stop
+# naming each row one of the AB script's corrections would move or drop (D13.6 (3)). A row a
+# move doesn't touch keeps its table, so the drops are checked on the sheet's tables.
+mapping_register <- function(sheet) {
+  register <- sheet[sheet$status %chin% c(mapping_file$seed_status, mapping_file$review_status)]
+  moved <- register$table_name %chin% mapping_moves$from &
+    register$attribute_name %chin% mapping_moves$attribute_name
+  named <- mapping_drops[!is.na(mapping_drops$table_name)]
+  any_table <- mapping_drops$attribute_name[is.na(mapping_drops$table_name)]
+  dropped <- register$attribute_name %chin% any_table |
+    paste(register$table_name, register$attribute_name) %chin%
+      paste(named$table_name, named$attribute_name)
+  hit <- moved | dropped
+  if (any(hit)) {
+    stop(
+      "The AB script's corrections would change rows of the ", mapping_file$sheet,
+      " sheet, whose evidence would then cite the workbook alone (D13.6 (3)): ",
+      paste(sprintf(
+        "row %d %s.%s (%s)", register$sheet_row[hit], register$table_name[hit],
+        register$attribute_name[hit], data.table::fifelse(moved[hit], "moved", "dropped")
+      ), collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+  register
+}
+
+# The AB register's rows as seeded contributor rows and review rows (D13.3 (3)).
+mapping_seed <- function(register, workbook, attributes) {
+  topic <- placement(register, attributes)
+  topic[is.na(topic) & register$status == mapping_file$review_status] <- "question"
+  evidence <- sprintf(
+    "AB mapping: %s (%s, %s, row %d)", register$status, workbook, mapping_file$sheet,
+    register$sheet_row
+  )
+  rule <- blank_to_na(gsub("\\s+", " ", register$rule))
+  note <- data.table::fifelse(
+    is.na(rule), sprintf("AB mapping, %s", register$status),
+    sprintf("AB mapping, %s: %s", register$status, trimws(rule))
+  )
+  seeded <- is.na(topic)
+  list(
+    rows = data.table::data.table(
+      table_name = register$table_name[seeded], attribute_name = register$attribute_name[seeded],
+      contributor = mapping_file$contributor, frame_type = "*", meas_type = "*",
+      applicability = "O", evidence = evidence[seeded], note = note[seeded], source = "mapping"
+    ),
+    review = review_rows(
+      topic[!seeded], mapping_file$contributor, register[!seeded], evidence[!seeded],
+      note[!seeded], attributes
+    )
+  )
+}
+
+# The workbook's rows and review rows (D13.3 (1), (3)): only the file whose register count was
+# verified is read; without it, one review row saying AB's rows weren't seeded.
+workbook_seed <- function(workbook_path, attributes) {
+  if (is.null(workbook_path)) {
+    review <- data.table::data.table(
+      topic = "not_seeded", detail = "AB mapping workbook not given: AB's rows"
+    )
+    return(list(rows = list(), review = list(review), source = NULL))
+  }
+  workbook <- basename(workbook_path)
+  if (workbook != mapping_file$file) {
+    stop(sprintf(
+      paste(
+        "No register row count is recorded for %s, only for %s (D13.3 (1)); check it, then",
+        "update mapping_file."
+      ),
+      workbook, mapping_file$file
+    ), call. = FALSE)
+  }
+  register <- mapping_register(read_mapping(workbook_path))
+  if (nrow(register) != mapping_file$register_rows) {
+    stop(sprintf(
+      "%s gives %d register rows where %d were verified (D13.3 (1)).",
+      workbook, nrow(register), mapping_file$register_rows
+    ), call. = FALSE)
+  }
+  seed <- mapping_seed(register, workbook, attributes)
+  list(
+    rows = list(seed$rows), review = list(seed$review),
+    source = data.table::data.table(
+      file = workbook, sha256 = unname(tools::sha256sum(workbook_path))
+    )
+  )
+}
+
+# The template: the matrix, its review rows and the sources read (plan 5.6, D13.1 to D13.5).
+build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
+  attributes <- spec$attributes
+  manifest <- spec$manifest
+  datasets <- contributor_datasets(spec$code_lists)
+  frame_codes <- spec$codes$code[
+    spec$codes$table_name == "magp_design_frames" & spec$codes$attribute_name == "frame_type"
+  ]
+  a2 <- a2_rows(spec$lineage_spec, manifest$file[manifest$input == "lineage_spec"])
+  if (any(!is.na(placement(a2, attributes)))) {
+    stop("Internal error: an A2 row falls on a key or a table without dataset rows.", call. = FALSE)
+  }
+  pipeline <- pipeline_seed(pipeline_dir, attributes, frame_codes)
+  workbook <- workbook_seed(workbook_path, attributes)
+  rows <- c(
+    list(national_rows(attributes, manifest$file[manifest$input == "dictionary"]), a2),
+    pipeline$rows, workbook$rows
+  )
+  merged <- merge_rows(data.table::rbindlist(rows, use.names = TRUE))
+  matrix <- dataset_rows(merged$rows, datasets)
+  position <- match(
+    paste(matrix$table_name, matrix$attribute_name),
+    paste(attributes$table_name, attributes$attribute_name)
+  )
+  matrix <- matrix[order(position, magp_dataset_id, frame_type, meas_type, method = "radix")]
+  review <- c(pipeline$review, workbook$review, list(merged$review))
+  list(
+    matrix = matrix[, matrix_columns, with = FALSE],
+    review = data.table::rbindlist(review, use.names = TRUE, fill = TRUE),
+    sources = list(
+      spec = manifest[manifest$input %chin% c("dictionary", "code_lists", "lineage_spec")],
+      pipeline = pipeline$sources, workbook = workbook$source
+    )
+  )
+}
