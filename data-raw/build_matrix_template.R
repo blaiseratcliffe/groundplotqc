@@ -1,5 +1,5 @@
 # Builds the applicability matrix's first working copy (plan 5.6; D2.6, D7.16, D7.26, D8.4,
-# D13.1 to D13.5): one national row per dictionary attribute, rows seeded from A2, from the
+# D13.1 to D13.13): one national row per dictionary attribute, rows seeded from A2, from the
 # pipeline scripts' registers, frame rules and absent links, and from the AB mapping workbook,
 # and a review guide. It writes applicability_working.csv and review_guide.md to the output
 # folder, never over an existing file. The default output folder is outside the repo, and the
@@ -39,9 +39,11 @@ source_labels <- c(
 # Contributors and their datasets, from the lookup's contributor and dataset sheets (D13.2 (1),
 # (4)): one row per dataset, with its contributor's abbreviated name.
 contributor_datasets <- function(code_lists) {
-  # A sheet's rows as a table of the wanted columns; the names don't shadow code_lists' columns.
+  # A sheet's rows as a table of the wanted columns, picked outside the brackets, where no column
+  # of code_lists can shadow the names.
   sheet_table <- function(name, wanted) {
-    cells <- code_lists[code_lists$sheet == name & code_lists$source_row > 1L]
+    in_sheet <- code_lists$sheet == name & code_lists$source_row > 1L
+    cells <- code_lists[in_sheet]
     absent <- setdiff(wanted, cells$sheet_column)
     if (nrow(cells) == 0L || length(absent) > 0L) {
       stop(sprintf(
@@ -49,7 +51,8 @@ contributor_datasets <- function(code_lists) {
         if (nrow(cells) == 0L) "rows" else paste(absent, collapse = ", ")
       ), call. = FALSE)
     }
-    cells <- cells[cells$sheet_column %chin% wanted]
+    in_wanted <- cells$sheet_column %chin% wanted
+    cells <- cells[in_wanted]
     data.table::dcast(cells, source_row ~ sheet_column, value.var = "value")
   }
   columns <- unname(contributor_sheet[c("id_col", "label_col")])
@@ -314,9 +317,13 @@ absent_links <- data.table::data.table(
 
 # A file's parse data, keyed so a node's children come in source order; nothing is run. The
 # lines are parsed under the file's base name, so R's message for a script that doesn't parse
-# never holds the folder (R cuts a longer file name in a message, so a swap wouldn't be safe).
+# never holds the folder (R cuts a longer file name in a message, so a swap wouldn't be safe). An
+# empty file is read as one empty line, so the stop it reaches names the file.
 parse_data <- function(path) {
   lines <- readLines(path, encoding = "UTF-8", warn = FALSE)
+  if (length(lines) == 0L) {
+    lines <- ""
+  }
   exprs <- parse(
     text = lines, keep.source = TRUE, srcfile = srcfilecopy(basename(path), lines),
     encoding = "UTF-8"
@@ -527,7 +534,8 @@ pipeline_sources <- function(pipeline_dir) {
 }
 
 # Review rows: what wasn't seeded, why, and its evidence. A pair the DD lacks names the table the
-# DD has the attribute in, a design table where there is one (D13.3, D13.4 (1)).
+# DD has the attribute in, a design table where there is one (D13.3, D13.4 (1)); the guide prints
+# that detail as it is, so the table names are in code spans (D13.13 (1)).
 review_rows <- function(topic, contributor, rows, evidence, note, attributes) {
   absent <- !paste(rows$table_name, rows$attribute_name) %chin%
     paste(attributes$table_name, attributes$attribute_name)
@@ -545,7 +553,7 @@ review_rows <- function(topic, contributor, rows, evidence, note, attributes) {
       }
       design <- found[found %chin% no_dataset_tables]
       if (length(design) > 0L) found <- design
-      paste0("the DD has it in ", paste(found, collapse = ", "))
+      paste0("the DD has it in ", paste(code_span(found), collapse = ", "))
     }, character(1L), USE.NAMES = FALSE)
     detail[at] <- text[match(rows$attribute_name[at], names_at)]
   }
@@ -636,9 +644,14 @@ pipeline_seed <- function(pipeline_dir, attributes, frame_codes) {
   sources <- if (!is.null(pipeline_dir)) pipeline_sources(pipeline_dir)
   rows <- list(frame_rule_rows(frame_codes, sources), absent_link_rows(sources))
   if (is.null(sources)) {
+    # The words name what the settings hold: the registers' contributors, and the absent links'.
+    owners <- paste0(pipeline_files$contributor[!is.na(pipeline_files$contributor)], "'s")
+    registers <- paste(
+      paste(owners[-length(owners)], collapse = ", "), "and", owners[[length(owners)]]
+    )
     review <- data.table::data.table(topic = "not_seeded", detail = paste(
-      "pipeline scripts not given: BC's, ON's and QC's registers, the frame rules and ON's",
-      "absent links"
+      "pipeline scripts not given:", registers, "registers, the frame rules and",
+      paste0(unique(absent_links$contributor), "'s"), "absent links"
     ))
     return(list(rows = rows, review = list(review), sources = NULL))
   }
@@ -804,18 +817,20 @@ workbook_seed <- function(workbook_path, attributes) {
   )
 }
 
-# The template: the matrix, its review rows and the sources read (plan 5.6, D13.1 to D13.5).
+# The template: the matrix, its review rows and the sources read (plan 5.6, D13.1 to D13.6).
 build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
   attributes <- spec$attributes
   manifest <- spec$manifest
   datasets <- contributor_datasets(spec$code_lists)
+  # The frame rules' table, whose frame_type codes give the frame types (D13.4 (2)).
+  frame_table <- unique(frame_rules$table_name)
   frame_codes <- spec$codes$code[which(
-    spec$codes$table_name == "magp_design_frames" & spec$codes$attribute_name == "frame_type"
+    spec$codes$table_name %chin% frame_table & spec$codes$attribute_name == "frame_type"
   )]
   if (length(frame_codes) == 0L) {
     stop(
-      "The spec gives no codes for magp_design_frames.frame_type, so the frame rules have no ",
-      "frame types (D13.4 (2)).",
+      "The spec gives no codes for ", paste(frame_table, collapse = ", "),
+      ".frame_type, so the frame rules have no frame types (D13.4 (2)).",
       call. = FALSE
     )
   }
@@ -913,7 +928,8 @@ review_topics <- c(
   pipeline_rule = "Not seeded: rules seen in the pipeline code beyond plan 5.6's list (D13.4 (4))"
 )
 
-# The guide's fixed text (D8.23, D13.5 (2)), one element per line of the file.
+# The guide's fixed text (D8.23, D13.5 (2), D13.6 (4), D13.8, D13.11, D13.13), one element per line
+# of the file.
 guide_text <- c(
   "## What a row says",
   "",
@@ -923,9 +939,9 @@ guide_text <- c(
     "record. `applicability` is R (required), O (optional) or N (not applicable). Every DD",
     "attribute has one national row, its four keys `*`. Where several rows match a record,",
     "the most specific wins, and `meas_type` rows that still disagree combine as R beats O beats",
-    "N (plan 5.4). Two rows that neither is more specific than the other and that disagree are",
-    "an error (plan 5.4), e.g. one keyed (BC, `*`) and one keyed (`*`, 110.05) on the same",
-    "attribute with different values. Every row starts with `status` \"proposed\"."
+    "N (plan 5.4). Two rows that disagree, neither more specific than the other, are an error",
+    "(plan 5.4), e.g. one keyed (BC, `*`) and one keyed (`*`, 110.05) on the same attribute with",
+    "different values. Every row starts with `status` \"proposed\"."
   ),
   "",
   "## Where a value comes from",
@@ -1004,30 +1020,43 @@ guide_text <- c(
   )
 )
 
-# The kind of a row's first evidence, for the guide's counts.
+# The kind of a row's first evidence, for the guide's counts: a factor whose levels are the
+# counts table's labels, in its order with other last. The labels are given once, here, so a
+# changed one can't leave a kind uncounted.
 evidence_kind <- function(evidence) {
-  data.table::fcase(
-    is.na(evidence), "no evidence (the default O)",
-    startsWith(evidence, "DD key_type"), "DD key_type",
-    startsWith(evidence, "A2 "), "A2",
-    startsWith(evidence, "AB mapping"), "AB mapping",
-    startsWith(evidence, "not seeded"), "not seeded",
-    grepl("^pipeline: [^;]*reg_unavailable", evidence), "pipeline: reg_unavailable",
-    grepl("^pipeline: [^;]*set_design_sentinels", evidence), "pipeline: set_design_sentinels()",
-    grepl("^pipeline: [^;]*absent by design", evidence), "pipeline: absent by design",
-    default = "other"
+  label <- c(
+    key = "DD key_type", a2 = "A2", register = "pipeline: reg_unavailable",
+    frame_rule = "pipeline: set_design_sentinels()", link = "pipeline: absent by design",
+    mapping = "AB mapping", unseeded = "not seeded", none = "no evidence (the default O)",
+    other = "other"
   )
+  kind <- data.table::fcase(
+    is.na(evidence), label[["none"]],
+    startsWith(evidence, "DD key_type"), label[["key"]],
+    startsWith(evidence, "A2 "), label[["a2"]],
+    startsWith(evidence, "AB mapping"), label[["mapping"]],
+    startsWith(evidence, "not seeded"), label[["unseeded"]],
+    grepl("^pipeline: [^;]*reg_unavailable", evidence), label[["register"]],
+    grepl("^pipeline: [^;]*set_design_sentinels", evidence), label[["frame_rule"]],
+    grepl("^pipeline: [^;]*absent by design", evidence), label[["link"]],
+    default = label[["other"]]
+  )
+  factor(kind, levels = unname(label))
 }
 
 # Text as Markdown shows it: runs of whitespace folded to one space, so a line break can't start
 # a list item or a heading, and the characters Markdown reads as markup escaped.
 markdown_text <- function(x) {
-  gsub("([\\\\`*_{}\\[\\]<>|#&])", "\\\\\\1", gsub("[[:space:]]+", " ", x), perl = TRUE)
+  gsub("([\\\\`*_{}\\[\\]<>|#&~])", "\\\\\\1", gsub("[[:space:]]+", " ", x), perl = TRUE)
 }
 
-# Text in a code span, or escaped where it holds a backtick, which would end the span.
+# Text in a code span, or escaped where it holds a backtick, which would end the span. Runs of
+# whitespace are folded to one space either way, so a note's line break can't split an item.
 code_span <- function(x) {
-  data.table::fifelse(grepl("`", x, fixed = TRUE), markdown_text(x), paste0("`", x, "`"))
+  data.table::fifelse(
+    grepl("`", x, fixed = TRUE), markdown_text(x),
+    paste0("`", gsub("[[:space:]]+", " ", x), "`")
+  )
 }
 
 # The guide's lines for this run: its sources, its counts and the rows it didn't seed.
@@ -1042,22 +1071,16 @@ run_lines <- function(template) {
       call. = FALSE
     )
   }
-  # The evidence list's names, in its order, with evidence_kind()'s other last.
-  kinds <- c(
-    "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
-    "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
-    "other"
-  )
+  # The rows of the counts are evidence_kind()'s levels, so no kind can go uncounted.
   counts <- table(
-    factor(evidence_kind(matrix$evidence), levels = kinds),
-    factor(matrix$applicability, levels = c("R", "O", "N"))
+    evidence_kind(matrix$evidence), factor(matrix$applicability, levels = c("R", "O", "N"))
   )
   counts <- counts[rowSums(counts) > 0L, , drop = FALSE]
   source_line <- function(file, sha256, version = "") {
     sprintf("- `%s`%s, SHA-256 `%s`", file, version, sha256)
   }
-  national <- matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
-    matrix$frame_type == "*" & matrix$meas_type == "*"
+  national <- matrix$jurisdiction %chin% "*" & matrix$magp_dataset_id %chin% "*" &
+    matrix$frame_type %chin% "*" & matrix$meas_type %chin% "*"
   # A row holds two sources where a "; " is followed by the start of a source's evidence; a
   # script's own reason may hold a "; " too.
   joined <- grepl("; (DD key_type|A2 |pipeline: |AB mapping: |not seeded: )", matrix$evidence)
@@ -1078,8 +1101,8 @@ run_lines <- function(template) {
     },
     "",
     sprintf(
-      "Rows: %d, %d of them national; %d hold two sources.", nrow(matrix), sum(national),
-      sum(joined)
+      "Rows: %d, %d of them national; %d %s two sources.", nrow(matrix), sum(national),
+      sum(joined), if (sum(joined) == 1L) "holds" else "hold"
     ),
     "",
     "Rows by first evidence and applicability (a row with two sources counts under its first):",
@@ -1105,8 +1128,15 @@ run_lines <- function(template) {
         "ON v7.3 = `magpv2_blocks_1-4_ON_2026data_v7.3_candidate.R` (contributor ON)",
         "QUE v7.3 = `magpv2_blocks_1-4_QUE_2026data_v7.3_candidate.R` (contributor QC)"
       )
-      lines <- c(lines, paste0("Scripts: ", paste(scripts, collapse = "; "), "."), "")
+      # code_notes were read from the scripts on 2026-10-06, not by this run (D13.4 (4), D13.13).
+      lead <- paste(
+        "Read from the scripts on 2026-10-06 (D13.4 (4)), not by this run; the last two are where",
+        "the code disagrees with plans 5.6 and 6.7 on rows the build seeds."
+      )
+      lines <- c(lines, lead, "", paste0("Scripts: ", paste(scripts, collapse = "; "), "."), "")
     }
+    # The detail of a review row is fixed words and DD names, written for the guide as it is; the
+    # item's names, evidence and note are in code spans, as the CSV holds them (D13.13 (1)).
     items <- if (heading == "not_seeded") {
       paste0("- ", markdown_text(rows$detail))
     } else if (heading == "pipeline_rule") {
@@ -1116,10 +1146,10 @@ run_lines <- function(template) {
       )
     } else {
       paste0(
-        "- `", rows$table_name, ".", rows$attribute_name, "`, ", rows$contributor,
-        data.table::fifelse(is.na(rows$detail), "", paste0(": ", markdown_text(rows$detail))),
+        "- ", code_span(paste0(rows$table_name, ".", rows$attribute_name)), ", ", rows$contributor,
+        data.table::fifelse(is.na(rows$detail), "", paste0(": ", rows$detail)),
         ". Evidence: ", code_span(rows$evidence),
-        data.table::fifelse(is.na(rows$note), "", paste0(". Note: ", markdown_text(rows$note)))
+        data.table::fifelse(is.na(rows$note), "", paste0(". Note: ", code_span(rows$note)))
       )
     }
     lines <- c(lines, items)

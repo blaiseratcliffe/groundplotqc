@@ -509,7 +509,7 @@ test_that("the compiled specification is the one the build makes (D12.14, D12.27
   expect_true(identical(tree_spec(), magp_spec()))
 })
 
-# ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.6, D13.12) ----
+# ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.13) ----
 
 # A code_lists component holding a contributor sheet and a dataset sheet (D13.2 (1), (4)).
 matrix_code_lists <- function(labels = c("AB", "BC"), ids = c("100", "110")) {
@@ -893,6 +893,9 @@ test_that("read_register stops on what it can't read without running it (D13.3 (
     "unequal lengths"
   )
   expect_error(read("other <- 1"), "0 top-level assignments to reg")
+  # An empty script, and one holding only a comment, name the file as any other.
+  expect_error(read(character()), "x.R has 0 top-level assignments to reg, not one")
+  expect_error(read("# nothing here"), "x.R has 0 top-level assignments to reg, not one")
   expect_error(read("reg <- 1", "reg <- 2"), "2 top-level assignments to reg")
   expect_error(read("reg <- data.table(table_name = \"a\")"), "isn't a table with columns")
 })
@@ -1042,13 +1045,24 @@ test_that("register_seed words its notes and lists the pairs the DD lacks (D13.4
     review$attribute_name, c("radius", "radius", "plot_area", "comments", "aspect", "baf")
   )
   # A design table is preferred where the DD has the attribute in one; none where it lacks it.
+  # The table names are in code spans, as the guide shows them (D13.13 (1)).
   expect_equal(review$detail, c(
-    "the DD has it in magp_design_frames", "the DD has it in magp_design_frames",
-    "the DD has no attribute of that name", "the DD has it in magp_design_frames",
-    "the DD has it in magp_sites", NA
+    "the DD has it in `magp_design_frames`", "the DD has it in `magp_design_frames`",
+    "the DD has no attribute of that name", "the DD has it in `magp_design_frames`",
+    "the DD has it in `magp_sites`", NA
   ))
   # The two rows sharing an attribute name get the one looked-up text.
   expect_equal(review$detail[[1L]], review$detail[[2L]])
+  # An attribute the DD has in two tables, neither a design table, has both named.
+  plots <- rbind(attributes, data.table::data.table(
+    table_name = "magp_plots", attribute_name = "comments", key_type = ".", source_row = 10L
+  ))
+  plots <- plots[plots$table_name != "magp_design_frames"]
+  several <- build$review_rows(
+    "not_in_dd", "BC", data.table::data.table(table_name = "magp_x", attribute_name = "comments"),
+    NA_character_, NA_character_, plots
+  )
+  expect_equal(several$detail, "the DD has it in `magp_trees`, `magp_plots`")
   expect_equal(review$evidence, sprintf(
     "pipeline: f.R v1 sha256:abc line %d (reg_unavailable: %s)", 12:17,
     c("not collected", "open", "no source", "computed later", "open", "not collected")
@@ -1344,7 +1358,10 @@ test_that("workbook_seed reads only the verified workbook, its count checked (D1
 test_that("build_template without files passes the gate on MAGPlot's spec (D7.16, D13.5 (1))", {
   build <- load_data_raw("build_matrix_template.R")
   spec <- magp_spec()
+  before <- data.table::copy(spec)
   template <- build$build_template(spec)
+  # The caller's spec is only read (plan 16.2); base identical(), as D12.27 asks.
+  expect_true(identical(spec, before))
   matrix <- template$matrix
   national <- matrix[
     jurisdiction == "*" & magp_dataset_id == "*" & frame_type == "*" & meas_type == "*"
@@ -1356,6 +1373,14 @@ test_that("build_template without files passes the gate on MAGPlot's spec (D7.16
   expect_equal(unique(matrix$status), "proposed")
   expect_equal(sum(grepl("^not seeded", matrix$evidence)), 26L)
   expect_equal(template$review$topic, c("not_seeded", "not_seeded"))
+  # The first words come from the settings: the contributors of pipeline_files, the absent links'.
+  expect_equal(template$review$detail, c(
+    paste(
+      "pipeline scripts not given: BC's, ON's and QC's registers, the frame rules and ON's",
+      "absent links"
+    ),
+    "AB mapping workbook not given: AB's rows"
+  ))
   expect_true(build$check_template(template, spec$attributes))
   expect_named(matrix, build$matrix_columns)
   # The rows follow the DD's order, then dataset, frame type and component; each attribute's
@@ -1379,6 +1404,35 @@ test_that("build_template without files passes the gate on MAGPlot's spec (D7.16
     matrix$jurisdiction[first] == "*" & matrix$magp_dataset_id[first] == "*" &
       matrix$frame_type[first] == "*" & matrix$meas_type[first] == "*"
   ))
+  # The evidence's file names and rows come from the manifest and the spec's own rows: a DD key's
+  # national row, and A2's first marked cell on each of its contributor's datasets.
+  manifest <- spec$manifest
+  dd_file <- manifest$file[manifest$input == "dictionary"]
+  a2_file <- manifest$file[manifest$input == "lineage_spec"]
+  key <- which(spec$attributes$key_type == "PK")[[1L]]
+  expect_equal(
+    matrix$evidence[first[[key]]],
+    sprintf("DD key_type PK (%s:%d)", dd_file, spec$attributes$source_row[[key]])
+  )
+  lineage <- spec$lineage_spec
+  marked <- which(lineage$source_text %in% names(build$a2_markers))[[1L]]
+  own <- build$datasets_of(
+    build$contributor_datasets(spec$code_lists), lineage$contributor_label[[marked]]
+  )
+  at <- which(
+    matrix$table_name == lineage$table_name[[marked]] &
+      matrix$attribute_name == lineage$attribute_name[[marked]] & matrix$magp_dataset_id %in% own
+  )
+  expect_gt(length(at), 0L)
+  expect_equal(
+    unique(matrix$evidence[at]),
+    sprintf("A2 %s (%s, %s)", lineage$source_text[[marked]], a2_file, lineage$source_cell[[marked]])
+  )
+  # The guide's three spec lines hold each input's base name and SHA-256, no path.
+  guide <- build$review_guide(template, as.Date("2026-10-06"))
+  inputs <- manifest[manifest$input %in% c("dictionary", "code_lists", "lineage_spec")]
+  expect_equal(nrow(inputs), 3L)
+  expect_true(all(sprintf("- `%s`, SHA-256 `%s`", inputs$file, inputs$sha256) %in% guide))
 })
 
 test_that("build_template stops when the spec gives no frame types for the design frames", {
@@ -1403,7 +1457,9 @@ test_that("build_template seeds and merges every source, no path reaching its te
   build$mapping_file$register_rows <- 4L
   workbook <- file.path(dir, build$mapping_file$file)
   writeLines("not a workbook", workbook)
+  before <- data.table::copy(spec)
   template <- build$build_template(spec, dir, workbook)
+  expect_true(identical(spec, before))
   matrix <- template$matrix
   expect_true(build$check_template(template, spec$attributes, c(dir, workbook)))
   aspect <- matrix[table_name == "magp_sites" & attribute_name == "aspect"]
@@ -1462,6 +1518,14 @@ test_that("build_template merges A2 with a clashing register row, A2's text firs
   expect_equal(review$attribute_name[clash], a2$attribute_name[[one]])
   expect_equal(review$detail[clash], "A2 N, register O; A2 kept")
   expect_equal(review$evidence[clash], matrix$evidence[at[[1L]]])
+  # The clash's item in the guide: its detail as it is, its evidence and note in code spans.
+  note <- matrix$note[at[[1L]]]
+  expect_false(grepl("`|\n|[[:space:]]{2}", note))
+  guide <- build$review_guide(template, as.Date("2026-10-06"))
+  expect_true(sprintf(
+    "- `%s.%s`, %s: A2 N, register O; A2 kept. Evidence: `%s`. Note: `%s`", a2$table_name[[one]],
+    a2$attribute_name[[one]], a2$contributor[[one]], matrix$evidence[at[[1L]]], note
+  ) %in% guide)
   # An A2 row on a key, on a table without dataset rows or on a pair the DD lacks stops the
   # build, naming the pair.
   attributes <- spec$attributes
@@ -1526,7 +1590,12 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
     "QUE v7.3 = `magpv2_blocks_1-4_QUE_2026data_v7.3_candidate.R` (contributor QC)."
   )
   rules <- which(startsWith(guide, "### Not seeded: rules seen"))
-  expect_equal(guide[rules + 1L:3L], c("", scripts, ""))
+  # The lead-in says the notes were read from the scripts on 2026-10-06, not by this run (D13.13).
+  lead <- paste(
+    "Read from the scripts on 2026-10-06 (D13.4 (4)), not by this run; the last two are where",
+    "the code disagrees with plans 5.6 and 6.7 on rows the build seeds."
+  )
+  expect_equal(guide[rules + 1L:5L], c("", lead, "", scripts, ""))
   # The Scripts line repeats three of pipeline_files' names (AB's runs through the workbook).
   named <- regmatches(scripts, gregexpr("magpv2_blocks_1-4_[A-Z]+_[0-9a-z._]+\\.R", scripts))[[1L]]
   expect_length(named, 4L)
@@ -1543,11 +1612,13 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
     "frames other than R for `max_dbh` (`AB v7.7 lines 2676, 2683`)"
   )))
   # The nine fixed notes are printed as written: no backslash escapes in them.
-  expect_false(any(grepl("\\", guide[rules + 4L:12L], fixed = TRUE)))
+  expect_false(any(grepl("\\", guide[rules + 6L:14L], fixed = TRUE)))
+  expect_length(guide, rules + 14L)
   expect_true(any(guide == "- pipeline scripts: not given"))
+  # The note is in a code span, the evidence holding a backtick escaped (D13.13 (1)).
   item <- guide[startsWith(guide, "- `magp_sites.aspect`, QC")]
   expect_equal(
-    item, "- `magp_sites.aspect`, QC. Evidence: pipeline: a \\`b\\` c. Note: x\\_y \\*z\\* \\| w"
+    item, "- `magp_sites.aspect`, QC. Evidence: pipeline: a \\`b\\` c. Note: `x_y *z* | w`"
   )
   expect_true(any(guide == paste(
     "Rows by first evidence and applicability",
@@ -1559,7 +1630,12 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
   expect_true(any(grepl("primary keys are R", guide, fixed = TRUE)))
   expect_true(any(grepl("combine as R beats O beats N", guide, fixed = TRUE)))
   expect_true(any(grepl("where `*` matches every", guide, fixed = TRUE)))
-  expect_true(any(grepl("one keyed (BC, `*`) and one keyed (`*`, 110.05)", guide, fixed = TRUE)))
+  expect_true(any(grepl(paste(
+    "Two rows that disagree, neither more specific than the other, are an error (plan 5.4),",
+    "e.g. one keyed (BC, `*`) and one keyed (`*`, 110.05) on the same attribute with different",
+    "values."
+  ), guide, fixed = TRUE)))
+  expect_false(any(grepl("that neither is more specific", guide, fixed = TRUE)))
   expect_true(any(startsWith(guide, "1. Check the seeded rows against what you know")))
   expect_true(any(grepl("sign-off doesn't require it.", guide, fixed = TRUE)))
   expect_true(any(startsWith(guide, "4. Decide each item listed under \"For your review\". The")))
@@ -1571,6 +1647,8 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
   expect_true(any(grepl("(`--output-dir`) to copy from.", guide, fixed = TRUE)))
   expect_true(any(grepl("Sign-off marks the matrix confirmed (plan 21 M9)", guide, fixed = TRUE)))
   expect_equal(build$markdown_text("a\n- b  &c"), "a - b \\&c")
+  # A tilde would pair into a strikethrough where the guide is rendered.
+  expect_equal(build$markdown_text("~5 to ~10"), "\\~5 to \\~10")
   stray <- template
   stray$review <- rbind(template$review, data.table::data.table(topic = "other_topic"), fill = TRUE)
   expect_error(build$review_guide(stray), "topics the guide doesn't list: other_topic")
@@ -1579,6 +1657,39 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
   expect_error(build$check_template(template, spec$attributes, "matrix", guide), "a machine path")
   folder <- file.path(normalizePath(".", winslash = "/"), "matrix")
   expect_true(build$check_template(template, spec$attributes, folder, guide))
+})
+
+test_that("a review item reads raw as the CSV does: names, evidence and note in code spans", {
+  build <- load_data_raw("build_matrix_template.R")
+  template <- list(
+    matrix = data.table::data.table(
+      jurisdiction = "*", magp_dataset_id = "*", frame_type = "*", meas_type = "*",
+      applicability = "O", evidence = NA_character_
+    ),
+    review = data.table::data.table(
+      topic = "open", contributor = "QC",
+      table_name = c("magp_sites", "magp_sites", "magp_sites", "magp_sites", "magp_site`s"),
+      attribute_name = "aspect",
+      detail = c("the DD has it in `magp_design_frames`", NA, NA, NA, NA),
+      evidence = "pipeline: f.R",
+      note = c("plain | joined", "a `tick` note", "line one\n- not a list item", NA, "n")
+    ),
+    sources = list(spec = data.table::data.table(file = "d.xlsx", sha256 = "ab"))
+  )
+  lines <- build$run_lines(template)
+  items <- lines[grepl("aspect", lines, fixed = TRUE)]
+  expect_equal(items, c(
+    paste0(
+      "- `magp_sites.aspect`, QC: the DD has it in `magp_design_frames`. ",
+      "Evidence: `pipeline: f.R`. Note: `plain | joined`"
+    ),
+    "- `magp_sites.aspect`, QC. Evidence: `pipeline: f.R`. Note: a \\`tick\\` note",
+    "- `magp_sites.aspect`, QC. Evidence: `pipeline: f.R`. Note: `line one - not a list item`",
+    "- `magp_sites.aspect`, QC. Evidence: `pipeline: f.R`",
+    "- magp\\_site\\`s.aspect, QC. Evidence: `pipeline: f.R`. Note: `n`"
+  ))
+  # No item holds a line break, so none can start a list item or a heading of its own.
+  expect_false(any(grepl("\n", lines, fixed = TRUE)))
 })
 
 test_that("evidence_kind names the first source of each form of evidence (D13.6 (2))", {
@@ -1598,11 +1709,17 @@ test_that("evidence_kind names the first source of each form of evidence (D13.6 
     ),
     "something else"
   )
-  expect_equal(build$evidence_kind(evidence), c(
+  kind <- build$evidence_kind(evidence)
+  # The levels are the counts table's rows, in its order, other last (D13.8 (4)).
+  labels <- c(
     "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
     "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
-    "A2", "other"
-  ))
+    "other"
+  )
+  expect_s3_class(kind, "factor")
+  expect_equal(levels(kind), labels)
+  expect_equal(as.character(kind), labels[c(1:8, 2L, 9L)])
+  expect_false(anyNA(kind))
 })
 
 test_that("run_lines counts a row as holding two sources by its join, not by a bare semicolon", {
@@ -1622,10 +1739,44 @@ test_that("run_lines counts a row as holding two sources by its join, not by a b
     sources = list(spec = data.table::data.table(file = "d.xlsx", sha256 = "ab"))
   )
   lines <- build$run_lines(template)
-  expect_true("Rows: 4, 4 of them national; 1 hold two sources." %in% lines)
+  # The verb agrees with the count: "1 holds", "0 hold" and "2 hold".
+  expect_true("Rows: 4, 4 of them national; 1 holds two sources." %in% lines)
   expect_true("| pipeline: reg_unavailable | 0 | 1 | 0 |" %in% lines)
   expect_true("- pipeline scripts: not given" %in% lines)
   expect_true("- AB mapping workbook: not given" %in% lines)
+  data.table::set(template$matrix, 2L, "evidence", "A2 X (a.xlsx, A2!D16)")
+  expect_true("Rows: 4, 4 of them national; 0 hold two sources." %in% build$run_lines(template))
+  data.table::set(template$matrix, 3L, "evidence", "A2 Z (a.xlsx, A2!D17); not seeded: x")
+  data.table::set(template$matrix, 4L, "evidence", "A2 Z (a.xlsx, A2!D18); not seeded: y")
+  expect_true("Rows: 4, 4 of them national; 2 hold two sources." %in% build$run_lines(template))
+})
+
+test_that("run_lines counts a row of every kind of evidence under its own label", {
+  build <- load_data_raw("build_matrix_template.R")
+  # One evidence of each kind evidence_kind() names, the default O's none included.
+  evidence <- c(
+    "DD key_type PK (d.xlsx:2)", "A2 X (a.xlsx, A2!D16)",
+    "pipeline: f.R v7.3 sha256:ab line 3 (reg_unavailable: not collected)",
+    "pipeline: f.R v7.3 sha256:ab line 4 (set_design_sentinels(): -9)",
+    "pipeline: f.R v7.3 sha256:ab line 5 (absent by design)",
+    "AB mapping: unavailable (m.xlsx, Mapping, row 3)", "not seeded: pipeline scripts not given",
+    NA, "something else"
+  )
+  template <- list(
+    matrix = data.table::data.table(
+      jurisdiction = "*", magp_dataset_id = "*", frame_type = "*", meas_type = "*",
+      applicability = "O", evidence = evidence
+    ),
+    review = data.table::data.table(topic = character()),
+    sources = list(spec = data.table::data.table(file = "d.xlsx", sha256 = "ab"))
+  )
+  lines <- build$run_lines(template)
+  labels <- levels(build$evidence_kind(character()))
+  expect_length(labels, length(evidence))
+  expect_equal(
+    lines[grepl("^\\| .+ \\| [0-9]+ \\| [0-9]+ \\| [0-9]+ \\|$", lines)],
+    sprintf("| %s | 0 | 1 | 0 |", labels)
+  )
 })
 
 test_that("review_guide names its sources and counts every row once (D13.5 (2))", {
@@ -1652,6 +1803,12 @@ test_that("review_guide names its sources and counts every row once (D13.5 (2))"
   )
   expect_false(any(grepl(": not given$", guide)))
   expect_true("### Not seeded: sources not given (D13.5 (1)), 0 items" %in% guide)
+  # An item of the design_table topic, AB's baf from the mapping sheet's row 6: no detail, since
+  # the DD has the pair, and its evidence and note each in a code span.
+  expect_true(paste0(
+    "- `magp_design_frames.baf`, AB. Evidence: `AB mapping: question (", build$mapping_file$file,
+    ", Mapping, row 6)`. Note: `AB mapping, question`"
+  ) %in% guide)
   matrix <- template$matrix
   national <- sum(
     matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
@@ -1668,11 +1825,7 @@ test_that("review_guide names its sources and counts every row once (D13.5 (2))"
   counts <- do.call(rbind, lapply(cells, function(cell) as.integer(cell[2:4])))
   labels <- vapply(cells, function(cell) cell[[1L]], character(1L))
   expect_equal(sum(counts), nrow(matrix))
-  kinds <- c(
-    "DD key_type", "A2", "pipeline: reg_unavailable", "pipeline: set_design_sentinels()",
-    "pipeline: absent by design", "AB mapping", "not seeded", "no evidence (the default O)",
-    "other"
-  )
+  kinds <- levels(build$evidence_kind(character()))
   expect_equal(labels, kinds[kinds %in% labels])
   expect_true(all(
     c("pipeline: reg_unavailable", "pipeline: set_design_sentinels()", "AB mapping") %in% labels
