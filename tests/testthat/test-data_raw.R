@@ -509,6 +509,73 @@ test_that("the compiled specification is the one the build makes (D12.14, D12.27
   expect_true(identical(tree_spec(), magp_spec()))
 })
 
+# A stand-in spec for build_magp_rules(): it reads only the manifest's dictionary date.
+dated_spec <- function(date = "20261005") {
+  list(manifest = data.table::data.table(input = "dictionary", file_date = date))
+}
+
+test_that("the hand-kept rule-set files read clean with their columns (D14.2)", {
+  expect_named(hand_kept("rules_meta.csv"), names(rule_set_schema()$meta))
+  expect_named(hand_kept("rules_rules.csv"), names(rule_set_schema()$rules))
+  expect_named(hand_kept("rules_settings.csv"), names(rule_set_schema()$settings))
+})
+
+test_that("the build's rule set is the one magp_rules() reads, written for the tree's spec", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  expect_identical(build$build_magp_rules(dated_spec(), dirs$config), magp_rules())
+  testthat::skip_if_not_installed("readxl")
+  expect_no_error(build$build_magp_rules(tree_spec(), dirs$config))
+})
+
+test_that("the build stops on a rule set written for another spec set (D14.15)", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  expect_error(
+    build$build_magp_rules(dated_spec("20991231"), dirs$config),
+    "spec_version is 20261005, but the specification files are dated 20991231",
+    fixed = TRUE
+  )
+  config <- withr::local_tempdir()
+  file.copy(file.path(dirs$config, c("rules_rules.csv", "rules_settings.csv")), config)
+  expect_error(
+    build$build_magp_rules(dated_spec(), config), "spec_version is NA",
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a stray rule-set file or one that doesn't read cleanly", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  config <- withr::local_tempdir()
+  file.copy(list.files(dirs$config, pattern = "^rules_", full.names = TRUE), config)
+  writeLines("x", file.path(config, "rules_extra.csv"))
+  expect_error(build$build_magp_rules(dated_spec(), config), "rules_extra.csv", fixed = TRUE)
+  unlink(file.path(config, "rules_extra.csv"))
+  writeLines(
+    c("setting,value,type", "lang,en,character,extra"), file.path(config, "rules_settings.csv")
+  )
+  expect_error(
+    build$build_magp_rules(dated_spec(), config),
+    "rules_settings.csv doesn't read cleanly, so nothing was built",
+    fixed = TRUE
+  )
+})
+
+test_that("copy_rule_set copies the rule-set files unchanged, a space in the path", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  out <- file.path(withr::local_tempdir(), "compiled set")
+  dir.create(out)
+  copied <- build$copy_rule_set(dirs$config, out)
+  expect_setequal(basename(copied), c("rules_meta.csv", "rules_rules.csv", "rules_settings.csv"))
+  for (path in copied) {
+    expect_identical(
+      unname(tools::md5sum(path)), unname(tools::md5sum(file.path(dirs$config, basename(path))))
+    )
+  }
+})
+
 # ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.13) ----
 
 # A code_lists component holding a contributor sheet and a dataset sheet (D13.2 (1), (4)).

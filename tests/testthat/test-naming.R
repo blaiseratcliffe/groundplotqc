@@ -244,7 +244,8 @@ package_names <- function() {
   # schema gives them (D12.32).
   columns <- c(
     names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
-    names(preflight_columns())
+    names(preflight_columns()), names(rule_set_schema()),
+    unlist(lapply(rule_set_schema(), names))
   )
   root <- source_root()
   files <- c(

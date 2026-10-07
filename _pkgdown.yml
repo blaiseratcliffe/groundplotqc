@@ -13,6 +13,7 @@ reference:
       - gpq_type_map
   - title: MAGPlot 2.0 layer
     contents:
+      - magp_rules
       - magp_spec
   - title: Configuration and data
     contents:

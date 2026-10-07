@@ -8,3 +8,4 @@
 - `gpq_preflight()` checks a specification before any data is read: 22 checks that stop or warn, with a pre-flight CSV and a self-contained HTML report.
 - A first article, "Specification files and configuration", reads and pre-flights the fish survey example.
 - `magp_spec()` returns MAGPlot 2.0's specification, compiled from 20261005_magpv2_DD.xlsx, 20261005_magpv2_Lookup_Tables.xlsx, 20261005_magpv2_A2.xlsx, 20261005_magpv2_datasets.csv, 20261005_magpv2_species.csv, 20261005_magpv2_condition.csv, 20261005_magpv2_treatment_disturbance.csv and 20261005_magpv2_severity.csv.
+- `magp_rules()` returns MAGPlot 2.0's rule set: its meta row, its rules rows and its settings, compiled from the hand-kept files in `data-raw/magp/` for the 20261005 specification files.
