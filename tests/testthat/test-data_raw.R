@@ -636,6 +636,13 @@ test_that("placement names why a row can't be seeded, design tables first (D13.3
     build$placement(rows, attributes),
     c("design_table", "design_table", "not_in_dd", "key", NA)
   )
+  # A foreign key is a key as well: with aspect an FK, its row is a key too.
+  foreign <- data.table::copy(attributes)
+  data.table::set(foreign, 2L, "key_type", "FK")
+  expect_equal(
+    build$placement(rows, foreign),
+    c("design_table", "design_table", "not_in_dd", "key", "key")
+  )
 })
 
 test_that("merge_rows keeps A2's value on a clash and joins evidence and notes (D13.2 (2))", {
@@ -763,7 +770,8 @@ test_that("check_template stops on each break of the M2a gate and passes a sound
       build$check_template(
         broken(function(m) data.table::set(m, 2L, "note", written)), attributes
       ),
-      "a machine path in"
+      "a machine path in",
+      info = written
     )
   }
   # The review rows' text is searched too, in each of its three columns.
@@ -777,7 +785,8 @@ test_that("check_template stops on each break of the M2a gate and passes a sound
     data.table::set(with_path, 1L, column, "see C:\\pipe\\x.R")
     expect_error(
       build$check_template(list(matrix = sound$matrix, review = with_path), attributes),
-      "a machine path in: see C:"
+      "a machine path in: see C:",
+      info = column
     )
   }
   # A path given with one kind of slash is found in text written with the other.
@@ -996,16 +1005,20 @@ test_that("register_seed words its notes and lists the pairs the DD lacks (D13.4
     table_name = "magp_design_frames", attribute_name = c("radius", "comments"),
     key_type = ".", source_row = 8:9
   ))
+  # The third row repeats the second's attribute name, radius, on another table.
   register <- data.table::data.table(
     table_name = c(
-      "magp_sites", "magp_designs", "magp_sites", "magp_designs", "magp_trees",
+      "magp_sites", "magp_designs", "magp_sites", "magp_sites", "magp_designs", "magp_trees",
       "magp_design_frames"
     ),
-    attribute_name = c("src_site_id", "radius", "plot_area", "comments", "aspect", "baf"),
-    reason = c(
-      "not collected", "not collected", "no source", "computed later", "open", "not collected"
+    attribute_name = c(
+      "src_site_id", "radius", "radius", "plot_area", "comments", "aspect", "baf"
     ),
-    note = c("asked twice", "a", NA, "c", "d", "e"), line = 11:16
+    reason = c(
+      "not collected", "not collected", "open", "no source", "computed later", "open",
+      "not collected"
+    ),
+    note = c("asked twice", "a", "b", NA, "c", "d", "e"), line = 11:17
   )
   source <- data.table::data.table(
     file = "f.R", contributor = "BC", version = "v1", sha256 = "abc"
@@ -1018,25 +1031,30 @@ test_that("register_seed words its notes and lists the pairs the DD lacks (D13.4
     seed$rows$evidence, "pipeline: f.R v1 sha256:abc line 11 (reg_unavailable: not collected)"
   )
   review <- seed$review
-  expect_equal(
-    review$topic, c("design_table", "not_in_dd", "design_table", "not_in_dd", "design_table")
-  )
-  expect_equal(review$contributor, rep("BC", 5L))
-  expect_equal(review$table_name, c(
-    "magp_designs", "magp_sites", "magp_designs", "magp_trees", "magp_design_frames"
+  expect_equal(review$topic, c(
+    "design_table", "not_in_dd", "not_in_dd", "design_table", "not_in_dd", "design_table"
   ))
-  expect_equal(review$attribute_name, c("radius", "plot_area", "comments", "aspect", "baf"))
+  expect_equal(review$contributor, rep("BC", 6L))
+  expect_equal(review$table_name, c(
+    "magp_designs", "magp_sites", "magp_sites", "magp_designs", "magp_trees", "magp_design_frames"
+  ))
+  expect_equal(
+    review$attribute_name, c("radius", "radius", "plot_area", "comments", "aspect", "baf")
+  )
   # A design table is preferred where the DD has the attribute in one; none where it lacks it.
   expect_equal(review$detail, c(
-    "the DD has it in magp_design_frames", "the DD has no attribute of that name",
-    "the DD has it in magp_design_frames", "the DD has it in magp_sites", NA
+    "the DD has it in magp_design_frames", "the DD has it in magp_design_frames",
+    "the DD has no attribute of that name", "the DD has it in magp_design_frames",
+    "the DD has it in magp_sites", NA
   ))
+  # The two rows sharing an attribute name get the one looked-up text.
+  expect_equal(review$detail[[1L]], review$detail[[2L]])
   expect_equal(review$evidence, sprintf(
-    "pipeline: f.R v1 sha256:abc line %d (reg_unavailable: %s)", 12:16,
-    c("not collected", "no source", "computed later", "open", "not collected")
+    "pipeline: f.R v1 sha256:abc line %d (reg_unavailable: %s)", 12:17,
+    c("not collected", "open", "no source", "computed later", "open", "not collected")
   ))
   expect_equal(review$note, c(
-    "BC register, not collected: a", "BC register, no source",
+    "BC register, not collected: a", "BC register, open: b", "BC register, no source",
     "BC register, computed later: c", "BC register, open: d", "BC register, not collected: e"
   ))
 })
@@ -1191,6 +1209,20 @@ test_that("anchor_line compares bytes, so a Latin-1 line neither warns nor hides
   expect_equal(found, 2L)
 })
 
+test_that("parse_data names a script that doesn't parse by its base name, never its folder", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- file.path(withr::local_tempdir(), "pipe dir")
+  dir.create(dir)
+  path <- pipeline_script(dir, "bad.R", c("x <- 1", "y <- 2 3"))
+  shown <- tryCatch(build$parse_data(path), error = conditionMessage)
+  expect_match(shown, "^bad\\.R:2:[0-9]+: unexpected numeric constant")
+  expect_false(grepl("pipe dir", shown, fixed = TRUE))
+  expect_false(grepl(dir, shown, fixed = TRUE))
+  # A script that parses is read as before.
+  fine <- pipeline_script(dir, "fine.R", "x <- 1")
+  expect_s3_class(build$parse_data(fine), "data.table")
+})
+
 # A Mapping sheet as read_mapping() returns it, no row of it touched by the AB corrections.
 mapping_sheet <- function() {
   data.table::data.table(
@@ -1220,6 +1252,21 @@ test_that("mapping_register stops on rows the AB corrections would change (D13.6
       "\\(dropped\\), row 10 magp_trees.n_species \\(dropped\\)"
     )
   )
+  # A move is a pair of table and attribute: a second table's move doesn't catch the first
+  # table's attributes there, nor the first's attributes on the second table.
+  build$mapping_moves <- rbind(build$mapping_moves, data.table::data.table(
+    from = "magp_trees", to = "magp_subplot_meas", attribute_name = "n_trees"
+  ))
+  other <- rbind(mapping_sheet(), data.table::data.table(
+    table_name = "magp_trees", attribute_name = "src_subpmeas_id", status = "unavailable",
+    rule = NA, sheet_row = 8L
+  ))
+  expect_equal(
+    build$mapping_register(other)$attribute_name,
+    c("aspect", "src_site_id", "comments", "baf", "src_subpmeas_id")
+  )
+  other[sheet_row == 8L, attribute_name := "n_trees"]
+  expect_error(build$mapping_register(other), "row 8 magp_trees.n_trees \\(moved\\)")
 })
 
 test_that("mapping_seed seeds unavailable as O and lists question rows (D13.3 (3))", {
@@ -1232,7 +1279,21 @@ test_that("mapping_seed seeds unavailable as O and lists question rows (D13.3 (3
   expect_equal(
     seed$rows$note, c("AB mapping, unavailable: not recorded by AB", "AB mapping, unavailable")
   )
-  expect_equal(seed$review$topic, c("question", "design_table"))
+  expect_equal(seed$rows$evidence[[2L]], "AB mapping: unavailable (w.xlsx, Mapping, row 4)")
+  expect_equal(seed$rows$contributor, c("AB", "AB"))
+  expect_equal(seed$rows$applicability, c("O", "O"))
+  expect_equal(seed$rows$frame_type, c("*", "*"))
+  expect_equal(seed$rows$meas_type, c("*", "*"))
+  expect_equal(seed$rows$source, c("mapping", "mapping"))
+  review <- seed$review
+  expect_equal(review$topic, c("question", "design_table"))
+  expect_equal(review$contributor, c("AB", "AB"))
+  expect_equal(review$table_name, c("magp_sites", "magp_design_frames"))
+  expect_equal(review$attribute_name, c("src_site_id", "baf"))
+  expect_equal(review$evidence, c(
+    "AB mapping: question (w.xlsx, Mapping, row 3)", "AB mapping: question (w.xlsx, Mapping, row 6)"
+  ))
+  expect_equal(review$note, c("AB mapping, question", "AB mapping, question"))
 })
 
 test_that("workbook_seed reads only the verified workbook, its count checked (D13.3 (1))", {
@@ -1245,6 +1306,7 @@ test_that("workbook_seed reads only the verified workbook, its count checked (D1
   build$mapping_file$register_rows <- 4L
   seed <- build$workbook_seed(workbook, attributes)
   expect_equal(seed$source$file, build$mapping_file$file)
+  expect_match(seed$source$sha256, "^[0-9a-f]{64}$")
   build$mapping_file$register_rows <- 55L
   expect_error(build$workbook_seed(workbook, attributes), "gives 4 register rows where 55")
   expect_error(
@@ -1253,6 +1315,17 @@ test_that("workbook_seed reads only the verified workbook, its count checked (D1
   )
   none <- build$workbook_seed(NULL, attributes)
   expect_equal(none$review[[1L]]$topic, "not_seeded")
+  # The AB corrections' guard runs through it: a sheet holding a moved row stops the seed.
+  build$read_mapping <- function(path) {
+    rbind(mapping_sheet(), data.table::data.table(
+      table_name = "magp_plot_meas", attribute_name = "src_subpmeas_id", status = "unavailable",
+      rule = NA, sheet_row = 8L
+    ))
+  }
+  expect_error(
+    build$workbook_seed(workbook, attributes),
+    "row 8 magp_plot_meas.src_subpmeas_id \\(moved\\)"
+  )
 })
 
 test_that("build_template without files passes the gate on MAGPlot's spec (D7.16, D13.5 (1))", {
@@ -1272,6 +1345,38 @@ test_that("build_template without files passes the gate on MAGPlot's spec (D7.16
   expect_equal(template$review$topic, c("not_seeded", "not_seeded"))
   expect_true(build$check_template(template, spec$attributes))
   expect_named(matrix, build$matrix_columns)
+  # The rows follow the DD's order, then dataset, frame type and component; each attribute's
+  # first row is its national row.
+  position <- match(
+    paste(matrix$table_name, matrix$attribute_name),
+    paste(spec$attributes$table_name, spec$attributes$attribute_name)
+  )
+  expect_false(anyNA(position))
+  expect_false(is.unsorted(position))
+  expect_identical(
+    order(
+      position, matrix$magp_dataset_id, matrix$frame_type, matrix$meas_type,
+      method = "radix"
+    ),
+    seq_len(nrow(matrix))
+  )
+  first <- which(!duplicated(position))
+  expect_equal(length(first), nrow(spec$attributes))
+  expect_true(all(
+    matrix$jurisdiction[first] == "*" & matrix$magp_dataset_id[first] == "*" &
+      matrix$frame_type[first] == "*" & matrix$meas_type[first] == "*"
+  ))
+})
+
+test_that("build_template stops when the spec gives no frame types for the design frames", {
+  build <- load_data_raw("build_matrix_template.R")
+  spec <- magp_spec()
+  frame_codes <- which(
+    spec$codes$table_name == "magp_design_frames" & spec$codes$attribute_name == "frame_type"
+  )
+  expect_gt(length(frame_codes), 0L)
+  spec$codes <- spec$codes[-frame_codes]
+  expect_error(build$build_template(spec), "no codes for magp_design_frames.frame_type")
 })
 
 test_that("build_template seeds and merges every source, no path reaching its text", {
@@ -1298,6 +1403,79 @@ test_that("build_template seeds and merges every source, no path reaching its te
   expect_equal(sort(unique(links$magp_dataset_id)), c("170.01", "170.02", "170.03"))
   expect_equal(unique(links$applicability), "N")
   expect_false(any(grepl("pipe dir", unlist(template$matrix), fixed = TRUE)))
+  # The workbook's source is its base name and its SHA-256, never its folder.
+  expect_equal(template$sources$workbook$file, basename(workbook))
+  expect_match(template$sources$workbook$sha256, "^[0-9a-f]{64}$")
+})
+
+test_that("build_template merges A2 with a register row first, and guards A2's rows", {
+  build <- load_data_raw("build_matrix_template.R")
+  spec <- magp_spec()
+  a2_file <- spec$manifest$file[spec$manifest$input == "lineage_spec"]
+  a2 <- build$a2_rows(spec$lineage_spec, a2_file)
+  # A key A2 marks N for a contributor, with A2's note: the register gives O for the same key.
+  marked <- which(a2$applicability == "N" & !is.na(a2$note))
+  expect_gt(length(marked), 0L)
+  one <- marked[[1L]]
+  register <- data.table::data.table(
+    table_name = a2$table_name[[one]], attribute_name = a2$attribute_name[[one]],
+    contributor = a2$contributor[[one]], frame_type = "*", meas_type = "*", applicability = "O",
+    evidence = "REGISTER-EVIDENCE", note = "REGISTER-NOTE", source = "register"
+  )
+  build$pipeline_seed <- function(pipeline_dir, attributes, frame_codes) {
+    list(rows = list(register), review = list(), sources = NULL)
+  }
+  template <- build$build_template(spec)
+  matrix <- template$matrix
+  at <- which(
+    matrix$table_name == a2$table_name[[one]] & matrix$attribute_name == a2$attribute_name[[one]] &
+      matrix$magp_dataset_id != "*"
+  )
+  expect_gt(length(at), 0L)
+  # A2's value, evidence and note come first, the register's after.
+  expect_equal(unique(matrix$applicability[at]), "N")
+  expect_equal(unique(matrix$evidence[at]), paste0(a2$evidence[[one]], "; REGISTER-EVIDENCE"))
+  expect_true(all(startsWith(matrix$evidence[at], "A2 ")))
+  expect_equal(unique(matrix$note[at]), paste0(a2$note[[one]], " | REGISTER-NOTE"))
+  # The disagreement reaches the review rows once, A2 kept.
+  review <- template$review
+  clash <- which(review$topic == "clash")
+  expect_length(clash, 1L)
+  expect_equal(review$contributor[clash], a2$contributor[[one]])
+  expect_equal(review$table_name[clash], a2$table_name[[one]])
+  expect_equal(review$attribute_name[clash], a2$attribute_name[[one]])
+  expect_equal(review$detail[clash], "A2 N, register O; A2 kept")
+  expect_equal(review$evidence[clash], matrix$evidence[at[[1L]]])
+  # An A2 row on a key, on a table without dataset rows or on a pair the DD lacks stops the
+  # build, naming the pair.
+  attributes <- spec$attributes
+  pair_at <- function(i) c(attributes$table_name[[i]], attributes$attribute_name[[i]])
+  design <- which(attributes$table_name %in% build$no_dataset_tables)
+  keyed <- which(
+    attributes$key_type == "PK" & !attributes$table_name %in% build$no_dataset_tables
+  )
+  bad <- list(
+    key = pair_at(keyed[[1L]]), design = pair_at(design[[1L]]),
+    absent = c("magp_sites", "no_such_attribute")
+  )
+  a2_original <- build$a2_rows
+  for (case in names(bad)) {
+    pair <- bad[[case]]
+    build$a2_rows <- function(lineage_spec, a2_file) {
+      rows <- a2_original(lineage_spec, a2_file)
+      data.table::set(rows, 1L, "table_name", pair[[1L]])
+      data.table::set(rows, 1L, "attribute_name", pair[[2L]])
+      rows
+    }
+    expect_error(
+      build$build_template(spec),
+      paste0(
+        "a key, a table without dataset rows or a pair the DD lacks: ",
+        paste(pair, collapse = "\\.")
+      ),
+      info = case
+    )
+  }
 })
 
 test_that("review_guide lists all nine topics with their counts and escapes Markdown (D13.5 (2))", {
@@ -1535,4 +1713,22 @@ test_that("parse_args reads the three arguments and never guesses the output fol
   expect_error(build$parse_args(character(), plans_dir = ""), "GPQ_PLANS_DIR is unset")
   expect_error(build$parse_args("--folder=x", plans_dir = "p"), "Unknown or repeated argument")
   expect_error(build$parse_args(c("--workbook=a", "--workbook=b"), plans_dir = "p"), "repeated")
+})
+
+test_that("absolute_paths puts the working directory before a relative path, no other (D13.12)", {
+  build <- load_data_raw("build_matrix_template.R")
+  here <- normalizePath(".", winslash = "/")
+  # One path of each form. The rule: a path that starts with a drive letter, a slash, a
+  # backslash or a tilde is taken as absolute and only normalised; any other has the working
+  # directory put in front. The expectations come from normalizePath(), so they hold on any OS.
+  relative <- c("matrix", ".")
+  absolute <- c("D:/x/y", "/srv/pipe dir", "\\srv\\pipe dir", "\\\\server\\share\\f", "~/plans")
+  made <- build$absolute_paths(c(relative, absolute))
+  expect_equal(unname(made[1:2]), c(file.path(here, "matrix"), here))
+  expect_equal(
+    unname(made[-(1:2)]), unname(normalizePath(absolute, winslash = "/", mustWork = FALSE))
+  )
+  for (i in seq_along(absolute)) {
+    expect_false(startsWith(made[[i + 2L]], here), info = absolute[[i]])
+  }
 })

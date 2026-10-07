@@ -312,9 +312,15 @@ absent_links <- data.table::data.table(
   )
 )
 
-# A file's parse data, keyed so a node's children come in source order; nothing is run.
+# A file's parse data, keyed so a node's children come in source order; nothing is run. A script
+# that doesn't parse stops with R's message, the file named by its base name, not its path.
 parse_data <- function(path) {
-  exprs <- parse(file = path, keep.source = TRUE, encoding = "UTF-8")
+  exprs <- tryCatch(
+    parse(file = path, keep.source = TRUE, encoding = "UTF-8"),
+    error = function(error) {
+      stop(gsub(path, basename(path), conditionMessage(error), fixed = TRUE), call. = FALSE)
+    }
+  )
   data <- data.table::as.data.table(utils::getParseData(exprs, includeText = TRUE))
   data.table::setkeyv(data, c("parent", "line1", "col1"))
   data
@@ -710,9 +716,11 @@ read_mapping <- function(path) {
 # naming each row one of the AB script's corrections would move or drop (D13.6 (3)). A row a
 # move doesn't touch keeps its table, so the drops are checked on the sheet's tables.
 mapping_register <- function(sheet) {
-  register <- sheet[sheet$status %chin% c(mapping_file$seed_status, mapping_file$review_status)]
-  moved <- register$table_name %chin% mapping_moves$from &
-    register$attribute_name %chin% mapping_moves$attribute_name
+  # Picked outside the brackets, where no column of the sheet can shadow the names.
+  keep <- sheet$status %chin% c(mapping_file$seed_status, mapping_file$review_status)
+  register <- sheet[keep]
+  moved <- paste(register$table_name, register$attribute_name) %chin%
+    paste(mapping_moves$from, mapping_moves$attribute_name)
   named <- mapping_drops[!is.na(mapping_drops$table_name)]
   any_table <- mapping_drops$attribute_name[is.na(mapping_drops$table_name)]
   dropped <- register$attribute_name %chin% any_table |
@@ -801,12 +809,26 @@ build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
   attributes <- spec$attributes
   manifest <- spec$manifest
   datasets <- contributor_datasets(spec$code_lists)
-  frame_codes <- spec$codes$code[
+  frame_codes <- spec$codes$code[which(
     spec$codes$table_name == "magp_design_frames" & spec$codes$attribute_name == "frame_type"
-  ]
+  )]
+  if (length(frame_codes) == 0L) {
+    stop(
+      "The spec gives no codes for magp_design_frames.frame_type, so the frame rules have no ",
+      "frame types (D13.4 (2)).",
+      call. = FALSE
+    )
+  }
   a2 <- a2_rows(spec$lineage_spec, manifest$file[manifest$input == "lineage_spec"])
-  if (any(!is.na(placement(a2, attributes)))) {
-    stop("Internal error: an A2 row falls on a key or a table without dataset rows.", call. = FALSE)
+  misplaced <- which(!is.na(placement(a2, attributes)))
+  if (length(misplaced) > 0L) {
+    pairs <- unique(paste0(a2$table_name[misplaced], ".", a2$attribute_name[misplaced]))
+    stop(
+      "Internal error: A2 rows fall on a key, a table without dataset rows or a pair the DD ",
+      "lacks: ", paste(utils::head(pairs, 3L), collapse = ", "),
+      if (length(pairs) > 3L) sprintf(" and %d more", length(pairs) - 3L), ".",
+      call. = FALSE
+    )
   }
   pipeline <- pipeline_seed(pipeline_dir, attributes, frame_codes)
   workbook <- workbook_seed(workbook_path, attributes)
@@ -820,7 +842,12 @@ build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
     paste(matrix$table_name, matrix$attribute_name),
     paste(attributes$table_name, attributes$attribute_name)
   )
-  matrix <- matrix[order(position, magp_dataset_id, frame_type, meas_type, method = "radix")]
+  # The order is made outside the brackets, where no column can shadow position.
+  ordering <- order(
+    position, matrix$magp_dataset_id, matrix$frame_type, matrix$meas_type,
+    method = "radix"
+  )
+  matrix <- matrix[ordering]
   review <- c(pipeline$review, workbook$review, list(merged$review))
   list(
     matrix = matrix[, matrix_columns, with = FALSE],
@@ -1183,6 +1210,15 @@ parse_args <- function(args, plans_dir = Sys.getenv("GPQ_PLANS_DIR")) {
   )
 }
 
+# Paths made absolute: one with no drive letter, slash, backslash or tilde gets getwd() first.
+absolute_paths <- function(paths) {
+  # normalizePath() leaves a missing relative path as it is off Windows, hence the join.
+  paths <- data.table::fifelse(
+    grepl("^([A-Za-z]:|[/\\\\~])", paths), paths, file.path(getwd(), paths)
+  )
+  normalizePath(paths, winslash = "/", mustWork = FALSE)
+}
+
 main <- function(args = commandArgs(trailingOnly = TRUE)) {
   library(data.table)
   pkgload::load_all(".", quiet = TRUE)
@@ -1191,14 +1227,8 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   spec <- magp_spec()
   template <- build_template(spec, given$pipeline_dir, given$workbook)
   guide <- review_guide(template)
-  # Absolute forms only, so a short relative folder can't match the guide's own words: a path
-  # without a drive letter, a leading slash, backslash or tilde gets the working directory in
-  # front, since normalizePath() leaves a missing relative path as it is off Windows.
-  given_paths <- unlist(given, use.names = FALSE)
-  given_paths <- data.table::fifelse(
-    grepl("^([A-Za-z]:|[/\\\\~])", given_paths), given_paths, file.path(getwd(), given_paths)
-  )
-  given_paths <- normalizePath(given_paths, winslash = "/", mustWork = FALSE)
+  # Absolute forms only, so a short relative folder can't match the guide's own words.
+  given_paths <- absolute_paths(unlist(given, use.names = FALSE))
   check_template(template, spec$attributes, given_paths, guide)
   paths <- write_template(template, guide, given$output_dir)
   # The console says what wasn't seeded, in the guide's own words (D13.5 (1)).
