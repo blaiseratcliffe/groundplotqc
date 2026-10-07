@@ -1299,3 +1299,59 @@ test_that("build_template seeds and merges every source, no path reaching its te
   expect_equal(unique(links$applicability), "N")
   expect_false(any(grepl("pipe dir", unlist(template$matrix), fixed = TRUE)))
 })
+
+test_that("review_guide lists each topic once with its count and escapes Markdown (D13.5 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  template <- build$build_template(magp_spec())
+  template$review <- rbind(template$review, data.table::data.table(
+    topic = "open", contributor = "QC", table_name = "magp_sites", attribute_name = "aspect",
+    detail = NA, evidence = "pipeline: a `b` c", note = "x_y *z* | w"
+  ), fill = TRUE)
+  guide <- build$review_guide(template, as.Date("2026-10-06"))
+  expect_match(guide[[3L]], "on 2026-10-06 beside `applicability_working.csv`")
+  expect_equal(sum(grepl("^### ", guide)), 3L)
+  expect_true(any(guide == "### Not seeded: sources not given (D13.5 (1)) (2)"))
+  heading <- paste(
+    "### Not seeded: rules seen in the pipeline code beyond plan 5.6's list (D13.4 (4))", "(9)"
+  )
+  expect_true(any(guide == heading))
+  expect_true(any(
+    guide == "- `magp_design_frames` max\\_dbh: -9 on BC's M frames (BC v7.3 lines 3219, 5491)"
+  ))
+  expect_true(any(guide == "- pipeline scripts: not given"))
+  item <- guide[startsWith(guide, "- `magp_sites.aspect`, QC")]
+  expect_equal(
+    item, "- `magp_sites.aspect`, QC. Evidence: pipeline: a \\`b\\` c. Note: x\\_y \\*z\\* \\| w"
+  )
+  expect_true(any(grepl("110.10 as the number 110.1", guide, fixed = TRUE)))
+  expect_true(any(grepl("primary keys are R", guide, fixed = TRUE)))
+})
+
+test_that("write_template writes what read_csv_text reads back, never over a file (D13.5 (3))", {
+  build <- load_data_raw("build_matrix_template.R")
+  template <- build$build_template(magp_spec())
+  data.table::set(template$matrix, 1L, "note", "say \"hi\", d\u00e9j\u00e0")
+  dir <- file.path(withr::local_tempdir(), "new folder")
+  paths <- build$write_template(template, c("# guide", "\u00e9"), dir)
+  read <- read_csv_text(paths[[1L]])
+  expect_equal(nrow(read$malformed), 0L)
+  expect_equal(nrow(read$invalid), 0L)
+  expect_equal(as.data.frame(read$data), as.data.frame(template$matrix))
+  bytes <- readBin(paths[[1L]], "raw", file.size(paths[[1L]]))
+  expect_false(any(bytes == as.raw(13L)))
+  expect_equal(readLines(paths[[2L]], encoding = "UTF-8"), c("# guide", "\u00e9"))
+  expect_error(build$write_template(template, "x", dir), "already exist, so nothing was written")
+  file.remove(paths[[1L]])
+  expect_error(build$write_template(template, "x", dir), "review_guide.md already exists")
+})
+
+test_that("parse_args reads the three arguments and never guesses the output folder", {
+  build <- load_data_raw("build_matrix_template.R")
+  given <- build$parse_args(c("--pipeline-dir=a dir", "--workbook=w.xlsx"), plans_dir = "p")
+  expect_equal(given, list(pipeline_dir = "a dir", workbook = "w.xlsx", output_dir = "p/matrix"))
+  expect_null(build$parse_args(character(), plans_dir = "p")$pipeline_dir)
+  expect_equal(build$parse_args("--output-dir=o", plans_dir = "")$output_dir, "o")
+  expect_error(build$parse_args(character(), plans_dir = ""), "GPQ_PLANS_DIR is unset")
+  expect_error(build$parse_args("--folder=x", plans_dir = "p"), "Unknown or repeated argument")
+  expect_error(build$parse_args(c("--workbook=a", "--workbook=b"), plans_dir = "p"), "repeated")
+})

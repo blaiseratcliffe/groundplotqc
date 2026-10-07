@@ -830,3 +830,324 @@ build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
     )
   )
 }
+
+# ---- The files and the command line (task 4) ----
+
+# What the code does that the build doesn't seed, and where it disagrees with the plan, read on
+# 2026-10-06 (D13.4 (4)); listed in the review guide under pipeline_rule (D13.6 (1)).
+code_notes <- data.table::data.table(
+  table_name = c(
+    "magp_design_frames", "magp_subplots", "magp_design_frames", "magp_design_frames",
+    "magp_design_frames", "magp_design_frames", "magp_design_frames", "magp_design_frames",
+    "magp_tree_meas"
+  ),
+  attribute_name = c(
+    "plot_shape", "ef_change", "tag_type", "min_dbh, max_dbh, min_ht",
+    "length, width, max_ht, baf", "max_ht, max_dbh", "max_dbh", "max_dbh, min_ht, max_ht",
+    "magp_frame_id, magp_subpmeas_id"
+  ),
+  what = c(
+    "\"Z\" on O and V frames, \"X\" on the others (AB, BC and ON)",
+    "\"Z\" where a subplot's first frame type is O",
+    "\"Z\" on AB's R and O frames and on QC's frames other than M",
+    "-9 on QC's R frames' min_dbh, M frames' max_dbh, and S and M frames' min_ht",
+    "-9 on every QC frame",
+    "-9 on every AB frame for max_ht, and on AB's frames other than R for max_dbh",
+    "-9 on BC's M frames",
+    "ON writes -1 on its O frames, where plan 5.6 gives N",
+    "the pipeline delivers NA for ON's age-sample trees, where plan 6.7 expects \"Z\""
+  ),
+  where = c(
+    "magpv2_functions_v7.2_candidate.R lines 445-448",
+    "magpv2_blocks_5-9_v7.2_candidate.R lines 897-909",
+    "AB v7.7 line 2329; QUE v7.3 line 3838",
+    "QUE v7.3 lines 751-753",
+    "QUE v7.3 line 3836",
+    "AB v7.7 lines 2676, 2683",
+    "BC v7.3 lines 3219, 5491",
+    "ON v7.3 line 3264",
+    "magpv2_blocks_5-9_v7.2_candidate.R lines 1475-1481"
+  )
+)
+
+# The review guide's headings for the review rows, in the order they're listed (D13.5 (2)); the
+# last lists code_notes (D13.6 (1)).
+review_topics <- c(
+  clash = "Clashes: A2 kept over a register (D13.2 (2))",
+  key = "Not seeded: keys, R nationally (D13.3 (4))",
+  design_table = "Not seeded: tables that take no dataset rows (D13.4 (1))",
+  not_in_dd = "Not seeded: pairs the DD doesn't have",
+  open = "Not seeded: \"open\" in a register (D13.3 (2))",
+  question = "Not seeded: \"question\" in the AB workbook (D13.3 (3))",
+  computed_later = "Not seeded: computed by MAGPlot, \"computed later\" in a register (D13.3 (2))",
+  not_seeded = "Not seeded: sources not given (D13.5 (1))",
+  pipeline_rule = "Not seeded: rules seen in the pipeline code beyond plan 5.6's list (D13.4 (4))"
+)
+
+# The guide's fixed text (D8.23, D13.5 (2)), one element per line of the file.
+guide_text <- c(
+  "## What a row says",
+  "",
+  paste(
+    "A row gives one attribute's applicability for the records its four keys match:",
+    "`jurisdiction`, `magp_dataset_id`, `frame_type` and `meas_type`, where \"\\*\" matches every",
+    "record. `applicability` is R (required), O (optional) or N (not applicable). Every DD",
+    "attribute has one national row, its four keys \"\\*\". Where several rows match a record,",
+    "the most specific wins, and `meas_type` rows that still disagree combine as R over O over N",
+    "(plan 5.4). Every row starts with `status` \"proposed\"."
+  ),
+  "",
+  "## Where a value comes from",
+  "",
+  "`evidence` says where a value comes from, and `note` adds the source's own words:",
+  "",
+  "- `DD key_type PK` or `FK`: a primary or foreign key, R nationally.",
+  paste(
+    "- `A2 X` or `A2 -1`: the contributor doesn't collect it, O for each of its datasets.",
+    "`A2 Z` or `A2 -9`: it doesn't apply to the contributor, N."
+  ),
+  paste(
+    "- `pipeline: <file> <version> sha256:<hash> line <n> (reg_unavailable: <reason>)`: the",
+    "script's list of what its contributor doesn't supply, O for each of the contributor's",
+    "datasets."
+  ),
+  paste(
+    "- `pipeline: ... (set_design_sentinels(): -9)`: the pipeline's frame rule, N on the frame",
+    "type the row names."
+  ),
+  "- `pipeline: ... (absent by design)`: a link the pipeline leaves out on purpose, N.",
+  paste(
+    "- `AB mapping: unavailable (<workbook>, Mapping, row <n>)`: AB's mapping workbook, O for",
+    "each of AB's datasets."
+  ),
+  paste(
+    "- `not seeded: ...`: the source wasn't given to this run; the row holds the default O, and",
+    "its note gives the value the rule would give."
+  ),
+  "- No evidence: the default O (D8.10), for you to confirm or change.",
+  "",
+  paste(
+    "Where two sources give the same row, their evidence is joined with \"; \" and their notes",
+    "with \" | \". Where they disagreed, A2's value was kept, and the row is listed under",
+    "\"Clashes\" below."
+  ),
+  "",
+  "## What to do",
+  "",
+  paste(
+    "1. Check the seeded rows against what you know of each contributor. Change",
+    "`applicability` where it's wrong, and set `status` to \"confirmed\" on each row you've",
+    "settled."
+  ),
+  "2. Go through the national O rows: an attribute every record must carry becomes R.",
+  paste(
+    "3. Add a row where a dataset, a frame type or a component differs from the national value,",
+    "its keys spelled as the lookup spells them."
+  ),
+  "4. Decide the rows listed under \"For your review\": the build didn't seed them.",
+  paste(
+    "5. Edit the file in a text editor, or in Excel through Data > From Text/CSV with every",
+    "column set to Text, and save it as CSV UTF-8 with the same ten columns in the same order.",
+    "Opened with a double-click, Excel reads dataset 110.10 as the number 110.1 and saves it so."
+  ),
+  "",
+  paste(
+    "At M9 the matrix checks run on the file (plan 5.7): every attribute is a DD attribute with",
+    "one national row, every key and value is valid, no key repeats, primary keys are R, and",
+    "the combinations the spec knows resolve to one value. Once you sign it off, it enters",
+    "`spec/` through `update-spec`."
+  )
+)
+
+# The kind of a row's first evidence, for the guide's counts.
+evidence_kind <- function(evidence) {
+  data.table::fcase(
+    is.na(evidence), "none, the default",
+    startsWith(evidence, "DD key_type"), "DD key",
+    startsWith(evidence, "A2 "), "A2",
+    startsWith(evidence, "AB mapping"), "AB mapping workbook",
+    startsWith(evidence, "not seeded"), "not seeded",
+    grepl("^pipeline: [^;]*reg_unavailable", evidence), "pipeline register",
+    grepl("^pipeline: [^;]*set_design_sentinels", evidence), "pipeline frame rule",
+    grepl("^pipeline: [^;]*absent by design", evidence), "pipeline absent link",
+    default = "other"
+  )
+}
+
+# Text as Markdown shows it: the characters Markdown reads as markup escaped.
+markdown_text <- function(x) {
+  gsub("([\\\\`*_{}\\[\\]<>|#])", "\\\\\\1", x, perl = TRUE)
+}
+
+# Text in a code span, or escaped where it holds a backtick, which would end the span.
+code_span <- function(x) {
+  data.table::fifelse(grepl("`", x, fixed = TRUE), markdown_text(x), paste0("`", x, "`"))
+}
+
+# The guide's lines for this run: its sources, its counts and the rows it didn't seed.
+run_lines <- function(template) {
+  matrix <- template$matrix
+  review <- template$review
+  sources <- template$sources
+  kinds <- c(
+    "DD key", "A2", "pipeline register", "AB mapping workbook", "pipeline frame rule",
+    "pipeline absent link", "not seeded", "none, the default", "other"
+  )
+  counts <- table(
+    factor(evidence_kind(matrix$evidence), levels = kinds),
+    factor(matrix$applicability, levels = c("R", "O", "N"))
+  )
+  counts <- counts[rowSums(counts) > 0L, , drop = FALSE]
+  source_line <- function(file, sha256, version = "") {
+    sprintf("- `%s`%s, SHA-256 `%s`", file, version, sha256)
+  }
+  national <- matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
+    matrix$frame_type == "*" & matrix$meas_type == "*"
+  lines <- c(
+    "## This run", "", "Sources:", "",
+    source_line(sources$spec$file, sources$spec$sha256),
+    if (is.null(sources$pipeline)) {
+      "- pipeline scripts: not given"
+    } else {
+      source_line(
+        sources$pipeline$file, sources$pipeline$sha256, paste0(" ", sources$pipeline$version)
+      )
+    },
+    if (is.null(sources$workbook)) {
+      "- AB mapping workbook: not given"
+    } else {
+      source_line(sources$workbook$file, sources$workbook$sha256)
+    },
+    "",
+    sprintf(
+      "Rows: %d, %d of them national; %d hold two sources.", nrow(matrix), sum(national),
+      sum(grepl("; ", matrix$evidence, fixed = TRUE))
+    ),
+    "", "| Evidence | R | O | N |", "|---|---|---|---|",
+    sprintf("| %s | %d | %d | %d |", rownames(counts), counts[, "R"], counts[, "O"], counts[, "N"]),
+    "", "## For your review"
+  )
+  for (heading in names(review_topics)) {
+    # Picked outside the brackets, since review has a column named topic.
+    picked <- review$topic == heading
+    rows <- if (heading == "pipeline_rule") code_notes else review[picked]
+    if (nrow(rows) == 0L) {
+      next
+    }
+    items <- if (heading == "not_seeded") {
+      paste0("- ", markdown_text(rows$detail))
+    } else if (heading == "pipeline_rule") {
+      paste0(
+        "- `", rows$table_name, "` ", markdown_text(rows$attribute_name), ": ",
+        markdown_text(rows$what), " (", rows$where, ")"
+      )
+    } else {
+      paste0(
+        "- `", rows$table_name, ".", rows$attribute_name, "`, ", rows$contributor,
+        ifelse(is.na(rows$detail), "", paste0(": ", markdown_text(rows$detail))),
+        ". Evidence: ", code_span(rows$evidence),
+        ifelse(is.na(rows$note), "", paste0(". Note: ", markdown_text(rows$note)))
+      )
+    }
+    lines <- c(lines, "", sprintf("### %s (%d)", review_topics[[heading]], nrow(rows)), "", items)
+  }
+  lines
+}
+
+# The review guide (D8.23, D13.5 (2)): the fixed text, then this run's sources, counts and the
+# rows the build didn't seed.
+review_guide <- function(template, date = Sys.Date()) {
+  c(
+    "# Applicability matrix: review guide",
+    "",
+    paste(
+      "Written by `data-raw/build_matrix_template.R` on", format(date), "beside",
+      paste0("`", output_files[["matrix"]], "`,"), "the working copy you fill and confirm",
+      "before M9 (plan 5.6, D7.26). Nothing reads the working copy before M9, so every QC run",
+      "until then is a run without a matrix (D7.3)."
+    ),
+    "",
+    guide_text,
+    "",
+    run_lines(template)
+  )
+}
+
+# A stop naming the output files already there, so nothing is written over them (D13.5 (3)).
+refuse_existing <- function(paths) {
+  present <- paths[file.exists(paths)]
+  if (length(present) > 0L) {
+    stop(
+      paste(present, collapse = " and "),
+      if (length(present) == 1L) " already exists" else " already exist",
+      ", so nothing was written (D13.5 (3)); move or delete it to build again.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+# The working copy and the guide, UTF-8 with LF line ends, the output folder made if missing.
+write_template <- function(template, guide, output_dir) {
+  paths <- file.path(output_dir, output_files)
+  refuse_existing(paths)
+  if (!dir.exists(output_dir) && !dir.create(output_dir, recursive = TRUE)) {
+    stop("Couldn't create the output folder ", output_dir, ".", call. = FALSE)
+  }
+  data.table::fwrite(
+    template$matrix, paths[[1L]],
+    na = "", quote = TRUE, eol = "\n", encoding = "UTF-8"
+  )
+  writeBin(charToRaw(enc2utf8(paste0(paste(guide, collapse = "\n"), "\n"))), paths[[2L]])
+  invisible(paths)
+}
+
+# The command line: --pipeline-dir=, --workbook= and --output-dir=, each at most once; the
+# output folder defaults to matrix/ in GPQ_PLANS_DIR, and with neither given the build stops
+# rather than guess a path (CLAUDE.md "Before you start").
+parse_args <- function(args, plans_dir = Sys.getenv("GPQ_PLANS_DIR")) {
+  known <- c("--pipeline-dir", "--workbook", "--output-dir")
+  given <- list()
+  for (arg in args) {
+    parts <- regmatches(arg, regexec("^(--[a-z-]+)=(.+)$", arg))[[1L]]
+    ok <- length(parts) == 3L && parts[[2L]] %chin% known && is.null(given[[parts[[2L]]]])
+    if (!ok) {
+      stop(
+        "Unknown or repeated argument ", encodeString(arg, quote = "\""), "; give ",
+        paste0(known, "=<path>", collapse = ", "), ", each at most once.",
+        call. = FALSE
+      )
+    }
+    given[[parts[[2L]]]] <- parts[[3L]]
+  }
+  output_dir <- given[["--output-dir"]]
+  if (is.null(output_dir)) {
+    if (!nzchar(plans_dir)) {
+      stop("GPQ_PLANS_DIR is unset and no --output-dir was given.", call. = FALSE)
+    }
+    output_dir <- file.path(plans_dir, "matrix")
+  }
+  list(
+    pipeline_dir = given[["--pipeline-dir"]], workbook = given[["--workbook"]],
+    output_dir = output_dir
+  )
+}
+
+main <- function(args = commandArgs(trailingOnly = TRUE)) {
+  library(data.table)
+  pkgload::load_all(".", quiet = TRUE)
+  given <- parse_args(args)
+  refuse_existing(file.path(given$output_dir, output_files))
+  spec <- magp_spec()
+  template <- build_template(spec, given$pipeline_dir, given$workbook)
+  guide <- review_guide(template)
+  check_template(template, spec$attributes, unlist(given, use.names = FALSE), guide)
+  paths <- write_template(template, guide, given$output_dir)
+  cat(sprintf(
+    "Wrote %d rows to %s, and the review guide beside it.\n", nrow(template$matrix), paths[[1L]]
+  ))
+}
+
+if (sys.nframe() == 0L) {
+  main()
+}
