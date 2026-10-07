@@ -246,3 +246,380 @@ check_template <- function(template, attributes, paths = character(), guide = ch
   }
   invisible(TRUE)
 }
+
+# ---- The pipeline scripts (task 2) ----
+
+# The pipeline files the build reads (D13.1), each with its contributor's abbreviated name, its
+# version and its register's row count verified on 2026-10-06 (D13.3 (1)). A file missing from
+# --pipeline-dir stops the build; a new script version needs its row here first.
+pipeline_files <- data.table::data.table(
+  file = c(
+    "magpv2_blocks_1-4_BC_2026data_v7.3_candidate.R",
+    "magpv2_blocks_1-4_ON_2026data_v7.3_candidate.R",
+    "magpv2_blocks_1-4_QUE_2026data_v7.3_candidate.R",
+    "magpv2_functions_v7.2_candidate.R"
+  ),
+  contributor = c("BC", "ON", "QC", NA),
+  version = c("v7.3", "v7.3", "v7.3", "v7.2"),
+  register_rows = c(91L, 22L, 85L, NA)
+)
+
+# Where each register is built (D13.3 (1)): its top-level assignments, in bind order. A "rows"
+# part is a data.table() literal or an rbindlist() of them; a "tables" part names tables whose
+# every DD attribute the register lists, as BC's join at its lines 1167-1170 does.
+register_parts <- data.table::data.table(
+  file = pipeline_files$file[c(1L, 1L, 1L, 2L, 3L)],
+  part = c(
+    "bc_empty_tables", "reg_unavailable_single", "reg_unavailable_c6", "reg_unavailable",
+    "reg_unavailable"
+  ),
+  kind = c("tables", "rows", "rows", "rows", "rows")
+)
+
+# Register reasons that don't seed O, each with the topic it's listed under (D13.3 (2)).
+unseeded_reasons <- c("computed later" = "computed_later", "open" = "open")
+
+# The frame rules of plan 5.6 (D13.4 (2), (3)): set_design_sentinels() in the functions file
+# writes -9 on O and V frames for a frame's area, dimensions and limits, and -9 for baf on every
+# frame but V. Each rule's line is the one line of its file holding its anchor.
+frame_rules <- data.table::data.table(
+  table_name = "magp_design_frames",
+  attribute_name = c(
+    "plot_area", "radius", "length", "width", "min_dbh", "max_dbh", "min_ht", "max_ht", "baf"
+  ),
+  frames = c(rep("O and V", 8L), "all but V"),
+  file = pipeline_files$file[[4L]],
+  anchor = c(
+    rep("dt[no_area  & is.na(get(col)), (col) := -9]", 8L),
+    "dt[frame_type != \"V\" & is.na(baf), baf := -9]"
+  )
+)
+
+# The links absent by design (plan 5.6, 6.7; D2.28): ON's age-sample trees, tree_type "A" and
+# so meas_type AGE (D2.3b), carry no subplot measurement and no frame; each rule says which
+# (D13.6 (2)).
+absent_links <- data.table::data.table(
+  table_name = "magp_tree_meas", attribute_name = c("magp_subpmeas_id", "magp_frame_id"),
+  contributor = "ON", meas_type = "AGE", file = pipeline_files$file[[2L]],
+  anchor = c(
+    "on_tree_meas[msr_typ == \"age\", `:=`(magp_subpmeas_id = NA_character_,",
+    "AGE ROWS CARRY NO DESIGN, AND THAT IS CORRECT"
+  ),
+  rule = paste(
+    "N for ON's age-sample trees (tree_type \"A\"), which have no",
+    c("subplot measurement", "frame"), "(absent by design)"
+  )
+)
+
+# A file's parse data, keyed so a node's children come in source order; nothing is run.
+parse_data <- function(path) {
+  exprs <- parse(file = path, keep.source = TRUE, encoding = "UTF-8")
+  data <- data.table::as.data.table(utils::getParseData(exprs, includeText = TRUE))
+  data.table::setkeyv(data, c("parent", "line1", "col1"))
+  data
+}
+
+# A node's children, in source order.
+children <- function(data, node) {
+  data[list(node), nomatch = NULL]
+}
+
+# The node holding the value of the file's one top-level `name <- value`, or a stop.
+assignment_value <- function(data, name, file) {
+  wraps <- data$parent[data$token == "SYMBOL" & data$text == name]
+  tops <- data$parent[match(wraps, data$id)]
+  found <- integer()
+  for (i in seq_along(wraps)) {
+    if (tops[[i]] == 0L || data$parent[match(tops[[i]], data$id)] != 0L) {
+      next
+    }
+    kids <- children(data, tops[[i]])
+    ok <- nrow(kids) == 3L && kids$id[[1L]] == wraps[[i]] && kids$text[[2L]] %chin% c("<-", "=")
+    if (ok) {
+      found <- c(found, kids$id[[3L]])
+    }
+  }
+  if (length(found) != 1L) {
+    stop(sprintf(
+      "%s has %d top-level assignments to %s, not one (D13.3 (1)).", file, length(found), name
+    ), call. = FALSE)
+  }
+  found
+}
+
+# A literal's value with the line of each element, read from the parse data, never run
+# (D13.3 (1)): strings, numbers and NULL; c(), rep(), list(), data.table() and rbindlist().
+# A vector is list(value, line); a table is a data.table with a <column>_line column for each
+# column; a list is a list of those. Any other call, or a name, stops the build.
+literal_value <- function(data, node, file) {
+  kids <- children(data, node)
+  constant <- nrow(kids) == 1L &&
+    kids$token[[1L]] %chin% c("STR_CONST", "NUM_CONST", "NULL_CONST")
+  if (constant) {
+    value <- str2lang(kids$text[[1L]])
+    return(if (is.null(value)) NULL else list(value = value, line = kids$line1[[1L]]))
+  }
+  call <- if (nrow(kids) >= 3L) children(data, kids$id[[1L]]) else kids[0L]
+  ok <- nrow(call) == 1L && call$token[[1L]] == "SYMBOL_FUNCTION_CALL" &&
+    kids$token[[2L]] == "'('"
+  where <- match(node, data$id)
+  if (!ok) {
+    stop(sprintf(
+      "%s line %d holds %s, which the build can't read without running it (D13.3 (1)).",
+      file, data$line1[[where]], data$text[[where]]
+    ), call. = FALSE)
+  }
+  fun <- call$text[[1L]]
+  if (!fun %chin% c("c", "rep", "list", "data.table", "rbindlist")) {
+    stop(sprintf(
+      "%s line %d calls %s(), which the build can't read without running it (D13.3 (1)).",
+      file, call$line1[[1L]], fun
+    ), call. = FALSE)
+  }
+  args <- call_arguments(kids, data, file)
+  switch(fun,
+    c = list(
+      value = unlist(lapply(args, `[[`, "value"), use.names = FALSE),
+      line = unlist(lapply(args, `[[`, "line"), use.names = FALSE)
+    ),
+    rep = literal_rep(args, call$line1[[1L]], file),
+    list = Filter(Negate(is.null), unname(args)),
+    data.table = literal_table(args, call$line1[[1L]], file),
+    rbindlist = data.table::rbindlist(args[[1L]], use.names = TRUE, fill = TRUE)
+  )
+}
+
+# A call's arguments, by name where named, each read as a literal; rbindlist()'s use.names and
+# fill are dropped, since the parts are bound by name and filled anyway.
+call_arguments <- function(kids, data, file) {
+  inside <- kids[-c(1L, 2L, nrow(kids))]
+  args <- list()
+  name <- ""
+  for (i in seq_len(nrow(inside))) {
+    if (inside$token[[i]] == "SYMBOL_SUB") {
+      name <- inside$text[[i]]
+    } else if (inside$token[[i]] == "expr") {
+      if (!name %chin% c("use.names", "fill")) {
+        args[length(args) + 1L] <- list(literal_value(data, inside$id[[i]], file))
+        names(args)[length(args)] <- name
+      }
+      name <- ""
+    }
+  }
+  args
+}
+
+# rep(x, times) and rep(x, times = n), the only forms read.
+literal_rep <- function(args, line, file) {
+  ok <- length(args) == 2L && names(args)[[1L]] == "" && names(args)[[2L]] %chin% c("", "times")
+  if (!ok) {
+    stop(sprintf("%s line %d: rep() is read only as rep(x, times).", file, line), call. = FALSE)
+  }
+  positions <- rep(seq_along(args[[1L]]$value), times = args[[2L]]$value)
+  list(value = args[[1L]]$value[positions], line = args[[1L]]$line[positions])
+}
+
+# data.table()'s named columns, a column of length 1 recycled, as the call itself would.
+literal_table <- function(args, line, file) {
+  lengths <- vapply(args, function(column) length(column$value), integer(1L))
+  n <- max(lengths)
+  if (any(names(args) == "") || any(lengths != n & lengths != 1L)) {
+    stop(sprintf(
+      "%s line %d: data.table() has an unnamed column or columns of unequal lengths.", file, line
+    ), call. = FALSE)
+  }
+  columns <- list()
+  for (column in names(args)) {
+    columns[[column]] <- rep_len(args[[column]]$value, n)
+    columns[[paste0(column, "_line")]] <- rep_len(args[[column]]$line, n)
+  }
+  data.table::as.data.table(columns)
+}
+
+# One script's register (D13.3 (1)): its parts read as literals and bound in order, one row per
+# table and attribute, the first kept, as BC's line 1288 does. A row's line is its attribute's,
+# or for a "tables" part its table's.
+read_register <- function(path, parts, attributes) {
+  data <- parse_data(path)
+  file <- basename(path)
+  rows <- lapply(seq_len(nrow(parts)), function(i) {
+    value <- literal_value(data, assignment_value(data, parts$part[[i]], file), file)
+    wanted <- c(if (parts$kind[[i]] == "rows") "attribute_name", "table_name", "reason")
+    ok <- data.table::is.data.table(value) && all(wanted %chin% names(value))
+    if (!ok) {
+      stop(sprintf(
+        "%s: %s isn't a table with columns %s.", file, parts$part[[i]],
+        paste(wanted, collapse = ", ")
+      ), call. = FALSE)
+    }
+    if (!"note" %chin% names(value)) {
+      value[, note := NA_character_]
+    }
+    if (parts$kind[[i]] == "tables") {
+      return(attributes[
+        value,
+        on = "table_name", nomatch = NULL,
+        list(table_name, attribute_name, reason, note, line = table_name_line)
+      ])
+    }
+    value[, list(table_name, attribute_name, reason, note, line = attribute_name_line)]
+  })
+  rows <- data.table::rbindlist(rows, use.names = TRUE)
+  unique(rows, by = c("table_name", "attribute_name"))
+}
+
+# The one line of a file holding a rule's anchor, or a stop (D13.4 (3)).
+anchor_line <- function(lines, anchor, file) {
+  found <- which(grepl(anchor, lines, fixed = TRUE))
+  if (length(found) != 1L) {
+    stop(sprintf(
+      "%s has %d lines holding the anchor %s, not one (D13.4 (3)).", file, length(found),
+      encodeString(anchor, quote = "\"")
+    ), call. = FALSE)
+  }
+  found
+}
+
+# A pipeline evidence value: file, version, SHA-256 and line (plan 5.2, D7.16).
+pipeline_evidence <- function(file, version, sha256, line, what) {
+  sprintf("pipeline: %s %s sha256:%s line %d (%s)", file, version, sha256, line, what)
+}
+
+# The pipeline files in the folder, with their paths and SHA-256, or a stop naming one missing.
+pipeline_sources <- function(pipeline_dir) {
+  paths <- file.path(pipeline_dir, pipeline_files$file)
+  absent <- pipeline_files$file[!file.exists(paths)]
+  if (length(absent) > 0L) {
+    stop("The pipeline folder lacks ", paste(absent, collapse = ", "), " (D13.1).", call. = FALSE)
+  }
+  sources <- data.table::copy(pipeline_files)
+  sources[, `:=`(path = paths, sha256 = unname(tools::sha256sum(paths)))]
+  sources[]
+}
+
+# Review rows: what wasn't seeded, why, and its evidence. A pair the DD lacks names the table the
+# DD has the attribute in, a design table where there is one (D13.3, D13.4 (1)).
+review_rows <- function(topic, contributor, rows, evidence, note, attributes) {
+  absent <- !paste(rows$table_name, rows$attribute_name) %chin%
+    paste(attributes$table_name, attributes$attribute_name)
+  tables <- vapply(rows$attribute_name, function(name) {
+    found <- attributes$table_name[attributes$attribute_name == name]
+    design <- found[found %chin% no_dataset_tables]
+    if (length(design) > 0L) found <- design
+    if (length(found) == 0L) "no table" else paste(found, collapse = ", ")
+  }, character(1L), USE.NAMES = FALSE)
+  data.table::data.table(
+    topic = topic, contributor = contributor, table_name = rows$table_name,
+    attribute_name = rows$attribute_name,
+    detail = data.table::fifelse(absent, paste0("the DD has it in ", tables), NA_character_),
+    evidence = evidence, note = note
+  )
+}
+
+# A register's rows as seeded contributor rows and review rows (D13.3 (2), (4), D13.4 (1)).
+register_seed <- function(register, source, attributes) {
+  topic <- placement(register, attributes)
+  topic[is.na(topic)] <- unname(unseeded_reasons[register$reason[is.na(topic)]])
+  evidence <- pipeline_evidence(
+    source$file, source$version, source$sha256, register$line,
+    paste0("reg_unavailable: ", register$reason)
+  )
+  note <- blank_to_na(register$note)
+  note <- data.table::fifelse(
+    is.na(note), sprintf("%s register, %s", source$contributor, register$reason),
+    sprintf("%s register, %s: %s", source$contributor, register$reason, note)
+  )
+  seeded <- is.na(topic)
+  list(
+    rows = data.table::data.table(
+      table_name = register$table_name[seeded], attribute_name = register$attribute_name[seeded],
+      contributor = source$contributor, frame_type = "*", meas_type = "*", applicability = "O",
+      evidence = evidence[seeded], note = note[seeded], source = "register"
+    ),
+    review = review_rows(
+      topic[!seeded], source$contributor, register[!seeded], evidence[!seeded], note[!seeded],
+      attributes
+    )
+  )
+}
+
+# A rule's rows (D13.4 (3), D13.5 (1)): N with the anchored line when the pipeline folder was
+# given, else the default O marked "not seeded", the rule's value in the note.
+rule_rows <- function(rows, sources, what) {
+  base <- data.table::data.table(
+    table_name = rows$table_name, attribute_name = rows$attribute_name,
+    contributor = rows$contributor, frame_type = rows$frame_type, meas_type = rows$meas_type
+  )
+  if (is.null(sources)) {
+    return(base[, `:=`(
+      applicability = "O", evidence = "not seeded: pipeline scripts not given",
+      note = paste0("rule: ", rows$rule), source = "rule"
+    )][])
+  }
+  origin <- sources[match(rows$file, sources$file)]
+  text <- lapply(unique(origin$path), readLines, warn = FALSE, encoding = "UTF-8")
+  names(text) <- unique(origin$path)
+  line <- vapply(seq_len(nrow(rows)), function(i) {
+    anchor_line(text[[origin$path[[i]]]], rows$anchor[[i]], rows$file[[i]])
+  }, integer(1L))
+  base[, `:=`(
+    applicability = "N",
+    evidence = pipeline_evidence(origin$file, origin$version, origin$sha256, line, what),
+    note = rows$rule, source = "rule"
+  )][]
+}
+
+# The frame-rule rows (plan 5.6, D13.4 (2), (3)), one per attribute and frame type, the frame
+# types of "all but V" taken from the code list.
+frame_rule_rows <- function(frame_codes, sources) {
+  types <- lapply(frame_rules$frames, function(frames) {
+    if (frames == "O and V") c("O", "V") else setdiff(frame_codes, "V")
+  })
+  rows <- frame_rules[rep(seq_len(nrow(frame_rules)), lengths(types))]
+  rows[, `:=`(
+    frame_type = unlist(types), contributor = NA_character_, meas_type = "*",
+    rule = sprintf("N on %s frames (set_design_sentinels())", frames)
+  )]
+  rule_rows(rows, sources, "set_design_sentinels(): -9")
+}
+
+# The absent-link rows (plan 5.6, 6.7; D2.28).
+absent_link_rows <- function(sources) {
+  rows <- data.table::copy(absent_links)
+  rows[, frame_type := "*"]
+  rule_rows(rows, sources, "absent by design")
+}
+
+# The pipeline's rows and review rows (D13.3, D13.4): each register checked against its verified
+# row count, the frame rules and the absent links; without the folder, the rules' rows marked
+# "not seeded" and one review row saying what wasn't seeded (D13.5 (1)).
+pipeline_seed <- function(pipeline_dir, attributes, frame_codes) {
+  sources <- if (!is.null(pipeline_dir)) pipeline_sources(pipeline_dir)
+  rows <- list(frame_rule_rows(frame_codes, sources), absent_link_rows(sources))
+  if (is.null(sources)) {
+    review <- data.table::data.table(topic = "not_seeded", detail = paste(
+      "pipeline scripts not given: BC's, ON's and QC's registers, the frame rules and ON's",
+      "absent links"
+    ))
+    return(list(rows = rows, review = list(review), sources = NULL))
+  }
+  review <- list()
+  for (i in which(!is.na(sources$register_rows))) {
+    source <- sources[i]
+    parts <- register_parts[register_parts$file == source$file]
+    register <- read_register(source$path, parts, attributes)
+    if (nrow(register) != source$register_rows) {
+      stop(sprintf(
+        paste(
+          "%s's register has %d rows where %d were verified (D13.3 (1)); check the script,",
+          "then update pipeline_files."
+        ),
+        source$file, nrow(register), source$register_rows
+      ), call. = FALSE)
+    }
+    seed <- register_seed(register, source, attributes)
+    rows <- c(rows, list(seed$rows))
+    review <- c(review, list(seed$review))
+  }
+  list(rows = rows, review = review, sources = sources)
+}

@@ -792,3 +792,198 @@ test_that("check_template stops on each break of the M2a gate and passes a sound
   repeated_dd <- rbind(attributes, attributes[1L])
   expect_true(build$check_template(sound, repeated_dd))
 })
+
+# Synthetic pipeline files under the real names, in a folder whose name has a space: BC's three
+# parts (a tables part, a literal and an rbindlist() with a repeat and a NULL), ON's and QUE's
+# registers, the functions file's two frame anchors and ON's two link anchors.
+pipeline_folder <- function(build) {
+  dir <- file.path(withr::local_tempdir(.local_envir = parent.frame()), "pipe dir")
+  dir.create(dir)
+  files <- build$pipeline_files$file
+  pipeline_script(dir, files[[1L]], c(
+    "bc_empty_tables <- data.table(",
+    "  table_name = c(\"magp_trees\"), reason = \"not collected\", note = \"none\"",
+    ")",
+    "reg_unavailable_single <- data.table(",
+    "  table_name = c(rep(\"magp_sites\", 2)),",
+    "  attribute_name = c(\"aspect\", \"src_site_id\"),",
+    "  reason = c(\"no source\", \"open\"), note = c(\"\", \"asked\")",
+    ")",
+    "reg_unavailable_c6 <- rbindlist(list(",
+    "  data.table(",
+    "    table_name = \"magp_design_frames\", attribute_name = \"baf\",",
+    "    reason = \"not collected\", note = \"x\"",
+    "  ),",
+    "  data.table(",
+    "    table_name = \"magp_sites\", attribute_name = \"aspect\",",
+    "    reason = \"computed later\", note = \"repeat\"",
+    "  ),",
+    "  NULL",
+    "), use.names = TRUE, fill = TRUE)"
+  ))
+  pipeline_script(dir, files[[2L]], c(
+    "reg_unavailable <- data.table(",
+    "  table_name = \"magp_sites\", attribute_name = \"src_site_id\",",
+    "  reason = \"not collected\", note = \"say \\\"none\\\", d\u00e9j\u00e0\"",
+    ")",
+    "on_tree_meas[msr_typ == \"age\", `:=`(magp_subpmeas_id = NA_character_,",
+    "                                    src_subpmeas_id = NA_integer_)]",
+    "# UPDATE -- AGE ROWS CARRY NO DESIGN, AND THAT IS CORRECT."
+  ))
+  pipeline_script(dir, files[[3L]], c(
+    "reg_unavailable <- data.table(table_name = \"magp_sites\", attribute_name = \"aspect\",",
+    "  reason = \"not collected\", note = \"n\")"
+  ))
+  pipeline_script(dir, files[[4L]], c(
+    "set_design_sentinels <- function(dt) {",
+    "    dt[no_area  & is.na(get(col)), (col) := -9]",
+    "    dt[frame_type != \"V\" & is.na(baf), baf := -9]",
+    "}"
+  ))
+  dir
+}
+
+test_that("literal_value reads the literal forms with each element's line (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  path <- pipeline_script(dir, "x.R", c(
+    "x <- data.table(",
+    "  a = c(rep(\"p\", 2), \"q\"),",
+    "  b = \"r\", n = c(1, 2L, NA)",
+    ")",
+    "y <- rbindlist(list(data.table(a = \"s\"), NULL, data.table(a = \"t\", b = \"u\")))"
+  ))
+  data <- build$parse_data(path)
+  x <- build$literal_value(data, build$assignment_value(data, "x", "x.R"), "x.R")
+  expect_equal(x$a, c("p", "p", "q"))
+  expect_equal(x$a_line, c(2L, 2L, 2L))
+  expect_equal(x$b, c("r", "r", "r"))
+  expect_equal(x$b_line, c(3L, 3L, 3L))
+  expect_equal(x$n, c(1, 2, NA))
+  y <- build$literal_value(data, build$assignment_value(data, "y", "x.R"), "x.R")
+  expect_equal(y$a, c("s", "t"))
+  expect_equal(y$b, c(NA, "u"))
+})
+
+test_that("read_register stops on what it can't read without running it (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  attributes <- matrix_attributes()
+  part <- data.table::data.table(file = "x.R", part = "reg", kind = "rows")
+  read <- function(...) {
+    build$read_register(pipeline_script(dir, "x.R", c(...)), part, attributes)
+  }
+  expect_error(
+    read("reg <- data.table(table_name = paste0(\"magp_\", \"sites\"))"),
+    "x.R line 1 calls paste0\\(\\)"
+  )
+  expect_error(read("reg <- data.table(table_name = tables)"), "x.R line 1 holds tables")
+  expect_error(read("reg <- data.table(table_name = rep(\"a\", each = 2))"), "rep\\(x, times\\)")
+  expect_error(
+    read("reg <- data.table(table_name = c(\"a\", \"b\"), reason = c(\"c\", \"d\", \"e\"))"),
+    "unequal lengths"
+  )
+  expect_error(read("other <- 1"), "0 top-level assignments to reg")
+  expect_error(read("reg <- 1", "reg <- 2"), "2 top-level assignments to reg")
+  expect_error(read("reg <- data.table(table_name = \"a\")"), "isn't a table with columns")
+})
+
+test_that("read_register expands a tables part and keeps the first of a repeated row", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- pipeline_folder(build)
+  bc <- build$pipeline_files$file[[1L]]
+  # Picked outside the brackets, since register_parts has a column named file.
+  picked <- build$register_parts$file == bc
+  register <- build$read_register(
+    file.path(dir, bc), build$register_parts[picked], matrix_attributes()
+  )
+  expect_equal(register$table_name, c(
+    "magp_trees", "magp_trees", "magp_sites", "magp_sites", "magp_design_frames"
+  ))
+  expect_equal(
+    register$attribute_name, c("magp_tree_id", "comments", "aspect", "src_site_id", "baf")
+  )
+  expect_equal(
+    register$reason, c("not collected", "not collected", "no source", "open", "not collected")
+  )
+  expect_equal(register$line, c(2L, 2L, 6L, 6L, 11L))
+})
+
+test_that("anchor_line finds the one line holding an anchor, else stops (D13.4 (3))", {
+  build <- load_data_raw("build_matrix_template.R")
+  lines <- c("a := -9", "b := -9", "a := -9 again")
+  expect_equal(build$anchor_line(lines, "b := -9", "f.R"), 2L)
+  expect_error(build$anchor_line(lines, "a := -9", "f.R"), "f.R has 2 lines holding the anchor")
+  expect_error(build$anchor_line(lines, "c", "f.R"), "f.R has 0 lines")
+})
+
+test_that("register_seed seeds O and lists keys, design tables, open and computed later", {
+  build <- load_data_raw("build_matrix_template.R")
+  register <- data.table::data.table(
+    table_name = c("magp_trees", "magp_trees", "magp_sites", "magp_sites", "magp_design_frames"),
+    attribute_name = c("magp_tree_id", "comments", "aspect", "src_site_id", "baf"),
+    reason = c("not collected", "computed later", "no source", "open", "not collected"),
+    note = c("none", "", NA, "asked", "x"), line = 1:5
+  )
+  source <- data.table::data.table(
+    file = "f.R", contributor = "BC", version = "v1", sha256 = "abc"
+  )
+  seed <- build$register_seed(register, source, matrix_attributes())
+  expect_equal(seed$rows$attribute_name, "aspect")
+  expect_equal(
+    seed$rows$evidence, "pipeline: f.R v1 sha256:abc line 3 (reg_unavailable: no source)"
+  )
+  expect_equal(seed$rows$note, "BC register, no source")
+  expect_equal(seed$review$topic, c("key", "computed_later", "open", "design_table"))
+})
+
+test_that("the rule rows are N with their lines, or O marked not seeded (D13.4 (3), D13.5 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  codes <- c("M", "S", "R", "O", "V")
+  unseeded <- build$frame_rule_rows(codes, NULL)
+  expect_equal(nrow(unseeded), 20L)
+  expect_equal(unique(unseeded$applicability), "O")
+  expect_equal(unique(unseeded$evidence), "not seeded: pipeline scripts not given")
+  expect_equal(
+    unseeded$note[unseeded$attribute_name == "baf"][[1L]],
+    "rule: N on all but V frames (set_design_sentinels())"
+  )
+  expect_equal(unseeded$frame_type[unseeded$attribute_name == "baf"], c("M", "S", "R", "O"))
+  sources <- build$pipeline_sources(pipeline_folder(build))
+  seeded <- build$frame_rule_rows(codes, sources)
+  expect_equal(unique(seeded$applicability), "N")
+  expect_match(seeded$evidence[[1L]], "v7.2 sha256:[0-9a-f]{64} line 2 \\(set_design_sentinels")
+  expect_match(seeded$evidence[seeded$attribute_name == "baf"][[1L]], " line 3 ")
+  links <- build$absent_link_rows(sources)
+  expect_equal(links$meas_type, c("AGE", "AGE"))
+  expect_equal(links$contributor, c("ON", "ON"))
+  expect_match(links$evidence[[1L]], " line 5 \\(absent by design\\)")
+  expect_match(links$evidence[[2L]], " line 7 \\(absent by design\\)")
+  expect_equal(links$note[[1L]], paste(
+    "N for ON's age-sample trees (tree_type \"A\"), which have no subplot measurement",
+    "(absent by design)"
+  ))
+  expect_equal(
+    links$note[[2L]],
+    "N for ON's age-sample trees (tree_type \"A\"), which have no frame (absent by design)"
+  )
+  expect_equal(build$absent_link_rows(NULL)$note[[2L]], paste0("rule: ", links$note[[2L]]))
+})
+
+test_that("pipeline_seed checks each register's verified row count (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- pipeline_folder(build)
+  build$pipeline_files$register_rows <- c(5L, 1L, 1L, NA)
+  seed <- build$pipeline_seed(dir, matrix_attributes(), c("M", "S", "R", "O", "V"))
+  expect_equal(seed$sources$contributor, c("BC", "ON", "QC", NA))
+  expect_match(seed$sources$sha256, "^[0-9a-f]{64}$")
+  review <- data.table::rbindlist(seed$review)
+  expect_equal(review$topic, c("key", "open", "design_table"))
+  build$pipeline_files$register_rows <- c(4L, 1L, 1L, NA)
+  expect_error(
+    build$pipeline_seed(dir, matrix_attributes(), "M"),
+    "register has 5 rows where 4 were verified"
+  )
+  file.remove(file.path(dir, build$pipeline_files$file[[3L]]))
+  expect_error(build$pipeline_sources(dir), "The pipeline folder lacks magpv2_blocks_1-4_QUE")
+})
