@@ -261,10 +261,11 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
 }
 
 # MAGPlot's rule set (D9.20, D14.2): every rules_<component>.csv in data-raw/magp/ read clean,
-# none outside the rule set's components, checked by the engine's validator, and written for
-# the spec set it is compiled with: rules_meta.csv's spec_version is the DD's file date, or
-# the build stops (D14.15). Each component keeps its file's name and each row's line, as
-# magp_rules() reads them from the copies, so the two rule sets are identical (D14.19).
+# rules_rules.csv among them and none outside the rule set's components, checked by the
+# engine's validator, and written for the spec set it is compiled with: rules_meta.csv's
+# spec_version is the DD's file date, or the build stops (D14.15). Each component keeps its
+# file's name and each row's line, as magp_rules() reads them from the copies, so the two
+# rule sets are identical (D14.19).
 build_magp_rules <- function(spec, config_dir = file.path("data-raw", "magp")) {
   components <- names(rule_set_schema())
   expected <- paste0("rules_", components, ".csv")
@@ -274,6 +275,12 @@ build_magp_rules <- function(spec, config_dir = file.path("data-raw", "magp")) {
     stop(
       "data-raw/magp/ has rule-set files for components a rule set doesn't have: ",
       paste(stray, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  if (!"rules_rules.csv" %in% found) {
+    stop(
+      config_dir, " has no rules_rules.csv, and a rule set needs its rules component.",
       call. = FALSE
     )
   }

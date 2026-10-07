@@ -562,6 +562,21 @@ test_that("the build stops on a stray rule-set file or one that doesn't read cle
   )
 })
 
+test_that("the build stops, naming rules_rules.csv and the folder, where there is none", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  config <- withr::local_tempdir()
+  expect_error(
+    build$build_magp_rules(dated_spec(), config), paste(config, "has no rules_rules.csv"),
+    fixed = TRUE
+  )
+  file.copy(file.path(dirs$config, c("rules_meta.csv", "rules_settings.csv")), config)
+  expect_error(
+    build$build_magp_rules(dated_spec(), config), paste(config, "has no rules_rules.csv"),
+    fixed = TRUE
+  )
+})
+
 test_that("copy_rule_set copies the rule-set files unchanged, a space in the path", {
   build <- load_data_raw("build_magp_config.R")
   dirs <- tree_dirs()

@@ -47,6 +47,15 @@ test_that("components come back in 3.5's order, the caller's tables untouched", 
   expect_named(checked, c("rules", "settings"))
   data.table::set(checked$rules, j = "rule_id", value = "changed")
   expect_identical(given$rules, before)
+  # A sub-assignment by reference into every returned component, none sharing a column with
+  # the caller's table, whatever form the caller's table has.
+  given <- lapply(a_rule_set(), data.table::as.data.table)
+  before <- lapply(given, data.table::copy)
+  checked <- validate_rule_set(given)
+  for (name in names(checked)) {
+    data.table::set(checked[[name]], i = 1L, j = 1L, value = "changed")
+  }
+  expect_identical(given, before)
 })
 
 test_that("a component no schema checks yet passes through as a copy", {
@@ -54,6 +63,15 @@ test_that("a component no schema checks yet passes through as a copy", {
   checked <- validate_rule_set(given)
   expect_named(checked, c("meta", "rules", "crossfield", "settings"))
   expect_equal(checked$crossfield$anything, 1)
+  given <- list(
+    rules = data.table::as.data.table(a_rule_set()$rules),
+    crossfield = data.table::data.table(rule_id = c("x", "y"), anything = c(1, 2))
+  )
+  before <- lapply(given, data.table::copy)
+  checked <- validate_rule_set(given)
+  data.table::set(checked$crossfield, i = 1L, j = "anything", value = 99)
+  data.table::set(checked$crossfield, i = 1L, j = "rule_id", value = "changed")
+  expect_identical(given, before)
 })
 
 test_that("a rule set that isn't one stops, naming what is wrong", {
@@ -111,6 +129,15 @@ test_that("meta has one row, enabled is TRUE or FALSE, text is valid UTF-8", {
   expect_error(validate_rule_set(set), "column rule_id, holds text that isn't valid UTF-8")
 })
 
+test_that("enabled is read in any case of the ASCII letters, a look-alike letter stops", {
+  set <- a_rule_set()
+  set$rules$enabled <- c("tRuE", "FaLsE")
+  expect_identical(validate_rule_set(set)$rules$enabled, c(TRUE, FALSE))
+  # U+017F, the long s, has the capital S: base toupper() would have read it as FALSE.
+  set$rules$enabled <- c("TRUE", "fal\u017fe")
+  expect_error(validate_rule_set(set), "in rows 2")
+})
+
 test_that("an empty rules component is a rule set", {
   set <- list(rules = data.frame(
     rule_id = character(), table_name = character(), attribute_name = character(),
@@ -137,7 +164,8 @@ test_that("a component's origin is carried over when its lines match its rows (D
   # An origin that names no file, or no whole line from 1 up, is dropped.
   hostile <- list(
     list(bad_bytes(), c(2L, 3L)), list("", c(2L, 3L)), list("f.csv", c(2.7, 3)),
-    list("f.csv", c(-1L, 3L)), list("f.csv", c("2", "3")), list(c("a", "b"), c(2L, 3L))
+    list("f.csv", c(-1L, 3L)), list("f.csv", c("2", "3")), list(c("a", "b"), c(2L, 3L)),
+    list("f.csv", c(Inf, 3)), list("f.csv", c(2, 3e9))
   )
   for (origin in hostile) {
     attr(set$rules, "source_file") <- origin[[1L]]
@@ -194,4 +222,16 @@ test_that("read_rule_set stops on a file that doesn't read cleanly, or no rules 
   expect_error(
     read_rule_set(file.path(dir, "rules_rules.csv")), "No rule-set file rules_rules.csv in"
   )
+})
+
+test_that("read_rule_set stops on a file holding an invalid byte", {
+  dir <- withr::local_tempdir()
+  writeBin(
+    c(
+      charToRaw("rule_id,table_name,attribute_name,severity,class,enabled\nr1,*,*,"),
+      as.raw(0x97), charToRaw(",,TRUE\n")
+    ),
+    file.path(dir, "rules_rules.csv")
+  )
+  expect_error(read_rule_set(dir), "rules_rules.csv doesn't read cleanly")
 })

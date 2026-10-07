@@ -28,8 +28,9 @@ rule_set_schema <- function() {
 #' A rule set checked and copied, its components in 3.5's order
 #'
 #' NULL stays NULL. Each checked component becomes a new data.table with exactly its
-#' schema's columns, each holding one value per row: text as UTF-8 with blanks NA, `enabled`
-#' logical, read from TRUE or FALSE in any case. A component keeps its origin
+#' schema's columns, each holding one value per row: text as UTF-8 with blanks NA, a column the
+#' schema declares logical (`enabled`) logical, read from TRUE or FALSE, the ASCII letters in
+#' any case. A component keeps its origin
 #' (carry_origin()). The caller's tables are never changed. A rule set that isn't a named
 #' list of tables with a rules component, or a component without exactly its columns, is a
 #' caller error (D12.33's pattern); what the rows say is pre-flight's to check (4.2).
@@ -113,16 +114,18 @@ rule_set_component <- function(x, name, columns) {
       ), call. = FALSE)
     }
   }
-  if ("enabled" %in% names(columns)) {
-    enabled <- toupper(table$enabled)
-    bad <- which(is.na(enabled) | !enabled %chin% c("TRUE", "FALSE"))
+  # A column the schema declares logical is read from TRUE or FALSE, the ASCII letters in any
+  # case: toupper() would fold other letters too, such as the long s.
+  for (column in names(columns)[columns == "logical"]) {
+    flag <- chartr(paste(letters, collapse = ""), paste(LETTERS, collapse = ""), table[[column]])
+    bad <- which(is.na(flag) | !flag %chin% c("TRUE", "FALSE"))
     if (length(bad) > 0L) {
       stop(sprintf(
-        "Rule-set component %s has enabled values that aren't TRUE or FALSE, in rows %s.",
-        name, paste(bad, collapse = ", ")
+        "Rule-set component %s has %s values that aren't TRUE or FALSE, in rows %s.",
+        name, column, paste(bad, collapse = ", ")
       ), call. = FALSE)
     }
-    set(table, j = "enabled", value = enabled == "TRUE")
+    set(table, j = column, value = flag == "TRUE")
   }
   carry_origin(table, x)
 }
@@ -147,7 +150,7 @@ carry_origin <- function(table, from) {
   lines <- attr(from, "source_lines", exact = TRUE)
   kept <- is.character(file) && length(file) == 1L && !is.na(file) && nzchar(file) &&
     validUTF8(file) && is.numeric(lines) && length(lines) == nrow(table) && !anyNA(lines) &&
-    all(lines >= 1 & lines == trunc(lines))
+    all(lines >= 1 & lines <= .Machine$integer.max & lines == trunc(lines))
   set_origin(table, if (kept) file, if (kept) as.integer(lines))
 }
 
