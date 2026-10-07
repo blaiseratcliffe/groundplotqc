@@ -835,7 +835,8 @@ build_template <- function(spec, pipeline_dir = NULL, workbook_path = NULL) {
 # ---- The files and the command line (task 4) ----
 
 # What the code does that the build doesn't seed, and where it disagrees with the plan, read on
-# 2026-10-06 (D13.4 (4)); listed in the review guide under pipeline_rule (D13.6 (1)).
+# 2026-10-06 (D13.4 (4)); listed in the review guide under pipeline_rule (D13.6 (1)). The guide
+# prints `what` as written, so an attribute name in it is in a code span (D13.11).
 code_notes <- data.table::data.table(
   table_name = c(
     "magp_design_frames", "magp_subplots", "magp_design_frames", "magp_design_frames",
@@ -851,9 +852,9 @@ code_notes <- data.table::data.table(
     "\"Z\" on O and V frames, \"X\" on the others (AB, BC and ON)",
     "\"Z\" where a subplot's first frame type is O",
     "\"Z\" on AB's R and O frames and on QC's frames other than M",
-    "-9 on QC's R frames' min_dbh, M frames' max_dbh, and S and M frames' min_ht",
+    "-9 on QC's R frames' `min_dbh`, M frames' `max_dbh`, and S and M frames' `min_ht`",
     "-9 on every QC frame",
-    "-9 on every AB frame for max_ht, and on AB's frames other than R for max_dbh",
+    "-9 on every AB frame for `max_ht`, and on AB's frames other than R for `max_dbh`",
     "-9 on BC's M frames",
     "ON writes -1 on its O frames, where plan 5.6 gives N",
     "the pipeline delivers NA for ON's age-sample trees, where plan 6.7 expects \"Z\""
@@ -951,9 +952,13 @@ guide_text <- c(
     "4. Decide each item listed under \"For your review\". The build left most of them out; a",
     "clash is a row it did write, with A2's value. If a source is listed under \"Not seeded:",
     "sources not given\", rebuild with its `--pipeline-dir` or `--workbook` before you start",
-    "editing (move both files away first). Once you have edits, don't rebuild: set the",
-    "frame-rule and link rows by hand from their notes; register and workbook rows can't be",
-    "recovered that way and need a rebuild into a separate folder (`--output-dir`) to copy from."
+    paste0(
+      "editing (move `", output_files[["matrix"]], "` and `", output_files[["guide"]],
+      "` away first)."
+    ),
+    "Once you have edits, don't rebuild: set the frame-rule and link rows by hand from their",
+    "notes; register and workbook rows can't be recovered that way and need a rebuild into a",
+    "separate folder (`--output-dir`) to copy from."
   ),
   paste(
     "5. Edit the file in a text editor, or in Excel through Data > From Text/CSV with every",
@@ -1080,7 +1085,7 @@ run_lines <- function(template) {
     } else if (heading == "pipeline_rule") {
       paste0(
         "- ", code_span(rows$table_name), " ", code_span(rows$attribute_name), ": ",
-        markdown_text(rows$what), " (", code_span(rows$where), ")"
+        rows$what, " (", code_span(rows$where), ")"
       )
     } else {
       paste0(
@@ -1186,8 +1191,14 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   spec <- magp_spec()
   template <- build_template(spec, given$pipeline_dir, given$workbook)
   guide <- review_guide(template)
-  # Absolute forms only, so a short relative folder can't match the guide's own words.
-  given_paths <- normalizePath(unlist(given, use.names = FALSE), winslash = "/", mustWork = FALSE)
+  # Absolute forms only, so a short relative folder can't match the guide's own words: a path
+  # without a drive letter, a leading slash, backslash or tilde gets the working directory in
+  # front, since normalizePath() leaves a missing relative path as it is off Windows.
+  given_paths <- unlist(given, use.names = FALSE)
+  given_paths <- data.table::fifelse(
+    grepl("^([A-Za-z]:|[/\\\\~])", given_paths), given_paths, file.path(getwd(), given_paths)
+  )
+  given_paths <- normalizePath(given_paths, winslash = "/", mustWork = FALSE)
   check_template(template, spec$attributes, given_paths, guide)
   paths <- write_template(template, guide, given$output_dir)
   # The console says what wasn't seeded, in the guide's own words (D13.5 (1)).

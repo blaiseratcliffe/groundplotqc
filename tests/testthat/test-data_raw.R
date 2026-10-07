@@ -1333,13 +1333,23 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
   )
   rules <- which(startsWith(guide, "### Not seeded: rules seen"))
   expect_equal(guide[rules + 1L:3L], c("", scripts, ""))
+  # The Scripts line repeats three of pipeline_files' names (AB's runs through the workbook).
+  named <- regmatches(scripts, gregexpr("magpv2_blocks_1-4_[A-Z]+_[0-9a-z._]+\\.R", scripts))[[1L]]
+  expect_length(named, 4L)
+  expect_true(all(named[!grepl("_AB_", named)] %in% build$pipeline_files$file))
   expect_true(any(
     guide == "- `magp_design_frames` `max_dbh`: -9 on BC's M frames (`BC v7.3 lines 3219, 5491`)"
   ))
   expect_true(any(guide == paste0(
-    "- `magp_design_frames` `min_dbh, max_dbh, min_ht`: -9 on QC's R frames' min\\_dbh, M frames' ",
-    "max\\_dbh, and S and M frames' min\\_ht (`QUE v7.3 lines 751-753`)"
+    "- `magp_design_frames` `min_dbh, max_dbh, min_ht`: -9 on QC's R frames' `min_dbh`, ",
+    "M frames' `max_dbh`, and S and M frames' `min_ht` (`QUE v7.3 lines 751-753`)"
   )))
+  expect_true(any(guide == paste0(
+    "- `magp_design_frames` `max_ht, max_dbh`: -9 on every AB frame for `max_ht`, and on AB's ",
+    "frames other than R for `max_dbh` (`AB v7.7 lines 2676, 2683`)"
+  )))
+  # The nine fixed notes are printed as written: no backslash escapes in them.
+  expect_false(any(grepl("\\", guide[rules + 4L:12L], fixed = TRUE)))
   expect_true(any(guide == "- pipeline scripts: not given"))
   item <- guide[startsWith(guide, "- `magp_sites.aspect`, QC")]
   expect_equal(
@@ -1360,15 +1370,20 @@ test_that("review_guide lists all nine topics with their counts and escapes Mark
   expect_true(any(grepl("sign-off doesn't require it.", guide, fixed = TRUE)))
   expect_true(any(startsWith(guide, "4. Decide each item listed under \"For your review\". The")))
   expect_true(any(grepl("rebuild with its `--pipeline-dir` or `--workbook`", guide, fixed = TRUE)))
+  expect_true(any(grepl(
+    "(move `applicability_working.csv` and `review_guide.md` away first)", guide,
+    fixed = TRUE
+  )))
   expect_true(any(grepl("(`--output-dir`) to copy from.", guide, fixed = TRUE)))
   expect_true(any(grepl("Sign-off marks the matrix confirmed (plan 21 M9)", guide, fixed = TRUE)))
   expect_equal(build$markdown_text("a\n- b  &c"), "a - b \\&c")
   stray <- template
   stray$review <- rbind(template$review, data.table::data.table(topic = "other_topic"), fill = TRUE)
   expect_error(build$review_guide(stray), "topics the guide doesn't list: other_topic")
-  # A short relative folder trips the gate as typed and passes it as main() normalises it.
+  # A short relative folder trips the gate as typed and passes it as main() makes it absolute,
+  # the working directory in front, which holds on every OS whether or not the folder exists.
   expect_error(build$check_template(template, spec$attributes, "matrix", guide), "a machine path")
-  folder <- normalizePath("matrix", winslash = "/", mustWork = FALSE)
+  folder <- file.path(normalizePath(".", winslash = "/"), "matrix")
   expect_true(build$check_template(template, spec$attributes, folder, guide))
 })
 
@@ -1435,6 +1450,7 @@ test_that("review_guide names its sources and counts every row once (D13.5 (2))"
   pipeline_lines <- sprintf(
     "- `%s` %s, SHA-256 `%s`", pipeline$file, pipeline$version, pipeline$sha256
   )
+  expect_gt(nrow(pipeline), 0L)
   expect_true(all(pipeline_lines %in% guide))
   workbook_source <- template$sources$workbook
   expect_true(
@@ -1447,7 +1463,9 @@ test_that("review_guide names its sources and counts every row once (D13.5 (2))"
     matrix$jurisdiction == "*" & matrix$magp_dataset_id == "*" &
       matrix$frame_type == "*" & matrix$meas_type == "*"
   )
-  two <- sum(grepl("; ", matrix$evidence, fixed = TRUE))
+  # The synthetic scripts give no pair two sources, so this is 0 here; the join pattern is the
+  # one run_lines() counts by, and its own test is above.
+  two <- sum(grepl("; (DD key_type|A2 |pipeline: |AB mapping: |not seeded: )", matrix$evidence))
   expect_true(sprintf(
     "Rows: %d, %d of them national; %d hold two sources.", nrow(matrix), national, two
   ) %in% guide)
