@@ -327,12 +327,17 @@ children <- function(data, node) {
 # The node holding the value of the file's one top-level `name <- value`, or a stop.
 assignment_value <- function(data, name, file) {
   wraps <- data$parent[data$token == "SYMBOL" & data$text == name]
-  tops <- data$parent[match(wraps, data$id)]
+  where <- match(wraps, data$id)
+  tops <- data$parent[where]
+  # An assignment at the top level has the file's root, 0, as its parent. The name's wrapper is
+  # an expr holding the SYMBOL alone, so the name after a `$` or `@` isn't taken for it.
+  distinct <- unique(wraps)
+  alone <- tabulate(match(data$parent, distinct), length(distinct))[match(wraps, distinct)] == 1L
+  top_level <- which(
+    tops != 0L & data$parent[match(tops, data$id)] == 0L & data$token[where] == "expr" & alone
+  )
   found <- integer()
-  for (i in seq_along(wraps)) {
-    if (tops[[i]] == 0L || data$parent[match(tops[[i]], data$id)] != 0L) {
-      next
-    }
+  for (i in top_level) {
     kids <- children(data, tops[[i]])
     ok <- nrow(kids) == 3L && kids$id[[1L]] == wraps[[i]] && kids$text[[2L]] %chin% c("<-", "=")
     if (ok) {
@@ -356,7 +361,19 @@ literal_value <- function(data, node, file) {
   constant <- nrow(kids) == 1L &&
     kids$token[[1L]] %chin% c("STR_CONST", "NUM_CONST", "NULL_CONST")
   if (constant) {
-    value <- str2lang(kids$text[[1L]])
+    text <- kids$text[[1L]]
+    # The parse data holds a string of about 1000 characters or more as a placeholder, so its
+    # full text is read from the source, as utils::getParseText() does from a one-row frame.
+    if (kids$token[[1L]] == "STR_CONST" && startsWith(text, "[")) {
+      one <- data.frame(
+        line1 = kids$line1[[1L]], col1 = kids$col1[[1L]], line2 = kids$line2[[1L]],
+        col2 = kids$col2[[1L]], token = "STR_CONST", text = text,
+        row.names = as.character(kids$id[[1L]])
+      )
+      attr(one, "srcfile") <- attr(data, "srcfile")
+      text <- utils::getParseText(one, kids$id[[1L]])
+    }
+    value <- str2lang(text)
     return(if (is.null(value)) NULL else list(value = value, line = kids$line1[[1L]]))
   }
   call <- if (nrow(kids) >= 3L) children(data, kids$id[[1L]]) else kids[0L]
@@ -364,9 +381,11 @@ literal_value <- function(data, node, file) {
     kids$token[[2L]] == "'('"
   where <- match(node, data$id)
   if (!ok) {
+    held <- data$text[[where]]
+    if (nchar(held) > 60L) held <- paste0(substr(held, 1L, 60L), "...")
     stop(sprintf(
       "%s line %d holds %s, which the build can't read without running it (D13.3 (1)).",
-      file, data$line1[[where]], data$text[[where]]
+      file, data$line1[[where]], held
     ), call. = FALSE)
   }
   fun <- call$text[[1L]]
@@ -459,7 +478,10 @@ read_register <- function(path, parts, attributes) {
       return(attributes[
         value,
         on = "table_name", nomatch = NULL,
-        list(table_name, attribute_name, reason, note, line = table_name_line)
+        list(
+          table_name, attribute_name,
+          reason = i.reason, note = i.note, line = i.table_name_line
+        )
       ])
     }
     value[, list(table_name, attribute_name, reason, note, line = attribute_name_line)]
@@ -470,7 +492,7 @@ read_register <- function(path, parts, attributes) {
 
 # The one line of a file holding a rule's anchor, or a stop (D13.4 (3)).
 anchor_line <- function(lines, anchor, file) {
-  found <- which(grepl(anchor, lines, fixed = TRUE))
+  found <- which(grepl(anchor, lines, fixed = TRUE, useBytes = TRUE))
   if (length(found) != 1L) {
     stop(sprintf(
       "%s has %d lines holding the anchor %s, not one (D13.4 (3)).", file, length(found),
@@ -502,17 +524,27 @@ pipeline_sources <- function(pipeline_dir) {
 review_rows <- function(topic, contributor, rows, evidence, note, attributes) {
   absent <- !paste(rows$table_name, rows$attribute_name) %chin%
     paste(attributes$table_name, attributes$attribute_name)
-  tables <- vapply(rows$attribute_name, function(name) {
-    found <- attributes$table_name[attributes$attribute_name == name]
-    design <- found[found %chin% no_dataset_tables]
-    if (length(design) > 0L) found <- design
-    if (length(found) == 0L) "no table" else paste(found, collapse = ", ")
-  }, character(1L), USE.NAMES = FALSE)
+  # The detail is worded for the absent pairs only, once for each distinct attribute name.
+  detail <- rep(NA_character_, nrow(rows))
+  at <- which(absent)
+  if (length(at) > 0L) {
+    names_at <- unique(rows$attribute_name[at])
+    wanted <- attributes$attribute_name %chin% names_at
+    listed <- split(attributes$table_name[wanted], attributes$attribute_name[wanted])
+    text <- vapply(names_at, function(name) {
+      found <- listed[[name]]
+      if (is.null(found)) {
+        return("the DD has no attribute of that name")
+      }
+      design <- found[found %chin% no_dataset_tables]
+      if (length(design) > 0L) found <- design
+      paste0("the DD has it in ", paste(found, collapse = ", "))
+    }, character(1L), USE.NAMES = FALSE)
+    detail[at] <- text[match(rows$attribute_name[at], names_at)]
+  }
   data.table::data.table(
     topic = topic, contributor = contributor, table_name = rows$table_name,
-    attribute_name = rows$attribute_name,
-    detail = data.table::fifelse(absent, paste0("the DD has it in ", tables), NA_character_),
-    evidence = evidence, note = note
+    attribute_name = rows$attribute_name, detail = detail, evidence = evidence, note = note
   )
 }
 
@@ -606,7 +638,9 @@ pipeline_seed <- function(pipeline_dir, attributes, frame_codes) {
   review <- list()
   for (i in which(!is.na(sources$register_rows))) {
     source <- sources[i]
-    parts <- register_parts[register_parts$file == source$file]
+    # Picked outside the brackets, since register_parts has a column named file.
+    picked <- register_parts$file == source$file
+    parts <- register_parts[picked]
     register <- read_register(source$path, parts, attributes)
     if (nrow(register) != source$register_rows) {
       stop(sprintf(

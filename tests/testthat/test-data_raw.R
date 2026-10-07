@@ -987,3 +987,206 @@ test_that("pipeline_seed checks each register's verified row count (D13.3 (1))",
   file.remove(file.path(dir, build$pipeline_files$file[[3L]]))
   expect_error(build$pipeline_sources(dir), "The pipeline folder lacks magpv2_blocks_1-4_QUE")
 })
+
+# Task 2's review fixes (D13.3, D13.4): the tests below widen the seven above.
+test_that("register_seed words its notes and lists the pairs the DD lacks (D13.4 (1), D13.6 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  # A copy of the helper's DD with radius and comments also in a design table.
+  attributes <- rbind(matrix_attributes(), data.table::data.table(
+    table_name = "magp_design_frames", attribute_name = c("radius", "comments"),
+    key_type = ".", source_row = 8:9
+  ))
+  register <- data.table::data.table(
+    table_name = c(
+      "magp_sites", "magp_designs", "magp_sites", "magp_designs", "magp_trees",
+      "magp_design_frames"
+    ),
+    attribute_name = c("src_site_id", "radius", "plot_area", "comments", "aspect", "baf"),
+    reason = c(
+      "not collected", "not collected", "no source", "computed later", "open", "not collected"
+    ),
+    note = c("asked twice", "a", NA, "c", "d", "e"), line = 11:16
+  )
+  source <- data.table::data.table(
+    file = "f.R", contributor = "BC", version = "v1", sha256 = "abc"
+  )
+  seed <- build$register_seed(register, source, attributes)
+  expect_equal(seed$rows$attribute_name, "src_site_id")
+  expect_equal(seed$rows$contributor, "BC")
+  expect_equal(seed$rows$note, "BC register, not collected: asked twice")
+  expect_equal(
+    seed$rows$evidence, "pipeline: f.R v1 sha256:abc line 11 (reg_unavailable: not collected)"
+  )
+  review <- seed$review
+  expect_equal(
+    review$topic, c("design_table", "not_in_dd", "design_table", "not_in_dd", "design_table")
+  )
+  expect_equal(review$contributor, rep("BC", 5L))
+  expect_equal(review$table_name, c(
+    "magp_designs", "magp_sites", "magp_designs", "magp_trees", "magp_design_frames"
+  ))
+  expect_equal(review$attribute_name, c("radius", "plot_area", "comments", "aspect", "baf"))
+  # A design table is preferred where the DD has the attribute in one; none where it lacks it.
+  expect_equal(review$detail, c(
+    "the DD has it in magp_design_frames", "the DD has no attribute of that name",
+    "the DD has it in magp_design_frames", "the DD has it in magp_sites", NA
+  ))
+  expect_equal(review$evidence, sprintf(
+    "pipeline: f.R v1 sha256:abc line %d (reg_unavailable: %s)", 12:16,
+    c("not collected", "no source", "computed later", "open", "not collected")
+  ))
+  expect_equal(review$note, c(
+    "BC register, not collected: a", "BC register, no source",
+    "BC register, computed later: c", "BC register, open: d", "BC register, not collected: e"
+  ))
+})
+
+test_that("assignment_value takes a top-level assignment of the name, and no other", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  path <- pipeline_script(dir, "x.R", c(
+    "obj <- list()",
+    "obj$reg <- data.table(a = \"member\")",
+    "make <- function() {",
+    "  reg <- data.table(a = \"inner\")",
+    "}",
+    "reg = data.table(a = \"top\")"
+  ))
+  data <- build$parse_data(path)
+  node <- build$assignment_value(data, "reg", "x.R")
+  expect_equal(build$literal_value(data, node, "x.R")$a, "top")
+  expect_error(build$assignment_value(data, "obj", "x.R"), NA)
+  # Neither the name after a $ nor an assignment inside a function is a top-level assignment.
+  only <- pipeline_script(dir, "y.R", c("obj$reg <- 1", "make <- function() reg <- 2"))
+  expect_error(
+    build$assignment_value(build$parse_data(only), "reg", "y.R"),
+    "y.R has 0 top-level assignments to reg"
+  )
+})
+
+test_that("literal_value gives the elements of a multi-line c() their own lines (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  path <- pipeline_script(dir, "x.R", c(
+    "x <- data.table(",
+    "  a = c(\"p\",",
+    "        \"q\", # a comment",
+    "        \"r\"),",
+    "  b = c(1, 2,",
+    "        3)",
+    ")"
+  ))
+  data <- build$parse_data(path)
+  x <- build$literal_value(data, build$assignment_value(data, "x", "x.R"), "x.R")
+  expect_equal(x$a, c("p", "q", "r"))
+  expect_equal(x$a_line, c(2L, 3L, 4L))
+  expect_equal(x$b, c(1, 2, 3))
+  expect_equal(x$b_line, c(5L, 5L, 6L))
+})
+
+test_that("read_register reads a string of 1500 characters in full (D13.3 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  long <- strrep("x", 1500)
+  part <- data.table::data.table(file = "x.R", part = "reg", kind = "rows")
+  path <- pipeline_script(dir, "x.R", c(
+    "reg <- data.table(",
+    "  table_name = \"magp_sites\", attribute_name = \"aspect\", reason = \"r\",",
+    sprintf("  note = \"%s\"", long),
+    ")"
+  ))
+  register <- build$read_register(path, part, matrix_attributes())
+  expect_equal(register$note, long)
+  expect_equal(register$line, 2L)
+})
+
+test_that("the literal_value stop quotes at most 60 characters of the code", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  part <- data.table::data.table(file = "x.R", part = "reg", kind = "rows")
+  read <- function(...) {
+    build$read_register(pipeline_script(dir, "x.R", c(...)), part, matrix_attributes())
+  }
+  expect_error(read("reg <- data.table(table_name = tables)"), "holds tables, which the build")
+  expect_error(
+    read(paste(
+      "reg <- data.table(table_name = alpha_alpha_alpha_alpha + beta_beta_beta_beta",
+      "+ gamma_gamma_gamma_gamma + delta_delta)"
+    )),
+    "holds [^,]{60}\\.\\.\\., which the build can't read"
+  )
+})
+
+test_that("read_register's tables part stops without a reason, and drops a table the DD lacks", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- withr::local_tempdir()
+  part <- data.table::data.table(file = "x.R", part = "tbl", kind = "tables")
+  path <- pipeline_script(dir, "x.R", c(
+    "tbl <- data.table(",
+    "  table_name = c(\"magp_trees\", \"magp_nowhere\"),",
+    "  reason = \"not collected\"",
+    ")"
+  ))
+  register <- build$read_register(path, part, matrix_attributes())
+  expect_equal(register$table_name, c("magp_trees", "magp_trees"))
+  expect_equal(register$attribute_name, c("magp_tree_id", "comments"))
+  expect_equal(register$line, c(2L, 2L))
+  expect_true(all(is.na(register$note)))
+  bare <- pipeline_script(dir, "y.R", "tbl <- data.table(table_name = \"magp_trees\")")
+  expect_error(
+    build$read_register(bare, part, matrix_attributes()),
+    "tbl isn't a table with columns table_name, reason"
+  )
+})
+
+test_that("frame_rule_rows puts a design column on O and V frames, for no contributor", {
+  build <- load_data_raw("build_matrix_template.R")
+  codes <- c("M", "S", "R", "O", "V")
+  unseeded <- build$frame_rule_rows(codes, NULL)
+  expect_equal(unseeded$frame_type[unseeded$attribute_name == "plot_area"], c("O", "V"))
+  expect_equal(
+    unseeded$note[unseeded$attribute_name == "plot_area"][[1L]],
+    "rule: N on O and V frames (set_design_sentinels())"
+  )
+  seeded <- build$frame_rule_rows(codes, build$pipeline_sources(pipeline_folder(build)))
+  expect_equal(seeded$frame_type[seeded$attribute_name == "max_ht"], c("O", "V"))
+  expect_equal(
+    seeded$note[seeded$attribute_name == "plot_area"][[1L]],
+    "N on O and V frames (set_design_sentinels())"
+  )
+  for (rows in list(unseeded, seeded)) {
+    expect_equal(unique(rows$table_name), "magp_design_frames")
+    expect_true(all(is.na(rows$contributor)))
+    expect_equal(unique(rows$meas_type), "*")
+  }
+})
+
+test_that("pipeline_seed gives ON's note as written, and without the folder only the rules", {
+  build <- load_data_raw("build_matrix_template.R")
+  dir <- pipeline_folder(build)
+  codes <- c("M", "S", "R", "O", "V")
+  build$pipeline_files$register_rows <- c(5L, 1L, 1L, NA)
+  seed <- build$pipeline_seed(dir, matrix_attributes(), codes)
+  # The rows come in the order: frame rules, links, then BC's, ON's and QC's registers.
+  on <- seed$rows[[4L]]
+  expect_equal(on$contributor, "ON")
+  expect_equal(on$attribute_name, "src_site_id")
+  expect_equal(on$note, "ON register, not collected: say \"none\", d\u00e9j\u00e0")
+  expect_match(on$evidence, " line 2 \\(reg_unavailable: not collected\\)")
+  none <- build$pipeline_seed(NULL, matrix_attributes(), codes)
+  expect_named(none, c("rows", "review", "sources"))
+  expect_null(none$sources)
+  expect_equal(vapply(none$rows, nrow, integer(1L)), c(20L, 2L))
+  expect_equal(length(none$review), 1L)
+  expect_equal(none$review[[1L]]$topic, "not_seeded")
+  expect_match(none$review[[1L]]$detail, "pipeline scripts not given")
+})
+
+test_that("anchor_line compares bytes, so a Latin-1 line neither warns nor hides the anchor", {
+  build <- load_data_raw("build_matrix_template.R")
+  lines <- c("caf\xe9 a", "b := -9", "caf\xe9 c")
+  # readLines(encoding = "UTF-8") marks the lines UTF-8 whatever their bytes.
+  Encoding(lines) <- "UTF-8"
+  expect_silent(found <- build$anchor_line(lines, "b := -9", "f.R"))
+  expect_equal(found, 2L)
+})
