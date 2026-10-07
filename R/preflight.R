@@ -3,24 +3,16 @@
 # findings, or the reason it couldn't run; preflight_checks() makes preflight.csv's rows
 # from them, in 4.2's order.
 
-#' The M2 pre-flight checks and their outcome on failure, in 4.2's order
+#' The pre-flight checks in the registry's order, and the outcome of each on failure
+#'
+#' A check registered `error` stops and one registered `warning` warns (D14.5).
 #' @noRd
 preflight_rules <- function() {
+  registry <- rule_registry()
+  registry <- registry[registry$check_type == "preflight"]
   data.table(
-    rule_id = c(
-      "dd_duplicate_attribute", "dd_type_unknown", "dd_type_column_ambiguous",
-      "dd_pk_missing", "dd_fk_target_missing", "code_list_missing", "code_column_missing",
-      "code_list_duplicate_code", "code_list_blank_row", "code_list_unreferenced",
-      "code_list_empty_column", "spec_clash_resolved", "spec_clash_unresolved",
-      "datasets_row_missing", "spec_encoding_invalid", "spec_csv_malformed",
-      "site_id_range_invalid", "lineage_spec_unparseable", "lineage_name_unknown",
-      "lineage_spec_row_unflagged", "lineage_id_unflagged", "crosswalk_unreadable"
-    ),
-    on_failure = c(
-      "stop", "stop", "stop", "stop", "stop", "stop", "stop", "warn", "warn", "stop",
-      "warn", "warn", "stop", "warn", "stop", "stop", "stop", "stop", "warn", "warn", "warn",
-      "stop"
-    )
+    rule_id = registry$rule_id,
+    on_failure = fifelse(registry$default_severity == "error", "stop", "warn")
   )
 }
 

@@ -2,7 +2,7 @@
 # names, help pages with a runnable example (a \dontrun{} or comment-only example counts as
 # none, D11.12, D11.19), the export-prefix linter, the pkgdown index, and name tokens against
 # NAMING.md (D12.18). The helpers are tested on synthetic help pages and lines below. The
-# rule-ID checks join with the registry at M3, the reason-code checks at M12.
+# rule-ID checks read the registry (M3a); the reason-code checks join at M12.
 
 export_pattern <- "^(gpq|magp)_[a-z0-9_]+$"
 
@@ -283,4 +283,12 @@ test_that("a \\dontrun or comment-only example counts as none", {
   expect_false(rd_has_examples(dontrun))
   expect_false(rd_has_examples(comments))
   expect_true(rd_has_examples(runs))
+})
+
+test_that("every registered rule ID is unique lower snake and has English text (D9.21)", {
+  registry <- rule_registry()
+  expect_equal(anyDuplicated(registry$rule_id), 0L)
+  expect_true(all(grepl("^[a-z][a-z0-9_]*$", registry$rule_id)))
+  texts <- report_texts()
+  expect_equal(setdiff(registry$message_id, texts$text_id[texts$lang == "en"]), character())
 })
