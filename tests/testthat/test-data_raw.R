@@ -508,3 +508,168 @@ test_that("the compiled specification is the one the build makes (D12.14, D12.27
   # Base identical(), not expect_identical(): no index attribute may differ (D12.27).
   expect_true(identical(tree_spec(), magp_spec()))
 })
+
+# ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.5) ----
+
+# A code_lists component holding a contributor sheet and a dataset sheet (D13.2 (1), (4)).
+matrix_code_lists <- function(labels = c("AB", "BC"), ids = c("100", "110")) {
+  cells <- function(sheet, columns) {
+    rows <- seq_along(columns[[1L]]) + 1L
+    data.table::rbindlist(lapply(names(columns), function(name) {
+      data.table::data.table(
+        sheet = sheet, source_row = c(1L, rows), sheet_column = name,
+        value = c(name, columns[[name]]), source_cell = NA_character_
+      )
+    }))
+  }
+  data.table::rbindlist(list(
+    cells("contributor", list(magp_contributor_id = ids, abbreviated_name = labels)),
+    cells("dataset", list(
+      magp_dataset_id = c("100.01", "110.01", "110.10"),
+      magp_contributor_id = c("100", "110", "110")
+    ))
+  ))
+}
+
+# An attributes component of three tables: a site table, a tree table and a design table.
+matrix_attributes <- function() {
+  data.table::data.table(
+    table_name = c(
+      "magp_sites", "magp_sites", "magp_sites", "magp_trees", "magp_trees", "magp_design_frames"
+    ),
+    attribute_name = c("magp_site_id", "aspect", "src_site_id", "magp_tree_id", "comments", "baf"),
+    key_type = c("PK", ".", ".", "PK", ".", "."),
+    source_row = 2:7
+  )
+}
+
+# A synthetic pipeline script: its text written to a file.
+pipeline_script <- function(dir, name, lines) {
+  path <- file.path(dir, name)
+  writeLines(enc2utf8(lines), path, useBytes = TRUE)
+  path
+}
+
+test_that("contributor_datasets maps abbreviated names to datasets (D13.2 (1), (4))", {
+  build <- load_data_raw("build_matrix_template.R")
+  datasets <- build$contributor_datasets(matrix_code_lists())
+  expect_equal(datasets$contributor, c("AB", "BC", "BC"))
+  expect_equal(datasets$magp_dataset_id, c("100.01", "110.01", "110.10"))
+  expect_equal(build$datasets_of(datasets, "BC"), c("110.01", "110.10"))
+  expect_error(build$datasets_of(datasets, "ON"), "no dataset of contributor ON")
+  expect_error(
+    build$contributor_datasets(matrix_code_lists(c("BC", "BC"))),
+    "repeats the abbreviated name BC"
+  )
+  lists <- matrix_code_lists()
+  expect_error(
+    build$contributor_datasets(lists[lists$sheet_column != "abbreviated_name"]),
+    "contributor sheet lacks abbreviated_name"
+  )
+})
+
+test_that("national_rows gives keys R with the DD's row, the rest the default O (D8.10)", {
+  build <- load_data_raw("build_matrix_template.R")
+  rows <- build$national_rows(matrix_attributes(), "20261005_magpv2_DD.xlsx")
+  expect_equal(rows$applicability, c("R", "O", "O", "R", "O", "O"))
+  expect_equal(rows$evidence[[1L]], "DD key_type PK (20261005_magpv2_DD.xlsx:2)")
+  expect_true(all(is.na(rows$evidence[rows$applicability == "O"])))
+  expect_true(all(is.na(rows$contributor) & rows$frame_type == "*" & rows$meas_type == "*"))
+})
+
+test_that("a2_rows reads X and -1 as O, Z and -9 as N, once per attribute (D13.2 (3))", {
+  build <- load_data_raw("build_matrix_template.R")
+  lineage <- data.table::data.table(
+    contributor_label = "BC",
+    table_name = c(
+      "magp_sites", "magp_sites", "magp_trees", "magp_trees", "magp_trees", "magp_sites"
+    ),
+    attribute_name = c("aspect", "aspect", "comments", "src_a", "src_b", "src_site_id"),
+    source_text = c("X", "X", "Z", "-1", "-9", "faib_header.site_identifier"),
+    note = c("Not in \"BC\"'s source.", "Not in \"BC\"'s source.", NA, NA, NA, NA),
+    source_cell = c("A2!D5", "A2!D5", "A2!D6", "A2!D7", "A2!D8", "A2!D9")
+  )
+  rows <- build$a2_rows(lineage, "20261005_magpv2_A2.xlsx")
+  expect_equal(rows$attribute_name, c("aspect", "comments", "src_a", "src_b"))
+  expect_equal(rows$applicability, c("O", "N", "O", "N"))
+  expect_equal(rows$evidence[[1L]], "A2 X (20261005_magpv2_A2.xlsx, A2!D5)")
+  expect_equal(rows$note[[1L]], "A2: Not in \"BC\"'s source.")
+  expect_true(is.na(rows$note[[2L]]))
+})
+
+test_that("merge_rows keeps A2's value on a clash and joins evidence and notes (D13.2 (2))", {
+  build <- load_data_raw("build_matrix_template.R")
+  rows <- data.table::data.table(
+    table_name = "magp_sites", attribute_name = c("aspect", "aspect", "slope", "slope"),
+    contributor = "BC", frame_type = "*", meas_type = "*",
+    applicability = c("N", "O", "O", "O"), evidence = c("A2 Z", "register", "A2 X", "register"),
+    note = c("A2: none.", NA, NA, "BC register, no source"),
+    source = c("a2", "register", "a2", "register")
+  )
+  merged <- build$merge_rows(rows)
+  expect_equal(merged$rows$applicability, c("N", "O"))
+  expect_equal(merged$rows$evidence, c("A2 Z; register", "A2 X; register"))
+  expect_equal(merged$rows$note, c("A2: none.", "BC register, no source"))
+  expect_equal(merged$review$topic, "clash")
+  expect_equal(merged$review$detail, "A2 N, register O; A2 kept")
+  rows$source <- "register"
+  expect_error(build$merge_rows(rows), "sources other than A2 disagree")
+})
+
+test_that("dataset_rows gives one row per dataset, '*' for a national row (D13.2 (1))", {
+  build <- load_data_raw("build_matrix_template.R")
+  datasets <- build$contributor_datasets(matrix_code_lists())
+  rows <- data.table::data.table(
+    table_name = "magp_sites", attribute_name = c("aspect", "aspect"), contributor = c(NA, "BC"),
+    frame_type = "*", meas_type = "*", applicability = "O", evidence = c(NA, "A2 X"),
+    note = NA_character_
+  )
+  out <- build$dataset_rows(rows, datasets)
+  expect_equal(out$magp_dataset_id, c("*", "110.01", "110.10"))
+  expect_true(all(out$jurisdiction == "*" & out$status == "proposed"))
+  rows$contributor[[2L]] <- "ON"
+  expect_error(build$dataset_rows(rows, datasets), "no dataset of contributor ON")
+})
+
+test_that("check_template stops on each break of the M2a gate and passes a sound matrix", {
+  build <- load_data_raw("build_matrix_template.R")
+  attributes <- matrix_attributes()
+  national <- build$national_rows(attributes, "dd.xlsx")
+  national[, `:=`(jurisdiction = "*", magp_dataset_id = "*", status = "proposed")]
+  sound <- list(
+    matrix = national[, build$matrix_columns, with = FALSE], review = data.table::data.table()
+  )
+  expect_true(build$check_template(sound, attributes))
+  broken <- function(edit) {
+    template <- list(matrix = data.table::copy(sound$matrix), review = sound$review)
+    edit(template$matrix)
+    template
+  }
+  expect_error(
+    build$check_template(broken(function(m) m[2L, attribute_name := "slope"]), attributes),
+    "magp_sites aspect has 0 national rows"
+  )
+  expect_error(
+    build$check_template(broken(function(m) m[2L, applicability := "Y"]), attributes),
+    "row 2 has applicability Y"
+  )
+  expect_error(
+    build$check_template(broken(function(m) m[1L, evidence := NA]), attributes),
+    "row 1 has no evidence"
+  )
+  local <- data.table::copy(sound$matrix[2L])
+  local[, `:=`(magp_dataset_id = "110.01", evidence = "A2 X")]
+  repeated <- list(matrix = rbind(sound$matrix, local, local), review = sound$review)
+  expect_error(build$check_template(repeated, attributes), "row 8 repeats a key")
+  expect_error(
+    build$check_template(broken(function(m) m[2L, note := "see C:\\pipe\\x.R"]), attributes),
+    "a machine path in: see C:"
+  )
+  expect_error(
+    build$check_template(sound, attributes, guide = "read /home/me/x"), "a machine path in"
+  )
+  given <- broken(function(m) m[2L, note := "from pipe dir/x.R"])
+  expect_error(build$check_template(given, attributes, paths = "pipe dir"), "a machine path in")
+  url <- broken(function(m) m[2L, note := "https://x.org"])
+  expect_true(build$check_template(url, attributes))
+})
