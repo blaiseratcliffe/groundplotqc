@@ -97,11 +97,20 @@ check_settings <- function(settings = list(), rules = NULL) {
 #' The value is checked against its definition, a bad one a caller error naming the setting
 #' and its tier. The rule-set tier is a settings row, its value returned as the text it
 #' holds, as `character` is the only type so far. Call check_settings() first.
+#'
+#' The severity setting isn't resolved here: it is one value per rule, with a tier for each,
+#' so asking for it is a developer error pointing to severity_entries() (D14.29).
 #' @noRd
 resolve_setting <- function(name, settings = list(), rules = NULL) {
   definition <- setting_definitions()[[name]]
   if (is.null(definition)) {
     stop(sprintf("No setting is named %s.", name), call. = FALSE)
+  }
+  if (name == "severity") {
+    stop(
+      "The severity setting is resolved per rule by severity_entries(), not by resolve_setting().",
+      call. = FALSE
+    )
   }
   rows <- rules$settings
   row <- if (!is.null(rows) && !is.na(definition$type)) which(rows$setting == name)

@@ -54,6 +54,22 @@ test_that("a bad language stops, naming the setting and where it came from", {
   expect_error(resolve_setting("no_such"), "No setting is named no_such")
 })
 
+test_that("resolve_setting refuses severity and points to severity_entries (D14.29)", {
+  withr::local_options(groundplotqc.severity = NULL)
+  expect_error(
+    resolve_setting("severity", list(), NULL),
+    "The severity setting is resolved per rule by severity_entries(), not by resolve_setting().",
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("severity", list(severity = c(a = "warning")), lang_rule_set()),
+    "resolved per rule by severity_entries()",
+    fixed = TRUE
+  )
+  withr::local_options(groundplotqc.severity = c(a = "warning"))
+  expect_error(resolve_setting("severity"), "severity_entries()", fixed = TRUE)
+})
+
 test_that("check_settings refuses an unnamed list, an unknown setting and bad rule-set rows", {
   expect_null(check_settings())
   expect_null(check_settings(list(lang = "fr")))
