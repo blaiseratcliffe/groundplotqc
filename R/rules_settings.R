@@ -3,10 +3,6 @@
 # metadata (9.5). Only the settings something reads are declared: lang and severity from
 # M3a, each later milestone adding its own with the feature that reads it (D14.9).
 
-# A language code: two or three lower-case letters, for the lang setting and the lang
-# column of a caller's text table (D14.20).
-lang_pattern <- "^[a-z]{2,3}$"
-
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value and what the test wants
 #'
@@ -70,7 +66,10 @@ check_settings <- function(settings = list(), rules = NULL) {
   refused <- setdiff(rows$setting, takes_rows)
   if (length(refused) > 0L) {
     stop(sprintf(
-      "The rule set's settings rows name settings a rule set can't give there: %s. They take %s.",
+      paste(
+        "The rule set's settings rows name settings a rule set can't give there: %s.",
+        "A settings row can give only %s."
+      ),
       paste(shown(refused), collapse = ", "), paste(takes_rows, collapse = ", ")
     ), call. = FALSE)
   }
@@ -83,10 +82,10 @@ check_settings <- function(settings = list(), rules = NULL) {
   wanted <- vapply(definitions[rows$setting], `[[`, "", "type")
   wrong <- is.na(rows$type) | rows$type != wanted
   if (any(wrong)) {
+    # Each setting is told with its own type.
     stop(sprintf(
-      "The rule set's settings rows give the wrong type for %s: %s takes %s.",
-      paste(shown(rows$setting[wrong]), collapse = ", "),
-      paste(shown(rows$setting[wrong]), collapse = ", "), paste(wanted[wrong], collapse = ", ")
+      "The rule set's settings rows give the wrong type for %s.",
+      paste0(shown(rows$setting[wrong]), ", which takes ", wanted[wrong], collapse = "; ")
     ), call. = FALSE)
   }
   invisible(NULL)
@@ -114,7 +113,8 @@ resolve_setting <- function(name, settings = list(), rules = NULL) {
   }
   rows <- rules$settings
   row <- if (!is.null(rows) && !is.na(definition$type)) which(rows$setting == name)
-  option <- getOption(paste0("groundplotqc.", name))
+  option_name <- paste0("groundplotqc.", name)
+  option <- getOption(option_name)
   if (!is.null(settings[[name]])) {
     value <- settings[[name]]
     tier <- "argument"
@@ -129,8 +129,10 @@ resolve_setting <- function(name, settings = list(), rules = NULL) {
     tier <- "built-in"
   }
   if (!definition$valid(value)) {
+    # The option tier names the option, as a finding on the severity setting does.
+    shown_tier <- if (tier == "option") paste("option", option_name) else tier
     stop(sprintf(
-      "Setting %s (%s) must be %s.", name, tier, definition$wants
+      "Setting %s (%s) must be %s.", name, shown_tier, definition$wants
     ), call. = FALSE)
   }
   list(value = value, tier = tier)
@@ -151,7 +153,10 @@ severity_entries <- function(settings = list()) {
       return(NULL)
     }
     if (!definition$valid(x)) {
-      stop(sprintf("Setting severity (%s) must be %s.", tier, definition$wants), call. = FALSE)
+      shown_tier <- if (tier == "option") "option groundplotqc.severity" else tier
+      stop(sprintf(
+        "Setting severity (%s) must be %s.", shown_tier, definition$wants
+      ), call. = FALSE)
     }
     data.table(rule_id = names(x), severity = unname(x), tier = tier)
   })

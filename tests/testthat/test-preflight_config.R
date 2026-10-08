@@ -494,3 +494,41 @@ test_that("text_slot_unknown reports a repeated slot once and changes no table (
   expect_true(identical(text, before_text))
   expect_true(identical(report_texts(), before_engine))
 })
+
+test_that("text_slots finds the slots fill_placeholders fills, no more and no fewer", {
+  templates <- c(
+    "{a} and {b_1}", "{A} {a-b} {} { c } {{d}} {e", "no slots", "{a}{a} {f}", "{9}"
+  )
+  for (template in templates) {
+    found <- text_slots(data.frame(text_id = "t", lang = "en", text = template))
+    # With no values at all, fill_placeholders() stops naming each slot it would fill.
+    asked <- tryCatch(fill_placeholders(template, list()), error = conditionMessage)
+    filled <- if (identical(asked, template)) {
+      character()
+    } else {
+      paste0("{", strsplit(sub("^.* needs a value for (.*)[.]$", "\\1", asked), ", ")[[1L]], "}")
+    }
+    expect_setequal(found$slot, filled)
+  }
+  expect_equal(
+    text_slots(data.frame(text_id = "t", lang = "en", text = "{a}{a} {f}"))$slot,
+    c("{a}", "{a}", "{f}")
+  )
+})
+
+test_that("allowed_text lists each rule's allowed values in order, blank for a rule with none", {
+  allowed <- data.table::data.table(
+    rule_id = c("a", "b", "a", "a"), value = c("x", "y", "z", "w")
+  )
+  expect_equal(
+    allowed_text(allowed, c("a", "c", "b", "a", NA)), c("x, z, w", "", "y", "x, z, w", "")
+  )
+  expect_identical(allowed_text(allowed, character()), character())
+  expect_identical(allowed_text(allowed[0L], "a"), "")
+  # A pre-flight check has no allowed value; an open rule has its own.
+  allowed <- allowed_overrides(test_registry())$severity
+  expect_equal(
+    allowed_text(allowed, c("dd_pk_missing", "conform", "plaus", "info_rule")),
+    c("", "error, warning", "flag", "info")
+  )
+})

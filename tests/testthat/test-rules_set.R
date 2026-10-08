@@ -82,7 +82,15 @@ test_that("a rule set that isn't one stops, naming what is wrong", {
   set <- a_rule_set()
   expect_error(validate_rule_set(c(set, list(extras = data.frame()))), "extras")
   expect_error(validate_rule_set(set[c("meta", "settings")]), "must have a rules component")
-  expect_error(validate_rule_set(c(set, set["meta"])), "more than once")
+  # The repeated component is named (RR-6).
+  expect_error(
+    validate_rule_set(c(set, set["meta"])), "`rules` names a component more than once: meta.",
+    fixed = TRUE
+  )
+  expect_error(
+    validate_rule_set(c(set, set[c("rules", "meta")])), "more than once: meta, rules.",
+    fixed = TRUE
+  )
   set$rules$note <- "x"
   set$rules$enabled <- NULL
   expect_error(
@@ -101,12 +109,19 @@ test_that("a column named twice, or not one value per row, stops", {
   expect_error(validate_rule_set(set), "(repeated enabled)", fixed = TRUE)
   set <- a_rule_set()
   set$rules$severity <- matrix(c("error", "warning", "flag", "info"), 2)
+  # The column stops are worded as the text table's are (RR-6).
   expect_error(
-    validate_rule_set(set), "component rules, column severity, must hold one value per row"
+    validate_rule_set(set),
+    "Column `severity` of rule-set component `rules` must hold one value per row.",
+    fixed = TRUE
   )
   set <- a_rule_set()
   set$rules$rule_id <- list("a", c("b", "c"))
-  expect_error(validate_rule_set(set), "column rule_id, must hold one value per row")
+  expect_error(
+    validate_rule_set(set),
+    "Column `rule_id` of rule-set component `rules` must hold one value per row.",
+    fixed = TRUE
+  )
 })
 
 test_that("a name with an invalid byte is shown with the byte as <xx> (D12.28)", {
@@ -127,7 +142,51 @@ test_that("meta has one row, enabled is TRUE or FALSE, text is valid UTF-8", {
   expect_error(validate_rule_set(set), "in rows 1, 2")
   set <- a_rule_set()
   set$rules$rule_id[[1L]] <- bad_bytes()
-  expect_error(validate_rule_set(set), "column rule_id, holds text that isn't valid UTF-8")
+  # The stop names the rows, as the text table's does (RR-6).
+  expect_error(
+    validate_rule_set(set),
+    "Column `rule_id` of rule-set component `rules` holds text that isn't valid UTF-8, in row 1.",
+    fixed = TRUE
+  )
+  set$rules$rule_id <- c(bad_bytes(), bad_bytes())
+  expect_error(validate_rule_set(set), "valid UTF-8, in rows 1, 2.", fixed = TRUE)
+})
+
+test_that("a long list of rows or lines in a stop shows ten, then how many more (RR-6)", {
+  first_ten <- paste(1:10, collapse = ", ")
+  set <- a_rule_set()
+  set$rules <- data.frame(
+    rule_id = letters[1:12], table_name = "*", attribute_name = "*", severity = NA,
+    class = NA, enabled = "maybe"
+  )
+  expect_error(
+    validate_rule_set(set), paste0("aren't TRUE or FALSE, in rows ", first_ten, " and 2 more."),
+    fixed = TRUE
+  )
+  set$rules <- data.frame(
+    rule_id = rep(bad_bytes(), 11L), table_name = "*", attribute_name = "*", severity = NA,
+    class = NA, enabled = TRUE
+  )
+  expect_error(
+    validate_rule_set(set), paste0("valid UTF-8, in rows ", first_ten, " and 1 more."),
+    fixed = TRUE
+  )
+  # A component read from a file gives its file's lines, ten of them.
+  dir <- withr::local_tempdir()
+  writeLines(
+    c(
+      "rule_id,table_name,attribute_name,severity,class,enabled",
+      paste0(letters[1:12], ",*,*,,,maybe")
+    ),
+    file.path(dir, "rules_rules.csv")
+  )
+  expect_error(
+    read_rule_set(dir),
+    paste0(
+      "in ", paste0("line ", 2:11, " of rules_rules.csv", collapse = ", "), " and 2 more."
+    ),
+    fixed = TRUE
+  )
 })
 
 test_that("enabled is read in any case of the ASCII letters, a look-alike letter stops", {
@@ -136,7 +195,7 @@ test_that("enabled is read in any case of the ASCII letters, a look-alike letter
   expect_identical(validate_rule_set(set)$rules$enabled, c(TRUE, FALSE))
   # U+017F, the long s, has the capital S: base toupper() would have read it as FALSE.
   set$rules$enabled <- c("TRUE", "fal\u017fe")
-  expect_error(validate_rule_set(set), "in rows 2")
+  expect_error(validate_rule_set(set), "in row 2")
 })
 
 test_that("the enabled stop names the file's line when the component has its origin (D14.26)", {
@@ -167,11 +226,11 @@ test_that("the enabled stop names the file's line when the component has its ori
   # The same rule set given in memory has no origin: R's row number, as before.
   set <- a_rule_set()
   set$rules$enabled <- c("TRUE", "")
-  expect_error(validate_rule_set(set), "in rows 2.", fixed = TRUE)
+  expect_error(validate_rule_set(set), "in row 2.", fixed = TRUE)
   # An origin that doesn't match the rows is dropped, so the stop gives R's rows.
   attr(set$rules, "source_file") <- "rules_rules.csv"
   attr(set$rules, "source_lines") <- 3L
-  expect_error(validate_rule_set(set), "in rows 2.", fixed = TRUE)
+  expect_error(validate_rule_set(set), "in row 2.", fixed = TRUE)
 })
 
 test_that("an empty rules component is a rule set", {

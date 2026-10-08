@@ -30,7 +30,9 @@ the package's English text. A row that uses a \{slot\} the package's row of that
 lacks stops pre-flight (\code{text_slot_unknown}).}
 
 \item{output_dir}{\code{NULL}, or a folder: \code{metadata/preflight.csv} and
-\code{reports/preflight.html} are written under it, whether or not pre-flight stops.}
+\code{reports/preflight.html} are written under it, whether or not pre-flight stops. The
+page's footer names the package version, the specification files and, given a rule set
+with a meta row, that rule set.}
 }
 \value{
 The pre-flight table, invisibly: columns \code{rule_id}, \code{outcome} (\code{stop}, \code{warn},

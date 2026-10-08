@@ -203,6 +203,12 @@ test_that("validate_text_table copies a table and refuses a malformed one", {
     validate_text_table(data.frame(text_id = c("a", "b"), lang = c("fr", " "), text = c(NA, "T"))),
     "blank cells in rows 1, 2;"
   )
+  # One row is "row", not "rows" (RR-7).
+  expect_error(
+    validate_text_table(data.frame(text_id = c("a", "b"), lang = "fr", text = c("T", NA))),
+    "`text` has blank cells in row 2; every text_id, lang and text must be filled.",
+    fixed = TRUE
+  )
   # A table of no rows is a table, as a file with only its header is.
   empty <- validate_text_table(data.frame(text_id = "a", lang = "fr", text = "1")[0L, ])
   expect_equal(nrow(empty), 0L)
@@ -211,7 +217,7 @@ test_that("validate_text_table copies a table and refuses a malformed one", {
   Encoding(bad) <- "UTF-8"
   expect_error(
     validate_text_table(data.frame(text_id = c("a", "b"), lang = "fr", text = c("T", bad))),
-    "Column `text` of `text` holds text that isn't valid UTF-8, in rows 2.",
+    "Column `text` of `text` holds text that isn't valid UTF-8, in row 2.",
     fixed = TRUE
   )
 })
@@ -319,6 +325,11 @@ test_that("validate_text_table refuses a lang that isn't a language code, naming
   expect_error(
     validate_text_table(given),
     "aren't a language code of two or three lower-case letters, in rows 1, 3."
+  )
+  expect_error(
+    validate_text_table(data.frame(text_id = c("a", "b"), lang = c("FR", "fr"), text = "T")),
+    "aren't a language code of two or three lower-case letters, in row 1.",
+    fixed = TRUE
   )
 })
 

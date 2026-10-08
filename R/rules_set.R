@@ -53,8 +53,13 @@ validate_rule_set <- function(rules) {
       paste(mark_invalid_utf8(unknown), collapse = ", "), paste(names(schema), collapse = ", ")
     ), call. = FALSE)
   }
-  if (anyDuplicated(names(rules)) > 0L) {
-    stop("`rules` names a component more than once.", call. = FALSE)
+  # The repeated components, in 3.5's order.
+  twice <- intersect(names(schema), names(rules)[duplicated(names(rules))])
+  if (length(twice) > 0L) {
+    stop(
+      "`rules` names a component more than once: ", paste(twice, collapse = ", "), ".",
+      call. = FALSE
+    )
   }
   if (!"rules" %in% names(rules)) {
     stop("`rules` must have a rules component.", call. = FALSE)
@@ -101,38 +106,47 @@ rule_set_component <- function(x, name, columns) {
     value <- x[[column]]
     if (is.list(value) || !is.null(dim(value)) || length(value) != nrow(x)) {
       stop(sprintf(
-        "Rule-set component %s, column %s, must hold one value per row.", name, column
+        "Column `%s` of rule-set component `%s` must hold one value per row.", column, name
       ), call. = FALSE)
     }
   }
   table <- as.data.table(lapply(names(columns), function(column) as_text(x[[column]])))
   setnames(table, names(columns))
+  table <- carry_origin(table, x)
+  # The first ten of a list for a message, then how many more.
+  listed <- function(items, n = 10L) {
+    if (length(items) <= n) {
+      return(paste(items, collapse = ", "))
+    }
+    paste0(paste(items[seq_len(n)], collapse = ", "), " and ", length(items) - n, " more")
+  }
+  # Where the cells at `bad` are, for a message: by their file lines when the component has
+  # its origin, by R's row numbers otherwise (D14.26).
+  places <- function(bad) {
+    origin_file <- attr(table, "source_file", exact = TRUE)
+    if (is.null(origin_file)) {
+      return(paste(if (length(bad) == 1L) "row" else "rows", listed(bad)))
+    }
+    listed(sprintf("line %d of %s", attr(table, "source_lines", exact = TRUE)[bad], origin_file))
+  }
   for (column in names(columns)) {
-    text <- table[[column]]
-    if (!all(validUTF8(text[!is.na(text)]))) {
+    bad <- which(!validUTF8(table[[column]]))
+    if (length(bad) > 0L) {
       stop(sprintf(
-        "Rule-set component %s, column %s, holds text that isn't valid UTF-8.", name, column
+        "Column `%s` of rule-set component `%s` holds text that isn't valid UTF-8, in %s.",
+        column, name, places(bad)
       ), call. = FALSE)
     }
   }
-  table <- carry_origin(table, x)
   # A column the schema declares logical is read from TRUE or FALSE, the ASCII letters in any
-  # case: toupper() would fold other letters too, such as the long s. A bad cell is placed by
-  # its file line when the component has its origin, by R's row number otherwise (D14.26).
+  # case: toupper() would fold other letters too, such as the long s.
   for (column in names(columns)[columns == "logical"]) {
     flag <- chartr(paste(letters, collapse = ""), paste(LETTERS, collapse = ""), table[[column]])
     bad <- which(is.na(flag) | !flag %chin% c("TRUE", "FALSE"))
     if (length(bad) > 0L) {
-      origin_file <- attr(table, "source_file", exact = TRUE)
-      places <- if (is.null(origin_file)) {
-        paste("rows", paste(bad, collapse = ", "))
-      } else {
-        origin_lines <- attr(table, "source_lines", exact = TRUE)[bad]
-        paste(sprintf("line %d of %s", origin_lines, origin_file), collapse = ", ")
-      }
       stop(sprintf(
         "Rule-set component %s has %s values that aren't TRUE or FALSE, in %s.",
-        name, column, places
+        name, column, places(bad)
       ), call. = FALSE)
     }
     set(table, j = column, value = flag == "TRUE")
@@ -162,12 +176,6 @@ carry_origin <- function(table, from) {
     validUTF8(file) && is.numeric(lines) && length(lines) == nrow(table) && !anyNA(lines) &&
     all(lines >= 1 & lines <= .Machine$integer.max & lines == trunc(lines))
   set_origin(table, if (kept) file, if (kept) as.integer(lines))
-}
-
-#' Text with each byte that isn't valid UTF-8 written as <xx>, for a caller error (D12.28)
-#' @noRd
-mark_invalid_utf8 <- function(x) {
-  iconv(x, "UTF-8", "UTF-8", sub = "byte")
 }
 
 #' A rule set read from a folder of rules_<component>.csv files

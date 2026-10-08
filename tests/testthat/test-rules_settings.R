@@ -49,8 +49,11 @@ test_that("a bad language stops, naming the setting and where it came from", {
     resolve_setting("lang", rules = lang_rule_set(NA_character_)), "Setting lang (rule set)",
     fixed = TRUE
   )
+  # The option tier names the option (RR-8).
   withr::local_options(groundplotqc.lang = "")
-  expect_error(resolve_setting("lang"), "(option)", fixed = TRUE)
+  expect_error(resolve_setting("lang"), "Setting lang (option groundplotqc.lang) must be one",
+    fixed = TRUE
+  )
   expect_error(resolve_setting("no_such"), "No setting is named no_such")
 })
 
@@ -78,9 +81,16 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
   expect_error(check_settings(list(lang = "en", lang = "fr")), "each named once")
   expect_error(check_settings(data.frame(lang = "en")), "each named once")
   expect_error(check_settings(list(row_cap = 10)), "doesn't have: row_cap")
-  expect_error(check_settings(rules = lang_rule_set(type = "integer")), "wrong type for lang")
+  # The wrong type is told with the setting's type, once (RR-8).
   expect_error(
-    check_settings(rules = lang_rule_set(type = NA_character_)), "wrong type for lang"
+    check_settings(rules = lang_rule_set(type = "integer")),
+    "give the wrong type for lang, which takes character.",
+    fixed = TRUE
+  )
+  expect_error(
+    check_settings(rules = lang_rule_set(type = NA_character_)),
+    "give the wrong type for lang, which takes character.",
+    fixed = TRUE
   )
   blank_setting <- lang_rule_set()
   blank_setting$settings$setting <- NA_character_
@@ -88,12 +98,20 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
   twice <- lang_rule_set()
   twice$settings <- rbind(twice$settings, twice$settings)
   expect_error(check_settings(rules = twice), "give lang more than once")
+  # A refused row says what a settings row can give, with no "they" to resolve (RR-8).
   severity_row <- lang_rule_set()
   severity_row$settings$setting <- "severity"
-  expect_error(check_settings(rules = severity_row), "can't give there: severity")
+  expect_error(
+    check_settings(rules = severity_row),
+    "can't give there: severity. A settings row can give only lang.",
+    fixed = TRUE
+  )
   unknown_row <- lang_rule_set()
   unknown_row$settings$setting <- "row_cap"
-  expect_error(check_settings(rules = unknown_row), "can't give there: row_cap")
+  expect_error(
+    check_settings(rules = unknown_row), "can't give there: row_cap. A settings row can give only",
+    fixed = TRUE
+  )
 })
 
 test_that("severity_entries lists the argument's and the option's entries with their tier", {
@@ -133,7 +151,7 @@ test_that("a severity setting of the wrong shape stops, naming its tier", {
     )
   }
   withr::local_options(groundplotqc.severity = "warning")
-  expect_error(severity_entries(), "Setting severity (option)", fixed = TRUE)
+  expect_error(severity_entries(), "Setting severity (option groundplotqc.severity)", fixed = TRUE)
 })
 
 test_that("an invalid byte or a matrix stops with the setting's own message", {
@@ -150,7 +168,7 @@ test_that("an invalid byte or a matrix stops with the setting's own message", {
     fixed = TRUE
   )
   withr::local_options(groundplotqc.severity = named_bad)
-  expect_error(severity_entries(), "Setting severity (option)", fixed = TRUE)
+  expect_error(severity_entries(), "Setting severity (option groundplotqc.severity)", fixed = TRUE)
   withr::local_options(groundplotqc.severity = NULL)
   expect_no_warning(expect_error(
     resolve_setting("lang", list(lang = bad)), "Setting lang (argument)",

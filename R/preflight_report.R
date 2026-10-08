@@ -1,10 +1,13 @@
 # The pre-flight files (plan 4.2, 9.5, 11.5; D2.11, D7.11, D12.17, D12.67, D14.11, D14.12,
-# D14.14): metadata/preflight.csv, the table as returned, and reports/preflight.html, a
+# D14.14, D14.39): metadata/preflight.csv, the table as returned, and reports/preflight.html, a
 # self-contained page that never goes to a provider (13). Uncapped (D12.17).
 
 #' metadata/preflight.csv and reports/preflight.html under output_dir
+#'
+#' `rules` is the rule set that was checked, as the context holds it, or NULL; the page's
+#' footer names it (D14.39).
 #' @noRd
-write_preflight_files <- function(results, spec, output_dir) {
+write_preflight_files <- function(results, spec, output_dir, rules = NULL) {
   csv <- file.path(output_dir, "metadata", "preflight.csv")
   html <- file.path(output_dir, "reports", "preflight.html")
   # Both folders are made, or the call stops naming the one it couldn't, before any file.
@@ -21,7 +24,7 @@ write_preflight_files <- function(results, spec, output_dir) {
   fwrite(results, csv, na = "", quote = TRUE)
   # The page is built before its file opens, so an error in building it leaves no empty
   # page behind.
-  page <- preflight_html(results, spec)
+  page <- preflight_html(results, spec, rules)
   # The page's text is UTF-8 already, and its bytes are written as they are, so a session
   # in another locale doesn't turn an accented letter into text such as "<U+00E9>".
   connection <- file(html, open = "wb")
@@ -67,8 +70,11 @@ preflight_result_line <- function(results) {
 
 #' The pre-flight page: the result line, a summary per check, then every row, uncapped
 #' (D12.17)
+#'
+#' The footer names the package version and the specification files, then the rule set when
+#' `rules`, the rule set that was checked, has a meta row (D14.39).
 #' @noRd
-preflight_html <- function(results, spec) {
+preflight_html <- function(results, spec, rules = NULL) {
   label <- function(columns) {
     vapply(paste0("preflight_column_", columns), report_text, character(1), USE.NAMES = FALSE)
   }
@@ -107,6 +113,18 @@ preflight_html <- function(results, spec) {
     as.character(utils::packageVersion("groundplotqc")), paste(listed, collapse = "; ")
   )
   names(meta) <- c(report_text("preflight_meta_package"), report_text("preflight_meta_files"))
+  # The rule set's name, version and spec set, from its meta row; no entry without one.
+  rule_set_meta <- rules[["meta"]]
+  if (!is.null(rule_set_meta) && nrow(rule_set_meta) == 1L) {
+    meta <- c(meta, structure(
+      report_text(
+        "preflight_meta_rule_set_value",
+        rule_set_name = rule_set_meta$rule_set_name, version = rule_set_meta$version,
+        spec_version = rule_set_meta$spec_version
+      ),
+      names = report_text("preflight_meta_rule_set")
+    ))
+  }
   html_page(
     report_text("preflight_title"),
     list(

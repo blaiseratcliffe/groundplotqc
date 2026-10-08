@@ -273,8 +273,76 @@ test_that("the page puts the result line first and labels the rows' count (D14.1
   )
   intro <- regexpr("Pre-flight checks the specification", page, fixed = TRUE)
   expect_true(result > 0L && result < intro)
+  # The intro covers the run's configuration too, not the specification alone (D14.39).
+  expect_true(grepl(
+    paste(
+      "Pre-flight checks the specification and the run&#39;s configuration, never the data.",
+      "A check that stops prevents the run; a warning lets it continue."
+    ),
+    page,
+    fixed = TRUE
+  ))
   expect_true(grepl("didn&#39;t run", page, fixed = TRUE))
   expect_true(grepl("Findings in this check", page, fixed = TRUE))
   # The summary table keeps "Findings".
   expect_true(grepl(">Findings<", page, fixed = TRUE))
+})
+
+test_that("the footer names the rule set checked, with no entry without one (D14.39)", {
+  entry <- paste0(
+    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 1, for the 20261005 specification files</dd>"
+  )
+  spec <- fx_fish_spec()
+  results <- preflight_checks(spec)
+  expect_match(preflight_html(results, spec, rules = magp_rules()), entry, fixed = TRUE)
+  # The entry follows the specification files.
+  page <- preflight_html(results, spec, rules = magp_rules())
+  expect_true(
+    regexpr("<dt>Specification files</dt>", page, fixed = TRUE) < regexpr(entry, page, fixed = TRUE)
+  )
+  # No rule set, or one without a meta row: no entry.
+  expect_false(grepl("Rule set", preflight_html(results, spec), fixed = TRUE))
+  expect_false(grepl(
+    "<dt>Rule set</dt>", preflight_html(results, spec, rules = fx_empty_rule_set()),
+    fixed = TRUE
+  ))
+  # The rule set's own words are escaped, and a blank cell shows as the blank text.
+  hostile <- validate_rule_set(list(
+    meta = data.frame(
+      rule_set_name = "<b>&\"x", version = NA_character_, date = "2026-10-07",
+      spec_version = "20261005"
+    ),
+    rules = fx_empty_rule_set()$rules
+  ))
+  page <- preflight_html(results, spec, rules = hostile)
+  expect_match(
+    page,
+    paste0(
+      "<dd>&lt;b&gt;&amp;&quot;x, version (blank), for the 20261005 specification files</dd>"
+    ),
+    fixed = TRUE
+  )
+  expect_false(grepl("<b>&", page, fixed = TRUE))
+})
+
+test_that("gpq_preflight gives the page the rule set it checked (D14.39)", {
+  spec <- fx_fish_spec()
+  read_page <- function(dir) {
+    lines <- readLines(file.path(dir, "reports", "preflight.html"), encoding = "UTF-8")
+    paste(lines, collapse = "\n")
+  }
+  dir <- withr::local_tempdir()
+  gpq_preflight(spec, rules = magp_rules(), output_dir = dir)
+  expect_match(
+    read_page(dir),
+    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 1, for the 20261005 specification files</dd>",
+    fixed = TRUE
+  )
+  dir <- withr::local_tempdir()
+  gpq_preflight(spec, output_dir = dir)
+  expect_false(grepl("<dt>Rule set</dt>", read_page(dir), fixed = TRUE))
+  # write_preflight_files() takes the rule set too.
+  dir <- withr::local_tempdir()
+  write_preflight_files(preflight_checks(spec), spec, dir, rules = magp_rules())
+  expect_match(read_page(dir), "<dt>Rule set</dt>", fixed = TRUE)
 })

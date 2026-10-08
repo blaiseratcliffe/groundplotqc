@@ -273,7 +273,7 @@ build_magp_rules <- function(spec, config_dir = file.path("data-raw", "magp")) {
   stray <- setdiff(found, expected)
   if (length(stray) > 0L) {
     stop(
-      "data-raw/magp/ has rule-set files for components a rule set doesn't have: ",
+      config_dir, " has rule-set files for components a rule set doesn't have: ",
       paste(stray, collapse = ", "), ".",
       call. = FALSE
     )
@@ -305,9 +305,21 @@ build_magp_rules <- function(spec, config_dir = file.path("data-raw", "magp")) {
   rules
 }
 
-# The rule set's files copied unchanged into the compiled folder, beside the spec.
+# The rule set's files copied unchanged into the compiled folder, beside the spec. A copy
+# there whose file has left the config folder is removed first, so magp_rules() never reads
+# a component the build didn't validate and pre-flight.
 copy_rule_set <- function(config_dir, out_dir) {
   files <- list.files(config_dir, pattern = "^rules_.*[.]csv$", full.names = TRUE)
+  copies <- list.files(out_dir, pattern = "^rules_.*[.]csv$", full.names = TRUE)
+  stale <- copies[!basename(copies) %in% basename(files)]
+  unlink(stale)
+  if (any(file.exists(stale))) {
+    stop(
+      "Couldn't remove ", paste(basename(stale[file.exists(stale)]), collapse = ", "),
+      " from ", out_dir, ".",
+      call. = FALSE
+    )
+  }
   copied <- file.copy(files, out_dir, overwrite = TRUE)
   if (!all(copied)) {
     stop("Couldn't copy ", paste(basename(files[!copied]), collapse = ", "), ".", call. = FALSE)

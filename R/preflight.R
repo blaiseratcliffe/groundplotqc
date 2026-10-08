@@ -563,7 +563,9 @@ preflight_check_functions <- function() {
 #'   the package's English text. A row that uses a \{slot\} the package's row of that text
 #'   lacks stops pre-flight (`text_slot_unknown`).
 #' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
-#'   `reports/preflight.html` are written under it, whether or not pre-flight stops.
+#'   `reports/preflight.html` are written under it, whether or not pre-flight stops. The
+#'   page's footer names the package version, the specification files and, given a rule set
+#'   with a meta row, that rule set.
 #' @return The pre-flight table, invisibly: columns `rule_id`, `outcome` (`stop`, `warn`,
 #'   `pass`, `not_run`), `file`, `detail`, `n_findings` (the check's total on each of its
 #'   rows; 0 on a pass row, `NA` on a `not_run` row), `not_run_reason` and `source_cell`.
@@ -644,9 +646,11 @@ gpq_preflight <- function(spec, rules = NULL, settings = list(), text = NULL,
   }
   # The rule set, settings and text are checked before any check runs: a caller's error in
   # them stops here (D14.6, D14.13).
-  results <- preflight_checks(spec, preflight_context(rules, settings, text))
+  context <- preflight_context(rules, settings, text)
+  results <- preflight_checks(spec, context)
   if (!is.null(output_dir)) {
-    write_preflight_files(results, spec, output_dir)
+    # The page's footer names the rule set that was checked (D14.39).
+    write_preflight_files(results, spec, output_dir, context$rules)
   }
   stops <- results[outcome == "stop"]
   if (nrow(stops) > 0L) {

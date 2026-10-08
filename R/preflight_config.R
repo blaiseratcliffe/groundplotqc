@@ -69,12 +69,14 @@ not_allowed <- function(allowed, rule_ids, values) {
 
 #' The allowed values of each rule, ", "-joined, for a finding's detail
 #'
-#' A loop over the rule set's rows, which are configuration, never data (16.2).
+#' One value per rule ID asked for, in order; "" for a rule with no allowed value. The
+#' allowed table is scanned once, however many rows ask.
 #' @noRd
 allowed_text <- function(allowed, rule_ids) {
-  vapply(rule_ids, function(id) {
-    paste(allowed$value[allowed$rule_id == id], collapse = ", ")
-  }, "", USE.NAMES = FALSE)
+  joined <- vapply(split(allowed$value, allowed$rule_id), paste, "", collapse = ", ")
+  texts <- unname(joined[rule_ids])
+  texts[is.na(texts)] <- ""
+  texts
 }
 
 #' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19)
@@ -280,6 +282,8 @@ preflight_text_checks <- function() {
 #' written with its braces (D14.21)
 #' @noRd
 text_slots <- function(texts) {
+  # What counts as a slot is also written in fill_placeholders() (R/report_text.R), which
+  # fills them: change the two together; a test holds them to the same slots.
   found <- regmatches(texts$text, gregexpr("\\{[a-z0-9_]+\\}", texts$text))
   n <- lengths(found)
   data.table(

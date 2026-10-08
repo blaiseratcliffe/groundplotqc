@@ -14,10 +14,12 @@ quoted_slots <- c(
 )
 
 # Slots that take a name from the specification or the rule set: shown as written, a blank
-# shown as the blank text (D12.54, D12.55). Every other slot stops on NA.
+# shown as the blank text (D12.54, D12.55). Every other slot stops on NA. The rule set's meta
+# row gives the last three, and a blank cell there shows as the blank text on the page's
+# footer rather than stopping the page (D14.39).
 blank_slots <- c(
   "table_name", "attribute_name", "spec_type", "contributor_label", "key_col", "sheet",
-  "column", "crosswalk", "rule_id"
+  "column", "crosswalk", "rule_id", "rule_set_name", "version", "spec_version"
 )
 
 # The engine's text table, read once per session (D12.29); reset_report_texts() empties it.
@@ -140,19 +142,21 @@ validate_text_table <- function(text) {
     }
     paste0(paste(x[seq_len(n)], collapse = ", "), " and ", length(x) - n, " more")
   }
+  # "row 1" for one row, "rows 1, 2" for more.
+  in_rows <- function(x) paste(if (length(x) == 1L) "row" else "rows", shown(x))
   blank <- which(rowSums(is.na(table)) > 0L)
   if (length(blank) > 0L) {
     stop(sprintf(
-      "`text` has blank cells in rows %s; every text_id, lang and text must be filled.",
-      shown(blank)
+      "`text` has blank cells in %s; every text_id, lang and text must be filled.",
+      in_rows(blank)
     ), call. = FALSE)
   }
   for (column in columns) {
     invalid <- which(!validUTF8(table[[column]]))
     if (length(invalid) > 0L) {
       stop(sprintf(
-        "Column `%s` of `text` holds text that isn't valid UTF-8, in rows %s.",
-        column, shown(invalid)
+        "Column `%s` of `text` holds text that isn't valid UTF-8, in %s.",
+        column, in_rows(invalid)
       ), call. = FALSE)
     }
   }
@@ -161,9 +165,9 @@ validate_text_table <- function(text) {
     stop(sprintf(
       paste(
         "`text` has lang values that aren't a language code of two or three lower-case",
-        "letters, in rows %s."
+        "letters, in %s."
       ),
-      shown(not_code)
+      in_rows(not_code)
     ), call. = FALSE)
   }
   twice <- duplicated(table, by = c("text_id", "lang"))
@@ -193,6 +197,9 @@ validate_text_table <- function(text) {
 #' from (the run's `lang` unless a fallback row gave it), so the caller can find the row.
 #' @noRd
 fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row_lang = lang) {
+  # What counts as a slot is also written in text_slots() (R/preflight_config.R), which
+  # finds the slots a caller's text adds to the package's row: change the two together; a
+  # test holds them to the same slots.
   pieces <- regmatches(template, gregexpr("\\{[a-z0-9_]+\\}", template), invert = NA)[[1L]]
   if (length(pieces) < 2L) {
     return(template)

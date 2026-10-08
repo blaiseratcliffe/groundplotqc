@@ -6,7 +6,7 @@ A generic engine works with any specification. A layer for the MAGPlot 2.0 groun
 
 ## Status
 
-Under development. This version has a specification reader and pre-flight checks of the specification. The first release will still be version 0.1.0.
+Under development. This version has a specification reader, pre-flight checks of the specification, and a rule set with settings (`magp_rules()`, and the `rules` and `settings` arguments of `gpq_preflight()`). The first release will still be version 0.1.0.
 
 ## Installation
 

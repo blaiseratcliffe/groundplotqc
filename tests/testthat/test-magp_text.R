@@ -14,6 +14,11 @@ test_that("MAGPlot's texts follow the engine file's rules: ASCII, braces only fo
   texts <- magp_texts()
   expect_true(all(!grepl("[^ -~]", texts$text)))
   expect_false(any(grepl("[{}]", gsub("\\{[a-z0-9_]+\\}", "", texts$text))))
+  # No row uses a slot the engine's row of its text lacks, or pre-flight would stop (D14.21).
+  found <- preflight_check_functions()[["text_slot_unknown"]](
+    fx_fish_spec(), preflight_context(text = texts)
+  )
+  expect_equal(nrow(found), 0L)
 })
 
 # The shipped file has no rows, so the three tests above assert nothing about a row until
@@ -21,8 +26,9 @@ test_that("MAGPlot's texts follow the engine file's rules: ASCII, braces only fo
 
 test_that("magp_texts hands on a clean file's rows, checked", {
   file <- withr::local_tempfile(fileext = ".csv")
+  # The engine's row of preflight_stop_line has the slots rule_id and detail.
   writeLines(
-    c('"text_id","lang","text"', '"preflight_title","fr","Rapport de pre-vol {x}"'), file
+    c('"text_id","lang","text"', '"preflight_stop_line","fr","{rule_id} - {detail}"'), file
   )
   real_read <- read_csv_text
   testthat::local_mocked_bindings(
@@ -32,13 +38,17 @@ test_that("magp_texts hands on a clean file's rows, checked", {
   expect_equal(nrow(texts), 1L)
   expect_equal(
     as.list(texts),
-    list(text_id = "preflight_title", lang = "fr", text = "Rapport de pre-vol {x}")
+    list(text_id = "preflight_stop_line", lang = "fr", text = "{rule_id} - {detail}")
   )
   # The three checks above hold for a good row: its id is the engine's, it is ASCII and its
-  # braces mark a slot.
+  # braces mark a slot, one the engine's row of that text has.
   expect_equal(setdiff(texts$text_id, report_texts()$text_id), character())
   expect_true(all(!grepl("[^ -~]", texts$text)))
   expect_false(any(grepl("[{}]", gsub("\\{[a-z0-9_]+\\}", "", texts$text))))
+  found <- preflight_check_functions()[["text_slot_unknown"]](
+    fx_fish_spec(), preflight_context(text = texts)
+  )
+  expect_equal(nrow(found), 0L)
   # The file's rows go through the table check, as a caller's do.
   writeLines(c('"text_id","lang","text"', '"preflight_title","FR","Rapport"'), file)
   expect_error(magp_texts(), "aren't a language code")
@@ -63,7 +73,7 @@ test_that("a stop on the file's rows names the file, the condition's class kept 
     conditionMessage(from_file), paste0("report_text_magp.csv: ", conditionMessage(direct))
   )
   expect_match(conditionMessage(from_file), "^report_text_magp.csv: `text` has lang values")
-  expect_match(conditionMessage(from_file), "in rows 1.$")
+  expect_match(conditionMessage(from_file), "in row 1.$")
   # A condition of another class keeps it: only the message changes.
   testthat::local_mocked_bindings(
     validate_text_table = function(text) {

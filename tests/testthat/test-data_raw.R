@@ -550,7 +550,12 @@ test_that("the build stops on a stray rule-set file or one that doesn't read cle
   config <- withr::local_tempdir()
   file.copy(list.files(dirs$config, pattern = "^rules_", full.names = TRUE), config)
   writeLines("x", file.path(config, "rules_extra.csv"))
-  expect_error(build$build_magp_rules(dated_spec(), config), "rules_extra.csv", fixed = TRUE)
+  # The stop names the folder in use, not a fixed one (SC F1, as R29 did for a missing file).
+  expect_error(
+    build$build_magp_rules(dated_spec(), config),
+    paste(config, "has rule-set files for components a rule set doesn't have: rules_extra.csv."),
+    fixed = TRUE
+  )
   unlink(file.path(config, "rules_extra.csv"))
   writeLines(
     c("setting,value,type", "lang,en,character,extra"), file.path(config, "rules_settings.csv")
@@ -589,6 +594,22 @@ test_that("copy_rule_set copies the rule-set files unchanged, a space in the pat
       unname(tools::md5sum(path)), unname(tools::md5sum(file.path(dirs$config, basename(path))))
     )
   }
+})
+
+test_that("copy_rule_set removes a rule-set copy whose source has left the folder (SC F2)", {
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  config <- withr::local_tempdir()
+  file.copy(file.path(dirs$config, c("rules_meta.csv", "rules_rules.csv")), config)
+  out <- withr::local_tempdir()
+  # Stale copies of components the config folder no longer has, and a file that isn't a copy.
+  writeLines("old", file.path(out, "rules_settings.csv"))
+  writeLines("old", file.path(out, "rules_gone.csv"))
+  writeLines("keep", file.path(out, "codes.csv"))
+  copied <- build$copy_rule_set(config, out)
+  expect_setequal(basename(copied), c("rules_meta.csv", "rules_rules.csv"))
+  expect_setequal(list.files(out), c("codes.csv", "rules_meta.csv", "rules_rules.csv"))
+  expect_equal(readLines(file.path(out, "codes.csv")), "keep")
 })
 
 # ---- build_matrix_template.R (M2a; plan 5.6, D13.1 to D13.13) ----

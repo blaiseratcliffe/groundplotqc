@@ -62,3 +62,17 @@ test_that("shorten_marked cuts a long value around its first marker (D12.28)", {
     shorten_marked(long), paste0("...", strrep("a", 18), "ok<97>", strrep("b", 16), "...")
   )
 })
+
+test_that("mark_invalid_utf8 writes each invalid byte as <xx> and leaves valid text (D12.28)", {
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
+  Encoding(bad) <- "UTF-8"
+  expect_equal(mark_invalid_utf8(c("fine", bad, NA)), c("fine", "ok<97>", NA))
+  expect_equal(mark_invalid_utf8(character()), character())
+})
+
+test_that("lang_pattern takes two or three lower-case letters and nothing else (D14.20)", {
+  expect_equal(
+    grepl(lang_pattern, c("en", "fra", "EN", "e", "engl", "en-CA", " en", "e1", "")),
+    c(TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE)
+  )
+})
