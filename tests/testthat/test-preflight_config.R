@@ -400,8 +400,11 @@ test_that("text_id_fallback lists each rule's text missing in the run language (
 test_that("a run language from the rule set or the option reaches text_id_fallback", {
   withr::local_options(groundplotqc.lang = "de")
   found <- check("text_id_fallback", preflight_context())
+  # Without the count, grepl() over no findings would pass.
+  expect_equal(nrow(found), nrow(rule_registry()))
   expect_true(all(grepl("language de", found$detail)))
   found <- check("text_id_fallback", preflight_context(fx_planted_rule_set()))
+  expect_equal(nrow(found), nrow(rule_registry()))
   expect_true(all(grepl("language fr", found$detail)))
 })
 
@@ -409,14 +412,17 @@ test_that("text_slot_unknown names each slot a caller's text adds to the package
   text <- data.frame(
     text_id = c(
       "preflight_detail_dd_pk_missing", "preflight_detail_dd_pk_missing", "preflight_title",
-      "no_such_text"
+      "no_such_text", "preflight_title"
     ),
-    lang = c("en", "fr", "en", "en"),
-    text = c("{table_name} lacks a key {nobody}.", "Pas de cle.", "Title {page}", "{anything}")
+    lang = c("en", "fr", "en", "en", "fr"),
+    text = c(
+      "{table_name} lacks a key {nobody}.", "Pas de cle.", "Title {page}", "{anything}",
+      "Titre {nom}"
+    )
   )
   found <- check("text_slot_unknown", preflight_context(text = text))
-  # The French row uses fewer slots, which is fine; no_such_text isn't the engine's, so it
-  # is skipped.
+  # The first French row uses fewer slots, which is fine; no_such_text isn't the engine's, so
+  # it is skipped; the second French row adds a slot, which is a finding in its language.
   expect_equal(found$detail, c(
     paste(
       "Text preflight_detail_dd_pk_missing in language en uses the slot {nobody}, which the",
@@ -424,6 +430,10 @@ test_that("text_slot_unknown names each slot a caller's text adds to the package
     ),
     paste(
       "Text preflight_title in language en uses the slot {page}, which the package's row of",
+      "that text doesn't have."
+    ),
+    paste(
+      "Text preflight_title in language fr uses the slot {nom}, which the package's row of",
       "that text doesn't have."
     )
   ))
@@ -442,4 +452,37 @@ test_that("text_slot_unknown passes with no text table or only known slots", {
     text_id = "preflight_detail_dd_pk_missing", lang = "fr", text = "Table {table_name} sans cle."
   )
   expect_equal(nrow(check("text_slot_unknown", preflight_context(text = text))), 0L)
+  # A table with no rows, a row with no slots, and a table of texts the package lacks.
+  tables <- list(
+    data.frame(text_id = character(), lang = character(), text = character()),
+    data.frame(text_id = "preflight_title", lang = "fr", text = "Titre"),
+    data.frame(text_id = c("no_such_text", "nor_this"), lang = "en", text = c("{a}", "{b}"))
+  )
+  for (table in tables) {
+    expect_equal(nrow(check("text_slot_unknown", preflight_context(text = table))), 0L)
+  }
+})
+
+test_that("text_slot_unknown reports a repeated slot once and changes no table (16.2)", {
+  text <- data.table::data.table(
+    text_id = c("preflight_title", "preflight_title"), lang = c("en", "fr"),
+    text = c("{page} and {page} again", "{nom}")
+  )
+  before_text <- data.table::copy(text)
+  before_engine <- data.table::copy(report_texts())
+  found <- check("text_slot_unknown", preflight_context(text = text))
+  expect_equal(found$detail, c(
+    paste(
+      "Text preflight_title in language en uses the slot {page}, which the package's row of",
+      "that text doesn't have."
+    ),
+    paste(
+      "Text preflight_title in language fr uses the slot {nom}, which the package's row of",
+      "that text doesn't have."
+    )
+  ))
+  # Base identical(): any change to the caller's table or the cached engine table, indices
+  # included, fails.
+  expect_true(identical(text, before_text))
+  expect_true(identical(report_texts(), before_engine))
 })

@@ -256,6 +256,10 @@ test_that("the result line gives the outcome in D14.11's words", {
     preflight_result_line(outcome_rows(c("pass", "not_run", "not_run"), c("a", "b", "c"))),
     "Passed: no check stopped or warned. 2 check(s) didn't run; the table says why."
   )
+  expect_equal(
+    preflight_result_line(outcome_rows(c("stop", "not_run"), c("a", "b"))),
+    "Stopped: 1 finding(s) from 1 check(s) that stop. 1 check(s) didn't run; the table says why."
+  )
 })
 
 test_that("the page puts the result line first and labels the rows' count (D14.12)", {
@@ -269,7 +273,7 @@ test_that("the page puts the result line first and labels the rows' count (D14.1
   )
   intro <- regexpr("Pre-flight checks the specification", page, fixed = TRUE)
   expect_true(result > 0L && result < intro)
-  expect_true(grepl("didn&#39;t run|didn't run", page))
+  expect_true(grepl("didn&#39;t run", page, fixed = TRUE))
   expect_true(grepl("Findings in this check", page, fixed = TRUE))
   # The summary table keeps "Findings".
   expect_true(grepl(">Findings<", page, fixed = TRUE))

@@ -236,10 +236,11 @@ preflight_text_checks <- function() {
   list(
     text_id_missing = function(spec, context) {
       registry <- context$registry
-      missing <- registry[!registry$message_id %chin% text_ids("en", context$text)]
+      has_text <- registry$message_id %chin% text_ids("en", context$text)
+      no_text <- registry[!has_text]
       findings_of(NA_character_, report_text(
         "preflight_detail_text_id_missing",
-        rule_id = missing$rule_id, message_id = missing$message_id
+        rule_id = no_text$rule_id, message_id = no_text$message_id
       ))
     },
     text_id_fallback = function(spec, context) {
@@ -247,10 +248,11 @@ preflight_text_checks <- function() {
         return(no_findings())
       }
       registry <- context$registry
-      missing <- registry[!registry$message_id %chin% text_ids(context$lang, context$text)]
+      has_row <- registry$message_id %chin% text_ids(context$lang, context$text)
+      no_row <- registry[!has_row]
       findings_of(NA_character_, report_text(
         "preflight_detail_text_id_fallback",
-        rule_id = missing$rule_id, message_id = missing$message_id, language = context$lang
+        rule_id = no_row$rule_id, message_id = no_row$message_id, language = context$lang
       ))
     },
     text_slot_unknown = function(spec, context) {
@@ -264,7 +266,8 @@ preflight_text_checks <- function() {
       english <- engine[is_english]
       known <- text$text_id %chin% english$text_id
       used <- text_slots(text[known])
-      unknown <- unique(used[!text_slots(english), on = c("text_id", "slot")])
+      package_slots <- text_slots(english)
+      unknown <- unique(used[!package_slots, on = c("text_id", "slot")])
       findings_of(NA_character_, report_text(
         "preflight_detail_text_slot_unknown",
         message_id = unknown$text_id, language = unknown$lang, slot = unknown$slot

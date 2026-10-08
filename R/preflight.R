@@ -560,7 +560,8 @@ preflight_check_functions <- function() {
 #' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
 #'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`
 #'   when pre-flight checks the registered rules' text; pre-flight's own page and table use
-#'   the package's English text.
+#'   the package's English text. A row that uses a \{slot\} the package's row of that text
+#'   lacks stops pre-flight (`text_slot_unknown`).
 #' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
 #'   `reports/preflight.html` are written under it, whether or not pre-flight stops.
 #' @return The pre-flight table, invisibly: columns `rule_id`, `outcome` (`stop`, `warn`,

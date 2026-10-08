@@ -26,7 +26,8 @@ language, whose text \code{text_id_fallback} checks, and \code{severity}, severi
 \item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
 \code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}
 when pre-flight checks the registered rules' text; pre-flight's own page and table use
-the package's English text.}
+the package's English text. A row that uses a \{slot\} the package's row of that text
+lacks stops pre-flight (\code{text_slot_unknown}).}
 
 \item{output_dir}{\code{NULL}, or a folder: \code{metadata/preflight.csv} and
 \code{reports/preflight.html} are written under it, whether or not pre-flight stops.}
