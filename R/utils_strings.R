@@ -1,4 +1,4 @@
-# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.36, D12.45).
+# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.28, D12.36, D12.45, D14.20, D14.39).
 
 #' Which cells are blank: empty after trimming
 #'
@@ -85,3 +85,13 @@ column_numbers <- function(x) {
   }
   out
 }
+
+#' Text with each byte that isn't valid UTF-8 written as <xx>, for a caller error (D12.28)
+#' @noRd
+mark_invalid_utf8 <- function(x) {
+  iconv(x, "UTF-8", "UTF-8", sub = "byte")
+}
+
+# A language code: two or three lower-case letters, for the lang setting and the lang
+# column of a caller's text table (D14.20).
+lang_pattern <- "^[a-z]{2,3}$"

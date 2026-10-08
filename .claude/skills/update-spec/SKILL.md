@@ -7,10 +7,11 @@ description: Bring a new version of a groundplotqc specification file into the p
 2. Dispatch spec-reader to diff old and new: tables, attributes, types, keys, codes, datasets, A2 rows.
 3. List clashes, discrepancies and anything the precedence rule resolves for the user. Stop for answers.
 4. Add matrix rows for new attributes with status "proposed" (in the working copy in `GPQ_PLANS_DIR`, D7.26; after M9, refresh it from `spec/` first, and ask the user to bring the result into `spec/` before the build, D7.35), so the matrix checks see every DD attribute (D9.30).
-5. Run `data-raw/build_magp_config.R` (pre-flight runs inside it); fix nothing in spec files.
-6. Draft cross-field rows from new DD text with review_status "draft" for the user's review (skipped at M10a, whose `build_crossfield_draft.R` drafts every row, D9.30).
-7. Bump the package version; NEWS.md names the spec files that changed.
-8. Dispatch check-runner (the manifest test must pass) and filemap-maintainer.
+5. Review the rule set (`data-raw/magp/rules_*.csv`) against the new spec: list for the user every `rules` row whose table or attribute the new spec drops or renames. Then set `rules_meta.csv`'s `spec_version` to the new set's date, raise its `version` by one and set its `date` to today; the build stops while `spec_version` differs from the DD's date (D14.15).
+6. Run `data-raw/build_magp_config.R` (pre-flight runs inside it, on the spec and the rule set); fix nothing in spec files.
+7. Draft cross-field rows from new DD text with review_status "draft" for the user's review (skipped at M10a, whose `build_crossfield_draft.R` drafts every row, D9.30).
+8. Bump the package version; NEWS.md names the spec files that changed.
+9. Dispatch check-runner (the manifest test must pass) and filemap-maintainer.
 
 ## Rules you always follow
 

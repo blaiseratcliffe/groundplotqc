@@ -4,13 +4,35 @@
 \alias{gpq_preflight}
 \title{Pre-flight a specification}
 \usage{
-gpq_preflight(spec, output_dir = NULL)
+gpq_preflight(
+  spec,
+  rules = NULL,
+  settings = list(),
+  text = NULL,
+  output_dir = NULL
+)
 }
 \arguments{
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}}.}
 
+\item{rules}{\code{NULL}, or a rule set: a named list of tables with a \code{rules} component, as
+\code{\link[=magp_rules]{magp_rules()}} returns. Its \code{rules} rows are checked against the specification and the
+registered rules, and its \code{settings} rows give settings.}
+
+\item{settings}{A named list of settings, which come before the rule set's, the
+options' and the built-in values (see \link{groundplotqc_options}): \code{lang}, the run
+language, whose text \code{text_id_fallback} checks, and \code{severity}, severities by rule ID.}
+
+\item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
+\code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}
+when pre-flight checks the registered rules' text; pre-flight's own page and table use
+the package's English text. A row that uses a \{slot\} the package's row of that text
+lacks stops pre-flight (\code{text_slot_unknown}).}
+
 \item{output_dir}{\code{NULL}, or a folder: \code{metadata/preflight.csv} and
-\code{reports/preflight.html} are written under it, whether or not pre-flight stops.}
+\code{reports/preflight.html} are written under it, whether or not pre-flight stops. The
+page's footer names the package version, the specification files and, given a rule set
+with a meta row, that rule set.}
 }
 \value{
 The pre-flight table, invisibly: columns \code{rule_id}, \code{outcome} (\code{stop}, \code{warn},
@@ -20,7 +42,9 @@ A check with findings has one row per finding.
 }
 \description{
 Checks a specification, never the data, and stops before a run that would read it
-wrongly. Each check gives one row per finding, or one pass or not-run row.
+wrongly. Given a rule set, it checks the rule set's rows too, and it checks the
+settings and report text a run would use. Each check gives one row per finding, or one
+pass or not-run row.
 }
 \section{Conditions}{
 
@@ -48,7 +72,12 @@ the specification's \code{clashes} component.
 \code{code_list_empty_column}, \code{spec_clash_resolved}, \code{spec_clash_unresolved},
 \code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
 \code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
-\code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable}.
+\code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable}; with a rule
+set, \code{rule_set_unknown_column}; with a rule set or a severity setting, \code{rule_id_unknown}
+and \code{rule_set_override_invalid}; and \code{text_id_missing}, \code{text_id_fallback} and
+\code{text_slot_unknown}, on the report text of the registered rules in English and in the run
+language and on a caller's text table. No rule set or setting changes what a check stops
+or warns on.
 }
 
 \examples{
@@ -73,4 +102,12 @@ twice <- data.frame(
 )
 stopped <- tryCatch(gpq_preflight(gpq_read_spec(twice)), gpq_preflight_error = function(e) e)
 subset(stopped$preflight, outcome == "stop")
+
+# A rule set's row naming a rule no one registered stops pre-flight too.
+rules <- list(rules = data.frame(
+  rule_id = "no_such_rule", table_name = "*", attribute_name = "*", severity = NA,
+  class = NA, enabled = TRUE
+))
+stopped <- tryCatch(gpq_preflight(forest, rules = rules), gpq_preflight_error = function(e) e)
+subset(stopped$preflight, outcome == "stop", c(rule_id, detail))
 }

@@ -1,8 +1,10 @@
-# Compiles MAGPlot's specification (plan 3.6, 4.4; D5.12, D12.15, D12.20, D12.22, D12.25).
-# Reads the one dated file of each kind in spec/ and the hand-kept files in
-# data-raw/magp/, applies spec_exceptions.csv to the dictionary, runs pre-flight (its
-# report under runs/build_magp_config/), and writes inst/extdata/magp/ only when
-# pre-flight doesn't stop. It never writes data-raw/magp/ or spec/.
+# Compiles MAGPlot's specification and rule set (plan 3.5, 3.6, 4.4; D5.12, D9.20, D12.15,
+# D12.20, D12.22, D12.25, D14.2, D14.15). Reads the one dated file of each kind in spec/ and
+# the hand-kept files in data-raw/magp/, applies spec_exceptions.csv to the dictionary, runs
+# pre-flight on the spec and the rule set (its report under runs/build_magp_config/), and
+# writes inst/extdata/magp/ only when pre-flight doesn't stop: the compiled spec, and the
+# rule set's rules_<component>.csv files copied unchanged. It never writes data-raw/magp/
+# or spec/.
 # Run from the repo root: Rscript data-raw/build_magp_config.R
 
 # MAGPlot's settings that aren't tables (D12.20), named after the arguments they fill
@@ -166,48 +168,50 @@ record_hand_kept <- function(spec, config_dir) {
   new_gpq_spec(spec)
 }
 
+# A hand-kept file reads clean or the build stops, naming the file and each problem: a
+# malformed line or an invalid byte would drop or change rows with no finding, since of
+# these files only the type map reaches pre-flight as a file (D12.58).
+read_hand_kept <- function(path) {
+  read <- read_csv_text(path)
+  at_line <- function(line) ifelse(is.na(line), "", paste0(" on line ", line))
+  malformed <- read$malformed
+  invalid <- read$invalid
+  # A "fields" problem gives the header's number of fields, a "short" one its record count
+  # and the rows read; any other the text fread() gave, where it gave one.
+  counts <- ifelse(
+    malformed$kind == "fields", paste0(" (the header has ", malformed$fields, " fields)"),
+    ifelse(
+      malformed$kind == "short",
+      paste0(
+        " (", malformed$n_records, " records after the header, ", malformed$n_read, " read)"
+      ),
+      ifelse(is.na(malformed$value), "", paste0(" (", malformed$value, ")"))
+    )
+  )
+  problems <- c(
+    paste0(malformed$kind, at_line(malformed$line), counts, recycle0 = TRUE),
+    # An invalid byte's row 0 is the header, line 1; row r starts on lines[r].
+    paste0(
+      "invalid byte", at_line(c(1L, read$lines)[invalid$row + 1L]), " (", invalid$value, ")",
+      recycle0 = TRUE
+    )
+  )
+  if (length(problems) > 0L) {
+    stop(
+      path, " doesn't read cleanly, so nothing was built: ", paste(problems, collapse = "; "),
+      ".",
+      call. = FALSE
+    )
+  }
+  read
+}
+
 build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw", "magp")) {
   files <- spec_files(spec_dir)
-  # A hand-kept file reads clean or the build stops, naming the file and each problem: a
-  # malformed line or an invalid byte would drop or change rows with no finding, since of
-  # these files only the type map reaches pre-flight as a file (D12.58). The five read
-  # through config() are all read before any spec file is opened; type_map.csv is read last,
-  # through gpq_type_map(path), which carries its findings on to pre-flight.
-  config <- function(name) {
-    path <- file.path(config_dir, name)
-    read <- read_csv_text(path)
-    at_line <- function(line) ifelse(is.na(line), "", paste0(" on line ", line))
-    malformed <- read$malformed
-    invalid <- read$invalid
-    # A "fields" problem gives the header's number of fields, a "short" one its record count
-    # and the rows read; any other the text fread() gave, where it gave one.
-    counts <- ifelse(
-      malformed$kind == "fields", paste0(" (the header has ", malformed$fields, " fields)"),
-      ifelse(
-        malformed$kind == "short",
-        paste0(
-          " (", malformed$n_records, " records after the header, ", malformed$n_read, " read)"
-        ),
-        ifelse(is.na(malformed$value), "", paste0(" (", malformed$value, ")"))
-      )
-    )
-    problems <- c(
-      paste0(malformed$kind, at_line(malformed$line), counts, recycle0 = TRUE),
-      # An invalid byte's row 0 is the header, line 1; row r starts on lines[r].
-      paste0(
-        "invalid byte", at_line(c(1L, read$lines)[invalid$row + 1L]), " (", invalid$value, ")",
-        recycle0 = TRUE
-      )
-    )
-    if (length(problems) > 0L) {
-      stop(
-        path, " doesn't read cleanly, so nothing was built: ", paste(problems, collapse = "; "),
-        ".",
-        call. = FALSE
-      )
-    }
-    read
-  }
+  # The five hand-kept files read through config() are all read before any spec file is
+  # opened; type_map.csv is read last, through gpq_type_map(path), which carries its findings
+  # on to pre-flight.
+  config <- function(name) read_hand_kept(file.path(config_dir, name))
   exceptions <- config("spec_exceptions.csv")$data
   non_code_sheets <- config("non_code_sheets.csv")$data$sheet
   columns <- config("crosswalk_columns.csv")$data
@@ -256,13 +260,82 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   record_hand_kept(spec, config_dir)
 }
 
+# MAGPlot's rule set (D9.20, D14.2): every rules_<component>.csv in data-raw/magp/ read clean,
+# rules_rules.csv among them and none outside the rule set's components, checked by the
+# engine's validator, and written for the spec set it is compiled with: rules_meta.csv's
+# spec_version is the DD's file date, or the build stops (D14.15). Each component keeps its
+# file's name and each row's line, as magp_rules() reads them from the copies, so the two
+# rule sets are identical (D14.19).
+build_magp_rules <- function(spec, config_dir = file.path("data-raw", "magp")) {
+  components <- names(rule_set_schema())
+  expected <- paste0("rules_", components, ".csv")
+  found <- list.files(config_dir, pattern = "^rules_.*[.]csv$")
+  stray <- setdiff(found, expected)
+  if (length(stray) > 0L) {
+    stop(
+      config_dir, " has rule-set files for components a rule set doesn't have: ",
+      paste(stray, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  if (!"rules_rules.csv" %in% found) {
+    stop(
+      config_dir, " has no rules_rules.csv, and a rule set needs its rules component.",
+      call. = FALSE
+    )
+  }
+  given <- expected[expected %in% found]
+  rules <- lapply(given, function(name) {
+    read <- read_hand_kept(file.path(config_dir, name))
+    set_origin(read$data, name, read$lines)
+  })
+  names(rules) <- sub("^rules_(.*)[.]csv$", "\\1", given)
+  rules <- validate_rule_set(rules)
+  dd_date <- spec$manifest$file_date[match("dictionary", spec$manifest$input)]
+  written_for <- if (is.null(rules$meta)) NA_character_ else rules$meta$spec_version
+  if (!identical(written_for, dd_date)) {
+    stop(sprintf(
+      paste0(
+        "rules_meta.csv's spec_version is %s, but the specification files are dated %s: ",
+        "review the rule set against them and update rules_meta.csv (update-spec)."
+      ),
+      written_for, dd_date
+    ), call. = FALSE)
+  }
+  rules
+}
+
+# The rule set's files copied unchanged into the compiled folder, beside the spec. A copy
+# there whose file has left the config folder is removed first, so magp_rules() never reads
+# a component the build didn't validate and pre-flight.
+copy_rule_set <- function(config_dir, out_dir) {
+  files <- list.files(config_dir, pattern = "^rules_.*[.]csv$", full.names = TRUE)
+  copies <- list.files(out_dir, pattern = "^rules_.*[.]csv$", full.names = TRUE)
+  stale <- copies[!basename(copies) %in% basename(files)]
+  unlink(stale)
+  if (any(file.exists(stale))) {
+    stop(
+      "Couldn't remove ", paste(basename(stale[file.exists(stale)]), collapse = ", "),
+      " from ", out_dir, ".",
+      call. = FALSE
+    )
+  }
+  copied <- file.copy(files, out_dir, overwrite = TRUE)
+  if (!all(copied)) {
+    stop("Couldn't copy ", paste(basename(files[!copied]), collapse = ", "), ".", call. = FALSE)
+  }
+  invisible(file.path(out_dir, basename(files)))
+}
+
 main <- function() {
   library(data.table)
   pkgload::load_all(".", quiet = TRUE)
-  spec <- build_magp_spec()
+  config_dir <- file.path("data-raw", "magp")
+  spec <- build_magp_spec(config_dir = config_dir)
+  rules <- build_magp_rules(spec, config_dir)
   stopped <- tryCatch(
     {
-      gpq_preflight(spec, output_dir = file.path("runs", "build_magp_config"))
+      gpq_preflight(spec, rules = rules, output_dir = file.path("runs", "build_magp_config"))
       NULL
     },
     gpq_preflight_error = function(e) e
@@ -271,8 +344,10 @@ main <- function() {
     cat(conditionMessage(stopped), "\nNothing was written to inst/extdata/magp/.\n", sep = "")
     quit(save = "no", status = 1L)
   }
-  write_compiled_spec(spec, file.path("inst", "extdata", "magp"))
-  cat("Compiled the specification into inst/extdata/magp/.\n")
+  out_dir <- file.path("inst", "extdata", "magp")
+  write_compiled_spec(spec, out_dir)
+  copy_rule_set(config_dir, out_dir)
+  cat("Compiled the specification and the rule set into inst/extdata/magp/.\n")
 }
 
 if (sys.nframe() == 0L) {

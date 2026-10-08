@@ -2,7 +2,7 @@
 # names, help pages with a runnable example (a \dontrun{} or comment-only example counts as
 # none, D11.12, D11.19), the export-prefix linter, the pkgdown index, and name tokens against
 # NAMING.md (D12.18). The helpers are tested on synthetic help pages and lines below. The
-# rule-ID checks join with the registry at M3, the reason-code checks at M12.
+# rule-ID checks read the registry (M3a); the reason-code checks join at M12.
 
 export_pattern <- "^(gpq|magp)_[a-z0-9_]+$"
 
@@ -241,10 +241,11 @@ package_names <- function() {
     names(formals(getExportedValue("groundplotqc", f)))
   }))
   # Component names come from the schema, so the compiled files' names are checked as the
-  # schema gives them (D12.32).
+  # schema gives them (D12.32). The registry's column names are read too (D14.27).
   columns <- c(
     names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
-    names(preflight_columns())
+    names(preflight_columns()), names(rule_set_schema()),
+    unlist(lapply(rule_set_schema(), names)), names(rule_registry())
   )
   root <- source_root()
   files <- c(
@@ -282,4 +283,12 @@ test_that("a \\dontrun or comment-only example counts as none", {
   expect_false(rd_has_examples(dontrun))
   expect_false(rd_has_examples(comments))
   expect_true(rd_has_examples(runs))
+})
+
+test_that("every registered rule ID is unique lower snake and has English text (D9.21)", {
+  registry <- rule_registry()
+  expect_equal(anyDuplicated(registry$rule_id), 0L)
+  expect_true(all(grepl("^[a-z][a-z0-9_]*$", registry$rule_id)))
+  texts <- report_texts()
+  expect_equal(setdiff(registry$message_id, texts$text_id[texts$lang == "en"]), character())
 })

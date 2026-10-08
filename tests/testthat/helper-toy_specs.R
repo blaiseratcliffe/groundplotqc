@@ -1,4 +1,5 @@
-# Fixture builders for the toy specs and the planted-defect spec (D12.18, D12.27, D12.31).
+# Fixture builders for the toy specs and the planted-defect spec (D12.18, D12.27, D12.31),
+# and a planted rule set and settings, one defect per check of M3a's (D12.31).
 
 fx_fish_column_map <- function(...) {
   gpq_column_map(
@@ -60,8 +61,9 @@ fx_forest_spec <- function() {
 # A synthetic spec with one planted defect per pre-flight check (plan 4.2); the expected
 # findings are in test-preflight.R. Each defect triggers only its own check (D12.31):
 #   plots.plot_id twice: dd_duplicate_attribute 1; trees.tree_id typed "text":
-#   dd_type_unknown 1; trees without a PK: dd_pk_missing 1; trees.plot_id to "stands":
-#   dd_fk_target_missing 1; soils: code_list_missing 1; cover's sheet without a cover
+#   dd_type_unknown 1; a second type column, datatype (types are read from data_type):
+#   dd_type_column_ambiguous 1; trees without a PK: dd_pk_missing 1; trees.plot_id to
+#   "stands": dd_fk_target_missing 1; soils: code_list_missing 1; cover's sheet without a cover
 #   column: code_column_missing 1; shape's repeated SQ, blank row 3 (as R counts rows)
 #   and empty use_when: code_list_duplicate_code, code_list_blank_row and
 #   code_list_empty_column 1 each; sheet extra: code_list_unreferenced 1; ds against
@@ -95,7 +97,8 @@ fx_planted_spec <- function() {
       "Source site."
     ),
     appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA),
-    data_type = c(rep("character", 5L), "text", rep("character", 3L))
+    data_type = c(rep("character", 5L), "text", rep("character", 3L)),
+    datatype = "character"
   )
   code_lists <- list(
     shape = data.frame(
@@ -135,4 +138,40 @@ fx_planted_spec <- function() {
     ),
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )
+}
+
+# A rule set and settings with one planted defect per check of M3a's, for fx_planted_spec()
+# (D12.31): rows 1 and 3 name unregistered rules, and the severity setting names a third
+# (rule_id_unknown 3; none of the three is also rule_set_override_invalid's, R7); row 3
+# also names the table stands, which the spec lacks (rule_set_unknown_column 1, an intended
+# overlap); row 2 gives the pre-flight check dd_pk_missing the severity "warning"
+# (rule_set_override_invalid 1, its only finding, D14.5), and dd_pk_missing still stops on
+# the spec's trees; the rule set's language, fr, has no rows (text_id_fallback, one finding
+# per registered rule). text_id_missing can't fire on the registry's own rules, which all
+# have English text; its test gives the check a registry of its own. text_slot_unknown 1 is
+# the planted test's text row.
+fx_planted_rule_set <- function() {
+  list(
+    meta = data.frame(
+      rule_set_name = "planted", version = "1", date = "2026-10-07", spec_version = "20261005"
+    ),
+    rules = data.frame(
+      rule_id = c("no_such_rule", "dd_pk_missing", "other_rule"),
+      table_name = c("plots", "*", "stands"), attribute_name = c("plot_id", "*", "*"),
+      severity = c(NA, "warning", NA), class = NA_character_, enabled = TRUE
+    ),
+    settings = data.frame(setting = "lang", value = "fr", type = "character")
+  )
+}
+
+fx_planted_settings <- function() {
+  list(severity = c(also_unknown = "error"))
+}
+
+# An empty rule set: every check of the rule set runs and finds nothing.
+fx_empty_rule_set <- function() {
+  list(rules = data.frame(
+    rule_id = character(), table_name = character(), attribute_name = character(),
+    severity = character(), class = character(), enabled = logical()
+  ))
 }

@@ -20,16 +20,28 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
     spec_clash_unresolved = "stop", datasets_row_missing = "warn", spec_encoding_invalid = "stop",
     spec_csv_malformed = "stop", site_id_range_invalid = "stop", lineage_spec_unparseable = "stop",
     lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
-    lineage_id_unflagged = "warn", crosswalk_unreadable = "stop"
+    lineage_id_unflagged = "warn", crosswalk_unreadable = "stop",
+    rule_set_unknown_column = "stop", rule_id_unknown = "stop",
+    rule_set_override_invalid = "stop", text_id_missing = "stop", text_id_fallback = "warn",
+    text_slot_unknown = "stop"
   ))
 })
 
 test_that("each planted defect gives its check's findings", {
-  results <- preflight_checks(fx_planted_spec())
+  withr::local_options(groundplotqc.lang = NULL, groundplotqc.severity = NULL)
+  # The caller's text table adds a slot the package's row of that text lacks (text_slot_unknown).
+  planted_text <- data.frame(
+    text_id = "preflight_detail_dd_pk_missing", lang = "en",
+    text = "Table {table_name} has no primary key {nobody}."
+  )
+  results <- preflight_checks(
+    fx_planted_spec(),
+    preflight_context(fx_planted_rule_set(), fx_planted_settings(), planted_text)
+  )
   expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
     dd_duplicate_attribute = "stop 1", dd_type_unknown = "stop 1",
-    dd_type_column_ambiguous = "pass 0", dd_pk_missing = "stop 1",
+    dd_type_column_ambiguous = "stop 1", dd_pk_missing = "stop 1",
     dd_fk_target_missing = "stop 1", code_list_missing = "stop 1",
     code_column_missing = "stop 1", code_list_duplicate_code = "warn 1",
     code_list_blank_row = "warn 1", code_list_unreferenced = "stop 1",
@@ -38,17 +50,59 @@ test_that("each planted defect gives its check's findings", {
     spec_encoding_invalid = "stop 1", spec_csv_malformed = "stop 1",
     site_id_range_invalid = "stop 2", lineage_spec_unparseable = "stop 2",
     lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
-    lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1"
+    lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
+    rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
+    rule_set_override_invalid = "stop 1", text_id_missing = "pass 0",
+    text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1"
   ))
   site <- results[results$rule_id == "site_id_range_invalid", ]
   expect_equal(site$n_findings, c(2L, 2L))
   expect_true(any(grepl("ZZ", site$detail)))
+  # Each check's findings carry its planted defect's witness (plan 18.3).
+  witness <- c(
+    dd_duplicate_attribute = "plots.plot_id", dd_type_unknown = "trees.tree_id",
+    dd_type_column_ambiguous = "data_type, datatype", dd_pk_missing = "Table trees",
+    dd_fk_target_missing = "\"stands\"", code_list_missing = "\"soils\"",
+    code_column_missing = "Code list cover", code_list_duplicate_code = "\"SQ\"",
+    code_list_blank_row = "Sheet shape", code_list_unreferenced = "Sheet extra",
+    code_list_empty_column = "use_when", spec_clash_resolved = "name for id \"2\"",
+    spec_clash_unresolved = "kind for id \"2\"", datasets_row_missing = "id \"3\"",
+    spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
+    site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
+    lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
+    lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond"
+  )
+  for (rule in names(witness)) {
+    details <- results$detail[results$rule_id == rule]
+    expect_true(all(grepl(witness[[rule]], details, fixed = TRUE)), info = rule)
+  }
+  in_memory <- "of the rule set's rules (as R counts rows)"
+  rule_set <- results[results$rule_id %in% c(
+    "rule_set_unknown_column", "rule_id_unknown", "rule_set_override_invalid"
+  ), ]
+  expect_equal(rule_set$detail, c(
+    paste("Row 3", in_memory, "names table stands, which isn't in the dictionary."),
+    paste("Row 1", in_memory, "names rule no_such_rule, which isn't registered."),
+    paste("Row 3", in_memory, "names rule other_rule, which isn't registered."),
+    "The severity setting given as an argument names rule also_unknown, which isn't registered.",
+    paste(
+      "Row 2", in_memory, "names dd_pk_missing, a pre-flight check,",
+      "which a rule set can't change."
+    )
+  ))
+  expect_equal(
+    results$detail[results$rule_id == "text_slot_unknown"],
+    paste(
+      "Text preflight_detail_dd_pk_missing in language en uses the slot {nobody}, which the",
+      "package's row of that text doesn't have."
+    )
+  )
 })
 
 test_that("the toy specs pass, and absent inputs are not_run with their reason", {
   fish <- preflight_checks(fx_fish_spec())
   # The toy specs give no findings, but they lack inputs, so the checks of those inputs
-  # don't run on them; the clean spec with every input, below, runs all 22 (D12.31).
+  # don't run on them; the clean spec with every input, below, runs every check (D12.31).
   expect_false(any(fish$outcome %in% c("stop", "warn")))
   expect_equal(sum(fish$n_findings, na.rm = TRUE), 0L)
   reasons <- fish$not_run_reason
@@ -62,7 +116,7 @@ test_that("the toy specs pass, and absent inputs are not_run with their reason",
   expect_equal(forest$not_run_reason[forest$rule_id == "lineage_id_unflagged"], "no_dd_column")
 })
 
-test_that("a clean spec with every input runs all 22 checks, each without a finding (D12.31)", {
+test_that("a clean spec with every input runs every check, each without a finding (D12.31)", {
   dictionary <- data.frame(
     table_name = c("plots", "plots", "plots", "trees", "trees", "trees"),
     attribute_name = c("plot_id", "kind", "src_plot_id", "tree_id", "plot_id", "status"),
@@ -100,7 +154,7 @@ test_that("a clean spec with every input runs all 22 checks, each without a find
     ),
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )
-  results <- preflight_checks(spec)
+  results <- preflight_checks(spec, preflight_context(fx_empty_rule_set()))
   # One row per check, none not_run, stop or warn: every check met clean input.
   expect_equal(results$rule_id, preflight_rules()$rule_id)
   expect_false(any(results$outcome %in% c("not_run", "stop", "warn")))
