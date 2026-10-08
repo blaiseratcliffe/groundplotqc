@@ -34,6 +34,11 @@ test_that("magp_texts hands on a clean file's rows, checked", {
     as.list(texts),
     list(text_id = "preflight_title", lang = "fr", text = "Rapport de pre-vol {x}")
   )
+  # The three checks above hold for a good row: its id is the engine's, it is ASCII and its
+  # braces mark a slot.
+  expect_equal(setdiff(texts$text_id, report_texts()$text_id), character())
+  expect_true(all(!grepl("[^ -~]", texts$text)))
+  expect_false(any(grepl("[{}]", gsub("\\{[a-z0-9_]+\\}", "", texts$text))))
   # The file's rows go through the table check, as a caller's do.
   writeLines(c('"text_id","lang","text"', '"preflight_title","FR","Rapport"'), file)
   expect_error(magp_texts(), "aren't a language code")
@@ -59,7 +64,15 @@ test_that("the checks above bite on a planted row: an id the engine lacks, a non
 })
 
 test_that("magp_texts stops on a file missing from the package", {
-  testthat::local_mocked_bindings(system.file = function(...) "")
+  # system.file() stands in for a package without the file, for this test only. Under
+  # load_all() the package calls pkgload's own system.file(), found among its imports; an
+  # installed package, as R CMD check runs it, calls base's.
+  imports <- parent.env(environment(magp_texts))
+  if (exists("system.file", envir = imports, inherits = FALSE)) {
+    testthat::local_mocked_bindings(system.file = function(...) "")
+  } else {
+    testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
+  }
   expect_error(magp_texts(), "report_text_magp.csv is missing from the package.")
 })
 

@@ -211,7 +211,8 @@ test_that("validate_text_table copies a table and refuses a malformed one", {
   Encoding(bad) <- "UTF-8"
   expect_error(
     validate_text_table(data.frame(text_id = c("a", "b"), lang = "fr", text = c("T", bad))),
-    "`text` column text holds text that isn't valid UTF-8, in rows 2."
+    "Column `text` of `text` holds text that isn't valid UTF-8, in rows 2.",
+    fixed = TRUE
   )
 })
 
@@ -236,26 +237,51 @@ test_that("validate_text_table names a repeated text_id and lang, and caps a lon
   )
 })
 
+test_that("every list of rows or pairs in a message shows ten, then how many more", {
+  first_ten <- paste(1:10, collapse = ", ")
+  blank <- data.frame(text_id = letters[1:11], lang = "fr", text = NA_character_)
+  expect_error(
+    validate_text_table(blank),
+    paste0("blank cells in rows ", first_ten, " and 1 more;"),
+    fixed = TRUE
+  )
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
+  Encoding(bad) <- "UTF-8"
+  invalid <- data.frame(text_id = letters[1:11], lang = "fr", text = bad)
+  expect_error(
+    validate_text_table(invalid),
+    paste0("holds text that isn't valid UTF-8, in rows ", first_ten, " and 1 more."),
+    fixed = TRUE
+  )
+  twice <- data.frame(text_id = rep(letters[1:11], each = 2L), lang = "fr", text = "T")
+  expect_error(
+    validate_text_table(twice),
+    paste0("pairs: ", paste0(letters[1:10], " (fr)", collapse = ", "), " and 1 more."),
+    fixed = TRUE
+  )
+})
+
 test_that("validate_text_table changes nothing it is given and shares no column with it", {
-  given <- data.table::data.table(
-    lang = c("fr", "en"), text = c("T", "U"), text_id = c("a", "b")
-  )
-  before <- data.table::copy(given)
-  checked <- validate_text_table(given)
-  # The caller's table keeps its columns, their order and their values.
-  expect_equal(given, before)
-  expect_identical(names(given), names(before))
-  expect_equal(
-    as.list(checked),
-    list(text_id = c("a", "b"), lang = c("fr", "en"), text = c("T", "U"))
-  )
-  # No column of the result is the vector of the caller's column, so a change by reference
-  # to the result can't reach the input.
-  for (column in names(checked)) {
-    expect_false(data.table::address(checked[[column]]) == data.table::address(given[[column]]))
+  frame <- data.frame(lang = c("fr", "en"), text = c("T", "U"), text_id = c("a", "b"))
+  # A data.table and a data.frame are both changed in place by data.table's functions.
+  for (given in list(data.table::as.data.table(frame), frame)) {
+    before <- data.table::copy(given)
+    checked <- validate_text_table(given)
+    # The caller's table keeps its columns, their order and their values.
+    expect_equal(given, before)
+    expect_identical(names(given), names(before))
+    expect_equal(
+      as.list(checked),
+      list(text_id = c("a", "b"), lang = c("fr", "en"), text = c("T", "U"))
+    )
+    # No column of the result is the vector of the caller's column, so a change by
+    # reference to the result can't reach the input.
+    for (column in names(checked)) {
+      expect_false(data.table::address(checked[[column]]) == data.table::address(given[[column]]))
+    }
+    data.table::set(checked, 1L, "text", "Changed")
+    expect_equal(given$text, c("T", "U"))
   }
-  data.table::set(checked, 1L, "text", "Changed")
-  expect_equal(given$text, c("T", "U"))
 })
 
 test_that("lookups leave the cached engine table as it was (D12.29)", {
@@ -277,9 +303,15 @@ test_that("lookups leave the cached engine table as it was (D12.29)", {
 test_that("validate_text_table refuses a column of more than one value per row", {
   given <- data.frame(text_id = c("a", "b"), lang = "fr", text = c("1", "2"))
   given$text <- matrix(c("1", "2", "3", "4"), 2)
-  expect_error(validate_text_table(given), "`text` column text must hold one value per row.")
+  expect_error(
+    validate_text_table(given), "Column `text` of `text` must hold one value per row.",
+    fixed = TRUE
+  )
   given$text <- list("x", c("y", "z"))
-  expect_error(validate_text_table(given), "`text` column text must hold one value per row.")
+  expect_error(
+    validate_text_table(given), "Column `text` of `text` must hold one value per row.",
+    fixed = TRUE
+  )
 })
 
 test_that("validate_text_table refuses a lang that isn't a language code, naming rows (D14.20)", {
@@ -296,13 +328,55 @@ test_that("a stop for a missing value names the text and the language (D14.8)", 
     "Report text preflight_detail_code_list_blank_row (language en) needs a value for sheet.",
     fixed = TRUE
   )
-  # The language is the run's, though the row came from the English fallback.
+  # The language is the row's, so a fallback row says English in a French run.
   expect_error(
     report_text("preflight_detail_code_list_blank_row", "fr", where = "line 1"),
-    "(language fr) needs a value for sheet.",
+    "(language en) needs a value for sheet.",
+    fixed = TRUE
+  )
+  french <- validate_text_table(data.frame(
+    text_id = c("preflight_title", "preflight_intro"), lang = c("fr", "en"),
+    text = c("Titre {zzz}", "Intro {zzz}")
+  ))
+  expect_error(
+    report_text("preflight_title", "fr", text = french),
+    "Report text preflight_title (language fr) needs a value for zzz.",
+    fixed = TRUE
+  )
+  # The caller's English row in a French run is the one at fault, and says so.
+  expect_error(
+    report_text("preflight_intro", "fr", text = french),
+    "Report text preflight_intro (language en) needs a value for zzz.",
     fixed = TRUE
   )
   expect_error(fill_placeholders("Row {row}.", list()), "Report text needs a value for row.")
+})
+
+test_that("a stop for values of two lengths or an NA names the text and the language", {
+  expect_error(
+    report_text(
+      "preflight_detail_code_list_blank_row",
+      where = c("line 1", "line 2"), sheet = c("a", "b", "c")
+    ),
+    "Report text preflight_detail_code_list_blank_row (language en) values must have length 1",
+    fixed = TRUE
+  )
+  expect_error(
+    report_text("preflight_detail_code_list_blank_row", where = NA_character_, sheet = "s"),
+    "Report text preflight_detail_code_list_blank_row (language en) slot {where} has an NA value.",
+    fixed = TRUE
+  )
+  # Called without a text id, the words are the plain ones.
+  expect_error(
+    fill_placeholders("Row {row} of {sheet}.", list(row = 1:2, sheet = c("a", "b", "c"))),
+    "Report text values must have length 1 or one common length;",
+    fixed = TRUE
+  )
+  expect_error(
+    fill_placeholders("Row {row}.", list(row = NA_integer_)),
+    "Report text slot {row} has an NA value.",
+    fixed = TRUE
+  )
 })
 
 test_that("a text with no row says so in English, or in the language and English", {

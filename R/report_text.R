@@ -60,14 +60,17 @@ report_text <- function(text_id, lang = "en", ..., text = NULL) {
   if (!ok) {
     stop("`text_id` and `lang` must each be one string.", call. = FALSE)
   }
-  fill_placeholders(text_template(text_id, lang, text), list(...), lang, text_id)
+  template <- text_template(text_id, lang, text)
+  fill_placeholders(as.vector(template), list(...), lang, text_id, attr(template, "lang"))
 }
 
 #' A text's template, looked up in D14.8's order
 #'
 #' The caller's table in the language, the engine's in the language, the caller's in
 #' English, the engine's in English; the first that has the row gives it. Two rows for one
-#' text and language in one table, or no row at all, stop.
+#' text and language in one table, or no row at all, stop. The string carries the language
+#' of the row it came from as its attribute `lang`, which differs from the asked language
+#' when a fallback row gave it.
 #' @noRd
 text_template <- function(text_id, lang, text = NULL) {
   engine <- report_texts()
@@ -85,7 +88,7 @@ text_template <- function(text_id, lang, text = NULL) {
       ), call. = FALSE)
     }
     if (length(found) == 1L) {
-      return(found)
+      return(structure(found, lang = step[[2L]]))
     }
   }
   if (identical(lang, "en")) {
@@ -123,7 +126,7 @@ validate_text_table <- function(text) {
   for (column in columns) {
     value <- text[[column]]
     if (is.list(value) || !is.null(dim(value)) || length(value) != nrow(text)) {
-      stop(sprintf("`text` column %s must hold one value per row.", column), call. = FALSE)
+      stop(sprintf("Column `%s` of `text` must hold one value per row.", column), call. = FALSE)
     }
   }
   table <- as.data.table(lapply(columns, function(column) as_text(text[[column]])))
@@ -146,7 +149,7 @@ validate_text_table <- function(text) {
     invalid <- which(!validUTF8(table[[column]]))
     if (length(invalid) > 0L) {
       stop(sprintf(
-        "`text` column %s holds text that isn't valid UTF-8, in rows %s.",
+        "Column `%s` of `text` holds text that isn't valid UTF-8, in rows %s.",
         column, shown(invalid)
       ), call. = FALSE)
     }
@@ -184,33 +187,35 @@ validate_text_table <- function(text) {
 #' Each value is written as text (numbers in full, D12.45); a slot of quoted_slots is
 #' quoted, a slot of blank_slots shows a blank as the blank text, and any other slot stops
 #' on NA. Every value the template uses has length 1 or one common length. `text_id`, when
-#' given, is named with the language in the stop for a value the template needs and
-#' `values` lacks, so the caller can find the row.
+#' given, is named in each stop with `row_lang`, the language of the row the template came
+#' from (the run's `lang` unless a fallback row gave it), so the caller can find the row.
 #' @noRd
-fill_placeholders <- function(template, values, lang = "en", text_id = NULL) {
+fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row_lang = lang) {
   pieces <- regmatches(template, gregexpr("\\{[a-z0-9_]+\\}", template), invert = NA)[[1L]]
   if (length(pieces) < 2L) {
     return(template)
+  }
+  # The words naming the text in a stop.
+  which_text <- function() {
+    if (is.null(text_id)) {
+      return("Report text")
+    }
+    sprintf("Report text %s (language %s)", text_id, row_lang)
   }
   slots <- seq(2L, length(pieces), by = 2L)
   wanted <- substr(pieces[slots], 2L, nchar(pieces[slots]) - 1L)
   absent <- setdiff(wanted, names(values))
   if (length(absent) > 0L) {
-    which_text <- if (is.null(text_id)) {
-      "Report text"
-    } else {
-      sprintf("Report text %s (language %s)", text_id, lang)
-    }
     stop(sprintf(
-      "%s needs a value for %s.", which_text, paste(absent, collapse = ", ")
+      "%s needs a value for %s.", which_text(), paste(absent, collapse = ", ")
     ), call. = FALSE)
   }
   used <- unique(wanted)
   sizes <- lengths(values[used])
   if (length(unique(sizes[sizes != 1L])) > 1L) {
     stop(sprintf(
-      "Report text values must have length 1 or one common length; got %s.",
-      paste0(used, " ", sizes, collapse = ", ")
+      "%s values must have length 1 or one common length; got %s.",
+      which_text(), paste0(used, " ", sizes, collapse = ", ")
     ), call. = FALSE)
   }
   if (any(sizes == 0L)) {
@@ -225,7 +230,7 @@ fill_placeholders <- function(template, values, lang = "en", text_id = NULL) {
       return(blank_as_text(x, lang))
     }
     if (anyNA(x)) {
-      stop(sprintf("Report text slot {%s} has an NA value.", name), call. = FALSE)
+      stop(sprintf("%s slot {%s} has an NA value.", which_text(), name), call. = FALSE)
     }
     x
   })
