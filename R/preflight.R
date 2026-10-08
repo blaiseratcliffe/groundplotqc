@@ -1,7 +1,9 @@
-# Pre-flight checks of a specification (plan 4.2, 9.5; D2.11, D8.9, D8.16, D12.15 to
-# D12.26). One function per check, held in preflight_check_functions(), returns its
-# findings, or the reason it couldn't run; preflight_checks() makes preflight.csv's rows
-# from them, in 4.2's order.
+# Pre-flight checks of a specification, and of the rule set, settings and report text a run
+# would use (plan 4.2, 9.5; D2.11, D8.9, D8.16, D12.15 to D12.26, D14.5, D14.6, D14.13). One
+# function per check, held in preflight_check_functions(), returns its findings, or the
+# reason it couldn't run; preflight_checks() makes preflight.csv's rows from them, in the
+# registry's order (R/rules_registry.R). R/preflight_config.R holds the checks of the rule set
+# and the text.
 
 #' The pre-flight checks in the registry's order, and the outcome of each on failure
 #'
@@ -26,13 +28,15 @@ preflight_columns <- function() {
 }
 
 #' The pre-flight table: a pass row, a not_run row, or one row per finding, per check
+#'
+#' `context` holds what the checks read besides the spec (preflight_context()).
 #' @noRd
-preflight_checks <- function(spec) {
+preflight_checks <- function(spec, context = preflight_context()) {
   rules <- preflight_rules()
   checks <- preflight_check_functions()
   rows <- lapply(seq_len(nrow(rules)), function(i) {
     rule <- rules$rule_id[[i]]
-    result <- checks[[rule]](spec)
+    result <- checks[[rule]](spec, context)
     if (is.character(result)) {
       return(data.table(
         rule_id = rule, outcome = "not_run", file = NA_character_, detail = NA_character_,
@@ -137,15 +141,16 @@ attribute_rows <- function(spec, tables, attributes) {
   a$source_row[match(paste(tables, attributes), paste(a$table_name, a$attribute_name))]
 }
 
-#' The 22 checks of 4.2 at M2, one function per rule ID, as a list named by it (D12.26)
+#' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' preflight_checks() takes each from this list, which works in an installed package,
-#' where a lookup by name wouldn't search the namespace. Each check returns
+#' M2's 22 here, then the rule set's from R/preflight_config.R. preflight_checks() takes
+#' each from this list, which works in an installed package, where a lookup by name
+#' wouldn't search the namespace. Each check takes the spec and the context and returns
 #' findings_of(...), or the reason it couldn't run.
 #' @noRd
 preflight_check_functions <- function() {
-  list(
-    dd_duplicate_attribute = function(spec) {
+  c(list(
+    dd_duplicate_attribute = function(spec, context) {
       a <- spec$attributes
       dup <- a[, list(n = .N, row = source_row[min(2L, .N)]), by = list(table_name, attribute_name)]
       dup <- dup[n > 1L]
@@ -158,7 +163,7 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, dup$row)
       )
     },
-    dd_type_unknown = function(spec) {
+    dd_type_unknown = function(spec, context) {
       a <- spec$attributes
       # A dictionary without a type column is dd_type_column_ambiguous's finding; a type
       # column that is all blank gives one finding per blank type (R9).
@@ -178,10 +183,10 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, unknown$source_row)
       )
     },
-    dd_type_column_ambiguous = function(spec) {
+    dd_type_column_ambiguous = function(spec, context) {
       read_findings_of(spec, "dd_type_column_ambiguous")
     },
-    dd_pk_missing = function(spec) {
+    dd_pk_missing = function(spec, context) {
       a <- spec$attributes
       absent <- setdiff(unique(a$table_name), spec$keys[key_type == "PK", table_name])
       findings_of(
@@ -190,7 +195,7 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, a$source_row[match(absent, a$table_name)])
       )
     },
-    dd_fk_target_missing = function(spec) {
+    dd_fk_target_missing = function(spec, context) {
       tables <- unique(spec$attributes$table_name)
       pk_tables <- unique(spec$keys[key_type == "PK", table_name])
       fk <- spec$keys[key_type == "FK"]
@@ -211,7 +216,7 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, attribute_rows(spec, hit$table_name, hit$attribute_name))
       )
     },
-    code_list_missing = function(spec) {
+    code_list_missing = function(spec, context) {
       m <- spec$code_list_map[status == "no_source"]
       findings_of(
         input_file(spec, "dictionary"),
@@ -222,7 +227,7 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, attribute_rows(spec, m$table_name, m$attribute_name))
       )
     },
-    code_column_missing = function(spec) {
+    code_column_missing = function(spec, context) {
       m <- spec$code_list_map[status == "no_code_column"]
       file <- fifelse(
         m$source_type == "sheet",
@@ -244,7 +249,7 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, attribute_rows(spec, m$table_name, m$attribute_name))
       )
     },
-    code_list_duplicate_code = function(spec) {
+    code_list_duplicate_code = function(spec, context) {
       if (!given(spec, "code_lists")) {
         return("no_input")
       }
@@ -285,7 +290,7 @@ preflight_check_functions <- function() {
         dups$cell
       )
     },
-    code_list_blank_row = function(spec) {
+    code_list_blank_row = function(spec, context) {
       if (!given(spec, "code_lists")) {
         return("no_input")
       }
@@ -318,7 +323,7 @@ preflight_check_functions <- function() {
         rows$cell
       )
     },
-    code_list_unreferenced = function(spec) {
+    code_list_unreferenced = function(spec, context) {
       if (!given(spec, "code_lists")) {
         return("no_input")
       }
@@ -332,7 +337,7 @@ preflight_check_functions <- function() {
         spec$code_lists$source_cell[match(unused, spec$code_lists$sheet)]
       )
     },
-    code_list_empty_column = function(spec) {
+    code_list_empty_column = function(spec, context) {
       if (!given(spec, "code_lists")) {
         return("no_input")
       }
@@ -363,7 +368,7 @@ preflight_check_functions <- function() {
         empty$cell
       )
     },
-    spec_clash_resolved = function(spec) {
+    spec_clash_resolved = function(spec, context) {
       by_value <- given(spec, "datasets") && given(spec, "precedence")
       if (!by_value && !given(spec, "lineage_spec")) {
         return("no_input")
@@ -386,7 +391,7 @@ preflight_check_functions <- function() {
       file <- fifelse(placement, input_file(spec, "lineage_spec"), input_file(spec, "datasets"))
       findings_of(file, detail, clash_cells(clash$source_cell_a, clash$source_cell_b))
     },
-    spec_clash_unresolved = function(spec) {
+    spec_clash_unresolved = function(spec, context) {
       if (!(given(spec, "datasets") && given(spec, "precedence"))) {
         return("no_input")
       }
@@ -403,22 +408,22 @@ preflight_check_functions <- function() {
       )
       rbindlist(list(read_findings_of(spec, "spec_clash_unresolved"), values))
     },
-    datasets_row_missing = function(spec) {
+    datasets_row_missing = function(spec, context) {
       if (!(given(spec, "datasets") && given(spec, "precedence"))) {
         return("no_input")
       }
       read_findings_of(spec, "datasets_row_missing")
     },
-    spec_encoding_invalid = function(spec) {
+    spec_encoding_invalid = function(spec, context) {
       read_findings_of(spec, "spec_encoding_invalid")
     },
-    spec_csv_malformed = function(spec) {
+    spec_csv_malformed = function(spec, context) {
       # The reader makes every finding of this check: from fread()'s warnings (D12.54), a
       # shortfall of rows against the file's records (D12.58) and fread()'s stop on a quote
       # in a file of one column (D12.59).
       read_findings_of(spec, "spec_csv_malformed")
     },
-    site_id_range_invalid = function(spec) {
+    site_id_range_invalid = function(spec, context) {
       if (!given(spec, "id_bands")) {
         return("no_input")
       }
@@ -426,7 +431,7 @@ preflight_check_functions <- function() {
       # known (build_id_bands(), D12.28).
       read_findings_of(spec, "site_id_range_invalid")
     },
-    lineage_spec_unparseable = function(spec) {
+    lineage_spec_unparseable = function(spec, context) {
       if (!given(spec, "lineage_spec")) {
         return("no_input")
       }
@@ -469,7 +474,7 @@ preflight_check_functions <- function() {
       )
       rbindlist(list(parse_findings, row_findings, blank_findings))
     },
-    lineage_name_unknown = function(spec) {
+    lineage_name_unknown = function(spec, context) {
       if (!given(spec, "lineage_spec")) {
         return("no_input")
       }
@@ -489,7 +494,7 @@ preflight_check_functions <- function() {
         names_used$source_cell
       )
     },
-    lineage_spec_row_unflagged = function(spec) {
+    lineage_spec_row_unflagged = function(spec, context) {
       if (!given(spec, "lineage_spec")) {
         return("no_input")
       }
@@ -510,7 +515,7 @@ preflight_check_functions <- function() {
         cells
       )
     },
-    lineage_id_unflagged = function(spec) {
+    lineage_id_unflagged = function(spec, context) {
       if (!given(spec, "id_pattern")) {
         return("no_input")
       }
@@ -528,22 +533,34 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, hit$source_row)
       )
     },
-    crosswalk_unreadable = function(spec) {
+    crosswalk_unreadable = function(spec, context) {
       if (!given(spec, "crosswalks")) {
         return("no_input")
       }
       read_findings_of(spec, "crosswalk_unreadable")
     }
-  )
+  ), preflight_rule_set_checks())
 }
 
 #' Pre-flight a specification
 #'
 #' @description
 #' Checks a specification, never the data, and stops before a run that would read it
-#' wrongly. Each check gives one row per finding, or one pass or not-run row.
+#' wrongly. Given a rule set, it checks the rule set's rows too, and it checks the
+#' settings and report text a run would use. Each check gives one row per finding, or one
+#' pass or not-run row.
 #'
 #' @param spec A specification from [gpq_read_spec()].
+#' @param rules `NULL`, or a rule set: a named list of tables with a `rules` component, as
+#'   [magp_rules()] returns. Its `rules` rows are checked against the specification and the
+#'   registered rules, and its `settings` rows give settings.
+#' @param settings A named list of settings, which come before the rule set's, the
+#'   options' and the built-in values (see [groundplotqc_options]): `lang`, the run
+#'   language, whose text `text_id_fallback` checks, and `severity`, severities by rule ID.
+#' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
+#'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`
+#'   when pre-flight checks the registered rules' text; pre-flight's own page and table use
+#'   the package's English text.
 #' @param output_dir `NULL`, or a folder: `metadata/preflight.csv` and
 #'   `reports/preflight.html` are written under it, whether or not pre-flight stops.
 #' @return The pre-flight table, invisibly: columns `rule_id`, `outcome` (`stop`, `warn`,
@@ -569,7 +586,10 @@ preflight_check_functions <- function() {
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
-#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`.
+#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`; with a rule
+#' set, `rule_set_unknown_column`; with a rule set or a severity setting, `rule_id_unknown`
+#' and `rule_set_override_invalid`. No rule set or setting changes what a check stops or
+#' warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(
@@ -592,8 +612,17 @@ preflight_check_functions <- function() {
 #' )
 #' stopped <- tryCatch(gpq_preflight(gpq_read_spec(twice)), gpq_preflight_error = function(e) e)
 #' subset(stopped$preflight, outcome == "stop")
+#'
+#' # A rule set's row naming a rule no one registered stops pre-flight too.
+#' rules <- list(rules = data.frame(
+#'   rule_id = "no_such_rule", table_name = "*", attribute_name = "*", severity = NA,
+#'   class = NA, enabled = TRUE
+#' ))
+#' stopped <- tryCatch(gpq_preflight(forest, rules = rules), gpq_preflight_error = function(e) e)
+#' subset(stopped$preflight, outcome == "stop", c(rule_id, detail))
 #' @export
-gpq_preflight <- function(spec, output_dir = NULL) {
+gpq_preflight <- function(spec, rules = NULL, settings = list(), text = NULL,
+                          output_dir = NULL) {
   if (!inherits(spec, "gpq_spec")) {
     stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
   }
@@ -610,7 +639,9 @@ gpq_preflight <- function(spec, output_dir = NULL) {
   if (!dir_ok) {
     stop("`output_dir` must be NULL or one folder, not an existing file.", call. = FALSE)
   }
-  results <- preflight_checks(spec)
+  # The rule set, settings and text are checked before any check runs: a caller's error in
+  # them stops here (D14.6, D14.13).
+  results <- preflight_checks(spec, preflight_context(rules, settings, text))
   if (!is.null(output_dir)) {
     write_preflight_files(results, spec, output_dir)
   }

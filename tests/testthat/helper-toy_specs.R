@@ -1,4 +1,5 @@
-# Fixture builders for the toy specs and the planted-defect spec (D12.18, D12.27, D12.31).
+# Fixture builders for the toy specs and the planted-defect spec (D12.18, D12.27, D12.31),
+# and a planted rule set and settings, one defect per check of M3a's (D12.31).
 
 fx_fish_column_map <- function(...) {
   gpq_column_map(
@@ -135,4 +136,38 @@ fx_planted_spec <- function() {
     ),
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )
+}
+
+# A rule set and settings with one planted defect per check of M3a's, for fx_planted_spec()
+# (D12.31): rows 1 and 3 name unregistered rules, and the severity setting names a third
+# (rule_id_unknown 3); row 3 also names the table stands, which the spec lacks
+# (rule_set_unknown_column 1, an intended overlap); row 2 names the pre-flight check
+# dd_pk_missing (rule_set_override_invalid 1, D14.5); the rule set's language, fr, has no
+# rows (text_id_fallback, one finding per registered rule). text_id_missing can't fire on
+# the registry's own rules, which all have English text; its test gives the check a
+# registry of its own.
+fx_planted_rule_set <- function() {
+  list(
+    meta = data.frame(
+      rule_set_name = "planted", version = "1", date = "2026-10-07", spec_version = "20261005"
+    ),
+    rules = data.frame(
+      rule_id = c("no_such_rule", "dd_pk_missing", "other_rule"),
+      table_name = c("plots", "*", "stands"), attribute_name = c("plot_id", "*", "*"),
+      severity = c(NA, "warning", NA), class = NA_character_, enabled = TRUE
+    ),
+    settings = data.frame(setting = "lang", value = "fr", type = "character")
+  )
+}
+
+fx_planted_settings <- function() {
+  list(severity = c(also_unknown = "error"))
+}
+
+# An empty rule set: every check of the rule set runs and finds nothing.
+fx_empty_rule_set <- function() {
+  list(rules = data.frame(
+    rule_id = character(), table_name = character(), attribute_name = character(),
+    severity = character(), class = character(), enabled = logical()
+  ))
 }

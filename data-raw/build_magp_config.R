@@ -323,7 +323,7 @@ main <- function() {
   rules <- build_magp_rules(spec, config_dir)
   stopped <- tryCatch(
     {
-      gpq_preflight(spec, output_dir = file.path("runs", "build_magp_config"))
+      gpq_preflight(spec, rules = rules, output_dir = file.path("runs", "build_magp_config"))
       NULL
     },
     gpq_preflight_error = function(e) e

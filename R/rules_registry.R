@@ -46,7 +46,11 @@ rule_registry <- function() {
     preflight("lineage_name_unknown", "warning", "attributes; lineage_spec"),
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),
-    preflight("crosswalk_unreadable", "error", "read_findings")
+    preflight("crosswalk_unreadable", "error", "read_findings"),
+    # ---- task 5 ----
+    preflight("rule_set_unknown_column", "error", "attributes; rules"),
+    preflight("rule_id_unknown", "error", "rules; settings:severity"),
+    preflight("rule_set_override_invalid", "error", "rules; settings:severity")
   ))
 }
 
