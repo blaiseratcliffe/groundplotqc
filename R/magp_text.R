@@ -4,6 +4,9 @@
 # table to the engine as `text` from M7.
 
 #' MAGPlot's report text table, checked
+#'
+#' A problem in the file's rows stops with validate_text_table()'s condition, its message
+#' prefixed with "report_text_magp.csv: " (D14.38).
 #' @noRd
 magp_texts <- function() {
   path <- system.file("extdata", "text", "report_text_magp.csv", package = "groundplotqc")
@@ -14,5 +17,13 @@ magp_texts <- function() {
   if (nrow(read$malformed) > 0L || nrow(read$invalid) > 0L) {
     stop("report_text_magp.csv doesn't read cleanly.", call. = FALSE)
   }
-  validate_text_table(read$data)
+  # A stop on the file's rows is the table check's own condition with the file's name in
+  # front of its message: same class, rows still counted as data rows (D14.38).
+  tryCatch(
+    validate_text_table(read$data),
+    error = function(cond) {
+      cond$message <- paste0("report_text_magp.csv: ", conditionMessage(cond))
+      stop(cond)
+    }
+  )
 }

@@ -75,7 +75,7 @@ test_that("allowed_overrides gives each kind of rule its choices, a pre-flight c
   ))
 })
 
-test_that("a registry of pre-flight checks gives empty tables that keep their columns (D14.5)", {
+test_that("empty override tables for pre-flight checks have the whole registry's columns (D14.5)", {
   registry <- rule_registry()
   allowed <- allowed_overrides(registry[registry$check_type == "preflight", ])
   for (kind in c("severity", "class")) {

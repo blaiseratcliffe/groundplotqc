@@ -222,6 +222,14 @@ test_that("no disabled row or severity entry changes a pre-flight check's outcom
     expect_equal(duplicate$n_findings, 1L)
     expect_equal(results$outcome[results$rule_id == "rule_set_override_invalid"], "stop")
   }
+  # A stop check lowered by an entry stays a stop, beside the warn check raised above: the
+  # planted spec's trees have no primary key (dd_pk_missing 1).
+  results <- preflight_checks(
+    fx_planted_spec(), preflight_context(NULL, list(severity = c(dd_pk_missing = "warning")))
+  )
+  expect_equal(results$outcome[results$rule_id == "dd_pk_missing"], "stop")
+  expect_equal(results$n_findings[results$rule_id == "dd_pk_missing"], 1L)
+  expect_equal(results$outcome[results$rule_id == "rule_set_override_invalid"], "stop")
 })
 
 test_that("each tier's severity entry is checked, the same rule in both included (8.5)", {

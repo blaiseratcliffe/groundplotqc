@@ -61,6 +61,8 @@ report_text <- function(text_id, lang = "en", ..., text = NULL) {
     stop("`text_id` and `lang` must each be one string.", call. = FALSE)
   }
   template <- text_template(text_id, lang, text)
+  # as.vector() strips the template's `lang` attribute, so the string is plain text; the
+  # language of the row it came from goes in separately, from attr(template, "lang").
   fill_placeholders(as.vector(template), list(...), lang, text_id, attr(template, "lang"))
 }
 

@@ -28,12 +28,13 @@ rule_set_schema <- function() {
 #' A rule set checked and copied, its components in 3.5's order
 #'
 #' NULL stays NULL. Each checked component becomes a new data.table with exactly its
-#' schema's columns, each holding one value per row: text as UTF-8 with blanks NA, a column the
-#' schema declares logical (`enabled`) logical, read from TRUE or FALSE, the ASCII letters in
-#' any case. A component keeps its origin
-#' (carry_origin()). The caller's tables are never changed. A rule set that isn't a named
-#' list of tables with a rules component, or a component without exactly its columns, is a
-#' caller error (D12.33's pattern); what the rows say is pre-flight's to check (4.2).
+#' schema's columns, each holding one value per row: text as UTF-8 with blanks NA, a column
+#' the schema declares logical (`enabled`) logical, read from TRUE or FALSE, the ASCII
+#' letters in any case. A component keeps its origin (carry_origin()), which places a bad
+#' `enabled` cell by its file line in the stop (D14.26). The caller's tables are never
+#' changed. A rule set that isn't a named list of tables with a rules component, or a
+#' component without exactly its columns, is a caller error (D12.33's pattern); what the
+#' rows say is pre-flight's to check (4.2).
 #' @noRd
 validate_rule_set <- function(rules) {
   if (is.null(rules)) {
@@ -114,20 +115,29 @@ rule_set_component <- function(x, name, columns) {
       ), call. = FALSE)
     }
   }
+  table <- carry_origin(table, x)
   # A column the schema declares logical is read from TRUE or FALSE, the ASCII letters in any
-  # case: toupper() would fold other letters too, such as the long s.
+  # case: toupper() would fold other letters too, such as the long s. A bad cell is placed by
+  # its file line when the component has its origin, by R's row number otherwise (D14.26).
   for (column in names(columns)[columns == "logical"]) {
     flag <- chartr(paste(letters, collapse = ""), paste(LETTERS, collapse = ""), table[[column]])
     bad <- which(is.na(flag) | !flag %chin% c("TRUE", "FALSE"))
     if (length(bad) > 0L) {
+      origin_file <- attr(table, "source_file", exact = TRUE)
+      places <- if (is.null(origin_file)) {
+        paste("rows", paste(bad, collapse = ", "))
+      } else {
+        origin_lines <- attr(table, "source_lines", exact = TRUE)[bad]
+        paste(sprintf("line %d of %s", origin_lines, origin_file), collapse = ", ")
+      }
       stop(sprintf(
-        "Rule-set component %s has %s values that aren't TRUE or FALSE, in rows %s.",
-        name, column, paste(bad, collapse = ", ")
+        "Rule-set component %s has %s values that aren't TRUE or FALSE, in %s.",
+        name, column, places
       ), call. = FALSE)
     }
     set(table, j = column, value = flag == "TRUE")
   }
-  carry_origin(table, x)
+  table
 }
 
 #' A component's origin set by reference: the name of the file it was read from and the

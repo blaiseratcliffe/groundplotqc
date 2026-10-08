@@ -44,6 +44,41 @@ test_that("magp_texts hands on a clean file's rows, checked", {
   expect_error(magp_texts(), "aren't a language code")
 })
 
+test_that("a stop on the file's rows names the file, the condition's class kept (D14.38)", {
+  file <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c('"text_id","lang","text"', '"preflight_title","FR","Rapport"'), file)
+  real_read <- read_csv_text
+  testthat::local_mocked_bindings(
+    read_csv_text = function(path) real_read(if (grepl("report_text_magp", path)) file else path)
+  )
+  # The table check's own stop for the same rows, with rows counted as data rows.
+  direct <- tryCatch(
+    validate_text_table(data.frame(text_id = "preflight_title", lang = "FR", text = "Rapport")),
+    error = identity
+  )
+  from_file <- tryCatch(magp_texts(), error = identity)
+  expect_s3_class(from_file, "error")
+  expect_identical(class(from_file), class(direct))
+  expect_identical(
+    conditionMessage(from_file), paste0("report_text_magp.csv: ", conditionMessage(direct))
+  )
+  expect_match(conditionMessage(from_file), "^report_text_magp.csv: `text` has lang values")
+  expect_match(conditionMessage(from_file), "in rows 1.$")
+  # A condition of another class keeps it: only the message changes.
+  testthat::local_mocked_bindings(
+    validate_text_table = function(text) {
+      stop(structure(
+        class = c("gpq_demo_error", "error", "condition"),
+        list(message = "demo message", call = NULL, extra = 7L)
+      ))
+    }
+  )
+  classed <- tryCatch(magp_texts(), error = identity)
+  expect_identical(class(classed), c("gpq_demo_error", "error", "condition"))
+  expect_identical(conditionMessage(classed), "report_text_magp.csv: demo message")
+  expect_identical(classed$extra, 7L)
+})
+
 test_that("the checks above bite on a planted row: an id the engine lacks, a non-ASCII text", {
   file <- withr::local_tempfile(fileext = ".csv")
   accent <- rawToChar(as.raw(c(0x52, 0xC3, 0xA9)))

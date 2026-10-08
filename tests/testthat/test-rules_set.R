@@ -48,7 +48,8 @@ test_that("components come back in 3.5's order, the caller's tables untouched", 
   data.table::set(checked$rules, j = "rule_id", value = "changed")
   expect_identical(given$rules, before)
   # A sub-assignment by reference into every returned component, none sharing a column with
-  # the caller's table, whatever form the caller's table has.
+  # the caller's table. The callers' tables here are data.tables: only a data.table could be
+  # reached by that sub-assignment.
   given <- lapply(a_rule_set(), data.table::as.data.table)
   before <- lapply(given, data.table::copy)
   checked <- validate_rule_set(given)
@@ -136,6 +137,41 @@ test_that("enabled is read in any case of the ASCII letters, a look-alike letter
   # U+017F, the long s, has the capital S: base toupper() would have read it as FALSE.
   set$rules$enabled <- c("TRUE", "fal\u017fe")
   expect_error(validate_rule_set(set), "in rows 2")
+})
+
+test_that("the enabled stop names the file's line when the component has its origin (D14.26)", {
+  dir <- withr::local_tempdir()
+  writeLines(
+    c(
+      "rule_id,table_name,attribute_name,severity,class,enabled",
+      "r1,*,*,,,TRUE",
+      "r2,*,*,,,",
+      "r3,\"two",
+      "lines\",*,,,maybe"
+    ),
+    file.path(dir, "rules_rules.csv")
+  )
+  expect_error(
+    read_rule_set(dir),
+    paste0(
+      "Rule-set component rules has enabled values that aren't TRUE or FALSE, ",
+      "in line 3 of rules_rules.csv, line 4 of rules_rules.csv."
+    ),
+    fixed = TRUE
+  )
+  writeLines(
+    c("rule_id,table_name,attribute_name,severity,class,enabled", "r1,*,*,,,TRUE", "r2,*,*,,,"),
+    file.path(dir, "rules_rules.csv")
+  )
+  expect_error(read_rule_set(dir), "in line 3 of rules_rules.csv.", fixed = TRUE)
+  # The same rule set given in memory has no origin: R's row number, as before.
+  set <- a_rule_set()
+  set$rules$enabled <- c("TRUE", "")
+  expect_error(validate_rule_set(set), "in rows 2.", fixed = TRUE)
+  # An origin that doesn't match the rows is dropped, so the stop gives R's rows.
+  attr(set$rules, "source_file") <- "rules_rules.csv"
+  attr(set$rules, "source_lines") <- 3L
+  expect_error(validate_rule_set(set), "in rows 2.", fixed = TRUE)
 })
 
 test_that("an empty rules component is a rule set", {
