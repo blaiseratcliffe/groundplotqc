@@ -26,15 +26,29 @@ test_that("lang resolves argument > rule set > option > built-in, with its tier"
     resolve_setting("lang", list(lang = "es"), lang_rule_set()),
     list(value = "es", tier = "argument")
   )
+  expect_equal(
+    resolve_setting("lang", list(lang = NULL), lang_rule_set()),
+    list(value = "fr", tier = "rule set")
+  )
 })
 
 test_that("a bad language stops, naming the setting and where it came from", {
   withr::local_options(groundplotqc.lang = NULL)
   expect_error(resolve_setting("lang", list(lang = 3)), "Setting lang (argument)", fixed = TRUE)
-  expect_error(resolve_setting("lang", list(lang = c("en", "fr"))), "argument")
-  expect_error(resolve_setting("lang", list(lang = NA_character_)), "argument")
+  expect_error(
+    resolve_setting("lang", list(lang = c("en", "fr"))), "Setting lang (argument)",
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("lang", list(lang = NA_character_)), "Setting lang (argument)",
+    fixed = TRUE
+  )
   expect_error(resolve_setting("lang", list(lang = "EN")), "lower-case")
   expect_error(resolve_setting("lang", rules = lang_rule_set(" fr")), "(rule set)", fixed = TRUE)
+  expect_error(
+    resolve_setting("lang", rules = lang_rule_set(NA_character_)), "Setting lang (rule set)",
+    fixed = TRUE
+  )
   withr::local_options(groundplotqc.lang = "")
   expect_error(resolve_setting("lang"), "(option)", fixed = TRUE)
   expect_error(resolve_setting("no_such"), "No setting is named no_such")
@@ -42,11 +56,19 @@ test_that("a bad language stops, naming the setting and where it came from", {
 
 test_that("check_settings refuses an unnamed list, an unknown setting and bad rule-set rows", {
   expect_null(check_settings())
+  expect_null(check_settings(list(lang = "fr")))
+  expect_null(check_settings(list(lang = "fr", severity = c(a = "warning")), lang_rule_set()))
   expect_error(check_settings(list("en")), "each named once")
   expect_error(check_settings(list(lang = "en", lang = "fr")), "each named once")
   expect_error(check_settings(data.frame(lang = "en")), "each named once")
   expect_error(check_settings(list(row_cap = 10)), "doesn't have: row_cap")
   expect_error(check_settings(rules = lang_rule_set(type = "integer")), "wrong type for lang")
+  expect_error(
+    check_settings(rules = lang_rule_set(type = NA_character_)), "wrong type for lang"
+  )
+  blank_setting <- lang_rule_set()
+  blank_setting$settings$setting <- NA_character_
+  expect_error(check_settings(rules = blank_setting), "can't give there: (blank).", fixed = TRUE)
   twice <- lang_rule_set()
   twice$settings <- rbind(twice$settings, twice$settings)
   expect_error(check_settings(rules = twice), "give lang more than once")
@@ -65,9 +87,21 @@ test_that("severity_entries lists the argument's and the option's entries with t
     rule_id = c("rule_a", "rule_b"), severity = c("warning", "flag"),
     tier = c("argument", "option")
   ))
+  same_rule <- severity_entries(list(severity = c(rule_b = "warning")))
+  expect_equal(as.data.frame(same_rule), data.frame(
+    rule_id = c("rule_b", "rule_b"), severity = c("warning", "flag"),
+    tier = c("argument", "option")
+  ))
   withr::local_options(groundplotqc.severity = NULL)
   expect_equal(nrow(severity_entries()), 0L)
   expect_named(severity_entries(), c("rule_id", "severity", "tier"))
+  several <- severity_entries(list(severity = c(rule_a = "warning", rule_b = "error")))
+  expect_equal(as.data.frame(several), data.frame(
+    rule_id = c("rule_a", "rule_b"), severity = c("warning", "error"), tier = "argument"
+  ))
+  none <- severity_entries(list(severity = structure(character(), names = character())))
+  expect_equal(nrow(none), 0L)
+  expect_named(none, c("rule_id", "severity", "tier"))
 })
 
 test_that("a severity setting of the wrong shape stops, naming its tier", {
@@ -77,7 +111,10 @@ test_that("a severity setting of the wrong shape stops, naming its tier", {
     structure("warning", names = NA_character_), c(" " = "warning")
   )
   for (x in wrong) {
-    expect_error(severity_entries(list(severity = x)), "Setting severity (argument)", fixed = TRUE)
+    expect_error(
+      severity_entries(list(severity = x)), "Setting severity (argument)",
+      fixed = TRUE, info = paste(deparse(x), collapse = " ")
+    )
   }
   withr::local_options(groundplotqc.severity = "warning")
   expect_error(severity_entries(), "Setting severity (option)", fixed = TRUE)

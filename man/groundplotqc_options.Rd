@@ -29,8 +29,9 @@ A function takes each setting from the first of these that gives a value:
 \itemize{
 \item \code{groundplotqc.lang}: the language of report text, a code of two or three
 lower-case letters such as \code{"fr"}. Built-in: \code{"en"}. A text with no row in
-the language is shown in English, and pre-flight's \code{text_id_fallback}
-lists each one.
+the language is shown in English. In a language other than English,
+pre-flight's \code{text_id_fallback} lists each registered rule's message that
+has no row in it.
 \item \code{groundplotqc.severity}: severities by rule ID, a named character vector
 such as \code{c(some_rule = "warning")}, each rule named once. Built-in: none,
 so each rule keeps its registered severity. In a rule set the \code{rules}

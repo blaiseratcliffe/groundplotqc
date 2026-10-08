@@ -19,8 +19,9 @@
 #' @section Options:
 #' - `groundplotqc.lang`: the language of report text, a code of two or three
 #'   lower-case letters such as `"fr"`. Built-in: `"en"`. A text with no row in
-#'   the language is shown in English, and pre-flight's `text_id_fallback`
-#'   lists each one.
+#'   the language is shown in English. In a language other than English,
+#'   pre-flight's `text_id_fallback` lists each registered rule's message that
+#'   has no row in it.
 #' - `groundplotqc.severity`: severities by rule ID, a named character vector
 #'   such as `c(some_rule = "warning")`, each rule named once. Built-in: none,
 #'   so each rule keeps its registered severity. In a rule set the `rules`

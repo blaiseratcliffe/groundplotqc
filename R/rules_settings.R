@@ -64,18 +64,20 @@ check_settings <- function(settings = list(), rules = NULL) {
   if (is.null(rows) || nrow(rows) == 0L) {
     return(invisible(NULL))
   }
+  # A blank setting cell is NA once the rule set is validated; messages show it as (blank).
+  shown <- function(x) fifelse(is.na(x), "(blank)", x)
   takes_rows <- names(definitions)[!is.na(vapply(definitions, `[[`, "", "type"))]
   refused <- setdiff(rows$setting, takes_rows)
   if (length(refused) > 0L) {
     stop(sprintf(
       "The rule set's settings rows name settings a rule set can't give there: %s. They take %s.",
-      paste(refused, collapse = ", "), paste(takes_rows, collapse = ", ")
+      paste(shown(refused), collapse = ", "), paste(takes_rows, collapse = ", ")
     ), call. = FALSE)
   }
   twice <- unique(rows$setting[duplicated(rows$setting)])
   if (length(twice) > 0L) {
     stop(sprintf(
-      "The rule set's settings rows give %s more than once.", paste(twice, collapse = ", ")
+      "The rule set's settings rows give %s more than once.", paste(shown(twice), collapse = ", ")
     ), call. = FALSE)
   }
   wanted <- vapply(definitions[rows$setting], `[[`, "", "type")
@@ -83,8 +85,8 @@ check_settings <- function(settings = list(), rules = NULL) {
   if (any(wrong)) {
     stop(sprintf(
       "The rule set's settings rows give the wrong type for %s: %s takes %s.",
-      paste(rows$setting[wrong], collapse = ", "), paste(rows$setting[wrong], collapse = ", "),
-      paste(wanted[wrong], collapse = ", ")
+      paste(shown(rows$setting[wrong]), collapse = ", "),
+      paste(shown(rows$setting[wrong]), collapse = ", "), paste(wanted[wrong], collapse = ", ")
     ), call. = FALSE)
   }
   invisible(NULL)
@@ -93,8 +95,8 @@ check_settings <- function(settings = list(), rules = NULL) {
 #' One setting's value and the tier it came from: argument, rule set, option or built-in
 #'
 #' The value is checked against its definition, a bad one a caller error naming the setting
-#' and its tier. The rule-set tier is a settings row, its value text converted by its type.
-#' Call check_settings() first.
+#' and its tier. The rule-set tier is a settings row, its value returned as the text it
+#' holds, as `character` is the only type so far. Call check_settings() first.
 #' @noRd
 resolve_setting <- function(name, settings = list(), rules = NULL) {
   definition <- setting_definitions()[[name]]
