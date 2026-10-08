@@ -50,7 +50,11 @@ rule_registry <- function() {
     # ---- task 5 ----
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
     preflight("rule_id_unknown", "error", "rules; settings:severity"),
-    preflight("rule_set_override_invalid", "error", "rules; settings:severity")
+    preflight("rule_set_override_invalid", "error", "rules; settings:severity"),
+    # ---- task 6 ----
+    preflight("text_id_missing", "error", "text"),
+    preflight("text_id_fallback", "warning", "text; settings:lang"),
+    preflight("text_slot_unknown", "error", "text")
   ))
 }
 

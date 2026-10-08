@@ -71,8 +71,10 @@ the specification's \code{clashes} component.
 \code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
 \code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable}; with a rule
 set, \code{rule_set_unknown_column}; with a rule set or a severity setting, \code{rule_id_unknown}
-and \code{rule_set_override_invalid}. No rule set or setting changes what a check stops or
-warns on.
+and \code{rule_set_override_invalid}; and \code{text_id_missing}, \code{text_id_fallback} and
+\code{text_slot_unknown}, on the report text of the registered rules in English and in the run
+language and on a caller's text table. No rule set or setting changes what a check stops
+or warns on.
 }
 
 \examples{

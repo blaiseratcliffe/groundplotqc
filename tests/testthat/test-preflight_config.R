@@ -365,3 +365,81 @@ test_that("MAGPlot's rule set passes its checks with MAGPlot's spec (D14.2)", {
   ), ]
   expect_equal(rule_set$outcome, c("pass", "pass", "pass"))
 })
+
+# ---- task 6 ----
+
+test_that("text_id_missing names a registered rule with no English text", {
+  found <- check("text_id_missing", test_context())
+  expect_equal(found$detail, "Rule untexted has no English report text no_text.")
+  expect_equal(nrow(check("text_id_missing", preflight_context())), 0L)
+  # A caller's table can supply the English row.
+  text <- data.frame(text_id = "no_text", lang = "en", text = "Now there is.")
+  expect_equal(nrow(check("text_id_missing", test_context(text = text))), 0L)
+})
+
+test_that("text_id_fallback lists each rule's text missing in the run language (D14.8)", {
+  withr::local_options(groundplotqc.lang = NULL)
+  expect_equal(nrow(check("text_id_fallback", preflight_context())), 0L)
+  found <- check("text_id_fallback", preflight_context(settings = list(lang = "fr")))
+  registry <- rule_registry()
+  expect_equal(nrow(found), nrow(registry))
+  expect_equal(
+    found$detail[[1L]],
+    paste(
+      "Rule dd_duplicate_attribute's text dd_duplicate_attribute has no row in language fr,",
+      "so English is shown."
+    )
+  )
+  # A French row in the caller's table is found at the lookup's first step.
+  text <- data.frame(text_id = "dd_pk_missing", lang = "fr", text = "Chaque table a une cle.")
+  found <- check("text_id_fallback", preflight_context(settings = list(lang = "fr"), text = text))
+  expect_equal(nrow(found), nrow(registry) - 1L)
+  expect_false(any(grepl("dd_pk_missing", found$detail)))
+})
+
+test_that("a run language from the rule set or the option reaches text_id_fallback", {
+  withr::local_options(groundplotqc.lang = "de")
+  found <- check("text_id_fallback", preflight_context())
+  expect_true(all(grepl("language de", found$detail)))
+  found <- check("text_id_fallback", preflight_context(fx_planted_rule_set()))
+  expect_true(all(grepl("language fr", found$detail)))
+})
+
+test_that("text_slot_unknown names each slot a caller's text adds to the package's (D14.21)", {
+  text <- data.frame(
+    text_id = c(
+      "preflight_detail_dd_pk_missing", "preflight_detail_dd_pk_missing", "preflight_title",
+      "no_such_text"
+    ),
+    lang = c("en", "fr", "en", "en"),
+    text = c("{table_name} lacks a key {nobody}.", "Pas de cle.", "Title {page}", "{anything}")
+  )
+  found <- check("text_slot_unknown", preflight_context(text = text))
+  # The French row uses fewer slots, which is fine; no_such_text isn't the engine's, so it
+  # is skipped.
+  expect_equal(found$detail, c(
+    paste(
+      "Text preflight_detail_dd_pk_missing in language en uses the slot {nobody}, which the",
+      "package's row of that text doesn't have."
+    ),
+    paste(
+      "Text preflight_title in language en uses the slot {page}, which the package's row of",
+      "that text doesn't have."
+    )
+  ))
+  expect_true(all(is.na(found$file)))
+  expect_true(all(is.na(found$source_cell)))
+  stopped <- tryCatch(
+    gpq_preflight(fx_fish_spec(), text = text),
+    gpq_preflight_error = function(e) e$preflight
+  )
+  expect_equal(unique(stopped$outcome[stopped$rule_id == "text_slot_unknown"]), "stop")
+})
+
+test_that("text_slot_unknown passes with no text table or only known slots", {
+  expect_equal(nrow(check("text_slot_unknown", preflight_context())), 0L)
+  text <- data.frame(
+    text_id = "preflight_detail_dd_pk_missing", lang = "fr", text = "Table {table_name} sans cle."
+  )
+  expect_equal(nrow(check("text_slot_unknown", preflight_context(text = text))), 0L)
+})

@@ -22,14 +22,21 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
     lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
     lineage_id_unflagged = "warn", crosswalk_unreadable = "stop",
     rule_set_unknown_column = "stop", rule_id_unknown = "stop",
-    rule_set_override_invalid = "stop"
+    rule_set_override_invalid = "stop", text_id_missing = "stop", text_id_fallback = "warn",
+    text_slot_unknown = "stop"
   ))
 })
 
 test_that("each planted defect gives its check's findings", {
   withr::local_options(groundplotqc.lang = NULL, groundplotqc.severity = NULL)
+  # The caller's text table adds a slot the package's row of that text lacks (text_slot_unknown).
+  planted_text <- data.frame(
+    text_id = "preflight_detail_dd_pk_missing", lang = "en",
+    text = "Table {table_name} has no primary key {nobody}."
+  )
   results <- preflight_checks(
-    fx_planted_spec(), preflight_context(fx_planted_rule_set(), fx_planted_settings())
+    fx_planted_spec(),
+    preflight_context(fx_planted_rule_set(), fx_planted_settings(), planted_text)
   )
   expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
@@ -45,7 +52,8 @@ test_that("each planted defect gives its check's findings", {
     lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
     rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
-    rule_set_override_invalid = "stop 1"
+    rule_set_override_invalid = "stop 1", text_id_missing = "pass 0",
+    text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1"
   ))
   site <- results[results$rule_id == "site_id_range_invalid", ]
   expect_equal(site$n_findings, c(2L, 2L))
@@ -82,6 +90,13 @@ test_that("each planted defect gives its check's findings", {
       "which a rule set can't change."
     )
   ))
+  expect_equal(
+    results$detail[results$rule_id == "text_slot_unknown"],
+    paste(
+      "Text preflight_detail_dd_pk_missing in language en uses the slot {nobody}, which the",
+      "package's row of that text doesn't have."
+    )
+  )
 })
 
 test_that("the toy specs pass, and absent inputs are not_run with their reason", {

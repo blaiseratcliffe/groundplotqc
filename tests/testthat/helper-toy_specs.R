@@ -148,7 +148,8 @@ fx_planted_spec <- function() {
 # (rule_set_override_invalid 1, its only finding, D14.5), and dd_pk_missing still stops on
 # the spec's trees; the rule set's language, fr, has no rows (text_id_fallback, one finding
 # per registered rule). text_id_missing can't fire on the registry's own rules, which all
-# have English text; its test gives the check a registry of its own.
+# have English text; its test gives the check a registry of its own. text_slot_unknown 1 is
+# the planted test's text row.
 fx_planted_rule_set <- function() {
   list(
     meta = data.frame(

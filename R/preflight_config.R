@@ -220,3 +220,67 @@ preflight_rule_set_checks <- function() {
     }
   )
 }
+
+# ---- task 6 ----
+
+#' The checks of the report text (4.2; D7.6, D14.7, D14.8, D14.13, D14.21)
+#'
+#' text_id_missing and text_id_fallback read every registered rule's message_id:
+#' text_id_missing in English, and text_id_fallback, in a run language other than English,
+#' in that language, a row in the caller's table or the engine's counting (the first two
+#' steps of D14.8's lookup). text_slot_unknown reads the caller's table: each {slot} of a
+#' row that the engine's English row of the same text_id lacks is a finding; fewer slots
+#' are fine, and a text_id the engine lacks is skipped (D14.21).
+#' @noRd
+preflight_text_checks <- function() {
+  list(
+    text_id_missing = function(spec, context) {
+      registry <- context$registry
+      missing <- registry[!registry$message_id %chin% text_ids("en", context$text)]
+      findings_of(NA_character_, report_text(
+        "preflight_detail_text_id_missing",
+        rule_id = missing$rule_id, message_id = missing$message_id
+      ))
+    },
+    text_id_fallback = function(spec, context) {
+      if (identical(context$lang, "en")) {
+        return(no_findings())
+      }
+      registry <- context$registry
+      missing <- registry[!registry$message_id %chin% text_ids(context$lang, context$text)]
+      findings_of(NA_character_, report_text(
+        "preflight_detail_text_id_fallback",
+        rule_id = missing$rule_id, message_id = missing$message_id, language = context$lang
+      ))
+    },
+    text_slot_unknown = function(spec, context) {
+      text <- context$text
+      if (is.null(text)) {
+        return(no_findings())
+      }
+      engine <- report_texts()
+      # Each subset's test is worked out before the brackets: `text` is also a column there.
+      is_english <- engine$lang == "en"
+      english <- engine[is_english]
+      known <- text$text_id %chin% english$text_id
+      used <- text_slots(text[known])
+      unknown <- unique(used[!text_slots(english), on = c("text_id", "slot")])
+      findings_of(NA_character_, report_text(
+        "preflight_detail_text_slot_unknown",
+        message_id = unknown$text_id, language = unknown$lang, slot = unknown$slot
+      ))
+    }
+  )
+}
+
+#' Each {slot} the rows of a text table use: one row per text_id, lang and slot, the slot
+#' written with its braces (D14.21)
+#' @noRd
+text_slots <- function(texts) {
+  found <- regmatches(texts$text, gregexpr("\\{[a-z0-9_]+\\}", texts$text))
+  n <- lengths(found)
+  data.table(
+    text_id = rep(texts$text_id, n), lang = rep(texts$lang, n),
+    slot = as.character(unlist(found))
+  )
+}

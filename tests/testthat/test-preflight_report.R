@@ -229,3 +229,48 @@ test_that("the footer names files without a hash alone, and is empty with none (
   empty <- preflight_html(preflight_checks(memory), memory)
   expect_match(empty, "<dt>Specification files</dt><dd></dd>", fixed = TRUE)
 })
+
+outcome_rows <- function(outcomes, rule_ids) {
+  data.table::data.table(
+    rule_id = rule_ids, outcome = outcomes, file = NA_character_, detail = NA_character_,
+    n_findings = NA_integer_, not_run_reason = NA_character_, source_cell = NA_character_
+  )
+}
+
+test_that("the result line gives the outcome in D14.11's words", {
+  expect_equal(
+    preflight_result_line(outcome_rows(
+      c("stop", "stop", "stop", "warn", "warn", "pass"), c("a", "a", "b", "c", "d", "e")
+    )),
+    "Stopped: 3 finding(s) from 2 check(s) that stop; 2 warning(s) from 2 check(s)."
+  )
+  expect_equal(
+    preflight_result_line(outcome_rows(c("stop", "pass"), c("a", "b"))),
+    "Stopped: 1 finding(s) from 1 check(s) that stop."
+  )
+  expect_equal(
+    preflight_result_line(outcome_rows(c("warn", "warn", "pass"), c("a", "a", "b"))),
+    "Passed with 2 warning(s) from 1 check(s); the run can continue."
+  )
+  expect_equal(
+    preflight_result_line(outcome_rows(c("pass", "not_run", "not_run"), c("a", "b", "c"))),
+    "Passed: no check stopped or warned. 2 check(s) didn't run; the table says why."
+  )
+})
+
+test_that("the page puts the result line first and labels the rows' count (D14.12)", {
+  dir <- withr::local_tempdir()
+  suppressWarnings(gpq_preflight(fx_fish_gear_twice_spec(), output_dir = dir))
+  page <- paste(readLines(file.path(dir, "reports", "preflight.html"), encoding = "UTF-8"),
+    collapse = "\n"
+  )
+  result <- regexpr("Passed with 1 warning(s) from 1 check(s); the run can continue.", page,
+    fixed = TRUE
+  )
+  intro <- regexpr("Pre-flight checks the specification", page, fixed = TRUE)
+  expect_true(result > 0L && result < intro)
+  expect_true(grepl("didn&#39;t run|didn't run", page))
+  expect_true(grepl("Findings in this check", page, fixed = TRUE))
+  # The summary table keeps "Findings".
+  expect_true(grepl(">Findings<", page, fixed = TRUE))
+})

@@ -143,10 +143,10 @@ attribute_rows <- function(spec, tables, attributes) {
 
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22 here, then the rule set's from R/preflight_config.R. preflight_checks() takes
-#' each from this list, which works in an installed package, where a lookup by name
-#' wouldn't search the namespace. Each check takes the spec and the context and returns
-#' findings_of(...), or the reason it couldn't run.
+#' M2's 22 here, then the rule set's and the text's from R/preflight_config.R.
+#' preflight_checks() takes each from this list, which works in an installed package, where
+#' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
+#' and returns findings_of(...), or the reason it couldn't run.
 #' @noRd
 preflight_check_functions <- function() {
   c(list(
@@ -539,7 +539,7 @@ preflight_check_functions <- function() {
       }
       read_findings_of(spec, "crosswalk_unreadable")
     }
-  ), preflight_rule_set_checks())
+  ), preflight_rule_set_checks(), preflight_text_checks())
 }
 
 #' Pre-flight a specification
@@ -588,8 +588,10 @@ preflight_check_functions <- function() {
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`; with a rule
 #' set, `rule_set_unknown_column`; with a rule set or a severity setting, `rule_id_unknown`
-#' and `rule_set_override_invalid`. No rule set or setting changes what a check stops or
-#' warns on.
+#' and `rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback` and
+#' `text_slot_unknown`, on the report text of the registered rules in English and in the run
+#' language and on a caller's text table. No rule set or setting changes what a check stops
+#' or warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(
