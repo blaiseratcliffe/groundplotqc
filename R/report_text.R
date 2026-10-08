@@ -60,7 +60,7 @@ report_text <- function(text_id, lang = "en", ..., text = NULL) {
   if (!ok) {
     stop("`text_id` and `lang` must each be one string.", call. = FALSE)
   }
-  fill_placeholders(text_template(text_id, lang, text), list(...), lang)
+  fill_placeholders(text_template(text_id, lang, text), list(...), lang, text_id)
 }
 
 #' A text's template, looked up in D14.8's order
@@ -87,6 +87,9 @@ text_template <- function(text_id, lang, text = NULL) {
     if (length(found) == 1L) {
       return(found)
     }
+  }
+  if (identical(lang, "en")) {
+    stop(sprintf("Report text %s has no row in English.", text_id), call. = FALSE)
   }
   stop(sprintf(
     "Report text %s has no row in language %s or in English.", text_id, lang
@@ -125,11 +128,28 @@ validate_text_table <- function(text) {
   }
   table <- as.data.table(lapply(columns, function(column) as_text(text[[column]])))
   setnames(table, columns)
-  if (anyNA(table, recursive = TRUE)) {
-    stop("`text` has a blank cell; every text_id, lang and text must be filled.", call. = FALSE)
+  # The first ten of a list of rows or values for a message, then how many more.
+  shown <- function(x, n = 10L) {
+    if (length(x) <= n) {
+      return(paste(x, collapse = ", "))
+    }
+    paste0(paste(x[seq_len(n)], collapse = ", "), " and ", length(x) - n, " more")
   }
-  if (!all(validUTF8(unlist(table, use.names = FALSE)))) {
-    stop("`text` holds text that isn't valid UTF-8.", call. = FALSE)
+  blank <- which(rowSums(is.na(table)) > 0L)
+  if (length(blank) > 0L) {
+    stop(sprintf(
+      "`text` has blank cells in rows %s; every text_id, lang and text must be filled.",
+      shown(blank)
+    ), call. = FALSE)
+  }
+  for (column in columns) {
+    invalid <- which(!validUTF8(table[[column]]))
+    if (length(invalid) > 0L) {
+      stop(sprintf(
+        "`text` column %s holds text that isn't valid UTF-8, in rows %s.",
+        column, shown(invalid)
+      ), call. = FALSE)
+    }
   }
   not_code <- which(!grepl(lang_pattern, table$lang))
   if (length(not_code) > 0L) {
@@ -138,14 +158,22 @@ validate_text_table <- function(text) {
         "`text` has lang values that aren't a language code of two or three lower-case",
         "letters, in rows %s."
       ),
-      paste(not_code, collapse = ", ")
+      shown(not_code)
     ), call. = FALSE)
   }
-  twice <- duplicated(table[, c("text_id", "lang")])
+  twice <- duplicated(table, by = c("text_id", "lang"))
   if (any(twice)) {
+    id <- table$text_id[twice]
+    code <- table$lang[twice]
+    pairs <- unique(paste0(id, " (", code, ")"))
+    if (length(pairs) == 1L) {
+      stop(sprintf(
+        "`text` has more than one row for text_id %s in language %s.", id[1L], code[1L]
+      ), call. = FALSE)
+    }
     stop(sprintf(
-      "`text` has more than one row for %s.",
-      paste(unique(paste(table$text_id[twice], table$lang[twice])), collapse = ", ")
+      "`text` has more than one row for each of these text_id (language) pairs: %s.",
+      shown(pairs)
     ), call. = FALSE)
   }
   table
@@ -155,9 +183,11 @@ validate_text_table <- function(text) {
 #'
 #' Each value is written as text (numbers in full, D12.45); a slot of quoted_slots is
 #' quoted, a slot of blank_slots shows a blank as the blank text, and any other slot stops
-#' on NA. Every value the template uses has length 1 or one common length.
+#' on NA. Every value the template uses has length 1 or one common length. `text_id`, when
+#' given, is named with the language in the stop for a value the template needs and
+#' `values` lacks, so the caller can find the row.
 #' @noRd
-fill_placeholders <- function(template, values, lang = "en") {
+fill_placeholders <- function(template, values, lang = "en", text_id = NULL) {
   pieces <- regmatches(template, gregexpr("\\{[a-z0-9_]+\\}", template), invert = NA)[[1L]]
   if (length(pieces) < 2L) {
     return(template)
@@ -166,8 +196,13 @@ fill_placeholders <- function(template, values, lang = "en") {
   wanted <- substr(pieces[slots], 2L, nchar(pieces[slots]) - 1L)
   absent <- setdiff(wanted, names(values))
   if (length(absent) > 0L) {
+    which_text <- if (is.null(text_id)) {
+      "Report text"
+    } else {
+      sprintf("Report text %s (language %s)", text_id, lang)
+    }
     stop(sprintf(
-      "Report text needs a value for %s.", paste(absent, collapse = ", ")
+      "%s needs a value for %s.", which_text, paste(absent, collapse = ", ")
     ), call. = FALSE)
   }
   used <- unique(wanted)
