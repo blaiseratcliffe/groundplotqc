@@ -26,7 +26,19 @@ A function takes each setting from the first of these that gives a value:
 
 \section{Options}{
 
-None yet. Each option is added to this page by the version that brings the
-setting it controls.
+\itemize{
+\item \code{groundplotqc.lang}: the language of report text, a code of two or three
+lower-case letters such as \code{"fr"}. Built-in: \code{"en"}. A text with no row in
+the language is shown in English, and pre-flight's \code{text_id_fallback}
+lists each one.
+\item \code{groundplotqc.severity}: severities by rule ID, a named character vector
+such as \code{c(some_rule = "warning")}, each rule named once. Built-in: none,
+so each rule keeps its registered severity. In a rule set the \code{rules}
+rows' \code{severity} column gives this tier. Pre-flight checks each entry
+(\code{rule_id_unknown}, \code{rule_set_override_invalid}); a pre-flight check's own
+outcome can't be changed.
+}
+
+More options are added by the versions that bring the settings they control.
 }
 
