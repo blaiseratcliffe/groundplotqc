@@ -15,6 +15,8 @@
 
 ## MAGPlot 2.0 layer
 
+- [`magp_rules()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.md)
+  : MAGPlot 2.0's rule set
 - [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
   : MAGPlot 2.0's compiled specification
 

@@ -13,9 +13,12 @@ and defaults.
 
 ## Status
 
-Under development. This version has a specification reader and
-pre-flight checks of the specification. The first release will still be
-version 0.1.0.
+Under development. This version has a specification reader, pre-flight
+checks of the specification, and a rule set with settings
+([`magp_rules()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.md),
+and the `rules` and `settings` arguments of
+[`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)).
+The first release will still be version 0.1.0.
 
 ## Installation
 

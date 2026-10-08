@@ -36,7 +36,24 @@
   dropped, as a repeated one is.
 - [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
   checks a specification before any data is read: 22 checks that stop or
-  warn, with a pre-flight CSV and a self-contained HTML report.
+  warn, with a pre-flight CSV and a self-contained HTML report. It also
+  takes a rule set, settings and report text (`rules`, `settings`,
+  `text`): three more checks find rule-set rows that name an unknown
+  table, attribute or rule, or give a rule a severity or class it can’t
+  take, each placed by its file and line where the rule set was read
+  from files; no rule set or setting can change what a pre-flight check
+  stops or warns on. The `text` rows and the `lang` setting are what
+  pre-flight’s report-text checks read; its own page and table stay in
+  the package’s English text. The options `groundplotqc.lang` and
+  `groundplotqc.severity` are documented on
+  [`?groundplotqc_options`](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md).
+- Pre-flight checks that every registered rule has English report text
+  and, in a run language other than English, lists each text that falls
+  back to English; it stops on a text in the caller’s table that uses a
+  slot the package’s row of that text doesn’t have. The pre-flight page
+  opens with a one-line result, its footer names the rule set that was
+  checked, and its rows table’s count column reads “Findings in this
+  check”.
 - A first article, “Specification files and configuration”, reads and
   pre-flights the fish survey example.
 - [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
@@ -46,3 +63,7 @@
   20261005_magpv2_species.csv, 20261005_magpv2_condition.csv,
   20261005_magpv2_treatment_disturbance.csv and
   20261005_magpv2_severity.csv.
+- [`magp_rules()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.md)
+  returns MAGPlot 2.0’s rule set: its meta row, its rules rows and its
+  settings, compiled from the hand-kept files in `data-raw/magp/` for
+  the 20261005 specification files.

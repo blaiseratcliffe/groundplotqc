@@ -112,6 +112,12 @@ results[, c("rule_id", "outcome", "not_run_reason")]
 #> 20: lineage_spec_row_unflagged not_run       no_input
 #> 21:       lineage_id_unflagged not_run       no_input
 #> 22:       crosswalk_unreadable not_run       no_input
+#> 23:    rule_set_unknown_column not_run       no_input
+#> 24:            rule_id_unknown not_run       no_input
+#> 25:  rule_set_override_invalid not_run       no_input
+#> 26:            text_id_missing    pass           <NA>
+#> 27:           text_id_fallback    pass           <NA>
+#> 28:          text_slot_unknown    pass           <NA>
 #>                        rule_id outcome not_run_reason
 #>                         <char>  <char>         <char>
 ```

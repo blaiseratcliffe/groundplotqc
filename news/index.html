@@ -46,10 +46,13 @@
 <li>
 <code><a href="../reference/gpq_read_spec.html">gpq_read_spec()</a></code> reads a data dictionary, its code lists, translation tables, datasets table and lineage spec into one specification object, recording every defect it finds for pre-flight. A blank name in <code>non_code_sheets</code> is dropped, as a repeated one is.</li>
 <li>
-<code><a href="../reference/gpq_preflight.html">gpq_preflight()</a></code> checks a specification before any data is read: 22 checks that stop or warn, with a pre-flight CSV and a self-contained HTML report.</li>
+<code><a href="../reference/gpq_preflight.html">gpq_preflight()</a></code> checks a specification before any data is read: 22 checks that stop or warn, with a pre-flight CSV and a self-contained HTML report. It also takes a rule set, settings and report text (<code>rules</code>, <code>settings</code>, <code>text</code>): three more checks find rule-set rows that name an unknown table, attribute or rule, or give a rule a severity or class it can’t take, each placed by its file and line where the rule set was read from files; no rule set or setting can change what a pre-flight check stops or warns on. The <code>text</code> rows and the <code>lang</code> setting are what pre-flight’s report-text checks read; its own page and table stay in the package’s English text. The options <code>groundplotqc.lang</code> and <code>groundplotqc.severity</code> are documented on <code><a href="../reference/groundplotqc_options.html">?groundplotqc_options</a></code>.</li>
+<li>Pre-flight checks that every registered rule has English report text and, in a run language other than English, lists each text that falls back to English; it stops on a text in the caller’s table that uses a slot the package’s row of that text doesn’t have. The pre-flight page opens with a one-line result, its footer names the rule set that was checked, and its rows table’s count column reads “Findings in this check”.</li>
 <li>A first article, “Specification files and configuration”, reads and pre-flights the fish survey example.</li>
 <li>
 <code><a href="../reference/magp_spec.html">magp_spec()</a></code> returns MAGPlot 2.0’s specification, compiled from 20261005_magpv2_DD.xlsx, 20261005_magpv2_Lookup_Tables.xlsx, 20261005_magpv2_A2.xlsx, 20261005_magpv2_datasets.csv, 20261005_magpv2_species.csv, 20261005_magpv2_condition.csv, 20261005_magpv2_treatment_disturbance.csv and 20261005_magpv2_severity.csv.</li>
+<li>
+<code><a href="../reference/magp_rules.html">magp_rules()</a></code> returns MAGPlot 2.0’s rule set: its meta row, its rules rows and its settings, compiled from the hand-kept files in <code>data-raw/magp/</code> for the 20261005 specification files.</li>
 </ul></div>
   </main></div>
 

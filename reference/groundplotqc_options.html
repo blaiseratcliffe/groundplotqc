@@ -65,8 +65,18 @@ lower snake case after the dot.</p>
     <h2 id="options">Options<a class="anchor" aria-label="anchor" href="#options"></a></h2>
 
 
-<p>None yet. Each option is added to this page by the version that brings the
-setting it controls.</p>
+<ul><li><p><code>groundplotqc.lang</code>: the language of report text, a code of two or three
+lower-case letters such as <code>"fr"</code>. Built-in: <code>"en"</code>. A text with no row in
+the language is shown in English. In a language other than English,
+pre-flight's <code>text_id_fallback</code> lists each registered rule's message that
+has no row in it.</p></li>
+<li><p><code>groundplotqc.severity</code>: severities by rule ID, a named character vector
+such as <code>c(some_rule = "warning")</code>, each rule named once. Built-in: none,
+so each rule keeps its registered severity. In a rule set the <code>rules</code>
+rows' <code>severity</code> column gives this tier. Pre-flight checks each entry
+(<code>rule_id_unknown</code>, <code>rule_set_override_invalid</code>); a pre-flight check's own
+outcome can't be changed.</p></li>
+</ul><p>More options are added by the versions that bring the settings they control.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
