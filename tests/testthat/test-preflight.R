@@ -34,7 +34,7 @@ test_that("each planted defect gives its check's findings", {
   expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
     dd_duplicate_attribute = "stop 1", dd_type_unknown = "stop 1",
-    dd_type_column_ambiguous = "pass 0", dd_pk_missing = "stop 1",
+    dd_type_column_ambiguous = "stop 1", dd_pk_missing = "stop 1",
     dd_fk_target_missing = "stop 1", code_list_missing = "stop 1",
     code_column_missing = "stop 1", code_list_duplicate_code = "warn 1",
     code_list_blank_row = "warn 1", code_list_unreferenced = "stop 1",
@@ -50,6 +50,38 @@ test_that("each planted defect gives its check's findings", {
   site <- results[results$rule_id == "site_id_range_invalid", ]
   expect_equal(site$n_findings, c(2L, 2L))
   expect_true(any(grepl("ZZ", site$detail)))
+  # Each check's findings carry its planted defect's witness (plan 18.3).
+  witness <- c(
+    dd_duplicate_attribute = "plots.plot_id", dd_type_unknown = "trees.tree_id",
+    dd_type_column_ambiguous = "data_type, datatype", dd_pk_missing = "Table trees",
+    dd_fk_target_missing = "\"stands\"", code_list_missing = "\"soils\"",
+    code_column_missing = "Code list cover", code_list_duplicate_code = "\"SQ\"",
+    code_list_blank_row = "Sheet shape", code_list_unreferenced = "Sheet extra",
+    code_list_empty_column = "use_when", spec_clash_resolved = "name for id \"2\"",
+    spec_clash_unresolved = "kind for id \"2\"", datasets_row_missing = "id \"3\"",
+    spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
+    site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
+    lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
+    lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond"
+  )
+  for (rule in names(witness)) {
+    details <- results$detail[results$rule_id == rule]
+    expect_true(all(grepl(witness[[rule]], details, fixed = TRUE)), info = rule)
+  }
+  in_memory <- "of the rule set's rules (as R counts rows)"
+  rule_set <- results[results$rule_id %in% c(
+    "rule_set_unknown_column", "rule_id_unknown", "rule_set_override_invalid"
+  ), ]
+  expect_equal(rule_set$detail, c(
+    paste("Row 3", in_memory, "names table stands, which isn't in the dictionary."),
+    paste("Row 1", in_memory, "names rule no_such_rule, which isn't registered."),
+    paste("Row 3", in_memory, "names rule other_rule, which isn't registered."),
+    "The severity setting given as an argument names rule also_unknown, which isn't registered.",
+    paste(
+      "Row 2", in_memory, "names dd_pk_missing, a pre-flight check,",
+      "which a rule set can't change."
+    )
+  ))
 })
 
 test_that("the toy specs pass, and absent inputs are not_run with their reason", {

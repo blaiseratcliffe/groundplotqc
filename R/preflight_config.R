@@ -63,8 +63,8 @@ setting_where <- function(tier) {
 #' Which of `values` aren't allowed for their rules, by allowed_overrides()'s table
 #' @noRd
 not_allowed <- function(allowed, rule_ids, values) {
-  given <- data.table(rule_id = rule_ids, value = values)
-  is.na(allowed[given, on = c("rule_id", "value"), which = TRUE, mult = "first"])
+  asked <- data.table(rule_id = rule_ids, value = values)
+  is.na(allowed[asked, on = c("rule_id", "value"), which = TRUE, mult = "first"])
 }
 
 #' The allowed values of each rule, ", "-joined, for a finding's detail
@@ -88,7 +88,9 @@ preflight_rule_set_checks <- function() {
       rows <- rule_set_rows(context)
       a <- spec$attributes
       every_table <- rows$table_name %chin% "*"
-      no_table <- !every_table & !rows$table_name %chin% unique(a$table_name)
+      # A blank table names no table, even beside a dictionary row with a blank one.
+      no_table <- !every_table &
+        (is.na(rows$table_name) | !rows$table_name %chin% unique(a$table_name))
       every_attribute <- rows$attribute_name %chin% "*"
       pairs <- unique(a[, list(table_name, attribute_name)])
       in_table <- !is.na(rows$attribute_name) & !is.na(
