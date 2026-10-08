@@ -113,3 +113,95 @@ test_that("a zero-length value beside a longer one stops as two lengths (D12.45)
     character()
   )
 })
+
+test_that("the engine's text is read once per session, and reset reads it again (D12.29)", {
+  real_read <- read_csv_text
+  reads <- 0L
+  testthat::local_mocked_bindings(read_csv_text = function(path) {
+    reads <<- reads + 1L
+    real_read(path)
+  })
+  reset_report_texts()
+  withr::defer(reset_report_texts())
+  report_text("preflight_title")
+  report_text("preflight_intro")
+  expect_identical(report_texts(), report_texts())
+  expect_equal(reads, 1L)
+  reset_report_texts()
+  report_text("preflight_title")
+  expect_equal(reads, 2L)
+})
+
+test_that("a text is looked up in D14.8's order: caller, engine, caller English, engine", {
+  text <- validate_text_table(data.frame(
+    text_id = c("preflight_title", "preflight_title", "preflight_intro"),
+    lang = c("fr", "en", "en"),
+    text = c("Rapport de pre-vol", "Pre-flight page", "Our intro.")
+  ))
+  expect_equal(report_text("preflight_title", "fr", text = text), "Rapport de pre-vol")
+  expect_equal(report_text("preflight_title", text = text), "Pre-flight page")
+  # No French row anywhere: the caller's English wins over the engine's.
+  expect_equal(report_text("preflight_intro", "fr", text = text), "Our intro.")
+  # Neither table has the text in French or the caller's in English: the engine's English.
+  expect_equal(report_text("preflight_summary_title", "fr", text = text), "Checks")
+  expect_equal(report_text("preflight_summary_title", "fr"), "Checks")
+  expect_error(report_text("no_such_text", "fr", text = text), "no row in language fr")
+})
+
+test_that("an engine row in the language comes before the caller's English (D14.8)", {
+  reset_report_texts()
+  withr::defer(reset_report_texts())
+  engine <- data.table::copy(report_texts())
+  french <- data.table::data.table(text_id = "preflight_title", lang = "fr", text = "Moteur")
+  text_cache$engine <- rbind(engine, french)
+  text <- validate_text_table(data.frame(
+    text_id = "preflight_title", lang = "en", text = "Caller English"
+  ))
+  expect_equal(report_text("preflight_title", "fr", text = text), "Moteur")
+})
+
+test_that("text_ids lists the ids with a row in a language, in either table", {
+  text <- validate_text_table(data.frame(text_id = "preflight_title", lang = "fr", text = "T"))
+  expect_equal(text_ids("fr", text), "preflight_title")
+  expect_equal(text_ids("fr"), character())
+  expect_true("preflight_title" %in% text_ids("en"))
+})
+
+test_that("validate_text_table copies a table and refuses a malformed one", {
+  given <- data.frame(lang = "fr", text = "T", text_id = "a")
+  checked <- validate_text_table(given)
+  expect_named(checked, c("text_id", "lang", "text"))
+  expect_null(validate_text_table(NULL))
+  expect_error(validate_text_table(list(text_id = "a")), "exactly the columns")
+  expect_error(validate_text_table(data.frame(text_id = "a", lang = "fr")), "exactly the columns")
+  expect_error(
+    validate_text_table(data.frame(text_id = "a", lang = "fr", text = "T", note = "x")),
+    "exactly the columns"
+  )
+  expect_error(validate_text_table(data.frame(text_id = "a", lang = " ", text = "T")), "blank")
+  expect_error(
+    validate_text_table(data.frame(text_id = c("a", "a"), lang = "fr", text = c("1", "2"))),
+    "more than one row for a fr"
+  )
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
+  Encoding(bad) <- "UTF-8"
+  expect_error(
+    validate_text_table(data.frame(text_id = "a", lang = "fr", text = bad)), "valid UTF-8"
+  )
+})
+
+test_that("validate_text_table refuses a column of more than one value per row", {
+  given <- data.frame(text_id = c("a", "b"), lang = "fr", text = c("1", "2"))
+  given$text <- matrix(c("1", "2", "3", "4"), 2)
+  expect_error(validate_text_table(given), "`text` column text must hold one value per row.")
+  given$text <- list("x", c("y", "z"))
+  expect_error(validate_text_table(given), "`text` column text must hold one value per row.")
+})
+
+test_that("validate_text_table refuses a lang that isn't a language code, naming rows (D14.20)", {
+  given <- data.frame(text_id = c("a", "b", "c"), lang = c("FR", "fr", "en-CA"), text = "T")
+  expect_error(
+    validate_text_table(given),
+    "aren't a language code of two or three lower-case letters, in rows 1, 3."
+  )
+})

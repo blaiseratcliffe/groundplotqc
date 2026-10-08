@@ -1,8 +1,10 @@
-# Report text: one CSV of text_id, lang and text, with {placeholder} filling (plan 11.7;
-# D4.19, D9.19, D12.21, D12.45, D12.55). Every string pre-flight's table, its conditions
-# and its pages show is a row there; errors meant for a caller or developer are English in
-# the code (D12.37).
-# Completed at M3 with the rule texts and the language fallback (D7.6).
+# Report text: CSVs of text_id, lang and text, with {placeholder} filling (plan 11.7;
+# D4.19, D9.19, D12.21, D12.29, D12.45, D12.55, D14.7, D14.8). Every string pre-flight's
+# table, its conditions and its pages show is a row of the engine's file; errors meant for a
+# caller or developer are English in the code (D12.37). The engine's table is read once per
+# session. A caller's text table, such as MAGPlot's (R/magp_text.R), overrides the engine's
+# row of the same text_id and lang: a text is looked up in the caller's table in the
+# language, then the engine's, then the caller's English, then the engine's English (D14.8).
 
 # Slots that take a value read from the specification: quoted at fill time, a blank shown
 # as the blank text (D12.45, D12.55).
@@ -11,21 +13,36 @@ quoted_slots <- c(
   "data_type", "lookup", "reference_table", "key_value"
 )
 
-# Slots that take a name from the specification: shown as written, a blank shown as the
-# blank text (D12.54, D12.55). Every other slot stops on NA.
+# Slots that take a name from the specification or the rule set: shown as written, a blank
+# shown as the blank text (D12.54, D12.55). Every other slot stops on NA.
 blank_slots <- c(
   "table_name", "attribute_name", "spec_type", "contributor_label", "key_col", "sheet",
-  "column", "crosswalk"
+  "column", "crosswalk", "rule_id"
 )
 
-#' The report text table
+# The engine's text table, read once per session (D12.29); reset_report_texts() empties it.
+text_cache <- new.env(parent = emptyenv())
+
+#' The engine's report text table, read once per session
+#'
+#' The table is shared by every call, so a caller never changes it by reference.
 #' @noRd
 report_texts <- function() {
-  path <- system.file("extdata", "text", "report_text_engine.csv", package = "groundplotqc")
-  if (!nzchar(path)) {
-    stop("report_text_engine.csv is missing from the package.", call. = FALSE)
+  if (is.null(text_cache$engine)) {
+    path <- system.file("extdata", "text", "report_text_engine.csv", package = "groundplotqc")
+    if (!nzchar(path)) {
+      stop("report_text_engine.csv is missing from the package.", call. = FALSE)
+    }
+    text_cache$engine <- read_csv_text(path)$data
   }
-  read_csv_text(path)$data
+  text_cache$engine
+}
+
+#' The cached report text emptied, so the next call reads the file again (for tests)
+#' @noRd
+reset_report_texts <- function() {
+  rm(list = ls(text_cache, all.names = TRUE), envir = text_cache)
+  invisible(NULL)
 }
 
 #' One report text, its placeholders filled
@@ -34,23 +51,104 @@ report_texts <- function() {
 #' The result is plain text, never escaped for HTML. A placeholder that lists several
 #' things for one finding takes one string per finding, already joined. Values are matched
 #' to `...` by name after `text_id` and `lang`, so a placeholder can't be named `text`,
-#' `la` or any other start of those two names: R would match it to them instead.
+#' `la` or any other start of those two names: R would match it to them instead. `text`, a
+#' table checked by validate_text_table(), overrides the engine's rows (D14.8).
 #' @noRd
-report_text <- function(text_id, lang = "en", ...) {
+report_text <- function(text_id, lang = "en", ..., text = NULL) {
   ok <- is.character(text_id) && length(text_id) == 1L && !is.na(text_id) &&
     is.character(lang) && length(lang) == 1L && !is.na(lang)
   if (!ok) {
     stop("`text_id` and `lang` must each be one string.", call. = FALSE)
   }
-  texts <- report_texts()
-  template <- texts$text[texts$text_id == text_id & texts$lang == lang]
-  if (length(template) != 1L) {
+  fill_placeholders(text_template(text_id, lang, text), list(...), lang)
+}
+
+#' A text's template, looked up in D14.8's order
+#'
+#' The caller's table in the language, the engine's in the language, the caller's in
+#' English, the engine's in English; the first that has the row gives it. Two rows for one
+#' text and language in one table, or no row at all, stop.
+#' @noRd
+text_template <- function(text_id, lang, text = NULL) {
+  engine <- report_texts()
+  steps <- list(list(text, lang), list(engine, lang), list(text, "en"), list(engine, "en"))
+  for (step in steps) {
+    table <- step[[1L]]
+    if (is.null(table)) {
+      next
+    }
+    found <- table[["text"]][table[["text_id"]] == text_id & table[["lang"]] == step[[2L]]]
+    if (length(found) > 1L) {
+      stop(sprintf(
+        "Report text %s has %d rows in language %s; it needs one.",
+        text_id, length(found), step[[2L]]
+      ), call. = FALSE)
+    }
+    if (length(found) == 1L) {
+      return(found)
+    }
+  }
+  stop(sprintf(
+    "Report text %s has no row in language %s or in English.", text_id, lang
+  ), call. = FALSE)
+}
+
+#' The text_ids with a row in a language, in the engine's table or the caller's
+#' @noRd
+text_ids <- function(lang, text = NULL) {
+  engine <- report_texts()
+  unique(c(engine$text_id[engine$lang == lang], text[["text_id"]][text[["lang"]] == lang]))
+}
+
+#' A caller's text table checked and copied (D14.8, D14.13, D14.20)
+#'
+#' NULL stays NULL. Exactly the columns text_id, lang and text, each holding one value per
+#' row, as UTF-8 text; every cell filled; each lang a language code of two or three
+#' lower-case letters, as the lang setting takes; one row per text_id and lang. Anything else
+#' is a caller error.
+#' @noRd
+validate_text_table <- function(text) {
+  if (is.null(text)) {
+    return(NULL)
+  }
+  columns <- c("text_id", "lang", "text")
+  if (!is.data.frame(text) || !setequal(names(text), columns) || ncol(text) != 3L) {
+    stop("`text` must be a table with exactly the columns text_id, lang and text.", call. = FALSE)
+  }
+  # A list column, or a matrix one, would be written as text over more or fewer rows than
+  # the table has.
+  for (column in columns) {
+    value <- text[[column]]
+    if (is.list(value) || !is.null(dim(value)) || length(value) != nrow(text)) {
+      stop(sprintf("`text` column %s must hold one value per row.", column), call. = FALSE)
+    }
+  }
+  table <- as.data.table(lapply(columns, function(column) as_text(text[[column]])))
+  setnames(table, columns)
+  if (anyNA(table, recursive = TRUE)) {
+    stop("`text` has a blank cell; every text_id, lang and text must be filled.", call. = FALSE)
+  }
+  if (!all(validUTF8(unlist(table, use.names = FALSE)))) {
+    stop("`text` holds text that isn't valid UTF-8.", call. = FALSE)
+  }
+  not_code <- which(!grepl(lang_pattern, table$lang))
+  if (length(not_code) > 0L) {
     stop(sprintf(
-      "Report text %s has %d rows in language %s; it needs one.",
-      text_id, length(template), lang
+      paste(
+        "`text` has lang values that aren't a language code of two or three lower-case",
+        "letters, in rows %s."
+      ),
+      paste(not_code, collapse = ", ")
     ), call. = FALSE)
   }
-  fill_placeholders(template, list(...), lang)
+  twice <- duplicated(table[, c("text_id", "lang")])
+  if (any(twice)) {
+    stop(sprintf(
+      "`text` has more than one row for %s.",
+      paste(unique(paste(table$text_id[twice], table$lang[twice])), collapse = ", ")
+    ), call. = FALSE)
+  }
+  table
 }
 
 #' A template's {placeholders} filled from named values

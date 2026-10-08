@@ -6,7 +6,7 @@ description: Add or change a groundplotqc QC rule end to end (registry, rule set
 1. Find the decision that approves the rule (decision ID or plan section). None: stop and ask the user.
 2. Choose the rule ID per NAMING.md; for a rename or split, add a `rule_id_map.csv` row.
 3. Add the registry row in `R/rules_registry.R` (stage, layer, check type, default severity, default class, inputs, strategy, message_id; plan 9.7).
-4. Add rule-set `rules` rows for the MAGPlot layer (table, attribute, severity or class override only where it differs from the registry, enabled; plan 3.5) and report text rows (English).
+4. Add rule-set `rules` rows for the MAGPlot layer to `data-raw/magp/rules_rules.csv` (table, attribute, severity or class override only where it differs from the registry, enabled; plan 3.5, D14.2), then rerun the build, and report text rows (English) in `report_text_engine.csv`, with MAGPlot's wording, where it differs, as a row of `report_text_magp.csv` with the same text_id (D14.8).
 5. Dispatch fixture-builder for defect blocks; confirm they fail before the code exists.
 6. Dispatch implementer for the check code (vectorised; plan 16.2).
 7. Update the help page's list of rule IDs, NEWS.md and FILEMAP.md.
