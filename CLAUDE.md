@@ -125,6 +125,10 @@ Reviewers grade each finding Critical, Important or Minor and tag its tier.
 - Bash runs commands only (R, tests, git, builds). Never create or change a file through
   Bash: no heredocs, `cat >`, `echo >`, `printf >`, `tee` or `sed -i`. A generated script
   that needs a heredoc quotes the delimiter.
+- Two exceptions, both run by the session only: subagent-driven-development's three
+  scripts (`sdd-workspace`, `task-brief`, `review-package`) writing in the worktree's
+  git-ignored `.superpowers/` (D11.10, plan 20.7 step 3), and the stray-edit sweep's R
+  script ("Review findings"). Agents still create files only with Write and Edit.
 - For a large new file, write a skeleton with Write and fill it in with Edit calls, not
   shell appends.
 
