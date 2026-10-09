@@ -112,14 +112,14 @@ test_that("a column named twice, or not one value per row, stops", {
   # The column stops are worded as the text table's are (RR-6).
   expect_error(
     validate_rule_set(set),
-    "Column `severity` of rule-set component `rules` must hold one value per row.",
+    "Column `severity` of rule-set component rules must hold one value per row.",
     fixed = TRUE
   )
   set <- a_rule_set()
   set$rules$rule_id <- list("a", c("b", "c"))
   expect_error(
     validate_rule_set(set),
-    "Column `rule_id` of rule-set component `rules` must hold one value per row.",
+    "Column `rule_id` of rule-set component rules must hold one value per row.",
     fixed = TRUE
   )
 })
@@ -145,7 +145,7 @@ test_that("meta has one row, enabled is TRUE or FALSE, text is valid UTF-8", {
   # The stop names the rows, as the text table's does (RR-6).
   expect_error(
     validate_rule_set(set),
-    "Column `rule_id` of rule-set component `rules` holds text that isn't valid UTF-8, in row 1.",
+    "Column `rule_id` of rule-set component rules holds text that isn't valid UTF-8, in row 1.",
     fixed = TRUE
   )
   set$rules$rule_id <- c(bad_bytes(), bad_bytes())

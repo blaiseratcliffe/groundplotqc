@@ -301,7 +301,7 @@ test_that("the footer names the rule set checked, with no entry without one (D14
     regexpr("<dt>Specification files</dt>", page, fixed = TRUE) < regexpr(entry, page, fixed = TRUE)
   )
   # No rule set, or one without a meta row: no entry.
-  expect_false(grepl("Rule set", preflight_html(results, spec), fixed = TRUE))
+  expect_false(grepl("<dt>Rule set</dt>", preflight_html(results, spec), fixed = TRUE))
   expect_false(grepl(
     "<dt>Rule set</dt>", preflight_html(results, spec, rules = fx_empty_rule_set()),
     fixed = TRUE

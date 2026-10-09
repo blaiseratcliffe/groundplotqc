@@ -10,7 +10,9 @@ You start cold. Inputs: the diff and the files the dispatch names.
 Check against plan section 16.2: no full-table copies, no row loops, `which()` before
 building issues, keyed or `on =` joins, no `uniqueN` by group on large tables, `set()`
 over columns, user tables never modified by reference inside checks. Check names
-against NAMING.md.
+against NAMING.md. Check code calls package functions by name, never by string
+(`do.call("x")`, `match.fun("x")`, `get()`), which the check-hash test can't follow
+(D15.13).
 
 Grade each finding Critical (wrong or unsafe), Important (the change can't be trusted
 until it's fixed: wrong or fragile behaviour, a missed requirement, a test that

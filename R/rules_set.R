@@ -106,7 +106,7 @@ rule_set_component <- function(x, name, columns) {
     value <- x[[column]]
     if (is.list(value) || !is.null(dim(value)) || length(value) != nrow(x)) {
       stop(sprintf(
-        "Column `%s` of rule-set component `%s` must hold one value per row.", column, name
+        "Column `%s` of rule-set component %s must hold one value per row.", column, name
       ), call. = FALSE)
     }
   }
@@ -133,7 +133,7 @@ rule_set_component <- function(x, name, columns) {
     bad <- which(!validUTF8(table[[column]]))
     if (length(bad) > 0L) {
       stop(sprintf(
-        "Column `%s` of rule-set component `%s` holds text that isn't valid UTF-8, in %s.",
+        "Column `%s` of rule-set component %s holds text that isn't valid UTF-8, in %s.",
         column, name, places(bad)
       ), call. = FALSE)
     }

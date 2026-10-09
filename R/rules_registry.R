@@ -12,15 +12,16 @@
 #' `default_class` (`source`, `harmonization`, `depends`, or `none` for information rules
 #' and pre-flight checks, which write no issues); `inputs` (what the rule reads, "; "-joined:
 #' specification components, `rules`, `settings:<name>`, `text`); `strategy` (`none` for a
-#' rule that proposes nothing); `message_id` (its text_id in the report text). Layer 6 and 7
-#' rules add their reason codes at M12 (D9.33).
+#' rule that proposes nothing); `message_id` (its text_id in the report text); `rule_version`
+#' (from 1, raised by the add-rule skill whenever the rule's check behaves differently, so its
+#' rule fingerprint changes, D15.6). Layer 6 and 7 rules add their reason codes at M12 (D9.33).
 #' @noRd
 rule_registry <- function() {
   preflight <- function(rule_id, severity, inputs) {
     data.table(
       rule_id = rule_id, stage = "conformance", layer = NA_integer_, check_type = "preflight",
       default_severity = severity, default_class = "none", inputs = inputs,
-      strategy = "none", message_id = rule_id
+      strategy = "none", message_id = rule_id, rule_version = 1L
     )
   }
   lists <- "code_list_map; code_lists; non_code_sheets"
