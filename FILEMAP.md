@@ -253,7 +253,7 @@ row per file (D7.10):
 | .claude/agents/spec-reader.md | Agent: answers questions about the specification set with file, sheet and row citations | none | spec/, inst/extdata/magp/, CLAUDE.md, FILEMAP.md, NAMING.md |
 | .claude/agents/implementer.md | Agent: implements one task of a milestone plan, test first, in the milestone's worktree | none | CLAUDE.md, FILEMAP.md, NAMING.md, the milestone's task plan |
 | .claude/agents/spec-conformance-reviewer.md | Agent: reviews a change against the spec files, the plan and the decisions log | none | spec/, CLAUDE.md, FILEMAP.md, NAMING.md, the plans folder |
-| .claude/agents/datatable-reviewer.md | Agent: reviews R code for data.table idioms, copies, row loops and naming | none | CLAUDE.md, FILEMAP.md, NAMING.md |
+| .claude/agents/datatable-reviewer.md | Agent: reviews R code for data.table idioms, copies, row loops, package functions called by name rather than by string, and naming | none | CLAUDE.md, FILEMAP.md, NAMING.md |
 | .claude/agents/fixture-builder.md | Agent: designs and writes synthetic test fixtures for a rule | none | spec/, tests/testthat/, CLAUDE.md, FILEMAP.md, NAMING.md |
 | .claude/agents/check-runner.md | Agent: runs document, tests, lint, R CMD check, the FILEMAP check and benchmarks, and reports verbatim | none | CLAUDE.md, FILEMAP.md |
 | .claude/agents/report-reviewer.md | Agent: reviews HTML reports and provider CSVs built from fixtures | none | tests/testthat/_snaps/, inst/extdata/text/, FILEMAP.md, NAMING.md |
