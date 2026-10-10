@@ -3,8 +3,8 @@
 # constructors that complete and check them, and the gpq_results object that holds them
 # with the run metadata (R/results_metadata.R). The caller's group columns, and in issues
 # the problem unit's key column, carry the caller's names and hold text: "*" where a table
-# can't reach the column (D7.5, D9.24). The engine refuses rows for a rule the registry
-# doesn't declare (9.7).
+# can't reach the column (D7.5; D9.24 for the group columns, R6 for the key column). The
+# engine refuses rows for a rule the registry doesn't declare (9.7).
 
 #' The three tables' columns and classes, with the caller's columns in their places
 #'
@@ -93,12 +93,21 @@ complete_table <- function(x, schema, name) {
       "The %s table has no columns %s.", name, paste(extra, collapse = ", ")
     ), call. = FALSE)
   }
-  n <- if (is.data.frame(x)) nrow(x) else max(c(0L, lengths(x)))
-  columns <- lapply(names(schema), function(column) {
-    if (column %in% names(x)) x[[column]] else rep(vector(schema[[column]], 1L)[NA], n)
-  })
-  names(columns) <- names(schema)
-  copy(as.data.table(columns))
+  given <- intersect(names(schema), names(x))
+  if (length(given) == 0L) {
+    return(empty_table(schema))
+  }
+  # as.data.table() copies each column it is given and recycles a short one, so the table
+  # shares none with `x`; the NA columns are made once, after it.
+  table <- as.data.table(as.list(x)[given])
+  absent <- setdiff(names(schema), given)
+  if (length(absent) > 0L) {
+    set(table, j = absent, value = lapply(schema[absent], function(type) {
+      rep(vector(type, 1L)[NA], nrow(table))
+    }))
+    setcolorder(table, names(schema))
+  }
+  table
 }
 
 #' A results summary table (9.2), completed and checked
@@ -136,7 +145,8 @@ new_corrections <- function(x = NULL) {
 #' settings tables (9.5): the columns that must hold a value hold one, a text one never
 #' empty; coded columns hold their values only; and each table's rules between columns. Results and
 #' issues name only rules the registry declares that aren't pre-flight checks, with the
-#' registry's stage and layer (9.7). A problem is a developer error naming the table.
+#' registry's stage and layer (9.7), and a conformance row's reason code is "*" (R3). A problem
+#' is a developer error naming the table.
 #' @noRd
 validate_schema <- function(x, name, schema, registry = rule_registry()) {
   if (!is.data.table(x)) {
@@ -177,6 +187,7 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
       "run_id", "run_start", "run_end", "package_version", "r_version", "platform",
       "data_table_version", "outcome"
     ),
+    settings = c("setting", "tier"),
     character()
   )
   for (column in required) {
@@ -228,6 +239,9 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
         "gives rules a stage or layer the registry doesn't: %s",
         paste(unique(x$rule_id[off]), collapse = ", ")
       ))
+    }
+    if (any(x$stage == "conformance" & x$reason_code != "*")) {
+      fail("gives a conformance row a reason code other than \"*\"")
     }
   }
   switch(name,
@@ -319,7 +333,9 @@ check_corrections_rows <- function(x, fail) {
 #' The group columns are the ones the run table records (D9.29); the problem unit's key
 #' column is the issues column beyond them and the fixed ones, if any. Every row carries
 #' the run's ID; every correction names an issue. Returns
-#' `structure(list(results, issues, corrections, metadata), class = "gpq_results")`.
+#' `structure(list(results, issues, corrections, metadata), class = "gpq_results")`. The
+#' object holds the tables it is given, not copies of them, so a later change by reference
+#' to a table the caller still holds reaches the object.
 #' @noRd
 new_gpq_results <- function(results, issues, corrections, metadata,
                             registry = rule_registry()) {
@@ -363,29 +379,58 @@ validate_gpq_results <- function(x, registry = rule_registry()) {
 }
 
 #' One run's results with another's for the same run appended, issue and correction IDs
-#' renumbered after the first's (plan 3.4: Layer 6 appends to results)
+#' renumbered after the first's (plan 3.4: Layer 6 appends to results; R16, D15.26)
 #'
-#' Both are gpq_results of the same run; the metadata is the first's.
+#' Both are gpq_results of the same run, with the same group columns; the metadata is the
+#' first's, not a copy of it, so a later change by reference to it reaches the bound object.
+#' The second object's `issue_id`, `root_issue_id`, `correction_id` and corrections'
+#' `issue_id` move by the first's largest ID. So do the issue IDs written in corrections'
+#' `related_issue_ids` and `easy_fix_blocked_by` (D15.26): cells of parts joined with "; ",
+#' where every all-digit part is an issue ID and any other part (`problem_plot`) and NA stay
+#' as written. The tables are bound first and the second object's rows changed in the new
+#' tables, so neither input is copied whole or changed.
 #' @noRd
 bind_results <- function(x, y, registry = rule_registry()) {
   validate_gpq_results(x, registry)
   validate_gpq_results(y, registry)
   one_run <- identical(x$metadata$run$run_id, y$metadata$run$run_id) &&
+    identical(x$metadata$run$group_cols, y$metadata$run$group_cols) &&
     identical(names(x$issues), names(y$issues))
   if (!one_run) {
     stop("Only results of one run, with the same columns, are bound.", call. = FALSE)
   }
   issue_offset <- max(c(0L, x$issues$issue_id))
   correction_offset <- max(c(0L, x$corrections$correction_id))
-  issues <- copy(y$issues)
-  set(issues, j = "issue_id", value = issues$issue_id + issue_offset)
-  set(issues, j = "root_issue_id", value = issues$root_issue_id + issue_offset)
-  corrections <- copy(y$corrections)
-  set(corrections, j = "correction_id", value = corrections$correction_id + correction_offset)
-  set(corrections, j = "issue_id", value = corrections$issue_id + issue_offset)
+  issues <- rbindlist(list(x$issues, y$issues))
+  corrections <- rbindlist(list(x$corrections, y$corrections))
+  issues_at <- nrow(x$issues) + seq_len(nrow(y$issues))
+  corrections_at <- nrow(x$corrections) + seq_len(nrow(y$corrections))
+  shift <- function(table, at, column, offset) {
+    set(table, i = at, j = column, value = table[[column]][at] + offset)
+  }
+  # The all-digit parts of "; "-joined cells moved by the issue offset, other parts and NA
+  # as they were.
+  shift_ids <- function(cells) {
+    given <- which(!is.na(cells))
+    text <- cells[given]
+    found <- gregexpr("(?<=^|; )[0-9]+(?=; |$)", text, perl = TRUE)
+    ids <- regmatches(text, found)
+    regmatches(text, found) <- relist(as.character(as.integer(unlist(ids)) + issue_offset), ids)
+    cells[given] <- text
+    cells
+  }
+  shift(issues, issues_at, "issue_id", issue_offset)
+  shift(issues, issues_at, "root_issue_id", issue_offset)
+  shift(corrections, corrections_at, "correction_id", correction_offset)
+  shift(corrections, corrections_at, "issue_id", issue_offset)
+  for (column in c("related_issue_ids", "easy_fix_blocked_by")) {
+    set(
+      corrections,
+      i = corrections_at, j = column, value = shift_ids(corrections[[column]][corrections_at])
+    )
+  }
   new_gpq_results(
-    rbindlist(list(x$results, y$results)), rbindlist(list(x$issues, issues)),
-    rbindlist(list(x$corrections, corrections)), x$metadata, registry
+    rbindlist(list(x$results, y$results)), issues, corrections, x$metadata, registry
   )
 }
 

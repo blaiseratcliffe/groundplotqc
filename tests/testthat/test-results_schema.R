@@ -31,7 +31,7 @@ test_that("a caller's column named like a fixed one, repeated or blank is refuse
   expect_error(results_schema(key_col = c("a", "b")), "one column name")
 })
 
-test_that("the constructors complete a table with NA and share no column with the input", {
+test_that("the constructors complete a table with NA", {
   local_results_registry()
   given <- data.table::data.table(
     run_id = "r", run_scope = "package", rule_id = "value_odd", rule_fingerprint = "f",
@@ -40,16 +40,59 @@ test_that("the constructors complete a table with NA and share no column with th
     reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L, status = "pass",
     message_id = "m"
   )
-  before <- data.table::copy(given)
   table <- new_results(given, group_cols = "unit")
   expect_equal(names(table), names(results_schema("unit")$results))
   expect_true(is.na(table$examples) && is.na(table$not_run_reason))
-  data.table::set(table, j = "rule_id", value = "changed")
-  expect_identical(given, before)
   expect_equal(nrow(new_results()), 0L)
   expect_equal(names(new_issues(key_col = "plot")), names(results_schema(key_col = "plot")$issues))
   expect_equal(nrow(new_corrections()), 0L)
   expect_error(new_corrections(list(extra = 1L)), "has no columns extra")
+})
+
+test_that("the constructors share no column with the input, in whatever form it is given", {
+  local_results_registry()
+  object <- fx_results()
+  groups <- c("unit", "area")
+  builders <- list(
+    results = list(table = object$results, build = function(x) new_results(x, groups)),
+    issues = list(table = object$issues, build = function(x) new_issues(x, groups, "plot")),
+    corrections = list(table = object$corrections, build = new_corrections)
+  )
+  # A value in the first row that differs from the one there, so that a change shows.
+  change <- function(table) {
+    for (column in names(table)) {
+      value <- table[[column]]
+      data.table::set(table, i = 1L, j = column, value = switch(class(value)[[1L]],
+        character = "changed",
+        integer = -7L,
+        logical = !(value[[1L]] %in% TRUE)
+      ))
+    }
+  }
+  for (name in names(builders)) {
+    for (form in c("list", "data.frame", "data.table")) {
+      given <- data.table::copy(builders[[name]]$table)
+      given <- switch(form,
+        list = as.list(given),
+        data.frame = as.data.frame(given),
+        data.table = given
+      )
+      before <- data.table::copy(given)
+      table <- builders[[name]]$build(given)
+      # No column of the result is the vector of the caller's column.
+      for (column in intersect(names(table), names(given))) {
+        expect_false(data.table::address(table[[column]]) == data.table::address(given[[column]]))
+      }
+      # A change by reference to the result leaves the input as it was.
+      change(table)
+      expect_identical(given, before)
+      # A change by reference to the input leaves the result as it was.
+      table <- builders[[name]]$build(given)
+      kept <- data.table::copy(table)
+      change(data.table::setDT(given))
+      expect_identical(table, kept)
+    }
+  }
 })
 
 test_that("a table of the wrong columns or classes, or with a blank required cell, is refused", {
@@ -129,6 +172,9 @@ test_that("results rows agree with their status and are one per rule, place, gro
   expect_error(check(2L, "n_checked", 3L), "counts checked or failing records on a not_run row")
   expect_error(check(1L, "n_fail", 0L), "a pass with failures or a fail without one")
   expect_error(check(1L, "n_easy_fix", -1L), "negative counts")
+  # A conformance rule's reason code is "*" (R3); a plausibility rule's is its own.
+  expect_error(check(1L, "reason_code", "value_jump"), "conformance row a reason code")
+  expect_no_error(check(3L, "reason_code", "other_reason"))
   twice <- rbind(results, results[1L])
   expect_error(validate_schema(twice, "results", fish_schema("results")), "more than one row")
   # The same rule and place in another group is another row.
@@ -146,6 +192,7 @@ test_that("issues: IDs once, record and column levels, positional PKs, roots (6.
     validate_schema(table, "issues", fish_schema("issues"))
   }
   expect_error(check(2L, "issue_id", 1L), "issue ID below 1 or used twice")
+  expect_error(check(1L, "reason_code", "value_jump"), "conformance row a reason code")
   expect_error(check(1L, "row_number", NA_integer_), "without a row number")
   expect_error(check(1L, "pk_positional", NA), "without a row number or a positional flag")
   expect_error(check(3L, "pk_positional", FALSE), "without a PK that aren't marked positional")
@@ -211,6 +258,36 @@ test_that("bind_results() appends one run's results to another's, renumbering ID
   expect_equal(both$corrections$issue_id, c(1L, 6L))
   # The first object is left as it was.
   expect_equal(object$issues$issue_id, 1:5)
+  # The issue IDs written in corrections' text cells move by the same offset (R16, D15.26):
+  # whole digit parts only, "problem_plot" and other parts as written, NA as NA.
+  expect_equal(both$corrections$easy_fix_blocked_by, c("2; problem_plot", "7; problem_plot"))
+  expect_equal(object$corrections$easy_fix_blocked_by, "2; problem_plot")
+  third <- object
+  third$results <- data.table::copy(object$results)
+  data.table::set(third$results, j = "area", value = "a8")
+  third$corrections <- data.table::copy(object$corrections)
+  data.table::set(third$corrections, j = "related_issue_ids", value = "1; 3; p2; 12x; 40")
+  data.table::set(third$corrections, j = "easy_fix_blocked_by", value = NA_character_)
+  more <- bind_results(object, third)
+  expect_equal(more$corrections$related_issue_ids, c(NA, "6; 8; p2; 12x; 45"))
+  expect_equal(more$corrections$easy_fix_blocked_by, c("2; problem_plot", NA))
+  expect_equal(third$corrections$related_issue_ids, "1; 3; p2; 12x; 40")
+  # Either object may have no corrections.
+  none <- third
+  none$corrections <- new_corrections()
+  expect_equal(bind_results(object, none)$corrections$correction_id, 1L)
+  expect_equal(bind_results(none, object)$corrections$issue_id, 6L)
+  # The same run ID and issues columns, but other group columns: not bound.
+  grouped <- object
+  grouped$metadata$run <- data.table::copy(object$metadata$run)
+  data.table::set(grouped$metadata$run, j = "group_cols", value = "unit; area; plot")
+  grouped$results <- data.table::copy(object$results)
+  data.table::set(grouped$results, j = "plot", value = "p1")
+  data.table::setcolorder(
+    grouped$results, names(results_schema(c("unit", "area", "plot"))$results)
+  )
+  expect_no_error(validate_gpq_results(grouped))
+  expect_error(bind_results(object, grouped), "Only results of one run")
   # Another run's results, every table carrying its run ID, aren't bound.
   other <- object
   other$metadata$run <- data.table::copy(object$metadata$run)

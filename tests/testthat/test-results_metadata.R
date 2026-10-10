@@ -45,6 +45,15 @@ test_that("the run table is one row with the versions, group columns and outcome
   )
   expect_true(is.na(none$group_cols) && is.na(none$report_units))
   expect_equal(none$outcome, "stopped_preflight")
+  # The units come in the C order, whatever the session's collation, so that the same input
+  # gives the same run.csv on every machine. testthat sets the C collation; the machine's own
+  # is put back for this call.
+  withr::local_collate("")
+  mixed <- run_metadata(
+    "20261008T120000Z_abc123", Sys.time(), Sys.time(),
+    report_units = c("b", "A", "a", "B")
+  )
+  expect_equal(mixed$report_units, "A; B; a; b")
 })
 
 test_that("the git commit is HEAD's in a checkout, NA outside one", {
@@ -81,6 +90,14 @@ test_that("settings: each declared setting with its tier, then severity entries 
   expect_equal(rows$value, c("en", "error", "warning", "error"))
   expect_equal(rows$tier, c("argument", "argument", "option", "option"))
   expect_no_error(validate_schema(rows, "settings", metadata_schema()$settings))
+  for (column in c("setting", "tier")) {
+    blank <- data.table::copy(rows)
+    data.table::set(blank, i = 1L, j = column, value = NA_character_)
+    expect_error(
+      validate_schema(blank, "settings", metadata_schema()$settings),
+      paste("has blank cells in", column)
+    )
+  }
   # The rule set's severities stay in the rule set: no row for them.
   severe <- list(rules = data.frame(
     rule_id = "fk_orphan", table_name = "*", attribute_name = "*", severity = "warning",
@@ -159,4 +176,48 @@ test_that("the clashes table keeps the clashes precedence resolved", {
   expect_equal(nrow(metadata$clashes), sum(spec$clashes$rule_id == "spec_clash_resolved"))
   expect_true(nrow(metadata$clashes) > 0L)
   expect_equal(metadata$preflight, preflight)
+})
+
+test_that("new_metadata() holds copies: a change by reference on either side stays there", {
+  local_results_registry()
+  spec <- fx_planted_spec()
+  run <- run_metadata("20261008T120000Z_abc123", Sys.time(), Sys.time())
+  preflight <- suppressWarnings(tryCatch(
+    gpq_preflight(spec),
+    gpq_preflight_error = function(e) e$preflight
+  ))
+  # A value in the first row that differs from the one there, so that a change shows.
+  change <- function(table) {
+    for (column in names(table)) {
+      value <- table[[column]]
+      data.table::set(table, i = 1L, j = column, value = switch(class(value)[[1L]],
+        character = "changed",
+        integer = -7L
+      ))
+    }
+  }
+  tables <- c("run", "spec_manifest", "preflight", "clashes")
+  inputs <- function() {
+    list(
+      run = run, spec_manifest = spec$manifest, preflight = preflight, clashes = spec$clashes
+    )
+  }
+  before <- lapply(inputs(), data.table::copy)
+  metadata <- new_metadata(run, spec, preflight)
+  for (name in tables) {
+    expect_gt(nrow(metadata[[name]]), 0L)
+  }
+  # A change to the metadata's tables leaves the inputs as they were.
+  for (name in tables) {
+    change(metadata[[name]])
+  }
+  expect_identical(inputs(), before)
+  # A change to the inputs leaves the metadata's tables as they were.
+  metadata <- new_metadata(run, spec, preflight)
+  kept <- lapply(metadata, data.table::copy)
+  for (table in inputs()) {
+    change(table)
+  }
+  expect_false(identical(inputs(), before))
+  expect_identical(metadata, kept)
 })

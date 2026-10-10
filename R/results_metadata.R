@@ -59,9 +59,10 @@ metadata_schema <- function() {
 #' `run_start` and `run_end` are times, written as UTC text; `group_cols` the run's group
 #' columns, report unit first (D9.29); `report_units` the report-unit values found in the
 #' run's input (MAGPlot's contributors, D7.12), so a stopped run records them too; both
-#' "; "-joined, NA when there are none. `outcome` is `completed` or `stopped_preflight`
-#' (D8.16). The package, R, data.table and sf versions are read here, sf's only when it is
-#' installed, and the git commit when the package runs from a git checkout.
+#' "; "-joined (the units in the C order, whatever the session's collation), NA when there
+#' are none. `outcome` is `completed` or `stopped_preflight` (D8.16). The package, R,
+#' data.table and sf versions are read here, sf's only when it is installed, and the git
+#' commit when the package runs from a git checkout.
 #' @noRd
 run_metadata <- function(run_id, run_start, run_end, group_cols = character(),
                          report_units = character(), outcome = "completed") {
@@ -75,7 +76,8 @@ run_metadata <- function(run_id, run_start, run_end, group_cols = character(),
     platform = R.version$platform,
     data_table_version = as.character(utils::packageVersion("data.table")),
     sf_version = if (sf_installed) as.character(utils::packageVersion("sf")) else NA_character_,
-    report_units = joined(sort(unique(report_units))), group_cols = joined(group_cols),
+    report_units = joined(sort(unique(report_units), method = "radix")),
+    group_cols = joined(group_cols),
     outcome = outcome
   )
 }
@@ -125,7 +127,7 @@ settings_metadata <- function(settings = list(), rules = NULL) {
   rbindlist(c(
     list(empty_table(metadata_schema()$settings)), rows,
     list(data.table(
-      setting = paste0("severity:", entries$rule_id), value = entries$severity,
+      setting = paste0("severity:", entries$rule_id, recycle0 = TRUE), value = entries$severity,
       tier = entries$tier
     ))
   ))
