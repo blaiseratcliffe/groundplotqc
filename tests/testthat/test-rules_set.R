@@ -109,7 +109,8 @@ test_that("a column named twice, or not one value per row, stops", {
   expect_error(validate_rule_set(set), "(repeated enabled)", fixed = TRUE)
   set <- a_rule_set()
   set$rules$severity <- matrix(c("error", "warning", "flag", "info"), 2)
-  # The column stops are worded as the text table's are (RR-6).
+  # The column stops follow the text table's sentence, with the component named plain (D15.3,
+  # RR-6).
   expect_error(
     validate_rule_set(set),
     "Column `severity` of rule-set component rules must hold one value per row.",
@@ -142,7 +143,8 @@ test_that("meta has one row, enabled is TRUE or FALSE, text is valid UTF-8", {
   expect_error(validate_rule_set(set), "in rows 1, 2")
   set <- a_rule_set()
   set$rules$rule_id[[1L]] <- bad_bytes()
-  # The stop names the rows, as the text table's does (RR-6).
+  # The stop names the rows as the text table's does, with the component named plain (D15.3,
+  # RR-6).
   expect_error(
     validate_rule_set(set),
     "Column `rule_id` of rule-set component rules holds text that isn't valid UTF-8, in row 1.",

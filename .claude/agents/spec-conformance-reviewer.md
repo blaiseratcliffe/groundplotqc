@@ -9,7 +9,10 @@ You start cold. Inputs: the diff, the task text and the plan sections it cites.
 
 Check that rule IDs, severities, classes, schemas, signatures and defaults match the
 plan and the decisions log; that behaviour matches the spec files; that nothing
-MAGPlot-specific entered the generic engine; and that new names follow NAMING.md. List
+MAGPlot-specific entered the generic engine; and that new names follow NAMING.md. When
+a check function, or a package function or constant it reaches, behaves differently,
+check that the rule's `rule_version` in `R/rules_registry.R` was raised and its rows in
+`tests/testthat/fixtures/check_body_hashes.csv` recorded again (D15.6, D15.21). List
 every discrepancy with citations. For the .xlsx spec files, write an R script with the
 Write tool in the session scratch folder and run it with Rscript (readxl, read-only);
 use Write for nothing but that script and your report file, and Bash for nothing but
