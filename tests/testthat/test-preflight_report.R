@@ -359,3 +359,33 @@ test_that("the CSV is the compiled writer's bytes, LF whatever the OS (D15.16)",
   expect_false(any(bytes == as.raw(0x0D)))
   expect_identical(bytes, compiled_bytes(results))
 })
+
+test_that("findings with a comma, a line break, an accent and formula text read back (D15.16)", {
+  # The types reach the findings' details. The line break stays in its field, so the test
+  # leaves out the CR check of the one above.
+  spec <- gpq_read_spec(
+    dictionary = data.frame(
+      table_name = "t", attribute_name = c("a", "b", "c", "d", "e"),
+      key_type = c("PK", "", "", "", ""),
+      data_type = c("R, \"D\"", "line one\nline two", "café", "=1+1", "")
+    ),
+    code_lists = list(`=sheet, x` = data.frame(a = "x"))
+  )
+  dir <- withr::local_tempdir()
+  results <- tryCatch(
+    gpq_preflight(spec, output_dir = dir),
+    gpq_preflight_error = function(e) e$preflight
+  )
+  csv <- file.path(dir, "metadata", "preflight.csv")
+  # The planted text is in the table, beside the NA of rows with no detail.
+  expect_true(any(grepl("line one\nline two", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("=1+1", results$detail, fixed = TRUE)))
+  expect_true(anyNA(results$detail))
+  expect_identical(read_run_csv(csv, preflight_columns())$detail, results$detail)
+  # A check's detail is never empty, so an empty detail beside NA is set by hand.
+  planted <- data.table::copy(results)
+  data.table::set(planted, i = 1L, j = "detail", value = "")
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(compiled_bytes(planted), path)
+  expect_identical(read_run_csv(path, preflight_columns())$detail, planted$detail)
+})

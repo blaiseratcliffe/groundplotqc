@@ -4,8 +4,9 @@
 # from its schema, so a round trip is identical. A run stopped at pre-flight writes only its
 # run and spec_manifest tables (write_run_metadata()) beside the two pre-flight files. Both
 # functions are internal until M4 exports them with examples (D15.4). Every file is the
-# compiled writer's bytes: UTF-8, LF, every field quoted, a blank as an empty field. Each
-# file is written once (D7.11, D15.17).
+# compiled writer's bytes: UTF-8, LF, every text field quoted, NA as an empty field. Each
+# file is written once: every check runs before any file is written, and a file that is
+# already there stops the write (D7.11, D15.17, D15.27).
 
 #' A run's results written to its folder, `<output_dir>/<run_id>/`
 #'
@@ -14,8 +15,9 @@
 #' metadata table as `metadata/<table>.csv` (9.5, D7.11). A run folder that already holds
 #' a run's results is never written over. The pre-flight files a run wrote there first
 #' stay as they are: preflight.csv must hold the results' pre-flight table, byte for byte,
-#' or the call stops before writing anything (D15.17). Returns the run folder's path,
-#' invisibly.
+#' or the call stops before writing anything (D15.17). Any other file the call would write
+#' that already exists stops it too, before any file is written (D15.27). Returns the run
+#' folder's path, invisibly.
 #' @noRd
 gpq_write_results <- function(results, output_dir) {
   if (!inherits(results, "gpq_results")) {
@@ -49,17 +51,33 @@ gpq_write_results <- function(results, output_dir) {
     }
     metadata$preflight <- NULL
   }
-  tables_dir <- file.path(run_dir, "tables")
-  dir.create(tables_dir, recursive = TRUE, showWarnings = FALSE)
-  if (!dir.exists(tables_dir)) {
+  # Every file the call would write, the run's pre-flight CSV left out when it is kept (D15.27).
+  table_names <- c("results", "issues", "corrections")
+  files <- c(
+    file.path(run_dir, "tables", paste0(table_names, ".csv")),
+    file.path(run_dir, "metadata", paste0(names(metadata), ".csv"))
+  )
+  existing <- files[file.exists(files)]
+  if (length(existing) > 0L) {
     stop(
-      "Can't create the folder ", tables_dir, " for the run's tables; a file of that name ",
-      "may be in the way.",
+      run_dir, " already holds ", paste(existing, collapse = ", "),
+      ", and a run's files are never written over.",
       call. = FALSE
     )
   }
-  for (name in c("results", "issues", "corrections")) {
-    writeBin(compiled_bytes(results[[name]]), file.path(tables_dir, paste0(name, ".csv")))
+  # Both folders are made, or the call stops naming the one it couldn't, before any file.
+  for (folder in file.path(run_dir, c("tables", "metadata"))) {
+    dir.create(folder, recursive = TRUE, showWarnings = FALSE)
+    if (!dir.exists(folder)) {
+      stop(
+        "Can't create the folder ", folder, " for the run's ", basename(folder), "; a file of ",
+        "that name may be in the way.",
+        call. = FALSE
+      )
+    }
+  }
+  for (name in table_names) {
+    writeBin(compiled_bytes(results[[name]]), file.path(run_dir, "tables", paste0(name, ".csv")))
   }
   write_run_metadata(metadata, run_dir)
   invisible(run_dir)
@@ -69,7 +87,8 @@ gpq_write_results <- function(results, output_dir) {
 #'
 #' `metadata` is a named list of metadata tables, all 9.5's or some of them, as a run
 #' stopped at pre-flight writes its run and spec_manifest tables (D7.11); each is checked
-#' against its schema before any is written. Returns the paths written, invisibly.
+#' against its schema before any is written, and a table's file that already exists stops
+#' the call before any is written (D15.27). Returns the paths written, invisibly.
 #' @noRd
 write_run_metadata <- function(metadata, run_dir) {
   schema <- metadata_schema()
@@ -83,6 +102,15 @@ write_run_metadata <- function(metadata, run_dir) {
     validate_schema(metadata[[name]], name, schema[[name]])
   }
   folder <- file.path(run_dir, "metadata")
+  paths <- file.path(folder, paste0(names(metadata), ".csv"))
+  existing <- paths[file.exists(paths)]
+  if (length(existing) > 0L) {
+    stop(
+      run_dir, " already holds ", paste(existing, collapse = ", "),
+      ", and a run's files are never written over.",
+      call. = FALSE
+    )
+  }
   dir.create(folder, recursive = TRUE, showWarnings = FALSE)
   if (!dir.exists(folder)) {
     stop(
@@ -91,7 +119,6 @@ write_run_metadata <- function(metadata, run_dir) {
       call. = FALSE
     )
   }
-  paths <- file.path(folder, paste0(names(metadata), ".csv"))
   for (k in seq_along(paths)) {
     writeBin(compiled_bytes(metadata[[k]]), paths[[k]])
   }
