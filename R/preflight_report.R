@@ -1,6 +1,7 @@
 # The pre-flight files (plan 4.2, 9.5, 11.5; D2.11, D7.11, D12.17, D12.67, D14.11, D14.12,
-# D14.14, D14.39): metadata/preflight.csv, the table as returned, and reports/preflight.html, a
-# self-contained page that never goes to a provider (13). Uncapped (D12.17).
+# D14.14, D14.39, D15.16): metadata/preflight.csv, the table as returned, and
+# reports/preflight.html, a self-contained page that never goes to a provider (13).
+# Uncapped (D12.17).
 
 #' metadata/preflight.csv and reports/preflight.html under output_dir
 #'
@@ -21,7 +22,8 @@ write_preflight_files <- function(results, spec, output_dir, rules = NULL) {
       )
     }
   }
-  fwrite(results, csv, na = "", quote = TRUE)
+  # The compiled writer's bytes, as every run file: UTF-8 and LF on every OS (D15.16).
+  writeBin(compiled_bytes(results), csv)
   # The page is built before its file opens, so an error in building it leaves no empty
   # page behind.
   page <- preflight_html(results, spec, rules)

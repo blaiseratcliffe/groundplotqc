@@ -1,4 +1,5 @@
-# Tests for the pre-flight files (plan 4.2, 11.5, 18.4; D2.11, D7.11, D12.17, D12.24).
+# Tests for the pre-flight files (plan 4.2, 11.5, 18.4; D2.11, D7.11, D12.17, D12.24,
+# D15.16).
 
 # The hostile text reaches the page and the CSV in two details: the sheet's name, in
 # code_list_unreferenced's, and the type, with "&" and quotes, in dd_type_unknown's.
@@ -345,4 +346,16 @@ test_that("gpq_preflight gives the page the rule set it checked (D14.39)", {
   dir <- withr::local_tempdir()
   write_preflight_files(preflight_checks(spec), spec, dir, rules = magp_rules())
   expect_match(read_page(dir), "<dt>Rule set</dt>", fixed = TRUE)
+})
+
+test_that("the CSV is the compiled writer's bytes, LF whatever the OS (D15.16)", {
+  dir <- withr::local_tempdir()
+  results <- tryCatch(
+    gpq_preflight(hostile_spec(), output_dir = dir),
+    gpq_preflight_error = function(e) e$preflight
+  )
+  csv <- file.path(dir, "metadata", "preflight.csv")
+  bytes <- readBin(csv, "raw", file.size(csv))
+  expect_false(any(bytes == as.raw(0x0D)))
+  expect_identical(bytes, compiled_bytes(results))
 })
