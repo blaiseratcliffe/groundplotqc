@@ -56,6 +56,7 @@ test_that("a rule's fingerprint follows its registry row, rule-set rows, setting
     ))
   }
   empty <- print_of(rules = fx_empty_rule_set())
+  expect_equal(empty, base)
   expect_false(print_of(rules = row("value_odd")) == empty)
   expect_equal(print_of(rules = row("value_jump")), empty)
   expect_false(print_of(rules = row("*")) == empty)
@@ -76,6 +77,91 @@ test_that("a rule's fingerprint follows its registry row, rule-set rows, setting
   more_lists$code_lists <- rbind(fish$code_lists, fish$code_lists[1L])
   expect_equal(print_of("value_jump", spec = more_lists), jump)
   expect_error(print_of("no_such_rule"), "Rules no_such_rule aren't registered")
+})
+
+test_that("a rule-set component no row of which names the rule adds nothing (D15.22)", {
+  local_results_registry()
+  fish <- fx_fish_spec()
+  print_of <- function(rules) rule_fingerprint("value_odd", fish, rules = rules)
+  row <- function(rule_id) {
+    data.frame(
+      rule_id = rule_id, table_name = "catches", attribute_name = "*", severity = NA,
+      class = NA, enabled = TRUE
+    )
+  }
+  # No rule set, an empty one, and rows that name only other rules give one fingerprint.
+  base <- print_of(NULL)
+  expect_equal(print_of(fx_empty_rule_set()), base)
+  expect_equal(print_of(list(rules = row("value_jump"))), base)
+  # A row that names the rule changes it, and taking the row out again restores it.
+  both <- rbind(row("value_jump"), row("value_odd"))
+  named <- print_of(list(rules = both))
+  expect_false(named == base)
+  expect_equal(print_of(list(rules = both[both$rule_id != "value_odd", ])), base)
+})
+
+test_that("a rule's fingerprint leaves the spec, rules, settings and registry as they were", {
+  registry <- local_results_registry()
+  spec <- fx_fish_spec()
+  rules <- list(rules = data.frame(
+    rule_id = "value_odd", table_name = "catches", attribute_name = "*", severity = NA,
+    class = NA, enabled = TRUE
+  ))
+  settings <- list(lang = "fr", severity = c(value_odd = "warning"))
+  before <- list(
+    spec = lapply(spec, data.table::copy), rules = lapply(rules, data.table::copy),
+    settings = settings, registry = data.table::copy(registry)
+  )
+  rule_fingerprint(c("value_odd", "value_jump"), spec, rules, settings, registry)
+  expect_true(identical(unclass(spec), before$spec))
+  expect_true(identical(rules, before$rules))
+  expect_identical(settings, before$settings)
+  expect_true(identical(registry, before$registry))
+})
+
+test_that("the language reaches the fingerprint from the argument, a rule-set row or the option", {
+  local_results_registry()
+  fish <- fx_fish_spec()
+  print_of <- function(...) rule_fingerprint("value_odd", fish, ...)
+  with_lang <- function(value) {
+    list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = "lang", value = value, type = "character")
+    )
+  }
+  base <- print_of()
+  from_argument <- print_of(settings = list(lang = "fr"))
+  expect_false(from_argument == base)
+  # A rule-set settings row gives the same fingerprint as the argument with that language.
+  expect_equal(print_of(rules = with_lang("fr")), from_argument)
+  # So does the option, set for this test only.
+  withr::local_options(groundplotqc.lang = "fr")
+  expect_equal(print_of(), from_argument)
+  # Argument over rule set over option, as 3.5 orders them.
+  withr::local_options(groundplotqc.lang = "es")
+  expect_equal(print_of(rules = with_lang("fr")), from_argument)
+  by_argument <- print_of(rules = with_lang("fr"), settings = list(lang = "de"))
+  expect_equal(by_argument, print_of(settings = list(lang = "de")))
+  expect_equal(print_of(), print_of(settings = list(lang = "es")))
+})
+
+test_that("a spec without a component a rule reads stops, naming it and the rules (D15.7)", {
+  local_results_registry()
+  fish <- fx_fish_spec()
+  fish$codes <- NULL
+  expect_error(
+    rule_fingerprint(c("value_odd", "value_jump"), fish),
+    "The specification lacks codes (read by value_jump).",
+    fixed = TRUE
+  )
+  # A rule that doesn't read it is fingerprinted as before.
+  expect_match(rule_fingerprint("value_odd", fish), "^[0-9a-f]{64}$")
+  fish$attributes <- NULL
+  expect_error(
+    rule_fingerprint(c("value_odd", "value_jump"), fish),
+    "lacks attributes (read by value_odd); codes (read by value_jump)",
+    fixed = TRUE
+  )
 })
 
 test_that("a spec built in memory and its compiled copy give one fingerprint (D15.7)", {

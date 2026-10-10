@@ -210,10 +210,11 @@ read_rule_set <- function(dir) {
 #'
 #' For each component it has, in 3.5's order, the component's name on a line, then the
 #' component as compiled_bytes() writes it. A rule set read from files and the same rows
-#' given in memory give the same bytes: a component's origin isn't part of it.
+#' given in memory give the same bytes: a component's origin isn't part of it. A rule set
+#' with no components gives no bytes, still a raw vector.
 #' @noRd
 rule_set_bytes <- function(rules) {
-  unlist(lapply(names(rules), function(name) {
+  c(raw(), unlist(lapply(names(rules), function(name) {
     c(charToRaw(paste0(name, "\n")), compiled_bytes(rules[[name]]))
-  }), use.names = FALSE)
+  }), use.names = FALSE))
 }

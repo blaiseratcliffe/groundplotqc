@@ -21,27 +21,37 @@ sha256_bytes <- function(bytes) {
 #' data.table with the columns `fingerprint` and `fingerprint_pk`, one row per issue.
 #' @noRd
 issue_fingerprint <- function(issues) {
-  base <- paste(issues$rule_id, issues$table_name, issues$column_name, sep = "|")
-  pk <- fifelse(is.na(issues$record_pk), NA_character_, paste0(base, "|pk:", issues$record_pk))
-  provider <- issues$provider_key
-  data.table(
-    fingerprint = fifelse(is.na(provider), pk, paste0(base, "|", provider)),
-    fingerprint_pk = pk
+  # The text up to the last part, for the given rows only.
+  stem <- function(rows) {
+    paste(issues$rule_id[rows], issues$table_name[rows], issues$column_name[rows], sep = "|")
+  }
+  pk <- rep(NA_character_, length(issues$rule_id))
+  with_pk <- which(!is.na(issues$record_pk))
+  pk[with_pk] <- paste0(stem(with_pk), "|pk:", issues$record_pk[with_pk])
+  fingerprint <- pk
+  with_provider <- which(!is.na(issues$provider_key))
+  fingerprint[with_provider] <- paste0(
+    stem(with_provider), "|", issues$provider_key[with_provider]
   )
+  data.table(fingerprint = fingerprint, fingerprint_pk = pk)
 }
 
 #' Each rule's definition fingerprint: the SHA-256 of what it is and what it reads
 #'
 #' For each rule ID, the hash of, in this order (D4.7, D15.6, D15.7): its registry row,
 #' `rule_version` included; the rows of each rule-set component with a `rule_id` column
-#' that name the rule or "*", in 3.5's order; then, for each entry of its registry
+#' that name the rule or "*", in 3.5's order, a component none of whose rows names the
+#' rule adding nothing, so no rule set, an empty one and an unrelated one give one hash
+#' (D15.22); then, for each entry of its registry
 #' `inputs` in order, the SHA-256 of a spec component it names, or the value of a setting
 #' it names as `settings:<name>` (the severity setting's value being the rule's own entry,
 #' the argument's over the option's). Every table goes in as the compiled writer's bytes
 #' (compiled_bytes()), so a spec built in memory and its compiled copy give the same
 #' fingerprint. An input entry that is neither (`rules`, `text`) adds nothing. `rules` is a
 #' rule set, checked here; `settings` as gpq_preflight() takes them. Returns a named
-#' character vector, one hash per rule ID; an unregistered rule ID is a developer error.
+#' character vector, one hash per rule ID; an unregistered rule ID is a developer error,
+#' and so is a spec lacking a component a rule reads, the stop naming the component and the
+#' rules that read it.
 #' @noRd
 rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
                              registry = rule_registry()) {
@@ -60,6 +70,16 @@ rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
   inputs <- strsplit(rows$inputs, "; ", fixed = TRUE)
   # Each spec component a rule reads is hashed once, however many rules read it.
   needed <- intersect(components, unlist(inputs))
+  lacking <- needed[!needed %chin% names(spec)]
+  if (length(lacking) > 0L) {
+    readers <- vapply(lacking, function(name) {
+      reading <- vapply(inputs, function(entries) name %chin% entries, logical(1))
+      sprintf("%s (read by %s)", name, paste(unique(rule_ids[reading]), collapse = ", "))
+    }, character(1))
+    stop(sprintf(
+      "The specification lacks %s.", paste(readers, collapse = "; ")
+    ), call. = FALSE)
+  }
   spec_hashes <- vapply(needed, function(name) {
     sha256_bytes(compiled_bytes(spec[[name]]))
   }, character(1))
@@ -73,6 +93,9 @@ rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
         next
       }
       naming <- component$rule_id %chin% c(id, "*")
+      if (!any(naming)) {
+        next
+      }
       parts <- c(parts, list(label(paste0("rules:", name)), compiled_bytes(component[naming])))
     }
     for (input in inputs[[k]]) {

@@ -27,8 +27,9 @@ rule_id_map <- function() {
 #' Exactly its four columns, every cell filled, `change` `rename` or `split`, no row twice;
 #' an old rule ID is never registered, since rule IDs are never reused (D5.2), and a new
 #' one always is, so a rule renamed twice has its first row rewritten to the latest ID; a
-#' renamed rule has one row and a split rule two or more, all of one change. Returns NULL
-#' invisibly, or stops naming the rows' old rule IDs.
+#' renamed rule has one row and a split rule two or more, all of one change. Each new rule
+#' ID belongs to one old rule ID, once, so the map holds no merge (D9.20, D15.23). Returns
+#' NULL invisibly, or stops naming the rows' old rule IDs.
 #' @noRd
 validate_rule_id_map <- function(map, registry = rule_registry()) {
   columns <- c("old_rule_id", "new_rule_id", "change", "package_version")
@@ -58,5 +59,10 @@ validate_rule_id_map <- function(map, registry = rule_registry()) {
   fail("mixes rename and split for", as.vector(kinds) > 1L)
   fail("has more than one rename row for", map$change == "rename" & as.vector(n_rows) > 1L)
   fail("has a split with one row for", map$change == "split" & as.vector(n_rows) < 2L)
+  # Each new rule ID belongs to one old rule ID, once: no merge in effect (D9.20, D15.23).
+  n_old <- tapply(map$old_rule_id, map$new_rule_id, function(x) length(unique(x)))[map$new_rule_id]
+  fail("gives one new rule ID to more than one old rule ID for", as.vector(n_old) > 1L)
+  pairs <- data.table(old = map$old_rule_id, new = map$new_rule_id)
+  fail("names one new rule ID more than once for", duplicated(pairs, by = c("old", "new")))
   invisible(NULL)
 }

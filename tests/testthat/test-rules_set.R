@@ -344,4 +344,7 @@ test_that("rule_set_bytes() is one text whether the rule set came from files or 
   changed$meta <- data.table::copy(in_memory$meta)
   data.table::set(changed$meta, j = "version", value = "2")
   expect_false(identical(rule_set_bytes(changed), rule_set_bytes(in_memory)))
+  # No components, no bytes: still a raw vector, which sha256_bytes() takes.
+  expect_identical(rule_set_bytes(NULL), raw())
+  expect_identical(rule_set_bytes(list()), raw())
 })

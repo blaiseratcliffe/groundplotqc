@@ -37,11 +37,13 @@ write_compiled_spec <- function(spec, dir) {
 #'
 #' UTF-8 with LF endings, so the bytes are the same on every OS (D12.69); every text field
 #' and the header quoted; a blank an empty field; a double column as text to 17 significant
-#' digits (R20), on a copy, so the caller's table keeps its numbers. A table with no columns
+#' digits (R20), in a new table that shares the other columns, so the caller's table keeps
+#' its numbers and nothing is copied but the doubles' text. A table with no columns
 #' gives no bytes. fwrite() writes to a file or to the console, so the text is taken from
 #' the console, sunk into a raw connection: its time grows with the rows, where
 #' capture.output()'s text connection slows with every line. fwrite()'s verbose and progress
-#' output are off, so nothing but the table reaches the bytes. The writers write these bytes
+#' output are off, and its separator and logical form are set, not read from the session's
+#' options, so nothing but the table reaches the bytes. The writers write these bytes
 #' and the fingerprints hash them, so a table built in memory and its file give the same
 #' hash.
 #' @noRd
@@ -51,11 +53,12 @@ compiled_bytes <- function(table) {
   }
   doubles <- names(table)[vapply(table, is.double, TRUE)]
   if (length(doubles) > 0L) {
-    table <- copy(table)
+    columns <- as.list(table)
     for (column in doubles) {
-      x <- table[[column]]
-      set(table, j = column, value = fifelse(is.na(x), NA_character_, sprintf("%.17g", x)))
+      x <- columns[[column]]
+      columns[[column]] <- fifelse(is.na(x), NA_character_, sprintf("%.17g", x))
     }
+    table <- setDT(columns)
   }
   bytes <- rawConnection(raw(), "w")
   on.exit(close(bytes), add = TRUE)
@@ -64,8 +67,8 @@ compiled_bytes <- function(table) {
   on.exit(sink(), add = TRUE, after = FALSE)
   fwrite(
     table,
-    file = "", na = "", quote = TRUE, eol = "\n", encoding = "UTF-8", verbose = FALSE,
-    showProgress = FALSE
+    file = "", sep = ",", na = "", quote = TRUE, eol = "\n", encoding = "UTF-8",
+    logical01 = FALSE, verbose = FALSE, showProgress = FALSE
   )
   rawConnectionValue(bytes)
 }
