@@ -415,7 +415,9 @@ bind_results <- function(x, y, registry = rule_registry()) {
     text <- cells[given]
     found <- gregexpr("(?<=^|; )[0-9]+(?=; |$)", text, perl = TRUE)
     ids <- regmatches(text, found)
-    regmatches(text, found) <- relist(as.character(as.integer(unlist(ids)) + issue_offset), ids)
+    regmatches(text, found) <- utils::relist(
+      as.character(as.integer(unlist(ids)) + issue_offset), ids
+    )
     cells[given] <- text
     cells
   }

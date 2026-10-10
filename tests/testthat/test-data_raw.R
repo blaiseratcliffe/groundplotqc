@@ -2004,3 +2004,13 @@ test_that("absolute_paths puts the working directory before a relative path, no 
     expect_false(startsWith(made[[i + 2L]], here), info = absolute[[i]])
   }
 })
+
+test_that("build_magp_example.R builds the example with the tests' clean base (D15.10)", {
+  env <- load_data_raw("build_magp_example.R")
+  helper <- testthat::test_path("..", "..", "tests", "testthat", "helper-fixtures.R")
+  testthat::skip_if_not(file.exists(helper), "the source tree isn't here")
+  builders <- env$fixture_builders(helper)
+  expect_true(is.function(builders$fx_magp_clean))
+  # data/magp_example.rda is what the build makes from today's code and magp_spec().
+  expect_equal(lapply(builders$fx_magp_clean(), as.list), lapply(magp_example, as.list))
+})
