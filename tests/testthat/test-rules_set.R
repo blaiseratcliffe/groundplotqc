@@ -332,3 +332,16 @@ test_that("read_rule_set stops on a file holding an invalid byte", {
   )
   expect_error(read_rule_set(dir), "rules_rules.csv doesn't read cleanly")
 })
+
+test_that("rule_set_bytes() is one text whether the rule set came from files or memory (D15.8)", {
+  from_files <- magp_rules()
+  in_memory <- validate_rule_set(lapply(from_files, as.data.frame))
+  expect_identical(rule_set_bytes(from_files), rule_set_bytes(in_memory))
+  text <- rawToChar(rule_set_bytes(from_files))
+  expect_true(startsWith(text, "meta\n\"rule_set_name\",\"version\",\"date\",\"spec_version\"\n"))
+  expect_match(text, "\nsettings\n\"setting\",\"value\",\"type\"\n", fixed = TRUE)
+  changed <- in_memory
+  changed$meta <- data.table::copy(in_memory$meta)
+  data.table::set(changed$meta, j = "version", value = "2")
+  expect_false(identical(rule_set_bytes(changed), rule_set_bytes(in_memory)))
+})

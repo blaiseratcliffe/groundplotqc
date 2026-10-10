@@ -205,3 +205,15 @@ read_rule_set <- function(dir) {
   names(read) <- components[given]
   validate_rule_set(read)
 }
+
+#' A checked rule set as one text, in bytes (D15.8)
+#'
+#' For each component it has, in 3.5's order, the component's name on a line, then the
+#' component as compiled_bytes() writes it. A rule set read from files and the same rows
+#' given in memory give the same bytes: a component's origin isn't part of it.
+#' @noRd
+rule_set_bytes <- function(rules) {
+  unlist(lapply(names(rules), function(name) {
+    c(charToRaw(paste0(name, "\n")), compiled_bytes(rules[[name]]))
+  }), use.names = FALSE)
+}
