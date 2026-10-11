@@ -24,14 +24,14 @@ test_that("a run written and read back is identical (18.4)", {
 test_that("a completed run with no group columns and no key column round trips (9.1)", {
   local_results_registry()
   object <- fx_results()
-  drop <- function(x, columns) data.table::set(data.table::copy(x), j = columns, value = NULL)
+  without <- function(x, columns) data.table::set(data.table::copy(x), j = columns, value = NULL)
   metadata <- object$metadata
   run <- data.table::copy(metadata$run)
   data.table::set(run, j = "group_cols", value = NA_character_)
   metadata$run <- run
   bare <- new_gpq_results(
-    drop(object$results[1L], c("unit", "area")),
-    drop(object$issues[1:2], c("unit", "area", "plot")),
+    without(object$results[1L], c("unit", "area")),
+    without(object$issues[1:2], c("unit", "area", "plot")),
     object$corrections, metadata
   )
   run_dir <- gpq_write_results(bare, withr::local_tempdir())
@@ -133,6 +133,24 @@ test_that("a file the write would make that is already there stops it before any
   # With neither there the same call writes the run.
   unlink(run_dir, recursive = TRUE)
   expect_no_error(gpq_write_results(object, dir))
+})
+
+test_that("a file in the way of metadata/ stops the write before any table file (D15.27)", {
+  local_results_registry()
+  object <- fx_results()
+  dir <- withr::local_tempdir()
+  run_dir <- file.path(dir, object$metadata$run$run_id)
+  dir.create(run_dir)
+  in_the_way <- file.path(run_dir, "metadata")
+  writeLines("kept", in_the_way)
+  expect_error(
+    gpq_write_results(object, dir),
+    paste0("Can't create the folder ", in_the_way, " for the run's metadata"),
+    fixed = TRUE
+  )
+  expect_false(file.exists(file.path(run_dir, "tables", "results.csv")))
+  expect_identical(list.files(file.path(run_dir, "tables")), character())
+  expect_identical(readLines(in_the_way), "kept")
 })
 
 test_that("a preflight.csv in the folder that isn't the results' stops before any file", {

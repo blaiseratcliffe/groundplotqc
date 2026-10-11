@@ -162,37 +162,45 @@ test_that("a foreign key that can't agree with its record's ancestors stops the 
   # Three roots (r2, r3, x), p1 pointing at r2 and r3, p2 at x, r2 and r3, and d at p1 and
   # p2. p1 pairs every r2 row with every r3 row but p2 pairs them one to one, so a d record
   # that p1 places on the pair (r2 = 1, r3 = 2) has no p2 row with that pair.
-  made <- c("r2", "r3", "x", "p1", "p2", "d")
-  links <- data.table::data.table(
-    table_name = c("p1", "p1", "p2", "p2", "p2", "d", "d"),
-    parent = c("r2", "r3", "x", "r2", "r3", "p1", "p2")
-  )
-  owners <- c(made, links$table_name)
-  column_names <- c(paste0(made, "_id"), paste0(links$parent, "_id"))
-  spec <- list(
-    attributes = data.table::data.table(
-      table_name = owners, attribute_name = column_names, data_type = "text",
-      r_class = "character", id_marked = FALSE
-    ),
-    keys = data.table::data.table(
-      table_name = owners, attribute_name = column_names,
-      key_type = rep(c("PK", "FK"), c(6L, 7L)), key_part = 1L,
-      reference_table = c(rep(NA_character_, 6L), links$parent),
-      reference_attribute = c(rep(NA_character_, 6L), paste0(links$parent, "_id"))
-    ),
-    codes = data.table::data.table(
-      table_name = character(), attribute_name = character(), code = character()
-    ),
-    sentinels = data.table::data.table(data_type = character(), value = character()),
-    type_map = data.table::data.table(data_type = "text", date_format = NA_character_)
-  )
-  expect_error(fx_clean_tables(spec), "can't make d.p2_id agree with the record's ancestors")
-  # Without p2's pairing of r2 and r3 the same tables build.
-  spec$keys <- spec$keys[!(spec$keys$table_name == "p2" & spec$keys$reference_table %in% "r3")]
-  spec$attributes <- spec$attributes[
-    !(spec$attributes$table_name == "p2" & spec$attributes$attribute_name == "r3_id")
-  ]
-  expect_clean_base(fx_clean_tables(spec), spec)
+  # The ancestor p1 and p2 share (r2) is also built under the names of the build's own
+  # variables at the join (line, shared, wanted, join_on), which a table of that name must not
+  # turn into a column read.
+  for (ancestor in c("r2", "line", "shared", "wanted", "join_on")) {
+    made <- c(ancestor, "r3", "x", "p1", "p2", "d")
+    links <- data.table::data.table(
+      table_name = c("p1", "p1", "p2", "p2", "p2", "d", "d"),
+      parent = c(ancestor, "r3", "x", ancestor, "r3", "p1", "p2")
+    )
+    owners <- c(made, links$table_name)
+    column_names <- c(paste0(made, "_id"), paste0(links$parent, "_id"))
+    spec <- list(
+      attributes = data.table::data.table(
+        table_name = owners, attribute_name = column_names, data_type = "text",
+        r_class = "character", id_marked = FALSE
+      ),
+      keys = data.table::data.table(
+        table_name = owners, attribute_name = column_names,
+        key_type = rep(c("PK", "FK"), c(6L, 7L)), key_part = 1L,
+        reference_table = c(rep(NA_character_, 6L), links$parent),
+        reference_attribute = c(rep(NA_character_, 6L), paste0(links$parent, "_id"))
+      ),
+      codes = data.table::data.table(
+        table_name = character(), attribute_name = character(), code = character()
+      ),
+      sentinels = data.table::data.table(data_type = character(), value = character()),
+      type_map = data.table::data.table(data_type = "text", date_format = NA_character_)
+    )
+    expect_error(
+      fx_clean_tables(spec), "can't make d.p2_id agree with the record's ancestors",
+      info = ancestor
+    )
+    # Without p2's pairing of the ancestor and r3 the same tables build.
+    spec$keys <- spec$keys[!(spec$keys$table_name == "p2" & spec$keys$reference_table %in% "r3")]
+    spec$attributes <- spec$attributes[
+      !(spec$attributes$table_name == "p2" & spec$attributes$attribute_name == "r3_id")
+    ]
+    expect_clean_base(fx_clean_tables(spec), spec)
+  }
 })
 
 test_that("the fixture guard refuses tables without the marker (18.3, D8.21)", {

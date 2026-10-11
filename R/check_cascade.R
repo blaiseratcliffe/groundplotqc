@@ -33,16 +33,21 @@ failed_cells <- function(issues, layers = 1:3) {
 #' a failed cell (failed_cells()) in one of those columns from an earlier layer, among
 #' `rows` when given (the check's own records, by row number). Its root is the failure of
 #' the lowest layer, then the lowest issue ID. Returns `row_number` and `root_issue_id`,
-#' one row per masked record, ordered by row.
+#' one row per masked record, ordered by row. `table_name` is one table name, a developer
+#' error otherwise. It narrows the rows step by step (the cheap tests over all of `failed`,
+#' `columns` and `rows` over the rows left), and takes only the columns the order and the
+#' result need from the hits.
 #' @noRd
 mark_not_evaluated <- function(failed, table_name, columns, layer, rows = NULL) {
-  hit <- failed$table_name == table_name & failed$column_name %chin% columns &
-    failed$layer < layer
-  if (!is.null(rows)) {
-    hit <- hit & failed$row_number %in% rows
+  if (!(is.character(table_name) && length(table_name) == 1L && !is.na(table_name))) {
+    stop("`table_name` must be one table name.", call. = FALSE)
   }
-  masked <- failed[hit]
-  setorderv(masked, c("row_number", "layer", "issue_id"))
-  first <- !duplicated(masked$row_number)
-  data.table(row_number = masked$row_number[first], root_issue_id = masked$issue_id[first])
+  hit <- which(failed$layer < layer & failed$table_name == table_name)
+  hit <- hit[failed$column_name[hit] %chin% columns]
+  if (!is.null(rows)) {
+    hit <- hit[failed$row_number[hit] %in% rows]
+  }
+  at <- hit[order(failed$row_number[hit], failed$layer[hit], failed$issue_id[hit])]
+  first <- !duplicated(failed$row_number[at])
+  data.table(row_number = failed$row_number[at][first], root_issue_id = failed$issue_id[at][first])
 }

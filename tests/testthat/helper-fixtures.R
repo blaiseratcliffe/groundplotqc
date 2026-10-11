@@ -8,13 +8,13 @@
 # dictionary columns of the type map's R classes. A table without foreign keys has `n`
 # rows; a table with them has `n` rows per row of its largest parent (the first such key
 # on a tie), so `n` is not a scale knob: MAGPlot's deepest tables have n^8 rows, and a
-# coded key caps `n` at the length of its list. Each other foreign key takes a parent row
-# that agrees with the record's own ancestors, so two key paths to one ancestor reach the
-# same row; where the record and that parent share an ancestor and no parent row agrees,
-# the build stops. Keys are unique and point to a parent's row; a coded column holds codes
-# of its list, never a sentinel; a date column dates in its format; other columns made-up
-# numbers and text with no blanks and no spaces. Single-column primary keys only, foreign
-# keys to their parent's PK, and no table that points at itself.
+# coded key caps its table's rows at the length of its list. Each other foreign key takes a
+# parent row that agrees with the record's own ancestors, so two key paths to one ancestor
+# reach the same row; where the record and that parent share an ancestor and no parent row
+# agrees, the build stops. Keys are unique and point to a parent's row; a coded column holds
+# codes of its list, never a sentinel; a date column dates in its format; other columns
+# made-up numbers and text with no blanks and no spaces. Single-column primary keys only,
+# foreign keys to their parent's PK, and no table that points at itself.
 fx_clean_tables <- function(spec, n = 2L) {
   attributes <- spec$attributes
   keys <- spec$keys
@@ -84,7 +84,11 @@ fx_clean_tables <- function(spec, n = 2L) {
     groups <- candidates[leads, shared, with = FALSE]
     data.table::set(groups, j = ".start", value = which(leads))
     data.table::set(groups, j = ".count", value = tabulate(runs))
-    found <- groups[line[, shared, with = FALSE], on = shared]
+    # The records' shared ancestors and the join columns are worked out before the brackets, as
+    # single symbols, so a table named line or shared isn't read as a column of `groups`.
+    wanted <- line[, shared, with = FALSE]
+    join_on <- shared
+    found <- groups[wanted, on = join_on]
     picked <- candidates$.row[found$.start + ((within - 1L) %% found$.count)]
     if (anyNA(picked)) {
       stop(

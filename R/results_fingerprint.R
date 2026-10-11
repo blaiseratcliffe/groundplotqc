@@ -73,7 +73,7 @@ rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
   lacking <- needed[!needed %chin% names(spec)]
   if (length(lacking) > 0L) {
     readers <- vapply(lacking, function(name) {
-      reading <- vapply(inputs, function(entries) name %chin% entries, logical(1))
+      reading <- vapply(inputs, function(listed) name %chin% listed, logical(1))
       sprintf("%s (read by %s)", name, paste(unique(rule_ids[reading]), collapse = ", "))
     }, character(1))
     stop(sprintf(

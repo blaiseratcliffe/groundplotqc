@@ -80,12 +80,16 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
 #' A table completed to its schema: the columns given, then every other column as NA
 #'
 #' `x` is NULL (no rows) or a data.frame or list holding some of the schema's columns, of
-#' their classes; a column the schema lacks is a developer error. The result is a new
-#' data.table in the schema's order, sharing no column with `x`.
+#' their classes; a column the schema lacks, or a list of values with no names, is a
+#' developer error. The result is a new data.table in the schema's order, sharing no column
+#' with `x`.
 #' @noRd
 complete_table <- function(x, schema, name) {
   if (is.null(x)) {
     return(empty_table(schema))
+  }
+  if (length(x) > 0L && is.null(names(x))) {
+    stop(sprintf("The %s table's columns must be named.", name), call. = FALSE)
   }
   extra <- setdiff(names(x), names(schema))
   if (length(extra) > 0L) {
@@ -98,13 +102,14 @@ complete_table <- function(x, schema, name) {
     return(empty_table(schema))
   }
   # as.data.table() copies each column it is given and recycles a short one, so the table
-  # shares none with `x`; the NA columns are made once, after it.
+  # shares none with `x`; each NA column is made and set in turn, so no more than one filler
+  # is alive at a time.
   table <- as.data.table(as.list(x)[given])
   absent <- setdiff(names(schema), given)
+  for (column in absent) {
+    set(table, j = column, value = rep(vector(schema[[column]], 1L)[NA], nrow(table)))
+  }
   if (length(absent) > 0L) {
-    set(table, j = absent, value = lapply(schema[absent], function(type) {
-      rep(vector(type, 1L)[NA], nrow(table))
-    }))
     setcolorder(table, names(schema))
   }
   table
@@ -386,9 +391,10 @@ validate_gpq_results <- function(x, registry = rule_registry()) {
 #' The second object's `issue_id`, `root_issue_id`, `correction_id` and corrections'
 #' `issue_id` move by the first's largest ID. So do the issue IDs written in corrections'
 #' `related_issue_ids` and `easy_fix_blocked_by` (D15.26): cells of parts joined with "; ",
-#' where every all-digit part is an issue ID and any other part (`problem_plot`) and NA stay
-#' as written. The tables are bound first and the second object's rows changed in the new
-#' tables, so neither input is copied whole or changed.
+#' where every all-digit part of at most nine digits (which an integer holds) is an issue ID
+#' and any other part (`problem_plot`, a longer run of digits) and NA stay as written. The
+#' tables are bound first and the second object's rows changed in the new tables, so neither
+#' input is copied whole or changed.
 #' @noRd
 bind_results <- function(x, y, registry = rule_registry()) {
   validate_gpq_results(x, registry)
@@ -405,15 +411,15 @@ bind_results <- function(x, y, registry = rule_registry()) {
   corrections <- rbindlist(list(x$corrections, y$corrections))
   issues_at <- nrow(x$issues) + seq_len(nrow(y$issues))
   corrections_at <- nrow(x$corrections) + seq_len(nrow(y$corrections))
-  shift <- function(table, at, column, offset) {
+  move_by <- function(table, at, column, offset) {
     set(table, i = at, j = column, value = table[[column]][at] + offset)
   }
   # The all-digit parts of "; "-joined cells moved by the issue offset, other parts and NA
-  # as they were.
+  # as they were. A part of more than nine digits is not an integer's: it stays as written.
   shift_ids <- function(cells) {
     given <- which(!is.na(cells))
     text <- cells[given]
-    found <- gregexpr("(?<=^|; )[0-9]+(?=; |$)", text, perl = TRUE)
+    found <- gregexpr("(?<=^|; )[0-9]{1,9}(?=; |$)", text, perl = TRUE)
     ids <- regmatches(text, found)
     regmatches(text, found) <- utils::relist(
       as.character(as.integer(unlist(ids)) + issue_offset), ids
@@ -421,10 +427,10 @@ bind_results <- function(x, y, registry = rule_registry()) {
     cells[given] <- text
     cells
   }
-  shift(issues, issues_at, "issue_id", issue_offset)
-  shift(issues, issues_at, "root_issue_id", issue_offset)
-  shift(corrections, corrections_at, "correction_id", correction_offset)
-  shift(corrections, corrections_at, "issue_id", issue_offset)
+  move_by(issues, issues_at, "issue_id", issue_offset)
+  move_by(issues, issues_at, "root_issue_id", issue_offset)
+  move_by(corrections, corrections_at, "correction_id", correction_offset)
+  move_by(corrections, corrections_at, "issue_id", issue_offset)
   for (column in c("related_issue_ids", "easy_fix_blocked_by")) {
     set(
       corrections,

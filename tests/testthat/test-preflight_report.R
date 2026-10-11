@@ -379,6 +379,8 @@ test_that("findings with a comma, a line break, an accent and formula text read 
   csv <- file.path(dir, "metadata", "preflight.csv")
   # The planted text is in the table, beside the NA of rows with no detail.
   expect_true(any(grepl("line one\nline two", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("R, \"D\"", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("café", results$detail, fixed = TRUE)))
   expect_true(any(grepl("=1+1", results$detail, fixed = TRUE)))
   expect_true(anyNA(results$detail))
   expect_identical(read_run_csv(csv, preflight_columns())$detail, results$detail)

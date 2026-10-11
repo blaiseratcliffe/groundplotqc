@@ -47,6 +47,10 @@ test_that("the constructors complete a table with NA", {
   expect_equal(names(new_issues(key_col = "plot")), names(results_schema(key_col = "plot")$issues))
   expect_equal(nrow(new_corrections()), 0L)
   expect_error(new_corrections(list(extra = 1L)), "has no columns extra")
+  # A list with values and no names has no columns to complete: refused, not read as empty.
+  expect_error(new_corrections(list(1L)), "The corrections table's columns must be named")
+  expect_error(new_issues(list("a", "b")), "The issues table's columns must be named")
+  expect_equal(nrow(new_corrections(list())), 0L)
 })
 
 test_that("the constructors share no column with the input, in whatever form it is given", {
@@ -272,6 +276,19 @@ test_that("bind_results() appends one run's results to another's, renumbering ID
   expect_equal(more$corrections$related_issue_ids, c(NA, "6; 8; p2; 12x; 45"))
   expect_equal(more$corrections$easy_fix_blocked_by, c("2; problem_plot", NA))
   expect_equal(third$corrections$related_issue_ids, "1; 3; p2; 12x; 40")
+  # An all-digit part too long for an integer (more than nine digits) is no issue ID of this
+  # run and stays as written, with no warning; nine digits still move.
+  long <- third
+  long$corrections <- data.table::copy(third$corrections)
+  data.table::set(
+    long$corrections,
+    j = "related_issue_ids", value = "1; 9999999999; 99999999999999999999; 999999999"
+  )
+  more <- expect_no_warning(bind_results(object, long))
+  expect_equal(
+    more$corrections$related_issue_ids,
+    c(NA, "6; 9999999999; 99999999999999999999; 1000000004")
+  )
   # Either object may have no corrections.
   none <- third
   none$corrections <- new_corrections()

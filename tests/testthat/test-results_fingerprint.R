@@ -100,22 +100,22 @@ test_that("a rule-set component no row of which names the rule adds nothing (D15
   expect_equal(print_of(list(rules = both[both$rule_id != "value_odd", ])), base)
 })
 
-test_that("a rule's fingerprint leaves the spec, rules, settings and registry as they were", {
+test_that("a rule's fingerprint leaves the spec, rules and registry as they were", {
   registry <- local_results_registry()
   spec <- fx_fish_spec()
   rules <- list(rules = data.frame(
     rule_id = "value_odd", table_name = "catches", attribute_name = "*", severity = NA,
     class = NA, enabled = TRUE
   ))
+  # The settings are a plain list, which R copies when it changes: no change by reference to check.
   settings <- list(lang = "fr", severity = c(value_odd = "warning"))
   before <- list(
     spec = lapply(spec, data.table::copy), rules = lapply(rules, data.table::copy),
-    settings = settings, registry = data.table::copy(registry)
+    registry = data.table::copy(registry)
   )
   rule_fingerprint(c("value_odd", "value_jump"), spec, rules, settings, registry)
   expect_true(identical(unclass(spec), before$spec))
   expect_true(identical(rules, before$rules))
-  expect_identical(settings, before$settings)
   expect_true(identical(registry, before$registry))
 })
 
