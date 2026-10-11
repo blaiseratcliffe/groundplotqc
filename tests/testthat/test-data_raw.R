@@ -2013,4 +2013,11 @@ test_that("build_magp_example.R builds the example with the tests' clean base (D
   expect_true(is.function(builders$fx_magp_clean))
   # data/magp_example.rda is what the build makes from today's code and magp_spec().
   expect_equal(lapply(builders$fx_magp_clean(), as.list), lapply(magp_example, as.list))
+  # The build saves with xz compression and format 3 (R28): the file is an xz stream whose
+  # contents start with R's format 3 marker.
+  path <- testthat::test_path("..", "..", "data", "magp_example.rda")
+  testthat::skip_if_not(file.exists(path), "data/magp_example.rda isn't in this tree")
+  bytes <- readBin(path, "raw", file.size(path))
+  expect_equal(bytes[1:6], as.raw(c(0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00)))
+  expect_equal(rawToChar(memDecompress(bytes, "xz")[1:4]), "RDX3")
 })

@@ -28,6 +28,7 @@ key_paths <- function(tables, spec, table) {
 
 # The properties every clean base has, whatever its spec.
 expect_clean_base <- function(tables, spec) {
+  fx_require_fixture(tables)
   a <- spec$attributes
   expect_equal(names(tables), unique(a$table_name))
   date_formats <- spec$type_map$date_format[match(a$data_type, spec$type_map$data_type)]
@@ -89,6 +90,24 @@ test_that("MAGPlot's clean base has every DD table and column, of its R class (2
   expect_equal(as.vector(table(tables$magp_datasets$magp_contributor_id)), c(2L, 2L))
 })
 
+test_that("each dataset is in one jurisdiction and contributor, as its sheet row has it (D15.32)", {
+  spec <- magp_spec()
+  sheet <- spec$datasets
+  tables <- fx_magp_clean()
+  sites <- tables$magp_sites
+  datasets <- tables$magp_datasets
+  of_site <- match(sites$magp_dataset_id, sheet$magp_dataset_id)
+  of_dataset <- match(datasets$magp_dataset_id, sheet$magp_dataset_id)
+  expect_equal(sites$jurisdiction, sheet$jurisdiction[of_site])
+  expect_equal(datasets$magp_contributor_id, sheet$magp_contributor_id[of_dataset])
+  # So each dataset's sites hold one jurisdiction, and the four datasets span two.
+  per_dataset <- tapply(sites$jurisdiction, sites$magp_dataset_id, data.table::uniqueN)
+  expect_equal(as.vector(per_dataset), rep(1L, 4L))
+  expect_equal(sort(unique(sites$jurisdiction)), c("AB", "BC"))
+  # Still a clean base: its codes, keys and key paths hold.
+  expect_clean_base(tables, spec)
+})
+
 test_that("the clean base's spec passes pre-flight with MAGPlot's rule set (21 M3b gate)", {
   expect_no_error(suppressWarnings(gpq_preflight(magp_spec(), rules = magp_rules())))
 })
@@ -110,6 +129,70 @@ test_that("the clean base refuses a spec it can't build", {
   twice <- spec
   twice$keys <- rbind(spec$keys, spec$keys[spec$keys$key_type == "PK"][1L])
   expect_error(fx_clean_tables(twice), "single-column PK")
+  pointing <- spec
+  pointing$keys <- rbind(spec$keys, data.table::data.table(
+    table_name = "hauls", attribute_name = "haul_id", key_type = "FK", key_part = 1L,
+    reference_table = "hauls", reference_attribute = "haul_id"
+  ))
+  expect_error(fx_clean_tables(pointing), "points at itself")
+  elsewhere <- spec
+  elsewhere$keys <- data.table::copy(spec$keys)
+  data.table::set(elsewhere$keys,
+    i = which(spec$keys$table_name == "catches" & spec$keys$key_type == "FK"),
+    j = "reference_attribute", value = "gear"
+  )
+  expect_error(fx_clean_tables(elsewhere), "point at their parent's PK")
+  # A value that can't take its column's class: a text code in a column of whole numbers.
+  untyped <- spec
+  untyped$attributes <- data.table::copy(spec$attributes)
+  data.table::set(untyped$attributes,
+    i = which(spec$attributes$attribute_name == "water_body"), j = "r_class", value = "integer"
+  )
+  expect_error(fx_clean_tables(untyped), "can't make stations.water_body of class integer")
+  # A coded key with fewer codes than the table has rows.
+  short <- spec
+  short$codes <- rbind(spec$codes, data.table::data.table(
+    table_name = "stations", attribute_name = "station_id", code = "S1",
+    source_type = "sheet", source_name = "stations", source_row = 2L
+  ))
+  expect_error(fx_clean_tables(short), "needs 2 codes for the key stations.station_id")
+})
+
+test_that("a foreign key that can't agree with its record's ancestors stops the base (D15.31)", {
+  # Three roots (r2, r3, x), p1 pointing at r2 and r3, p2 at x, r2 and r3, and d at p1 and
+  # p2. p1 pairs every r2 row with every r3 row but p2 pairs them one to one, so a d record
+  # that p1 places on the pair (r2 = 1, r3 = 2) has no p2 row with that pair.
+  made <- c("r2", "r3", "x", "p1", "p2", "d")
+  links <- data.table::data.table(
+    table_name = c("p1", "p1", "p2", "p2", "p2", "d", "d"),
+    parent = c("r2", "r3", "x", "r2", "r3", "p1", "p2")
+  )
+  owners <- c(made, links$table_name)
+  column_names <- c(paste0(made, "_id"), paste0(links$parent, "_id"))
+  spec <- list(
+    attributes = data.table::data.table(
+      table_name = owners, attribute_name = column_names, data_type = "text",
+      r_class = "character", id_marked = FALSE
+    ),
+    keys = data.table::data.table(
+      table_name = owners, attribute_name = column_names,
+      key_type = rep(c("PK", "FK"), c(6L, 7L)), key_part = 1L,
+      reference_table = c(rep(NA_character_, 6L), links$parent),
+      reference_attribute = c(rep(NA_character_, 6L), paste0(links$parent, "_id"))
+    ),
+    codes = data.table::data.table(
+      table_name = character(), attribute_name = character(), code = character()
+    ),
+    sentinels = data.table::data.table(data_type = character(), value = character()),
+    type_map = data.table::data.table(data_type = "text", date_format = NA_character_)
+  )
+  expect_error(fx_clean_tables(spec), "can't make d.p2_id agree with the record's ancestors")
+  # Without p2's pairing of r2 and r3 the same tables build.
+  spec$keys <- spec$keys[!(spec$keys$table_name == "p2" & spec$keys$reference_table %in% "r3")]
+  spec$attributes <- spec$attributes[
+    !(spec$attributes$table_name == "p2" & spec$attributes$attribute_name == "r3_id")
+  ]
+  expect_clean_base(fx_clean_tables(spec), spec)
 })
 
 test_that("the fixture guard refuses tables without the marker (18.3, D8.21)", {
@@ -119,6 +202,21 @@ test_that("the fixture guard refuses tables without the marker (18.3, D8.21)", {
   plain <- tables
   attr(plain, "gpq_fixture") <- NULL
   expect_error(fx_require_fixture(plain), "Test helpers take fixtures only")
+  # A table taken out of the list is still marked; one that was never marked is refused.
+  expect_invisible(fx_require_fixture(tables$stations))
+  expect_error(fx_require_fixture(data.table::data.table(a = 1L)), "no gpq_fixture attribute")
+})
+
+test_that("the fixture marker goes on a list of data.tables only (D8.21)", {
+  one <- data.table::data.table(a = 1L)
+  marked <- fx_mark_fixture(list(one = one))
+  expect_true(isTRUE(attr(marked, "gpq_fixture")))
+  expect_true(isTRUE(attr(marked$one, "gpq_fixture")))
+  # A single data.table would mark each of its columns, so it is refused, as is a list
+  # holding anything else.
+  expect_error(fx_mark_fixture(data.table::data.table(a = 1L)), "takes a list of data.tables")
+  expect_error(fx_mark_fixture(list(a = data.frame(a = 1L))), "takes a list of data.tables")
+  expect_error(fx_mark_fixture(1:3), "takes a list of data.tables")
 })
 
 test_that("the answer sheet and the defect blocks match, every rule covered (18.3)", {
@@ -129,6 +227,9 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
     "cascade_rule_ids", "witness"
   ))
   expect_setequal(sheet$defect_id, names(blocks))
+  expect_false(anyDuplicated(sheet$defect_id) > 0L)
+  expect_false(anyDuplicated(names(blocks)) > 0L)
+  expect_true(all(vapply(sheet, is.character, logical(1))))
   expect_true(all(vapply(blocks, is.function, logical(1))))
   registry <- rule_registry()
   data_rules <- registry$rule_id[registry$check_type != "preflight"]
