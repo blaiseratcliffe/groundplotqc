@@ -67,9 +67,10 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
   if (!is.null(key_col) && !(named(key_col) && length(key_col) == 1L)) {
     stop("The problem unit's key column must be one column name.", call. = FALSE)
   }
-  # run.csv's group_cols joins the group columns' names with "; " (R11, D9.29), so a name
-  # holding it could not be told from two names when the run is read back (D15.39).
-  joined <- grep("; ", c(group_cols, key_col), fixed = TRUE, value = TRUE)
+  # run.csv's group_cols joins the group columns' names with "; " (R11, D9.29), so a group
+  # column's name holding it could not be told from two names when the run is read back
+  # (D15.39). The key column isn't recorded there, so its name is not checked (D15.40).
+  joined <- grep("; ", group_cols, fixed = TRUE, value = TRUE)
   if (length(joined) > 0L) {
     stop(
       "The caller's columns ", paste(joined, collapse = ", "), " have \"; \" in their names, ",

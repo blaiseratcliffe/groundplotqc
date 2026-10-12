@@ -31,13 +31,15 @@ test_that("a caller's column named like a fixed one, repeated or blank is refuse
   expect_error(results_schema(key_col = c("a", "b")), "one column name")
 })
 
-test_that("a caller's column named with the separator of group_cols is refused (D15.39)", {
+test_that("a group column named with \"; \" is refused, a key column isn't (D15.39, D15.40)", {
   # run.csv's group_cols joins the names with "; " (R11, D9.29), so a name holding it could
   # not be told from two names when the run is read back.
   expect_error(results_schema("a; b"), "have \"; \" in their names")
   expect_error(results_schema(c("unit", "x; y", "z; w")), "x; y, z; w have \"; \" in their names")
-  expect_error(results_schema("unit", "plot; 2"), "plot; 2 have \"; \" in their names")
   expect_error(new_results(NULL, group_cols = "a; b"), "have \"; \" in their names")
+  # The key column isn't recorded in group_cols, so its name may hold the separator (D15.40).
+  kept <- results_schema("unit", "plot; 2")
+  expect_true("plot; 2" %in% names(kept$issues))
   # A semicolon without the space, or a space without the semicolon, is no separator.
   schema <- results_schema(c("a;b", "c ;d", "e ,f"), "g;h")
   expect_true(all(c("a;b", "c ;d", "e ,f", "g;h") %in% names(schema$issues)))
