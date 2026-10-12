@@ -14,7 +14,24 @@ test_that("a run written and read back is identical (18.4)", {
     issues,
     i = 4:5, j = "value", value = c(intToUtf8(0x1F600), strrep("long text, ", 2000L))
   )
+  # CRLF and a lone CR in values (they replace the first two rows' values, which the other
+  # round trips of fx_results() still hold), and hostile text in keys, group cells and the
+  # provider key, not in values alone (18.4).
+  data.table::set(
+    issues,
+    i = 1:2, j = "value", value = c("crlf one\r\ntwo", "lone\rcr")
+  )
+  data.table::set(
+    issues,
+    i = 1:2, j = "record_pk", value = c("c,1 \"q\"", "c\r\n2")
+  )
+  data.table::set(issues, j = "unit", value = "Québec \"QC\", x")
+  data.table::set(issues, i = 1:3, j = "plot", value = c("p\n1", "p\n1", " p 2 "))
+  data.table::set(issues, i = 2L, j = "provider_key", value = "tbl.key=<7>&; tbl.no=\"2\"")
   object$issues <- issues
+  results <- data.table::copy(object$results)
+  data.table::set(results, i = 1L, j = "unit", value = "Québec \"QC\", x")
+  object$results <- results
   dir <- withr::local_tempdir()
   run_dir <- gpq_write_results(object, dir)
   expect_equal(run_dir, file.path(dir, "20261008T120000Z_abc123"))
@@ -36,6 +53,30 @@ test_that("a completed run with no group columns and no key column round trips (
   )
   run_dir <- gpq_write_results(bare, withr::local_tempdir())
   expect_identical(gpq_read_results(run_dir), bare)
+})
+
+test_that("group and key columns named with quotes round trip (9.1, 18.4)", {
+  local_results_registry()
+  object <- fx_results()
+  # A quote in a name is written doubled and read back doubled, as it is in a cell, so the
+  # names are undone like the cells; area's name holds two quotes in a row.
+  quoted <- c(unit = "un\"it", area = "a\"\"b", plot = "pl\"ot")
+  rename <- function(x) {
+    x <- data.table::copy(x)
+    present <- intersect(names(quoted), names(x))
+    data.table::setnames(x, present, unname(quoted[present]))
+    x
+  }
+  metadata <- object$metadata
+  run <- data.table::copy(metadata$run)
+  data.table::set(run, j = "group_cols", value = "un\"it; a\"\"b")
+  metadata$run <- run
+  changed <- new_gpq_results(
+    rename(object$results), rename(object$issues), object$corrections, metadata
+  )
+  expect_true(all(unname(quoted) %in% names(changed$issues)))
+  run_dir <- gpq_write_results(changed, withr::local_tempdir())
+  expect_identical(gpq_read_results(run_dir), changed)
 })
 
 test_that("an output folder that doesn't exist yet is made", {
@@ -102,33 +143,37 @@ test_that("a file the write would make that is already there stops it before any
     writeLines("kept", path)
     path
   }
-  refused <- function(files) {
+  # `listed` is the text after "already holds": the files by their paths inside the run
+  # folder, several joined with ", " and " and " before the last (R69).
+  refused <- function(listed) {
     expect_error(
       gpq_write_results(object, dir),
-      paste0(
-        run_dir, " already holds ", paste(files, collapse = ", "),
-        ", and a run's files are never written over."
-      ),
+      paste0(run_dir, " already holds ", listed, ", and a run's files are never written over."),
       fixed = TRUE
     )
   }
   # A tables file there with no results.csv: nothing is written, no folder is made.
-  issues_csv <- put("tables", "issues.csv")
+  put("tables", "issues.csv")
   before <- snapshot()
-  refused(issues_csv)
+  refused("tables/issues.csv")
   expect_identical(snapshot(), before)
   expect_false(dir.exists(file.path(run_dir, "metadata")))
   # A metadata file there.
   unlink(run_dir, recursive = TRUE)
-  run_csv <- put("metadata", "run.csv")
+  put("metadata", "run.csv")
   before <- snapshot()
-  refused(run_csv)
+  refused("metadata/run.csv")
   expect_identical(snapshot(), before)
   expect_false(dir.exists(file.path(run_dir, "tables")))
   # Both, named together, the tables' first.
-  issues_csv <- put("tables", "issues.csv")
+  put("tables", "issues.csv")
   before <- snapshot()
-  refused(c(issues_csv, run_csv))
+  refused("tables/issues.csv and metadata/run.csv")
+  expect_identical(snapshot(), before)
+  # Three, the last two joined by " and ".
+  put("tables", "corrections.csv")
+  before <- snapshot()
+  refused("tables/issues.csv, tables/corrections.csv and metadata/run.csv")
   expect_identical(snapshot(), before)
   # With neither there the same call writes the run.
   unlink(run_dir, recursive = TRUE)
@@ -208,9 +253,8 @@ test_that("a run stopped at pre-flight leaves four files and no results to read 
   expect_error(
     write_run_metadata(list(run = run, spec_manifest = spec$manifest), run_dir),
     paste0(
-      run_dir, " already holds ", file.path(run_dir, "metadata", "run.csv"), ", ",
-      file.path(run_dir, "metadata", "spec_manifest.csv"),
-      ", and a run's files are never written over."
+      run_dir, " already holds metadata/run.csv and metadata/spec_manifest.csv, and a run's ",
+      "files are never written over."
     ),
     fixed = TRUE
   )

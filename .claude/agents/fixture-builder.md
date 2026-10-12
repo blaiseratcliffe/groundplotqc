@@ -7,7 +7,7 @@ model: opus
 
 You start cold. Input: the rule definition (registry row, rule-set rows, plan section).
 
-Build fixtures in code in `tests/testthat/helper-*.R` from the 20260925 spec, never
+Build fixtures in code in `tests/testthat/helper-*.R` from `magp_spec()`, never
 from delivered data. Every fixture object carries the fixture marker. For each rule,
 plan the defects that must trip it, including edge cases (sentinels, wildcards, empty
 groups, ties, cascades), and the ones that must not. Add answer-sheet rows with the

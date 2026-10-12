@@ -67,6 +67,16 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
   if (!is.null(key_col) && !(named(key_col) && length(key_col) == 1L)) {
     stop("The problem unit's key column must be one column name.", call. = FALSE)
   }
+  # run.csv's group_cols joins the group columns' names with "; " (R11, D9.29), so a name
+  # holding it could not be told from two names when the run is read back (D15.39).
+  joined <- grep("; ", c(group_cols, key_col), fixed = TRUE, value = TRUE)
+  if (length(joined) > 0L) {
+    stop(
+      "The caller's columns ", paste(joined, collapse = ", "), " have \"; \" in their names, ",
+      "which the run's `group_cols` joins names with.",
+      call. = FALSE
+    )
+  }
   clash <- intersect(c(group_cols, key_col), fixed)
   if (length(clash) > 0L) {
     stop(sprintf(
@@ -415,16 +425,33 @@ bind_results <- function(x, y, registry = rule_registry()) {
     set(table, i = at, j = column, value = table[[column]][at] + offset)
   }
   # The all-digit parts of "; "-joined cells moved by the issue offset, other parts and NA
-  # as they were. A part of more than nine digits is not an integer's: it stays as written.
+  # as they were. At most nine digits keep the shifted value inside an integer (R63), so a
+  # longer part stays as written. Each pass finds the first ID left to move in every cell that
+  # holds one (one regexpr() over those cells), moves it and cuts the cell after it, so a cut
+  # piece begins with "; " or is empty and the pattern's "^" can't match inside it. The loop
+  # runs as many times as the most IDs in one cell, never once per cell (16.2).
   shift_ids <- function(cells) {
     given <- which(!is.na(cells))
-    text <- cells[given]
-    found <- gregexpr("(?<=^|; )[0-9]{1,9}(?=; |$)", text, perl = TRUE)
-    ids <- regmatches(text, found)
-    regmatches(text, found) <- utils::relist(
-      as.character(as.integer(unlist(ids)) + issue_offset), ids
-    )
-    cells[given] <- text
+    rest <- cells[given]
+    done <- character(length(rest))
+    active <- seq_along(rest)
+    repeat {
+      found <- regexpr("(?<=^|; )[0-9]{1,9}(?=; |$)", rest[active], perl = TRUE)
+      hit <- which(found > 0L)
+      if (length(hit) == 0L) {
+        break
+      }
+      first <- found[hit]
+      last <- first + attr(found, "match.length")[hit] - 1L
+      active <- active[hit]
+      cut <- rest[active]
+      done[active] <- paste0(
+        done[active], substr(cut, 1L, first - 1L),
+        as.integer(substr(cut, first, last)) + issue_offset
+      )
+      rest[active] <- substr(cut, last + 1L, .Machine$integer.max)
+    }
+    cells[given] <- paste0(done, rest)
     cells
   }
   move_by(issues, issues_at, "issue_id", issue_offset)

@@ -51,16 +51,20 @@ gpq_write_results <- function(results, output_dir) {
     }
     metadata$preflight <- NULL
   }
-  # Every file the call would write, the run's pre-flight CSV left out when it is kept (D15.27).
+  # Every file the call would write, the run's pre-flight CSV left out when it is kept
+  # (D15.27). Each one that is there is named by its path inside the run folder, the last two
+  # joined by " and " (R69).
   table_names <- c("results", "issues", "corrections")
-  files <- c(
-    file.path(run_dir, "tables", paste0(table_names, ".csv")),
-    file.path(run_dir, "metadata", paste0(names(metadata), ".csv"))
+  inside <- c(
+    file.path("tables", paste0(table_names, ".csv")),
+    file.path("metadata", paste0(names(metadata), ".csv"))
   )
-  existing <- files[file.exists(files)]
+  existing <- inside[file.exists(file.path(run_dir, inside))]
   if (length(existing) > 0L) {
+    last <- length(existing)
     stop(
-      run_dir, " already holds ", paste(existing, collapse = ", "),
+      run_dir, " already holds ",
+      paste0(paste(existing[-last], collapse = ", "), if (last > 1L) " and ", existing[[last]]),
       ", and a run's files are never written over.",
       call. = FALSE
     )
@@ -102,11 +106,14 @@ write_run_metadata <- function(metadata, run_dir) {
     validate_schema(metadata[[name]], name, schema[[name]])
   }
   folder <- file.path(run_dir, "metadata")
-  paths <- file.path(folder, paste0(names(metadata), ".csv"))
-  existing <- paths[file.exists(paths)]
+  inside <- file.path("metadata", paste0(names(metadata), ".csv"))
+  paths <- file.path(run_dir, inside)
+  existing <- inside[file.exists(paths)]
   if (length(existing) > 0L) {
+    last <- length(existing)
     stop(
-      run_dir, " already holds ", paste(existing, collapse = ", "),
+      run_dir, " already holds ",
+      paste0(paste(existing[-last], collapse = ", "), if (last > 1L) " and ", existing[[last]]),
       ", and a run's files are never written over.",
       call. = FALSE
     )
@@ -189,13 +196,17 @@ read_run_csv <- function(path, classes) {
       }
     )
   }
-  header <- names(read(nrows = 0L, colClasses = "character"))
+  # fread() keeps a quote in a name doubled, as it does in a cell: the names are undone before
+  # the class lookup and set after the read, so a caller's column named with a quote reads
+  # back as written.
+  header <- gsub("\"\"", "\"", names(read(nrows = 0L, colClasses = "character")), fixed = TRUE)
   wanted <- unname(classes[header])
   wanted[is.na(wanted)] <- "character"
   data <- read(colClasses = wanted)
   if (warned) {
     stop(path, " doesn't read cleanly; it may have been edited.", call. = FALSE)
   }
+  setnames(data, header)
   undo_doubled_quotes(data, names(data)[vapply(data, is.character, logical(1))])
   data
 }
