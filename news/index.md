@@ -51,9 +51,10 @@
   and, in a run language other than English, lists each text that falls
   back to English; it stops on a text in the caller’s table that uses a
   slot the package’s row of that text doesn’t have. The pre-flight page
-  opens with a one-line result, its footer names the rule set that was
-  checked, and its rows table’s count column reads “Findings in this
-  check”.
+  opens with a one-line result and an introduction that covers the run’s
+  configuration as well as the specification, its footer names the rule
+  set that was checked when the rule set has a meta row, and its rows
+  table’s count column reads “Findings in this check”.
 - A first article, “Specification files and configuration”, reads and
   pre-flights the fish survey example.
 - [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
@@ -67,3 +68,11 @@
   returns MAGPlot 2.0’s rule set: its meta row, its rules rows and its
   settings, compiled from the hand-kept files in `data-raw/magp/` for
   the 20261005 specification files.
+- `magp_example` is a small synthetic example of MAGPlot 2.0’s 17
+  tables, built from
+  [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md):
+  every table and column of the data dictionary, with made-up values.
+  Help pages use it.
+- The pre-flight CSV, `metadata/preflight.csv`, ends its lines with LF
+  on every platform, so its bytes are the same on Windows, macOS and
+  Linux.
