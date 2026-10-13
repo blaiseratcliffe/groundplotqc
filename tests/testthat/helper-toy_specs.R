@@ -146,19 +146,21 @@ fx_planted_spec <- function() {
 # also names the table stands, which the spec lacks (rule_set_unknown_column 1, an intended
 # overlap); row 2 gives the pre-flight check dd_pk_missing the severity "warning"
 # (rule_set_override_invalid 1, its only finding, D14.5), and dd_pk_missing still stops on
-# the spec's trees; the rule set's language, fr, has no rows (text_id_fallback, one finding
-# per registered rule). text_id_missing can't fire on the registry's own rules, which all
-# have English text; its test gives the check a registry of its own. text_slot_unknown 1 is
-# the planted test's text row.
+# the spec's trees; row 4 repeats row 1 (rule_set_duplicate_row 1, D16.6; also
+# rule_id_unknown's, an intended overlap, which so counts 4); the rule set's language, fr,
+# has no rows (text_id_fallback, one finding per registered rule). text_id_missing can't fire
+# on the registry's own rules, which all have English text; its test gives the check a
+# registry of its own. text_slot_unknown 1 is the planted test's text row.
 fx_planted_rule_set <- function() {
   list(
     meta = data.frame(
       rule_set_name = "planted", version = "1", date = "2026-10-07", spec_version = "20261005"
     ),
     rules = data.frame(
-      rule_id = c("no_such_rule", "dd_pk_missing", "other_rule"),
-      table_name = c("plots", "*", "stands"), attribute_name = c("plot_id", "*", "*"),
-      severity = c(NA, "warning", NA), class = NA_character_, enabled = TRUE
+      rule_id = c("no_such_rule", "dd_pk_missing", "other_rule", "no_such_rule"),
+      table_name = c("plots", "*", "stands", "plots"),
+      attribute_name = c("plot_id", "*", "*", "plot_id"),
+      severity = c(NA, "warning", NA, NA), class = NA_character_, enabled = TRUE
     ),
     settings = data.frame(setting = "lang", value = "fr", type = "character")
   )

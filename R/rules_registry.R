@@ -52,6 +52,7 @@ rule_registry <- function() {
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
     preflight("rule_id_unknown", "error", "rules; settings:severity"),
     preflight("rule_set_override_invalid", "error", "rules; settings:severity"),
+    preflight("rule_set_duplicate_row", "error", "rules"),
     # ---- task 6 ----
     preflight("text_id_missing", "error", "text"),
     preflight("text_id_fallback", "warning", "text; settings:lang"),

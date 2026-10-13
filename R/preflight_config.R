@@ -79,7 +79,7 @@ allowed_text <- function(allowed, rule_ids) {
   texts
 }
 
-#' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19)
+#' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19, D16.6)
 #' @noRd
 preflight_rule_set_checks <- function() {
   list(
@@ -219,6 +219,24 @@ preflight_rule_set_checks <- function() {
           allowed = allowed_text(allowed$severity, entry_open$rule_id)
         ))
       ))
+    },
+    rule_set_duplicate_row = function(spec, context) {
+      if (is.null(context$rules)) {
+        return("no_input")
+      }
+      # Each row after the first that names the same rule, table and attribute (D16.6).
+      rows <- rule_set_rows(context)
+      again <- duplicated(rows, by = c("rule_id", "table_name", "attribute_name"))
+      repeats <- rows[again]
+      findings_of(
+        repeats$file,
+        report_text(
+          "preflight_detail_rule_set_duplicate_row",
+          position = repeats$position, rule_id = repeats$rule_id,
+          table_name = repeats$table_name, attribute_name = repeats$attribute_name
+        ),
+        repeats$source_cell
+      )
     }
   )
 }

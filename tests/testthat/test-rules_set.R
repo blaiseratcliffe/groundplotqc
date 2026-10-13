@@ -247,17 +247,17 @@ test_that("an empty rules component is a rule set", {
 
 test_that("a component's origin is carried over when its lines match its rows (D14.19)", {
   set <- a_rule_set()
-  attr(set$rules, "source_file") <- "rules_rules.csv"
-  attr(set$rules, "source_lines") <- c(2L, 4L)
+  set$rules <- set_origin(set$rules, "rules_rules.csv", c(2L, 4L))
   checked <- validate_rule_set(set)
   expect_equal(attr(checked$rules, "source_file"), "rules_rules.csv")
   expect_identical(attr(checked$rules, "source_lines"), c(2L, 4L))
   expect_null(attr(checked$meta, "source_file"))
   expect_identical(validate_rule_set(checked), checked)
-  attr(set$rules, "source_lines") <- 2L
+  set$rules <- set_origin(set$rules, "rules_rules.csv", 2L)
   checked <- validate_rule_set(set)
   expect_null(attr(checked$rules, "source_file"))
   expect_null(attr(checked$rules, "source_lines"))
+  expect_null(attr(checked$rules, "source_sha256"))
   # An origin that names no file, or no whole line from 1 up, is dropped.
   hostile <- list(
     list(bad_bytes(), c(2L, 3L)), list("", c(2L, 3L)), list("f.csv", c(2.7, 3)),
@@ -265,10 +265,14 @@ test_that("a component's origin is carried over when its lines match its rows (D
     list("f.csv", c(Inf, 3)), list("f.csv", c(2, 3e9))
   )
   for (origin in hostile) {
-    attr(set$rules, "source_file") <- origin[[1L]]
-    attr(set$rules, "source_lines") <- origin[[2L]]
+    set$rules <- set_origin(set$rules, origin[[1L]], origin[[2L]])
     expect_null(attr(validate_rule_set(set)$rules, "source_file"))
   }
+  # An origin set by hand, with no hash of the rows, is dropped too (D16.15).
+  attr(set$rules, "source_file") <- "rules_rules.csv"
+  attr(set$rules, "source_lines") <- c(2L, 4L)
+  attr(set$rules, "source_sha256") <- NULL
+  expect_null(attr(validate_rule_set(set)$rules, "source_file"))
 })
 
 test_that("read_rule_set reads a folder of rules_<component>.csv, a space in its path", {
@@ -347,4 +351,67 @@ test_that("rule_set_bytes() is one text whether the rule set came from files or 
   # No components, no bytes: still a raw vector, which sha256_bytes() takes.
   expect_identical(rule_set_bytes(NULL), raw())
   expect_identical(rule_set_bytes(list()), raw())
+})
+
+test_that("a component keeps its origin only while its rows are as read (D16.15)", {
+  dir <- withr::local_tempdir()
+  writeLines(
+    c(
+      "rule_id,table_name,attribute_name,severity,class,enabled",
+      "r1,*,*,,,TRUE", "r2,t,a,warning,,FALSE"
+    ),
+    file.path(dir, "rules_rules.csv")
+  )
+  read <- read_rule_set(dir)
+  expect_match(attr(read$rules, "source_sha256"), "^[0-9a-f]{64}$")
+  # Unchanged, it keeps its lines through any number of checks.
+  again <- validate_rule_set(validate_rule_set(read))
+  expect_identical(attr(again$rules, "source_lines"), 2:3)
+  # Changed by reference, reordered or filtered, it loses them.
+  edited <- validate_rule_set(read)
+  data.table::set(edited$rules, i = 1L, j = "severity", value = "error")
+  expect_null(attr(validate_rule_set(edited)$rules, "source_file"))
+  reordered <- read
+  reordered$rules <- read$rules[2:1]
+  data.table::setattr(reordered$rules, "source_file", "rules_rules.csv")
+  data.table::setattr(reordered$rules, "source_lines", 2:3)
+  data.table::setattr(reordered$rules, "source_sha256", attr(read$rules, "source_sha256"))
+  expect_null(attr(validate_rule_set(reordered)$rules, "source_file"))
+  # A changed component's finding gives R's row, not a stale line.
+  context <- preflight_context(list(rules = data.frame(
+    rule_id = c("r1", "no_rule"), table_name = "*", attribute_name = "*", severity = NA,
+    class = NA, enabled = TRUE
+  )))
+  expect_true(is.na(rule_set_rows(context)$file[[1L]]))
+})
+
+test_that("MAGPlot's rule set keeps its origin, and a copy with a row changed doesn't (D16.15)", {
+  rules <- magp_rules()
+  expect_equal(attr(validate_rule_set(rules)$settings, "source_file"), "rules_settings.csv")
+  changed <- rules
+  changed$settings <- data.table::copy(rules$settings)
+  data.table::set(changed$settings, i = 1L, j = "value", value = "fr")
+  expect_null(attr(validate_rule_set(changed)$settings, "source_file"))
+})
+
+test_that("rule_row_values takes each value from the most specific row giving one (D16.6)", {
+  rows <- validate_rule_set(list(rules = data.frame(
+    rule_id = c("r", "r", "r", "r", "s"),
+    table_name = c("*", "t", "*", "t", "*"),
+    attribute_name = c("*", "*", "a", "a", "*"),
+    severity = c("error", NA, "warning", NA, "warning"),
+    class = c(NA, "source", NA, NA, NA),
+    enabled = c(TRUE, TRUE, TRUE, FALSE, TRUE)
+  )))$rules
+  found <- rule_row_values(
+    rows, c("r", "r", "r", "r", "s", "x"),
+    c("t", "t", "u", "u", "t", "t"), c("a", "b", "a", "b", "a", "a")
+  )
+  # t.a: its own row gives enabled; t.* gives class; *.a gives severity (above *.*).
+  expect_equal(found$severity, c("warning", "error", "warning", "error", "warning", NA))
+  expect_equal(found$class, c("source", "source", NA, NA, NA, NA))
+  expect_equal(found$enabled, c(FALSE, TRUE, TRUE, TRUE, TRUE, NA))
+  expect_equal(nrow(rule_row_values(NULL, "r", "t", "a")), 1L)
+  expect_true(is.na(rule_row_values(NULL, "r", "t", "a")$enabled))
+  expect_equal(nrow(rule_row_values(rows, character(), character(), character())), 0L)
 })

@@ -106,7 +106,7 @@ rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
         value <- if (setting == "severity") {
           entries$severity[match(id, entries$rule_id)]
         } else {
-          paste(as.character(resolve_setting(setting, settings, rules)$value), collapse = "; ")
+          setting_text(resolve_setting(setting, settings, rules)$value)
         }
         parts <- c(parts, list(label(paste0(input, "=", value))))
       }

@@ -107,8 +107,9 @@ package_git_commit <- function() {
 
 #' The settings table: each declared setting's value and tier, then the severity entries
 #'
-#' One row per declared setting but severity, its value as text ("; "-joined) and the tier
-#' it came from (resolve_setting()); then one row per severity entry given as an argument
+#' One row per declared setting but severity, its value as text (setting_text(): "; "-joined,
+#' "name=value" for a named value, NA for none) and the tier it came from (resolve_setting());
+#' then one row per severity entry given as an argument
 #' or an option, `setting` "severity:<rule_id>" (D15.2). The rule set's severities stay in
 #' the rule set, which the rules table identifies. `rules` is a rule set, checked here.
 #' @noRd
@@ -119,8 +120,7 @@ settings_metadata <- function(settings = list(), rules = NULL) {
   rows <- lapply(declared, function(setting) {
     resolved <- resolve_setting(setting, settings, rules)
     data.table(
-      setting = setting, value = paste(as.character(resolved$value), collapse = "; "),
-      tier = resolved$tier
+      setting = setting, value = setting_text(resolved$value), tier = resolved$tier
     )
   })
   entries <- severity_entries(settings)

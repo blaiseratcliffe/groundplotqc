@@ -1,16 +1,48 @@
-# Settings (plan 3.5, 8.5; D3.16, D9.21, D14.6, D14.9): each resolves argument > rule set >
-# option (groundplotqc.<setting>) > built-in, and the tier it came from is kept for the run
-# metadata (9.5). Only the settings something reads are declared: lang and severity from
-# M3a, each later milestone adding its own with the feature that reads it (D14.9).
+# Settings (plan 3.5, 8.5; D3.16, D9.21, D14.6, D14.9, D16.11, D16.12): each resolves
+# argument > rule set > option (groundplotqc.<setting>) > built-in, and the tier it came from
+# is kept for the run metadata (9.5). Only the settings something reads are declared: lang
+# and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
+# unknown_codes from M4a, read by the conformance checks. A rule-set row gives a setting as
+# text: a whole number for type "integer", several values "; "-joined, a named value as
+# "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
-#' value and what the test wants
+#' value, what the test wants, and how a rule-set row's text becomes a value
 #'
 #' `severity` is a named character vector by rule ID; its rule-set tier is the rules rows'
 #' `severity` column, not a settings row (3.5, D9.21), so it has no row type. Each test checks
-#' for invalid UTF-8 before it reads the text.
+#' for invalid UTF-8 before it reads the text. `from_text` reads a row's value (NA for a
+#' blank cell): a whole number for an integer setting (anything else NA, which the test
+#' refuses), "; "-joined parts for several values, "name=value" parts for named ones (D16.12).
+#' The code settings refuse, in every tier, a code that is empty, padded with spaces or holds
+#' ";" ("=" too for unknown codes), and an unknown code's name empty, padded or holding ";"
+#' or "=", so a typo in a rule-set row stops rather than giving a code no value matches; a
+#' row ending in "; " has an empty last code (D16.21, D16.23, D16.24).
 #' @noRd
 setting_definitions <- function() {
+  text_ok <- function(x) {
+    is.character(x) && is.null(dim(x)) && !anyNA(x) && all(validUTF8(x))
+  }
+  # Valid UTF-8 only; `marks` a pattern no element may hold, NULL for none.
+  plain <- function(x, marks = NULL) {
+    padded <- !nzchar(x) | x != trimws(x)
+    !any(padded) && (is.null(marks) || !any(grepl(marks, x)))
+  }
+  whole <- function(x, lowest) {
+    is.numeric(x) && is.null(dim(x)) && length(x) == 1L && !is.na(x) && is.finite(x) &&
+      x == trunc(x) && x >= lowest && x <= .Machine$integer.max
+  }
+  parts <- function(text) {
+    if (is.na(text)) {
+      return(character())
+    }
+    pieces <- strsplit(text, "; ", fixed = TRUE)[[1L]]
+    # strsplit() drops a trailing empty part, which is refused as any empty code is (D16.23).
+    if (endsWith(text, "; ")) c(pieces, "") else pieces
+  }
+  as_whole <- function(text) {
+    if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
+  }
   list(
     lang = list(
       type = "character", built_in = "en",
@@ -18,7 +50,8 @@ setting_definitions <- function() {
         is.character(x) && is.null(dim(x)) && length(x) == 1L && !is.na(x) && validUTF8(x) &&
           grepl(lang_pattern, x)
       },
-      wants = "one language code of two or three lower-case letters, such as \"en\""
+      wants = "one language code of two or three lower-case letters, such as \"en\"",
+      from_text = function(text) text
     ),
     severity = list(
       type = NA_character_, built_in = structure(character(), names = character()),
@@ -27,7 +60,57 @@ setting_definitions <- function() {
           !anyNA(names(x)) && all(validUTF8(x)) && all(validUTF8(names(x))) &&
           all(nzchar(trimws(names(x)))) && !anyDuplicated(names(x))
       },
-      wants = "a character vector of severities named by rule ID, each name once"
+      wants = "a character vector of severities named by rule ID, each name once",
+      from_text = NULL
+    ),
+    example_cap = list(
+      type = "integer", built_in = 5L, valid = function(x) whole(x, 0),
+      wants = "one whole number, 0 or more", from_text = as_whole
+    ),
+    column_level_min_n = list(
+      type = "integer", built_in = 10L, valid = function(x) whole(x, 1),
+      wants = "one whole number, 1 or more", from_text = as_whole
+    ),
+    raw_na_policy = list(
+      type = "character", built_in = "when_sentinels",
+      valid = function(x) {
+        is.character(x) && is.null(dim(x)) && length(x) == 1L && !is.na(x) &&
+          x %chin% c("when_sentinels", "always", "never")
+      },
+      wants = "one of \"when_sentinels\", \"always\" or \"never\"",
+      from_text = function(text) text
+    ),
+    rogue_codes = list(
+      type = "character", built_in = c("-999", "UNK", "NA", "N/A"),
+      valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+      wants = paste(
+        "a character vector of codes, none of them NA, empty, padded with spaces",
+        "or holding \";\""
+      ),
+      from_text = parts
+    ),
+    unknown_codes = list(
+      type = "character", built_in = structure(character(), names = character()),
+      valid = function(x) {
+        text_ok(x) && plain(x, "[;=]") && (length(x) == 0L || (
+          !is.null(names(x)) && !anyNA(names(x)) && all(validUTF8(names(x))) &&
+            plain(names(x), "[;=]")
+        ))
+      },
+      wants = paste(
+        "a character vector of codes named by attribute, such as c(species = \"UNKN.SPP\"),",
+        "no code NA, empty, padded with spaces or holding \";\" or \"=\",",
+        "and no name empty, padded with spaces or holding \";\" or \"=\""
+      ),
+      from_text = function(text) {
+        pieces <- parts(text)
+        named <- grepl("=", pieces, fixed = TRUE)
+        # fifelse() keeps a row with no part character, where ifelse() gives logical(0).
+        structure(
+          fifelse(named, sub("^[^=]*=", "", pieces), NA_character_),
+          names = fifelse(named, sub("=.*$", "", pieces), NA_character_)
+        )
+      }
     )
   )
 }
@@ -94,8 +177,8 @@ check_settings <- function(settings = list(), rules = NULL) {
 #' One setting's value and the tier it came from: argument, rule set, option or built-in
 #'
 #' The value is checked against its definition, a bad one a caller error naming the setting
-#' and its tier. The rule-set tier is a settings row, its value returned as the text it
-#' holds, as `character` is the only type so far. Call check_settings() first.
+#' and its tier. The rule-set tier is a settings row, its text read by the definition's
+#' `from_text` (D16.12). Call check_settings() first.
 #'
 #' The severity setting isn't resolved here: it is one value per rule, with a tier for each,
 #' so asking for it is a developer error pointing to severity_entries() (D14.29).
@@ -119,7 +202,7 @@ resolve_setting <- function(name, settings = list(), rules = NULL) {
     value <- settings[[name]]
     tier <- "argument"
   } else if (length(row) == 1L) {
-    value <- rows$value[[row]]
+    value <- definition$from_text(rows$value[[row]])
     tier <- "rule set"
   } else if (!is.null(option)) {
     value <- option
@@ -163,4 +246,20 @@ severity_entries <- function(settings = list()) {
   rbindlist(c(
     list(data.table(rule_id = character(), severity = character(), tier = character())), parts
   ))
+}
+
+#' A setting's value as one text, as settings.csv and a rule's fingerprint write it
+#'
+#' The elements "; "-joined, each "name=value" when the value has names (D16.12, R13); NA when
+#' the value has no element.
+#' @noRd
+setting_text <- function(value) {
+  if (length(value) == 0L) {
+    return(NA_character_)
+  }
+  text <- as.character(value)
+  if (!is.null(names(value))) {
+    text <- paste0(names(value), "=", text)
+  }
+  paste(text, collapse = "; ")
 }
