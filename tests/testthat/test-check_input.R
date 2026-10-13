@@ -20,6 +20,42 @@ test_that("validate_tables takes a named list of data.frames and refuses anythin
   expect_error(validate_tables(list(t = listed)), "don't hold one value per row: y")
 })
 
+test_that("validate_tables refuses a table holding text marked as bytes (D16.38)", {
+  marked <- "Hé"
+  Encoding(marked) <- "bytes"
+  refused <- function(table, columns) {
+    paste0(
+      "Table ", table, " has columns holding text marked as bytes: ", columns,
+      "; read the table with its encoding, such as UTF-8 or latin1."
+    )
+  }
+  spec <- fx_fish_spec()
+  # A PK value: the run stops before any other check reads it.
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_id[[2L]] <- marked
+  fish$hauls <- hauls
+  expect_error(validate_tables(fish), refused("hauls", "haul_id"), fixed = TRUE)
+  expect_error(gpq_check_conformance(fish, spec), refused("hauls", "haul_id"), fixed = TRUE)
+  # A plain text column, and a factor's levels, each such column named in the table's order.
+  hauls$gear <- structure(c(1L, 2L, 1L, 1L), levels = c("GN", marked), class = "factor")
+  fish$hauls <- hauls
+  expect_error(validate_tables(fish), refused("hauls", "haul_id, gear"), fixed = TRUE)
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  stations$water_body[[1L]] <- marked
+  fish$stations <- stations
+  expect_error(
+    gpq_check_conformance(fish, spec, layers = 1), refused("stations", "water_body"),
+    fixed = TRUE
+  )
+  # Text marked latin1 or UTF-8 runs.
+  stations$water_body <- c(iconv("Zürich", "UTF-8", "latin1"), "Málaga")
+  fish$stations <- stations
+  expect_invisible(validate_tables(fish))
+  expect_no_error(gpq_check_conformance(fish, spec, layers = 1))
+})
+
 test_that("a type's family and a column's storage are named as 3.5 and the type map say", {
   expect_equal(
     type_family(c("integer", "double", "character", "character"), c(NA, NA, NA, "%Y-%m-%d")),
@@ -236,6 +272,8 @@ test_that("a latin1-marked group value is converted to UTF-8 and written so (D16
 })
 
 test_that("a group value that isn't valid UTF-8 is a caller error naming its column and row", {
+  # Outside a UTF-8 locale the unmarked bytes below are native text, which converts (D16.36).
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
   invalid <- rawToChar(as.raw(c(0x6C, 0x61, 0x97)))
   expect_false(validUTF8(invalid))
   spec <- fx_fish_spec()
@@ -270,14 +308,17 @@ test_that("a group value that isn't valid UTF-8 is a caller error naming its col
   fish$hauls <- hauls
   expect_error(conformance_input(fish, spec, group_cols = "gear"), in_gear(3L), fixed = TRUE)
   # Text marked as bytes has no encoding to convert from, even where its bytes are valid
-  # UTF-8 (D16.36).
+  # UTF-8 (D16.36). The run refuses it before (D16.38), so this is the second line.
   marked <- "Gé"
   Encoding(marked) <- "bytes"
   expect_true(validUTF8(marked))
   hauls$gear <- c("GN", "GN", "GN", marked)
   fish$hauls <- hauls
   expect_error(conformance_input(fish, spec, group_cols = "gear"), in_gear(4L), fixed = TRUE)
-  expect_error(gpq_check_conformance(fish, spec, group_cols = "gear"), in_gear(4L), fixed = TRUE)
+  expect_error(
+    gpq_check_conformance(fish, spec, group_cols = "gear"), "holding text marked as bytes: gear",
+    fixed = TRUE
+  )
 })
 
 test_that("a table name that isn't valid UTF-8 is checked, not a stop", {

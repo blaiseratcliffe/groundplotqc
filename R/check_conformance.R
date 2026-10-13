@@ -42,8 +42,9 @@
 #'
 #' A record's group values are read from its own table, or from the nearest table that holds
 #' the column, through the foreign keys; a record that can't reach one, or whose keys on the
-#' way don't match, has "*" there. A group value that isn't valid UTF-8 stops the run, naming
-#' the column, the table it is read from and its first such row.
+#' way don't match, has "*" there. A group value marked latin1 is converted to UTF-8 and runs;
+#' one whose bytes aren't valid UTF-8, or that is marked as bytes, stops the run, naming the
+#' column, the table it is read from and its first such row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
@@ -587,7 +588,8 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   value <- outcome$value[kept]
   # A value marked as bytes keeps its bytes but loses the mark, which data.table's grouping
   # and the results' writer stop on; it is then held as unmarked text, as text that isn't
-  # valid UTF-8 is (D16.36).
+  # valid UTF-8 is (D16.36). validate_tables() refuses such text first (D16.38): this is a
+  # second line.
   marked <- which(Encoding(value) == "bytes")
   if (length(marked) > 0L) {
     unmarked <- value[marked]

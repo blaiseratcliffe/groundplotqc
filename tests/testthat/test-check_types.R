@@ -429,10 +429,17 @@ test_that("latin1-marked text is read as UTF-8; text marked as bytes is unreadab
   count[[3L]] <- marked
   catches$fish_count <- count
   fish$catches <- catches
-  expect_silent(results <- gpq_check_conformance(fish, spec, layers = 1))
+  # The run refuses text marked as bytes (D16.38), so the rules and the recording, its second
+  # line, are run a step inside it.
+  input <- conformance_input(fish, spec)
+  context <- conformance_context(spec, NULL, list(), 1L)
+  expect_silent(found <- check_types(input, context))
+  state <- new_run_state()
+  record_layer(found, 1L, input, context, state, "20261215T140312Z_3fa9c1")
+  issues <- data.table::rbindlist(state$issues, use.names = TRUE)
   # Each value keeps its bytes, without the mark the results' writer stops on.
-  expect_no_error(gpq_write_results(results, withr::local_tempdir()))
-  issues <- results$issues
+  expect_false("bytes" %in% Encoding(issues$value))
+  expect_no_error(compiled_bytes(issues))
   open <- issues[issues$status == "open"]
   # The latin1 date reads back as written; the one marked as bytes is never read.
   bad <- open[open$rule_id == "date_unparseable"]
@@ -444,6 +451,19 @@ test_that("latin1-marked text is read as UTF-8; text marked as bytes is unreadab
     paste(loss$column_name, loss$row_number), c("fish_count 3", "weight 1", "weight 2")
   )
   expect_identical(lapply(loss$value, charToRaw), lapply(c(marked, weight[1:2]), charToRaw))
+  # Without it, the run reads the latin1 date back and loses the latin1 number, and its
+  # results are written.
+  hauls$haul_date[[2L]] <- written
+  fish$hauls <- hauls
+  catches$weight[[2L]] <- "8"
+  catches$fish_count[[3L]] <- "3"
+  fish$catches <- catches
+  expect_silent(results <- gpq_check_conformance(fish, spec, layers = 1))
+  expect_no_error(gpq_write_results(results, withr::local_tempdir()))
+  open <- results$issues[results$issues$status == "open"]
+  expect_equal(open$row_number[open$rule_id == "date_unparseable"], 4L)
+  loss <- open[open$rule_id == "coercion_loss"]
+  expect_identical(charToRaw(loss$value), charToRaw(weight[[1L]]))
 })
 
 test_that("a Layer 1 rule failing every record of a column collapses (6.3)", {

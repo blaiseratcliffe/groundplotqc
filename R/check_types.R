@@ -7,7 +7,8 @@
 # leaves alone too. Text marked latin1 is read as UTF-8 (D16.36). Text marked as bytes, text
 # that isn't valid UTF-8 even so, and a date longer than its format can write are read by
 # nothing that stops or warns on them: each is lost or unparseable as given (D16.33, D16.34,
-# D16.36).
+# D16.36). A run refuses a table holding text marked as bytes before Layer 1 (D16.38), so
+# for such text this is a second line.
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -114,9 +115,9 @@ check_types <- function(input, context) {
         # locale: it can't read back as written. Counting bytes is safe though strptime(),
         # which stops on more than 1000 characters, counts characters: every date the format
         # writes is within the bound, and a value within it has no more characters than the
-        # longest date. The format is written for every month with every weekday, before noon
-        # and after, on two-digit days and hours, so names, AM and PM are at their longest
-        # (D16.34).
+        # bound counts bytes, as no character is shorter than a byte. The format is written
+        # for every month with every weekday, before noon and after, on two-digit days and
+        # hours, so names, AM and PM are at their longest (D16.34).
         days <- rep(seq(as.Date("2021-01-22"), by = "month", length.out = 12L), each = 7L) + 0:6
         moments <- as.POSIXct(rep(days, 2L)) + rep(c(43199, 86399), each = length(days))
         written <- format(moments, row$date_format, tz = "UTC")

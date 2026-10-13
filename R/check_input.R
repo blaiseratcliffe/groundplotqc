@@ -1,13 +1,13 @@
 # The tables a conformance run reads, matched to its specification (plan 6.1, 6.2, 16.2;
-# D7.5, D9.24, D16.9, D16.13, D16.14, D16.33, D16.35, D16.36). Each spec table is matched to
-# the input table of its name, and each dictionary attribute to its column: exactly, or
-# failing that by letter case and spaces. A column is coerced to its expected class only when
-# a check asks, one column at a time. Each record finds its group values and the problem
-# unit's key through the foreign keys. The caller's tables are read, never changed or copied
-# whole.
+# D7.5, D9.24, D16.9, D16.13, D16.14, D16.33, D16.35, D16.36, D16.38). Each spec table is
+# matched to the input table of its name, and each dictionary attribute to its column:
+# exactly, or failing that by letter case and spaces. A column is coerced to its expected
+# class only when a check asks, one column at a time. Each record finds its group values and
+# the problem unit's key through the foreign keys. The caller's tables are read, never
+# changed or copied whole; a table holding text marked as bytes is refused.
 
 #' The caller's tables checked: a list of data.frames, each named once by its table, each
-#' column named once and holding one value per row
+#' column named once and holding one value per row, and no text marked as bytes (D16.38)
 #'
 #' Caller errors, in English (D12.37). Returns `tables`, invisibly.
 #' @noRd
@@ -45,6 +45,22 @@ validate_tables <- function(tables) {
       stop(sprintf(
         "Table %s has columns that don't hold one value per row: %s.", shown,
         paste(mark_invalid_utf8(columns[listed]), collapse = ", ")
+      ), call. = FALSE)
+    }
+    # Text marked as bytes has no encoding to read it in, and data.table stops on it in a
+    # sort, leaving the session's later sorts broken (D16.38). Each text column's marks are
+    # read once, a factor's from its levels; no text is copied or converted (16.2).
+    marked <- vapply(tables[[name]], function(x) {
+      text <- if (is.factor(x)) levels(x) else if (is.character(x)) x else character()
+      any(Encoding(text) == "bytes")
+    }, logical(1))
+    if (any(marked)) {
+      stop(sprintf(
+        paste0(
+          "Table %s has columns holding text marked as bytes: %s; read the table with its ",
+          "encoding, such as UTF-8 or latin1."
+        ),
+        shown, paste(mark_invalid_utf8(columns[marked]), collapse = ", ")
       ), call. = FALSE)
     }
   }
@@ -110,7 +126,8 @@ stored_text <- function(x) {
 #' written in the type's date format; text is never lost. Text that isn't valid UTF-8 is read
 #' as UTF-8 where it converts to it (marked latin1, or native in a locale that isn't UTF-8);
 #' text marked as bytes, or that isn't valid UTF-8 even so, is no number, so it is lost
-#' without being read: as.numeric() stops on it in a UTF-8 locale (D16.33, D16.36).
+#' without being read: as.numeric() stops on it in a UTF-8 locale (D16.33, D16.36; a run
+#' refuses text marked as bytes before, D16.38).
 #' @noRd
 coerce_column <- function(x, r_class, date_format = NA_character_) {
   n <- length(x)
@@ -409,7 +426,8 @@ group_index <- function(input, table) {
     # becomes UTF-8, and valid UTF-8 that fread() leaves unmarked is marked so, which the order
     # below needs. Text marked as bytes has no encoding to convert from. A value marked so, or
     # that isn't valid UTF-8 even so, stops the run: the caller is told the column, the table
-    # it is read from and its first such row (D16.35, D16.36).
+    # it is read from and its first such row (D16.35, D16.36). validate_tables() refuses text
+    # marked as bytes first (D16.38), so for it this is a second line.
     bytes <- Encoding(text) == "bytes"
     text[!bytes] <- enc2utf8(text[!bytes])
     if (any(bytes) || !all(validUTF8(text))) {
