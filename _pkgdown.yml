@@ -11,6 +11,9 @@ reference:
       - gpq_read_spec
       - gpq_sentinels
       - gpq_type_map
+  - title: "Generic engine: checks and results"
+    contents:
+      - gpq_check_conformance
   - title: MAGPlot 2.0 layer
     contents:
       - magp_example

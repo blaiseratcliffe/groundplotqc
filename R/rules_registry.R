@@ -15,6 +15,8 @@
 #' rule that proposes nothing); `message_id` (its text_id in the report text); `rule_version`
 #' (from 1, raised by the add-rule skill whenever the rule's check behaves differently, so its
 #' rule fingerprint changes, D15.6). Layer 6 and 7 rules add their reason codes at M12 (D9.33).
+#' Conformance data rules have check type `conformance` (8.2) and the strategy 6.1's Fix
+#' column gives (`sentinel_fix`, `trim_whitespace`, else `none`), proposed from M11.
 #' @noRd
 rule_registry <- function() {
   preflight <- function(rule_id, severity, inputs) {
@@ -22,6 +24,13 @@ rule_registry <- function() {
       rule_id = rule_id, stage = "conformance", layer = NA_integer_, check_type = "preflight",
       default_severity = severity, default_class = "none", inputs = inputs,
       strategy = "none", message_id = rule_id, rule_version = 1L
+    )
+  }
+  conformance <- function(rule_id, layer, severity, class, inputs, strategy = "none") {
+    data.table(
+      rule_id = rule_id, stage = "conformance", layer = layer, check_type = "conformance",
+      default_severity = severity, default_class = class, inputs = inputs,
+      strategy = strategy, message_id = rule_id, rule_version = 1L
     )
   }
   lists <- "code_list_map; code_lists; non_code_sheets"
@@ -56,7 +65,13 @@ rule_registry <- function() {
     # ---- task 6 ----
     preflight("text_id_missing", "error", "text"),
     preflight("text_id_fallback", "warning", "text; settings:lang"),
-    preflight("text_slot_unknown", "error", "text")
+    preflight("text_slot_unknown", "error", "text"),
+    # ---- M4a: Layer 0, structure (6.1; D2.34, D8.11, D16.8) ----
+    conformance("table_missing", 0L, "error", "harmonization", "attributes"),
+    conformance("table_unexpected", 0L, "warning", "harmonization", "attributes"),
+    conformance("column_missing", 0L, "error", "harmonization", "attributes"),
+    conformance("column_unexpected", 0L, "warning", "harmonization", "attributes"),
+    conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes")
   ))
 }
 

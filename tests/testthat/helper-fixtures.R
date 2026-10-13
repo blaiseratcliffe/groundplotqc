@@ -226,20 +226,104 @@ fx_require_fixture <- function(x) {
   invisible(x)
 }
 
-# The answer sheet (18.3): one row per defect block, each a single edit to the clean base:
-# the record it edits, the edit, the rule that must catch it, the cascade rules allowed
-# ("; "-joined) and the witness value the rule must report. Empty until M4.
-fx_answer_sheet <- function() {
+# One answer-sheet row: the defect, where it is (record "*" for a table or column), the edit,
+# the rule that must catch it, the other rules allowed open issues with it ("; "-joined) and
+# the witness value the rule must report (NA where its issue has none).
+fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_id,
+                      cascade_rule_ids = NA_character_, witness = NA_character_) {
   data.table::data.table(
-    defect_id = character(), table_name = character(), column_name = character(),
-    record_pk = character(), edit = character(), rule_id = character(),
-    cascade_rule_ids = character(), witness = character()
+    defect_id = defect_id, table_name = table_name, column_name = column_name,
+    record_pk = record_pk, edit = edit, rule_id = rule_id,
+    cascade_rule_ids = cascade_rule_ids, witness = witness
   )
 }
 
+# The answer sheet (18.3): one row per defect block, each a single edit to MAGPlot's clean
+# base (fx_magp_clean()), caught by gpq_check_conformance() with magp_rules() (fx_caught()).
+fx_answer_sheet <- function() {
+  data.table::rbindlist(list(
+    fx_defect(character(), character(), character(), character(), character(), character()),
+    # ---- Layer 0 (task 3) ----
+    fx_defect(
+      "table_missing", "magp_tree_age", "*", "*", "magp_tree_age left out", "table_missing"
+    ),
+    fx_defect(
+      "table_unexpected", "magp_notes", "*", "*", "a table magp_notes added", "table_unexpected"
+    ),
+    fx_defect(
+      "column_missing", "magp_trees", "comments", "*", "magp_trees$comments removed",
+      "column_missing"
+    ),
+    fx_defect(
+      "column_unexpected", "magp_plots", "colour", "*", "a column colour added to magp_plots",
+      "column_unexpected"
+    ),
+    fx_defect(
+      "column_name_mismatch", "magp_tree_meas", "dbh", "*", "magp_tree_meas$dbh renamed DBH",
+      "column_name_mismatch",
+      witness = "DBH"
+    )
+    # ---- Layer 1 (task 4) ----
+    # ---- Layer 2 (task 5) ----
+  ))
+}
+
+# A defect block that sets one cell of a copy of the base: `value` at `row` of `column`.
+fx_set_cell <- function(table, column, row, value) {
+  function(tables) {
+    tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+    data.table::set(tables[[table]], i = row, j = column, value = value)
+    tables
+  }
+}
+
+# A defect block that replaces one column of a copy of the base with `make(column)`.
+fx_set_column <- function(table, column, make) {
+  function(tables) {
+    tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+    data.table::set(tables[[table]], j = column, value = make(tables[[table]][[column]]))
+    tables
+  }
+}
+
 # The defect blocks, named by defect ID: each a function of the clean base's tables that
-# returns them with its one edit made on a copy (data.table::copy()), so no block changes
-# the tables another block or test reads. Empty until M4.
+# returns them with its one edit made on copies (data.table::copy()), so no block changes
+# the tables another block or test reads.
 fx_defect_blocks <- function() {
-  structure(list(), names = character())
+  list(
+    # ---- Layer 0 (task 3) ----
+    table_missing = function(tables) {
+      fx_mark_fixture(lapply(tables[names(tables) != "magp_tree_age"], data.table::copy))
+    },
+    table_unexpected = function(tables) {
+      tables <- lapply(tables, data.table::copy)
+      tables$magp_notes <- data.table::data.table(note = "t1")
+      fx_mark_fixture(tables)
+    },
+    column_missing = fx_set_column("magp_trees", "comments", function(x) NULL),
+    column_unexpected = fx_set_column("magp_plots", "colour", function(x) "red"),
+    column_name_mismatch = function(tables) {
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      data.table::setnames(tables$magp_tree_meas, "dbh", "DBH")
+      tables
+    }
+    # ---- Layer 1 (task 4) ----
+    # ---- Layer 2 (task 5) ----
+  )
+}
+
+# The open issues gpq_check_conformance() raises on fixture tables, Layers 0 to 2, with
+# MAGPlot's spec, rule set and group columns; pre-flight's warning about the spec is muffled.
+fx_caught <- function(tables) {
+  fx_require_fixture(tables)
+  results <- withCallingHandlers(
+    gpq_check_conformance(
+      tables, magp_spec(),
+      group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  issues <- results$issues
+  issues[issues$status == "open"]
 }

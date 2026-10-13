@@ -167,6 +167,7 @@ test_that("values that read the same are one group: a blank, NA and a broken pat
   input <- conformance_input(fish, fx_fish_spec(), group_cols = "water_body")
   expect_equal(input$groups$stations$values$water_body, "*")
   expect_equal(input$groups$catches$values$water_body, "*")
+  expect_no_error(gpq_check_conformance(fish, fx_fish_spec(), group_cols = "water_body"))
 })
 
 test_that("a table name that isn't valid UTF-8 is checked, not a stop", {

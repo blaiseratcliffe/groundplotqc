@@ -137,3 +137,8 @@
 "preflight_rows_column_n_findings","en","Findings in this check"
 "preflight_meta_rule_set","en","Rule set"
 "preflight_meta_rule_set_value","en","{rule_set_name}, version {version}, for the {spec_version} specification files"
+"table_missing","en","A table the data dictionary defines is missing from the tables checked."
+"table_unexpected","en","The tables checked include one the data dictionary doesn't define."
+"column_missing","en","A column the data dictionary defines is missing from its table."
+"column_unexpected","en","A table has a column the data dictionary doesn't define."
+"column_name_mismatch","en","A column's name differs from the data dictionary's only in letter case or spaces."

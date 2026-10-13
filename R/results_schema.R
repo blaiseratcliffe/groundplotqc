@@ -11,7 +11,8 @@
 #' Results carry the group columns after `column_name`; issues carry the group columns,
 #' then the problem unit's key column unless it is one of them, after
 #' `provider_key_status` (9.2, 9.3). Each caller column is character. A caller column that
-#' repeats, is blank, or has the name of a fixed column is a caller error.
+#' repeats, is blank, or has the name of a fixed column is a caller error, and so is a group
+#' column whose name holds "; " (D15.39, D15.40).
 #' @noRd
 results_schema <- function(group_cols = character(), key_col = NULL) {
   chr <- "character"
@@ -73,8 +74,8 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
   joined <- grep("; ", group_cols, fixed = TRUE, value = TRUE)
   if (length(joined) > 0L) {
     stop(
-      "The caller's columns ", paste(joined, collapse = ", "), " have \"; \" in their names, ",
-      "which the run's `group_cols` joins names with.",
+      "The caller's columns ", paste0("\"", joined, "\"", collapse = ", "),
+      " have \"; \" in their names, which the run's `group_cols` joins names with.",
       call. = FALSE
     )
   }
@@ -272,14 +273,22 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
 
 #' The results table's rules between columns (9.2; D7.3)
 #'
-#' Counts never negative; a pass has no failures, a fail some; a not_run row has a
-#' not-run reason, no records checked and no failures, and only it has a reason; one row
-#' per rule, table, column, group and reason code.
+#' Counts never negative; no more failures than records checked, and no more easy fixes or
+#' distinct failing values than failures (m24, D16.8: a table or column rule counts tables
+#' or columns, so the bounds hold for it too); a pass has no failures, a fail some; a
+#' not_run row has a not-run reason, no records checked and no failures, and only it has a
+#' reason; one row per rule, table, column, group and reason code.
 #' @noRd
 check_results_rows <- function(x, caller, fail) {
   counts <- c("n_checked", "n_fail", "n_not_evaluated", "n_distinct_fail_values", "n_easy_fix")
   if (any(vapply(counts, function(column) any(x[[column]] < 0L), logical(1)))) {
     fail("has negative counts")
+  }
+  if (any(x$n_fail > x$n_checked)) {
+    fail("counts more failing records than records checked")
+  }
+  if (any(x$n_easy_fix > x$n_fail | x$n_distinct_fail_values > x$n_fail)) {
+    fail("counts more easy fixes or distinct failing values than failing records")
   }
   not_run <- x$status == "not_run"
   if (any(not_run != !is.na(x$not_run_reason))) {
@@ -301,7 +310,8 @@ check_results_rows <- function(x, caller, fail) {
 #'
 #' Issue IDs from 1, each once; a record-level issue has its row number and whether it is
 #' positional, and only a positional one may lack its PK; a column-level issue has
-#' `record_pk` "*", a count of records and no row number; a not_evaluated issue, and only
+#' `record_pk` "*", a count of records (0 for a table rule's missing table, D16.8) and no row
+#' number; a not_evaluated issue, and only
 #' it, names its root, an issue of the same table.
 #' @noRd
 check_issues_rows <- function(x, fail) {
@@ -316,7 +326,7 @@ check_issues_rows <- function(x, fail) {
     fail("has record-level issues without a PK that aren't marked positional")
   }
   column <- !record
-  counted <- !is.na(x$n_records) & x$n_records >= 1L
+  counted <- !is.na(x$n_records) & x$n_records >= 0L
   if (any(column & (!x$record_pk %chin% "*" | !counted | !is.na(x$row_number)))) {
     fail("has column-level issues without record_pk \"*\" and a count, or with a row number")
   }

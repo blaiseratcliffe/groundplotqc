@@ -254,3 +254,26 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
     data.table::is.data.table(table) && isTRUE(attr(table, "gpq_fixture"))
   }, logical(1))))
 })
+
+test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
+  expect_equal(nrow(fx_caught(fx_magp_clean())), 0L)
+})
+
+test_that("planted vs caught: each block caught by its rule with its witness, and nothing else", {
+  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  testthat::skip_on_cran()
+  base <- fx_magp_clean()
+  sheet <- fx_answer_sheet()
+  blocks <- fx_defect_blocks()
+  for (i in seq_len(nrow(sheet))) {
+    row <- sheet[i]
+    caught <- fx_caught(blocks[[row$defect_id]](base))
+    is_hit <- caught$rule_id == row$rule_id & caught$table_name == row$table_name &
+      caught$column_name == row$column_name & caught$record_pk %in% row$record_pk
+    hit <- caught[is_hit]
+    expect_equal(nrow(hit), 1L, info = row$defect_id)
+    expect_identical(hit$value, row$witness, info = row$defect_id)
+    allowed <- c(row$rule_id, split_joined(row$cascade_rule_ids))
+    expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
+  }
+})

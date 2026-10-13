@@ -411,3 +411,14 @@ read_csv_text <- function(path) {
     blank_header = blank_header
   )
 }
+
+#' Which groups of records become one column-level issue (6.3; D4.1, D16.10)
+#'
+#' A rule's failures in a group collapse when every record it checked there failed and at
+#' least `min_n` were checked; masked records sharing one root collapse when there are at
+#' least `min_n` (pass their count as both `n_records` and `n_checked`). Vectorised over
+#' groups.
+#' @noRd
+collapse_column_level <- function(n_records, n_checked, min_n) {
+  n_records > 0L & n_records == n_checked & n_checked >= min_n
+}
