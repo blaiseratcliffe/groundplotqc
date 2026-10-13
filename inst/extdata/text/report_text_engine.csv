@@ -142,3 +142,8 @@
 "column_missing","en","A column the data dictionary defines is missing from its table."
 "column_unexpected","en","A table has a column the data dictionary doesn't define."
 "column_name_mismatch","en","A column's name differs from the data dictionary's only in letter case or spaces."
+"class_mismatch","en","A column is stored as another type than the one the data dictionary gives it."
+"coercion_loss","en","A value can't be read as the type the data dictionary gives its column."
+"date_unparseable","en","A date isn't a real date written in its column's date format."
+"integer_stored_as_double","en","A number column holds decimal numbers where the data dictionary says whole numbers, or whole numbers where it says decimals."
+"value_not_finite","en","A number is infinite or not a number (Inf or NaN)."

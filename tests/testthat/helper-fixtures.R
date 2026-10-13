@@ -262,8 +262,33 @@ fx_answer_sheet <- function() {
       "column_name_mismatch", "magp_tree_meas", "dbh", "*", "magp_tree_meas$dbh renamed DBH",
       "column_name_mismatch",
       witness = "DBH"
-    )
+    ),
     # ---- Layer 1 (task 4) ----
+    fx_defect(
+      "class_mismatch", "magp_tree_meas", "height", "*", "magp_tree_meas$height stored as text",
+      "class_mismatch",
+      witness = "character"
+    ),
+    fx_defect(
+      "coercion_loss", "magp_tree_meas", "height", "magp_tree_meas_1",
+      "magp_tree_meas$height stored as text, row 1 \"tall\"", "coercion_loss",
+      cascade_rule_ids = "class_mismatch", witness = "tall"
+    ),
+    fx_defect(
+      "date_unparseable", "magp_site_visits", "meas_date", "magp_site_visits_1",
+      "magp_site_visits$meas_date row 1 \"2020-02-30\"", "date_unparseable",
+      witness = "2020-02-30"
+    ),
+    fx_defect(
+      "integer_stored_as_double", "magp_tree_meas", "visit_num", "*",
+      "magp_tree_meas$visit_num stored as double", "integer_stored_as_double",
+      witness = "double"
+    ),
+    fx_defect(
+      "value_not_finite", "magp_tree_meas", "dbh", "magp_tree_meas_1",
+      "magp_tree_meas$dbh row 1 Inf", "value_not_finite",
+      witness = "Inf"
+    )
     # ---- Layer 2 (task 5) ----
   ))
 }
@@ -321,8 +346,17 @@ fx_defect_blocks <- function() {
       tables <- fx_mark_fixture(lapply(tables, data.table::copy))
       data.table::setnames(tables$magp_tree_meas, "dbh", "DBH")
       tables
-    }
+    },
     # ---- Layer 1 (task 4) ----
+    class_mismatch = fx_set_column("magp_tree_meas", "height", as.character),
+    coercion_loss = function(tables) {
+      tables <- fx_set_column("magp_tree_meas", "height", as.character)(tables)
+      data.table::set(tables$magp_tree_meas, i = 1L, j = "height", value = "tall")
+      tables
+    },
+    date_unparseable = fx_set_cell("magp_site_visits", "meas_date", 1L, "2020-02-30"),
+    integer_stored_as_double = fx_set_column("magp_tree_meas", "visit_num", as.double),
+    value_not_finite = fx_set_cell("magp_tree_meas", "dbh", 1L, Inf)
     # ---- Layer 2 (task 5) ----
   )
 }

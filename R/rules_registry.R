@@ -71,7 +71,19 @@ rule_registry <- function() {
     conformance("table_unexpected", 0L, "warning", "harmonization", "attributes"),
     conformance("column_missing", 0L, "error", "harmonization", "attributes"),
     conformance("column_unexpected", 0L, "warning", "harmonization", "attributes"),
-    conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes")
+    conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes"),
+    # ---- M4a: Layer 1, data types (6.1; D2.33, D8.8, D8.11, D16.8, D16.9) ----
+    conformance("class_mismatch", 1L, "error", "harmonization", "attributes; type_map"),
+    conformance(
+      "coercion_loss", 1L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+    ),
+    conformance(
+      "date_unparseable", 1L, "error", "depends",
+      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+    ),
+    conformance("integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map"),
+    conformance("value_not_finite", 1L, "error", "harmonization", "attributes; type_map")
   ))
 }
 
