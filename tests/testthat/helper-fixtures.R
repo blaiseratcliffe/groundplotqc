@@ -1,7 +1,7 @@
 # The clean base and the fixture scaffold (plan 18.3; D5.11, D8.21, D12.38, D15.10): clean
 # tables built in code from a spec (MAGPlot's from magp_spec(), the generic ones from the
 # fish toy spec), the fixture marker and the guard that refuses tables without it, and the
-# answer sheet with its defect blocks, empty until M4 registers the first data rules.
+# answer sheet with its defect blocks, one or more for each registered data rule.
 # data-raw/build_magp_example.R sources this file to build magp_example.
 
 # Clean tables for every table of `spec`, in the dictionary's order, each with its
