@@ -332,13 +332,19 @@ check_issues_rows <- function(x, fail) {
 }
 
 #' The corrections table's rules between columns (9.4)
+#'
+#' Correction IDs from 1, each once; support counts never negative, each checked even when
+#' the other is missing; `support_n` no more than `support_d` where both are given.
 #' @noRd
 check_corrections_rows <- function(x, fail) {
   if (any(x$correction_id < 1L) || anyDuplicated(x$correction_id)) {
     fail("has a correction ID below 1 or used twice")
   }
+  if (any(x$support_n < 0L | x$support_d < 0L, na.rm = TRUE)) {
+    fail("has negative support counts")
+  }
   both <- !is.na(x$support_n) & !is.na(x$support_d)
-  if (any(both & (x$support_n < 0L | x$support_n > x$support_d))) {
+  if (any(both & x$support_n > x$support_d)) {
     fail("has support counts out of order")
   }
   invisible(NULL)

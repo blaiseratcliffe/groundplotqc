@@ -223,7 +223,7 @@ test_that("issues: IDs once, record and column levels, positional PKs, roots (6.
   expect_error(check(1L, "table_name", "hauls"), "a root that isn't an issue of the same table")
 })
 
-test_that("corrections: IDs once and support counts in order (9.4)", {
+test_that("corrections: IDs once, support counts never negative and in order (9.4)", {
   local_results_registry()
   corrections <- fx_results()$corrections
   twice <- rbind(corrections, corrections)
@@ -234,6 +234,17 @@ test_that("corrections: IDs once and support counts in order (9.4)", {
     validate_schema(table, "corrections", fish_schema("corrections")),
     "support counts out of order"
   )
+  # Each count is checked on its own, the other missing.
+  for (column in c("support_n", "support_d")) {
+    alone <- data.table::copy(corrections)
+    data.table::set(alone, j = setdiff(c("support_n", "support_d"), column), value = NA_integer_)
+    expect_no_error(validate_schema(alone, "corrections", fish_schema("corrections")))
+    data.table::set(alone, j = column, value = -1L)
+    expect_error(
+      validate_schema(alone, "corrections", fish_schema("corrections")),
+      "negative support counts"
+    )
+  }
 })
 
 test_that("new_gpq_results() checks the tables together", {
