@@ -276,14 +276,26 @@ test_that("value_not_finite finds NaN and Inf, stored or written as text", {
   expect_false("coercion_loss" %in% open$rule_id)
 })
 
-test_that("a number column stored as dates is lost as text and holds no NaN or Inf (16.2)", {
+test_that("a number column stored as dates is lost as text; an infinite date is found at its row", {
   fish <- fx_fish_clean()
-  stations <- data.table::copy(fish$stations)
-  stations$depth <- data.table::as.IDate(c("2020-06-01", "2020-06-01"))
-  fish$stations <- stations
+  catches <- data.table::copy(fish$catches)
+  # Repeated days, so each distinct day is written once and mapped back to its rows; the
+  # infinite one sits at row 5.
+  days <- c(18414, 18414, 18415, 18414, Inf, 18415, 18414, 18414)
+  catches$weight <- structure(days, class = "Date")
+  fish$catches <- catches
   open <- fish_open(fish, layers = 1)
-  expect_setequal(placed(open), c("class_mismatch stations depth", "coercion_loss stations depth"))
-  expect_equal(open$value[open$rule_id == "coercion_loss"], rep("2020-06-01", 2L))
+  expect_setequal(placed(open), c(
+    "class_mismatch catches weight", "coercion_loss catches weight",
+    "value_not_finite catches weight"
+  ))
+  finite <- open[open$rule_id == "value_not_finite"]
+  expect_equal(finite$row_number, 5L)
+  expect_equal(finite$value, "Inf")
+  # Every other day is lost as the text it is; the infinite one reads as a number.
+  loss <- open[open$rule_id == "coercion_loss"]
+  expect_equal(loss$row_number, c(1:4, 6:8))
+  expect_equal(loss$value[c(1L, 3L)], c("2020-06-01", "2020-06-02"))
 })
 
 test_that("a value that isn't valid UTF-8 is reported as given, never a stop or a warning", {
@@ -313,6 +325,35 @@ test_that("a value that isn't valid UTF-8 is reported as given, never a stop or 
     expect_identical(charToRaw(found$value[[1L]]), charToRaw(invalid), info = rule)
   }
   expect_equal(open$row_number[open$rule_id == "date_unparseable"], 2L)
+})
+
+test_that("a date longer than its format can write is unparseable, never a stop (D16.34)", {
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  # strptime() stops on 1001 bytes; "2020-06-011" is one over the 10 the format writes.
+  long <- strrep("2", 1001L)
+  over <- "2020-06-011"
+  hauls$haul_date <- c("2020-06-01", long, over, "2020-06-04")
+  fish$hauls <- hauls
+  expect_silent(open <- fish_open(fish, layers = 1))
+  bad <- open[open$rule_id == "date_unparseable"]
+  expect_equal(bad$value, c(long, over))
+  expect_equal(bad$row_number, c(2L, 3L))
+  # The bound is the longest date the format writes in this locale's month and weekday
+  # names: the longest written date reads back, one character more does not.
+  spec <- fx_fish_spec()
+  layout <- "%A, %B %d, %Y"
+  spec$type_map$date_format[spec$type_map$data_type == "day"] <- layout
+  written <- format(as.Date("2021-01-01") + 0:365, layout)
+  longest <- written[which.max(nchar(written, type = "bytes"))]
+  hauls$haul_date <- c(longest, paste0(longest, "x"), written[[1L]], strrep(longest, 40L))
+  stations <- data.table::copy(fish$stations)
+  stations$first_visit <- written[1:2]
+  fish$hauls <- hauls
+  fish$stations <- stations
+  issues <- gpq_check_conformance(fish, spec, layers = 1)$issues
+  bad <- issues[issues$status == "open" & issues$rule_id == "date_unparseable"]
+  expect_equal(bad$value, c(paste0(longest, "x"), strrep(longest, 40L)))
 })
 
 test_that("a Layer 1 rule failing every record of a column collapses (6.3)", {

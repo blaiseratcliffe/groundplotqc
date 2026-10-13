@@ -184,6 +184,58 @@ test_that("values that read the same are one group: a blank, NA and a broken pat
   expect_no_error(gpq_check_conformance(fish, fx_fish_spec(), group_cols = "water_body"))
 })
 
+test_that("an unmarked non-ASCII group value, as fread() leaves it, is a group as written", {
+  # Unmarked text is UTF-8 only in a UTF-8 locale, and order() refused it there (D16.35).
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
+  name <- "Zürich"
+  Encoding(name) <- "unknown"
+  expect_identical(Encoding(name), "unknown")
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  stations$water_body <- c(name, "lake")
+  fish$stations <- stations
+  spec <- fx_fish_spec()
+  values <- conformance_input(fish, spec, group_cols = "water_body")$groups$stations$values
+  expect_identical(charToRaw(values$water_body[[1L]]), charToRaw(name))
+  expect_equal(values$water_body[[2L]], "lake")
+  results <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 1)
+  written <- vapply(results$results$water_body, function(v) paste(charToRaw(v), collapse = ""), "")
+  expect_true(paste(charToRaw(name), collapse = "") %in% written)
+})
+
+test_that("a group value that isn't valid UTF-8 is a caller error naming its column and row", {
+  invalid <- rawToChar(as.raw(c(0x6C, 0x61, 0x97)))
+  expect_false(validUTF8(invalid))
+  spec <- fx_fish_spec()
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  stations$water_body <- c("lake", invalid)
+  fish$stations <- stations
+  message <- paste0(
+    "Group column water_body of table stations holds text that isn't valid UTF-8, ",
+    "first in row 2; the table may have been read with the wrong encoding."
+  )
+  expect_error(conformance_input(fish, spec, group_cols = "water_body"), message, fixed = TRUE)
+  # The run stops with it before any results are built.
+  expect_error(
+    gpq_check_conformance(fish, spec, group_cols = "water_body"), message,
+    fixed = TRUE
+  )
+  # The first such row of the table the value is read from, however many follow it.
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$gear <- c("GN", invalid, "GN", invalid)
+  fish$hauls <- hauls
+  expect_error(
+    conformance_input(fish, spec, group_cols = "gear"),
+    paste0(
+      "Group column gear of table hauls holds text that isn't valid UTF-8, first in row 2; ",
+      "the table may have been read with the wrong encoding."
+    ),
+    fixed = TRUE
+  )
+})
+
 test_that("a table name that isn't valid UTF-8 is checked, not a stop", {
   bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
   Encoding(bad) <- "UTF-8"

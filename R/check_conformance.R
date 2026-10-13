@@ -42,7 +42,8 @@
 #'
 #' A record's group values are read from its own table, or from the nearest table that holds
 #' the column, through the foreign keys; a record that can't reach one, or whose keys on the
-#' way don't match, has "*" there.
+#' way don't match, has "*" there. A group value that isn't valid UTF-8 stops the run, naming
+#' the column, the table it is read from and its first such row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,

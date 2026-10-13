@@ -1,11 +1,12 @@
-# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32, D16.33):
+# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32 to D16.34):
 # each column's class against the type map, and the values its coercion to that class would
 # lose. The storage-class rules check columns, not records (D16.8); the record rules read the
 # values as given. A value Layer 2 reports (a blank outside the keys, another type's
 # sentinel, a rogue code outside the keys, the text "NA" in an ID) is left to Layer 2, so it
 # is reported once (D8.8). A blank in a key column is Layer 4's (D7.9), which Layer 1 leaves
-# alone too. A value that isn't valid UTF-8 is read by nothing that stops or warns on it: it
-# is lost or unparseable as given (D16.33).
+# alone too. A value that isn't valid UTF-8, or a date longer than its format can write, is
+# read by nothing that stops or warns on it: it is lost or unparseable as given (D16.33,
+# D16.34).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -90,8 +91,12 @@ check_types <- function(input, context) {
         distinct <- unique(given)
         distinct <- distinct[!missing_like(distinct, row, context) & !distinct %chin% own]
         # Text that isn't valid UTF-8 is no date and is not read: strptime() stops on it in a
-        # UTF-8 locale (D16.33).
-        valid <- validUTF8(distinct)
+        # UTF-8 locale (D16.33). Nor is a value longer than the longest date the format writes,
+        # in the bytes of this locale's month and weekday names: it can't read back as written,
+        # and strptime() stops on one of more than 1000 bytes (D16.34).
+        first_days <- rep(seq(as.Date("2021-01-01"), by = "month", length.out = 12L), each = 7L)
+        longest <- max(nchar(enc2utf8(format(first_days + 0:6, row$date_format)), type = "bytes"))
+        valid <- validUTF8(distinct) & nchar(distinct, type = "bytes") <= longest
         readable <- distinct[valid]
         parsed <- strptime(readable, row$date_format, tz = "UTC")
         unread <- !valid

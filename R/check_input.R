@@ -1,9 +1,9 @@
 # The tables a conformance run reads, matched to its specification (plan 6.1, 6.2, 16.2;
-# D7.5, D9.24, D16.9, D16.13, D16.14). Each spec table is matched to the input table of its
-# name, and each dictionary attribute to its column: exactly, or failing that by letter case
-# and spaces. A column is coerced to its expected class only when a check asks, one column
-# at a time. Each record finds its group values and the problem unit's key through the
-# foreign keys. The caller's tables are read, never changed or copied whole.
+# D7.5, D9.24, D16.9, D16.13, D16.14, D16.33, D16.35). Each spec table is matched to the
+# input table of its name, and each dictionary attribute to its column: exactly, or failing
+# that by letter case and spaces. A column is coerced to its expected class only when a check
+# asks, one column at a time. Each record finds its group values and the problem unit's key
+# through the foreign keys. The caller's tables are read, never changed or copied whole.
 
 #' The caller's tables checked: a list of data.frames, each named once by its table, each
 #' column named once and holding one value per row
@@ -376,7 +376,8 @@ reached_values <- function(input, reached, column_name) {
 #'
 #' Without group columns every row is in group 1 and `values` is NULL. Otherwise each group
 #' column's value is read where the record reaches it, "*" where it reaches none or the
-#' value is blank; the groups are numbered in the order of their text.
+#' value is blank; the groups are numbered in the order of their text. A group value that
+#' isn't valid UTF-8 stops the run, naming its column, table and first row (D16.35).
 #' @noRd
 group_index <- function(input, table) {
   n <- nrow(input$data[[table]])
@@ -387,12 +388,32 @@ group_index <- function(input, table) {
   codes <- list()
   labels <- list()
   for (column_name in group_cols) {
-    value <- reached_values(input, reach_column(input, table, column_name), column_name)
+    reached <- reach_column(input, table, column_name)
+    value <- reached_values(input, reached, column_name)
     distinct <- unique(value)
     # Each distinct value as text, "*" for a blank or a value no record reached, so values
     # that read the same are one group.
     text <- value_text(distinct)
+    # A group value goes into every results row and file, so it must be valid UTF-8; the
+    # caller is told the column, the table it is read from and its first such row (D16.35).
+    if (!all(validUTF8(text))) {
+      at <- which(
+        input$columns$table_name == reached$home & input$columns$attribute_name == column_name
+      )
+      whole <- value_text(input$data[[reached$home]][[input$columns$column[[at]]]])
+      stop(sprintf(
+        paste0(
+          "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
+          "the table may have been read with the wrong encoding."
+        ),
+        mark_invalid_utf8(column_name), mark_invalid_utf8(reached$home),
+        which(!validUTF8(whole))[[1L]]
+      ), call. = FALSE)
+    }
     text[is.na(text) | is_blank(text)] <- "*"
+    # Marked as UTF-8 so the order below reads it: fread() leaves valid non-ASCII text
+    # unmarked, which order() refuses. The bytes don't change (D16.35).
+    Encoding(text) <- "UTF-8"
     labels[[column_name]] <- unique(text)
     codes[[column_name]] <- match(text, labels[[column_name]])[match(value, distinct)]
   }
