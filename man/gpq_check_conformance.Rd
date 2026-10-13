@@ -39,12 +39,12 @@ unit problem plots are ranked by; issues carry that key under its name.}
 \value{
 An object of class \code{gpq_results}, a list of four tables:
 \itemize{
-\item \code{results}: the summary, one row per rule, table, column and group (9.2): \code{run_id},
+\item \code{results}: the summary, one row per rule, table, column and group: \code{run_id},
 \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer}, \code{severity}, \code{table_name},
 \code{column_name}, the group columns, \code{n_checked}, \code{n_fail}, \code{n_not_evaluated},
 \code{reason_code}, \code{n_distinct_fail_values}, \code{n_easy_fix}, \code{examples}, \code{status} (\code{pass},
 \code{fail} or \code{not_run}), \code{not_run_reason} and \code{message_id}.
-\item \code{issues}: one row per failing or not-evaluated record, or per column-level issue (9.3):
+\item \code{issues}: one row per failing or not-evaluated record, or per column-level issue:
 \code{issue_id}, \code{run_id}, \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer},
 \code{severity}, \code{reason_code}, \code{table_name}, \code{column_name}, \code{record_pk}, \code{row_number},
 \code{pk_positional}, \code{level} (\code{record} or \code{column}), \code{n_records}, \code{value}, \code{expected},
@@ -53,7 +53,7 @@ the problem unit's key column, \code{root_issue_id}, \code{status} (\code{open} 
 \code{issue_class}, \code{class_basis}, \code{script_file}, \code{script_block}, \code{attribution_status},
 \code{fingerprint}, \code{fingerprint_pk}, \code{first_seen_run}, \code{change} and \code{change_cause}. The
 columns a conformance run doesn't fill are NA.
-\item \code{corrections}: an empty table (9.4).
+\item \code{corrections}: an empty table.
 \item \code{metadata}: the tables of \verb{metadata/} in a run folder.
 }
 
@@ -84,8 +84,9 @@ Layers and the rules they can raise:
 Layers 3 to 5 have no rules yet. A column whose name differs from its dictionary
 attribute's only in letter case or spaces is reported by \code{column_name_mismatch} and
 checked as that attribute. Layer 0's rules and \code{class_mismatch} and
-\code{integer_stored_as_double} count tables or columns, not records, and their rows have "*"
-in every group column. A value that failed Layer 1 is not evaluated by Layer 2: its
+\code{integer_stored_as_double} count tables or columns, not records, and their rows have \code{"*"}
+in every group column, except where none of a rule's tables or columns could be checked.
+A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status \code{not_evaluated} and names the earlier issue as its root. When a
 rule fails on every checked record of a column in a group, and at least
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked

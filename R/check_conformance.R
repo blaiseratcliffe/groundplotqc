@@ -32,8 +32,9 @@
 #' Layers 3 to 5 have no rules yet. A column whose name differs from its dictionary
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and
 #' checked as that attribute. Layer 0's rules and `class_mismatch` and
-#' `integer_stored_as_double` count tables or columns, not records, and their rows have "*"
-#' in every group column. A value that failed Layer 1 is not evaluated by Layer 2: its
+#' `integer_stored_as_double` count tables or columns, not records, and their rows have `"*"`
+#' in every group column, except where none of a rule's tables or columns could be checked.
+#' A value that failed Layer 1 is not evaluated by Layer 2: its
 #' issue there has status `not_evaluated` and names the earlier issue as its root. When a
 #' rule fails on every checked record of a column in a group, and at least
 #' `column_level_min_n` records were checked, the run records one column-level issue; masked
@@ -63,12 +64,12 @@
 #' @param run_id `NULL`, to make one from the run's start, or a run ID such as
 #'   `"20261215T140312Z_3fa9c1"`: the UTC start time and six hex characters.
 #' @return An object of class `gpq_results`, a list of four tables:
-#'   - `results`: the summary, one row per rule, table, column and group (9.2): `run_id`,
+#'   - `results`: the summary, one row per rule, table, column and group: `run_id`,
 #'     `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`, `severity`, `table_name`,
 #'     `column_name`, the group columns, `n_checked`, `n_fail`, `n_not_evaluated`,
 #'     `reason_code`, `n_distinct_fail_values`, `n_easy_fix`, `examples`, `status` (`pass`,
 #'     `fail` or `not_run`), `not_run_reason` and `message_id`.
-#'   - `issues`: one row per failing or not-evaluated record, or per column-level issue (9.3):
+#'   - `issues`: one row per failing or not-evaluated record, or per column-level issue:
 #'     `issue_id`, `run_id`, `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`,
 #'     `severity`, `reason_code`, `table_name`, `column_name`, `record_pk`, `row_number`,
 #'     `pk_positional`, `level` (`record` or `column`), `n_records`, `value`, `expected`,
@@ -77,7 +78,7 @@
 #'     `issue_class`, `class_basis`, `script_file`, `script_block`, `attribution_status`,
 #'     `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and `change_cause`. The
 #'     columns a conformance run doesn't fill are NA.
-#'   - `corrections`: an empty table (9.4).
+#'   - `corrections`: an empty table.
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
 #'   Write it with [gpq_write_results()].
@@ -261,10 +262,13 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
 #' @noRd
 record_outcome <- function(rule_id, table_name, column_name, fail, value,
                            expected = NA_character_) {
-  rows <- is.numeric(fail) && !anyNA(fail) && all(fail >= 1L & fail == trunc(fail))
+  rows <- is.numeric(fail) && !anyNA(fail) && all(is.finite(fail)) &&
+    all(fail >= 1L & fail <= .Machine$integer.max & fail == trunc(fail)) &&
+    anyDuplicated(fail) == 0L
   if (!rows) {
     stop(
-      "Rule ", rule_id, ": `fail` must be row numbers, whole numbers from 1.",
+      "Rule ", rule_id, ": `fail` must be row numbers, each once: whole numbers from 1 ",
+      "within the integer range.",
       call. = FALSE
     )
   }
