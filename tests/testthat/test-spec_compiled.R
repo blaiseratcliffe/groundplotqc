@@ -168,3 +168,60 @@ test_that("a folder that can't be made is a caller's error naming it, before any
   # A folder that already exists is not an error.
   expect_no_error(write_compiled_spec(fx_fish_spec(), parent))
 })
+
+test_that("compiled_bytes() gives the bytes of MAGPlot's compiled files, in memory (D15.7)", {
+  spec <- magp_spec()
+  dir <- system.file("extdata", "magp", package = "groundplotqc")
+  for (name in names(spec_schema())) {
+    path <- file.path(dir, paste0(name, ".csv"))
+    expect_identical(
+      compiled_bytes(spec[[name]]), readBin(path, "raw", file.size(path)),
+      label = name
+    )
+  }
+  expect_identical(compiled_bytes(data.table::data.table()), raw())
+})
+
+test_that("compiled_bytes() gives the writer's bytes in a C locale too (D15.7)", {
+  spec <- fx_planted_spec()
+  dir <- withr::local_tempdir()
+  write_compiled_spec(spec, dir)
+  for (name in c("code_lists", "attributes", "read_findings")) {
+    path <- file.path(dir, paste0(name, ".csv"))
+    bytes <- withr::with_locale(c(LC_CTYPE = "C"), compiled_bytes(spec[[name]]))
+    expect_identical(bytes, readBin(path, "raw", file.size(path)), label = name)
+  }
+  # MAGPlot's own components, non-ASCII text among them, made in a C locale, are the shipped
+  # files' bytes.
+  magp <- magp_spec()
+  shipped <- system.file("extdata", "magp", package = "groundplotqc")
+  for (name in names(spec_schema())) {
+    path <- file.path(shipped, paste0(name, ".csv"))
+    bytes <- withr::with_locale(c(LC_CTYPE = "C"), compiled_bytes(magp[[name]]))
+    expect_identical(bytes, readBin(path, "raw", file.size(path)), label = paste("magp", name))
+  }
+})
+
+test_that("compiled_bytes() takes nothing but the table from the console (D15.7)", {
+  table <- data.table::data.table(a = c("x", NA, ""), b = 1:3)
+  plain <- compiled_bytes(table)
+  expect_identical(rawToChar(plain), "\"a\",\"b\"\n\"x\",1\n,2\n\"\",3\n")
+  # data.table's verbose and progress output stay out of the bytes.
+  withr::with_options(list(datatable.verbose = TRUE, datatable.showProgress = TRUE), {
+    expect_identical(compiled_bytes(table), plain)
+  })
+  # fwrite()'s separator and logical options, which a session may set, stay out of the bytes.
+  flags <- data.table::data.table(a = c("x", "y"), ok = c(TRUE, NA))
+  flags_plain <- compiled_bytes(flags)
+  expect_identical(rawToChar(flags_plain), "\"a\",\"ok\"\n\"x\",TRUE\n\"y\",\n")
+  withr::with_options(list(datatable.fwrite.sep = ";", datatable.logical01 = TRUE), {
+    expect_identical(compiled_bytes(flags), flags_plain)
+  })
+  # Inside another capture of the console, as testthat and knitr run code.
+  expect_identical(utils::capture.output(inner <- compiled_bytes(table)), character())
+  expect_identical(inner, plain)
+  # A table fwrite() can't write leaves no sink behind.
+  sinks <- sink.number()
+  expect_error(compiled_bytes(data.table::data.table(a = list(list(1)))), "list column")
+  expect_equal(sink.number(), sinks)
+})

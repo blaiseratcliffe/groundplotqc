@@ -5,10 +5,10 @@ description: Add or change a groundplotqc QC rule end to end (registry, rule set
 
 1. Find the decision that approves the rule (decision ID or plan section). None: stop and ask the user.
 2. Choose the rule ID per NAMING.md; for a rename or split, add a `rule_id_map.csv` row.
-3. Add the registry row in `R/rules_registry.R` (stage, layer, check type, default severity, default class, inputs, strategy, message_id; plan 9.7).
+3. Add the registry row in `R/rules_registry.R` (stage, layer, check type, default severity, default class, inputs, strategy, message_id, rule_version; plan 9.7). When a rule changes, raise its `rule_version` whenever its check behaves differently: the check-hash test in `test-rules_registry.R` fails on any change to a check function or a package function it calls (those of `R/report_text.R`, `R/report_html.R` and `R/rules_registry.R` aside), and its message gives the rows to record in `tests/testthat/fixtures/check_body_hashes.csv`. A change that leaves behaviour as it was records the new hashes only (D15.6, D15.13). The test follows package constants as well as functions, and a new `check_<family>()` fails it as new until its first row is recorded the same way.
 4. Add rule-set `rules` rows for the MAGPlot layer to `data-raw/magp/rules_rules.csv` (table, attribute, severity or class override only where it differs from the registry, enabled; plan 3.5, D14.2), then rerun the build, and report text rows (English) in `report_text_engine.csv`, with MAGPlot's wording, where it differs, as a row of `report_text_magp.csv` with the same text_id (D14.8).
 5. Dispatch fixture-builder for defect blocks; confirm they fail before the code exists.
-6. Dispatch implementer for the check code (vectorised; plan 16.2).
+6. Dispatch implementer for the check code (vectorised; plan 16.2), which calls package functions by name, never by string (`do.call("x")`, `match.fun("x")`, `get()`), so the check-hash test can follow it (D15.13).
 7. Update the help page's list of rule IDs, NEWS.md and FILEMAP.md.
 8. Dispatch spec-conformance-reviewer and datatable-reviewer, then check-runner.
 9. Report decisions raised along the way to the user unchanged.

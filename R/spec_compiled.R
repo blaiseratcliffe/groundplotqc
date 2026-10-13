@@ -4,7 +4,8 @@
 # identical() to the one written. The files are the package's own output, so a typed one
 # is read with fread() directly and any warning stops the read (R42, D12.69). MAGPlot's
 # build writes its set into inst/extdata/magp/, which magp_spec() reads (R/magp_spec.R,
-# M2's closing task, D12.20).
+# M2's closing task, D12.20). compiled_bytes() makes a component's file bytes in memory,
+# which the writer writes and the fingerprints hash (D15.7).
 
 #' A spec written as one UTF-8 CSV per component
 #'
@@ -27,24 +28,49 @@ write_compiled_spec <- function(spec, dir) {
   }
   paths <- file.path(dir, paste0(component_names, ".csv"))
   for (k in seq_along(paths)) {
-    component <- spec[[component_names[[k]]]]
-    if (ncol(component) == 0L) {
-      writeLines(character(), paths[[k]])
-      next
-    }
-    doubles <- names(component)[vapply(component, is.double, TRUE)]
-    if (length(doubles) > 0L) {
-      # A copy, so the caller's spec keeps its numbers.
-      component <- copy(component)
-      for (column in doubles) {
-        x <- component[[column]]
-        set(component, j = column, value = fifelse(is.na(x), NA_character_, sprintf("%.17g", x)))
-      }
-    }
-    # LF endings, so the bytes are the same on every OS (D12.69).
-    fwrite(component, paths[[k]], na = "", quote = TRUE, eol = "\n", encoding = "UTF-8")
+    writeBin(compiled_bytes(spec[[component_names[[k]]]]), paths[[k]])
   }
   invisible(paths)
+}
+
+#' A table as a compiled specification's CSV file, in bytes, made in memory (D15.7)
+#'
+#' UTF-8 with LF endings, so the bytes are the same on every OS (D12.69); every text field
+#' and the header quoted; a blank an empty field; a double column as text to 17 significant
+#' digits (R20), in a new table that shares the other columns, so the caller's table keeps
+#' its numbers and nothing is copied but the doubles' text. A table with no columns
+#' gives no bytes. fwrite() writes to a file or to the console, so the text is taken from
+#' the console, sunk into a raw connection: its time grows with the rows, where
+#' capture.output()'s text connection slows with every line. fwrite()'s verbose and progress
+#' output are off, and its separator and logical form are set, not read from the session's
+#' options, so nothing but the table reaches the bytes. The writers write these bytes
+#' and the fingerprints hash them, so a table built in memory and its file give the same
+#' hash.
+#' @noRd
+compiled_bytes <- function(table) {
+  if (ncol(table) == 0L) {
+    return(raw())
+  }
+  doubles <- names(table)[vapply(table, is.double, TRUE)]
+  if (length(doubles) > 0L) {
+    columns <- as.list(table)
+    for (column in doubles) {
+      x <- columns[[column]]
+      columns[[column]] <- fifelse(is.na(x), NA_character_, sprintf("%.17g", x))
+    }
+    table <- setDT(columns)
+  }
+  bytes <- rawConnection(raw(), "w")
+  on.exit(close(bytes), add = TRUE)
+  sink(bytes)
+  # The sink ends before the connection closes, on an error too.
+  on.exit(sink(), add = TRUE, after = FALSE)
+  fwrite(
+    table,
+    file = "", sep = ",", na = "", quote = TRUE, eol = "\n", encoding = "UTF-8",
+    logical01 = FALSE, verbose = FALSE, showProgress = FALSE
+  )
+  rawConnectionValue(bytes)
 }
 
 #' A compiled spec read back with each component's column classes, identical() to it

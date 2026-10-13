@@ -241,11 +241,14 @@ package_names <- function() {
     names(formals(getExportedValue("groundplotqc", f)))
   }))
   # Component names come from the schema, so the compiled files' names are checked as the
-  # schema gives them (D12.32). The registry's column names are read too (D14.27).
+  # schema gives them (D12.32). The registry's column names are read too (D14.27), and the
+  # results and metadata tables' names and columns (M3b's names).
   columns <- c(
     names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
     names(preflight_columns()), names(rule_set_schema()),
-    unlist(lapply(rule_set_schema(), names)), names(rule_registry())
+    unlist(lapply(rule_set_schema(), names)), names(rule_registry()),
+    names(results_schema()), unlist(lapply(results_schema(), names)),
+    names(metadata_schema()), unlist(lapply(metadata_schema(), names))
   )
   root <- source_root()
   files <- c(

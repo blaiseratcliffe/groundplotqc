@@ -106,7 +106,7 @@ rule_set_component <- function(x, name, columns) {
     value <- x[[column]]
     if (is.list(value) || !is.null(dim(value)) || length(value) != nrow(x)) {
       stop(sprintf(
-        "Column `%s` of rule-set component `%s` must hold one value per row.", column, name
+        "Column `%s` of rule-set component %s must hold one value per row.", column, name
       ), call. = FALSE)
     }
   }
@@ -133,7 +133,7 @@ rule_set_component <- function(x, name, columns) {
     bad <- which(!validUTF8(table[[column]]))
     if (length(bad) > 0L) {
       stop(sprintf(
-        "Column `%s` of rule-set component `%s` holds text that isn't valid UTF-8, in %s.",
+        "Column `%s` of rule-set component %s holds text that isn't valid UTF-8, in %s.",
         column, name, places(bad)
       ), call. = FALSE)
     }
@@ -204,4 +204,17 @@ read_rule_set <- function(dir) {
   })
   names(read) <- components[given]
   validate_rule_set(read)
+}
+
+#' A checked rule set as one text, in bytes (D15.8)
+#'
+#' For each component it has, in 3.5's order, the component's name on a line, then the
+#' component as compiled_bytes() writes it. A rule set read from files and the same rows
+#' given in memory give the same bytes: a component's origin isn't part of it. A rule set
+#' with no components gives no bytes, still a raw vector.
+#' @noRd
+rule_set_bytes <- function(rules) {
+  c(raw(), unlist(lapply(names(rules), function(name) {
+    c(charToRaw(paste0(name, "\n")), compiled_bytes(rules[[name]]))
+  }), use.names = FALSE))
 }

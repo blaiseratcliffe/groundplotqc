@@ -1,4 +1,5 @@
-# Tests for the pre-flight files (plan 4.2, 11.5, 18.4; D2.11, D7.11, D12.17, D12.24).
+# Tests for the pre-flight files (plan 4.2, 11.5, 18.4; D2.11, D7.11, D12.17, D12.24,
+# D15.16).
 
 # The hostile text reaches the page and the CSV in two details: the sheet's name, in
 # code_list_unreferenced's, and the type, with "&" and quotes, in dd_type_unknown's.
@@ -301,7 +302,7 @@ test_that("the footer names the rule set checked, with no entry without one (D14
     regexpr("<dt>Specification files</dt>", page, fixed = TRUE) < regexpr(entry, page, fixed = TRUE)
   )
   # No rule set, or one without a meta row: no entry.
-  expect_false(grepl("Rule set", preflight_html(results, spec), fixed = TRUE))
+  expect_false(grepl("<dt>Rule set</dt>", preflight_html(results, spec), fixed = TRUE))
   expect_false(grepl(
     "<dt>Rule set</dt>", preflight_html(results, spec, rules = fx_empty_rule_set()),
     fixed = TRUE
@@ -345,4 +346,48 @@ test_that("gpq_preflight gives the page the rule set it checked (D14.39)", {
   dir <- withr::local_tempdir()
   write_preflight_files(preflight_checks(spec), spec, dir, rules = magp_rules())
   expect_match(read_page(dir), "<dt>Rule set</dt>", fixed = TRUE)
+})
+
+test_that("the CSV is the compiled writer's bytes, LF whatever the OS (D15.16)", {
+  dir <- withr::local_tempdir()
+  results <- tryCatch(
+    gpq_preflight(hostile_spec(), output_dir = dir),
+    gpq_preflight_error = function(e) e$preflight
+  )
+  csv <- file.path(dir, "metadata", "preflight.csv")
+  bytes <- readBin(csv, "raw", file.size(csv))
+  expect_false(any(bytes == as.raw(0x0D)))
+  expect_identical(bytes, compiled_bytes(results))
+})
+
+test_that("findings with a comma, a line break, an accent and formula text read back (D15.16)", {
+  # The types reach the findings' details. The line break stays in its field, so the test
+  # leaves out the CR check of the one above.
+  spec <- gpq_read_spec(
+    dictionary = data.frame(
+      table_name = "t", attribute_name = c("a", "b", "c", "d", "e"),
+      key_type = c("PK", "", "", "", ""),
+      data_type = c("R, \"D\"", "line one\nline two", "café", "=1+1", "")
+    ),
+    code_lists = list(`=sheet, x` = data.frame(a = "x"))
+  )
+  dir <- withr::local_tempdir()
+  results <- tryCatch(
+    gpq_preflight(spec, output_dir = dir),
+    gpq_preflight_error = function(e) e$preflight
+  )
+  csv <- file.path(dir, "metadata", "preflight.csv")
+  # The planted text is in the table, beside the NA of rows with no detail.
+  expect_true(any(grepl("line one\nline two", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("R, \"D\"", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("café", results$detail, fixed = TRUE)))
+  expect_true(any(grepl("=1+1", results$detail, fixed = TRUE)))
+  expect_true(anyNA(results$detail))
+  expect_identical(read_run_csv(csv, preflight_columns())$detail, results$detail)
+  # A check's detail is never empty, so an empty detail beside NA is set by hand.
+  planted <- data.table::copy(results)
+  data.table::set(planted, i = 1L, j = "detail", value = "")
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeBin(compiled_bytes(planted), path)
+  expect_identical(read_run_csv(path, preflight_columns())$detail, planted$detail)
 })
