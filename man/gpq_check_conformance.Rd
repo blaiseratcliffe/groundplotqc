@@ -37,10 +37,27 @@ unit problem plots are ranked by; issues carry that key under its name.}
 \code{"20261215T140312Z_3fa9c1"}: the UTC start time and six hex characters.}
 }
 \value{
-An object of class \code{gpq_results}: a list of the \code{results} summary (one row per
-rule, table, column and group), the \code{issues}, an empty \code{corrections} table and the run
-\code{metadata} (the tables of \verb{metadata/} in a run folder). Write it with
-\code{\link[=gpq_write_results]{gpq_write_results()}}.
+An object of class \code{gpq_results}, a list of four tables:
+\itemize{
+\item \code{results}: the summary, one row per rule, table, column and group (9.2): \code{run_id},
+\code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer}, \code{severity}, \code{table_name},
+\code{column_name}, the group columns, \code{n_checked}, \code{n_fail}, \code{n_not_evaluated},
+\code{reason_code}, \code{n_distinct_fail_values}, \code{n_easy_fix}, \code{examples}, \code{status} (\code{pass},
+\code{fail} or \code{not_run}), \code{not_run_reason} and \code{message_id}.
+\item \code{issues}: one row per failing or not-evaluated record, or per column-level issue (9.3):
+\code{issue_id}, \code{run_id}, \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer},
+\code{severity}, \code{reason_code}, \code{table_name}, \code{column_name}, \code{record_pk}, \code{row_number},
+\code{pk_positional}, \code{level} (\code{record} or \code{column}), \code{n_records}, \code{value}, \code{expected},
+\code{entity_key}, \code{visit_keys}, \code{provider_key}, \code{provider_key_status}, the group columns,
+the problem unit's key column, \code{root_issue_id}, \code{status} (\code{open} or \code{not_evaluated}),
+\code{issue_class}, \code{class_basis}, \code{script_file}, \code{script_block}, \code{attribution_status},
+\code{fingerprint}, \code{fingerprint_pk}, \code{first_seen_run}, \code{change} and \code{change_cause}. The
+columns a conformance run doesn't fill are NA.
+\item \code{corrections}: an empty table (9.4).
+\item \code{metadata}: the tables of \verb{metadata/} in a run folder.
+}
+
+Write it with \code{\link[=gpq_write_results]{gpq_write_results()}}.
 }
 \description{
 Runs the conformance stage on a set of related tables: pre-flight of the
@@ -82,8 +99,8 @@ Settings (each from the argument, the rule set, the option, or the built-in valu
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
 \code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule set's \code{rules} rows
 give a rule's severity and turn it off (\code{enabled}) for a table and attribute: the most
-specific row that gives a value wins (table and attribute, then table and "\emph{", then "}"
-and attribute, then "\emph{" and "}"). A rule turned off writes no rows there.
+specific row that gives a value wins (table and attribute, then table and \code{"*"}, then
+\code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no rows there.
 }
 \examples{
 # magp_example with one planted defect: a missing value in a column that must hold one.

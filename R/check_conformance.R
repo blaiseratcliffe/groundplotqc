@@ -47,8 +47,8 @@
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
 #' `column_level_min_n`, `example_cap`, `lang` and `severity`. A rule set's `rules` rows
 #' give a rule's severity and turn it off (`enabled`) for a table and attribute: the most
-#' specific row that gives a value wins (table and attribute, then table and "*", then "*"
-#' and attribute, then "*" and "*"). A rule turned off writes no rows there.
+#' specific row that gives a value wins (table and attribute, then table and `"*"`, then
+#' `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no rows there.
 #'
 #' @param tables A named list of data.frames, one per table, named as the specification
 #'   names its tables.
@@ -62,10 +62,25 @@
 #' @param settings A named list of settings.
 #' @param run_id `NULL`, to make one from the run's start, or a run ID such as
 #'   `"20261215T140312Z_3fa9c1"`: the UTC start time and six hex characters.
-#' @return An object of class `gpq_results`: a list of the `results` summary (one row per
-#'   rule, table, column and group), the `issues`, an empty `corrections` table and the run
-#'   `metadata` (the tables of `metadata/` in a run folder). Write it with
-#'   [gpq_write_results()].
+#' @return An object of class `gpq_results`, a list of four tables:
+#'   - `results`: the summary, one row per rule, table, column and group (9.2): `run_id`,
+#'     `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`, `severity`, `table_name`,
+#'     `column_name`, the group columns, `n_checked`, `n_fail`, `n_not_evaluated`,
+#'     `reason_code`, `n_distinct_fail_values`, `n_easy_fix`, `examples`, `status` (`pass`,
+#'     `fail` or `not_run`), `not_run_reason` and `message_id`.
+#'   - `issues`: one row per failing or not-evaluated record, or per column-level issue (9.3):
+#'     `issue_id`, `run_id`, `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`,
+#'     `severity`, `reason_code`, `table_name`, `column_name`, `record_pk`, `row_number`,
+#'     `pk_positional`, `level` (`record` or `column`), `n_records`, `value`, `expected`,
+#'     `entity_key`, `visit_keys`, `provider_key`, `provider_key_status`, the group columns,
+#'     the problem unit's key column, `root_issue_id`, `status` (`open` or `not_evaluated`),
+#'     `issue_class`, `class_basis`, `script_file`, `script_block`, `attribution_status`,
+#'     `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and `change_cause`. The
+#'     columns a conformance run doesn't fill are NA.
+#'   - `corrections`: an empty table (9.4).
+#'   - `metadata`: the tables of `metadata/` in a run folder.
+#'
+#'   Write it with [gpq_write_results()].
 #' @examples
 #' # magp_example with one planted defect: a missing value in a column that must hold one.
 #' trees <- data.table::copy(magp_example$magp_trees)
@@ -144,7 +159,8 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
   expected <- run_rules[!run_rules$rule_id %chin% state$not_expected]
   report_units <- if (length(group_cols) > 0L) {
     units <- unlist(lapply(input$groups, function(grouping) grouping$values[[group_cols[[1L]]]]))
-    setdiff(units, "*")
+    # With no table of the spec given there is no unit at all: NULL, made text here.
+    setdiff(as.character(units), "*")
   } else {
     character()
   }
@@ -239,11 +255,22 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
   )
 }
 
-#' A rule's outcome on a column's records: the rows that fail, each failing value as text,
-#' and what was expected (one text, or one per failing row)
+#' A rule's outcome on a column's records: the rows that fail (row numbers), each failing
+#' value as text (one per failing row), and what was expected (one text, or one per failing
+#' row)
 #' @noRd
 record_outcome <- function(rule_id, table_name, column_name, fail, value,
                            expected = NA_character_) {
+  rows <- is.numeric(fail) && !anyNA(fail) && all(fail >= 1L & fail == trunc(fail))
+  if (!rows) {
+    stop(
+      "Rule ", rule_id, ": `fail` must be row numbers, whole numbers from 1.",
+      call. = FALSE
+    )
+  }
+  if (length(value) != length(fail)) {
+    stop("Rule ", rule_id, ": `value` must hold one text for each failing row.", call. = FALSE)
+  }
   list(
     kind = "record", rule_id = rule_id, table_name = table_name, column_name = column_name,
     fail = as.integer(fail), value = as.character(value), expected = as.character(expected)
@@ -309,11 +336,24 @@ outcome_values <- function(rule_id, table_names, column_names, default, context)
 #' A rule the family returns no outcomes for has nothing to check and isn't expected by the
 #' self-test (D16.17); nor is a rule turned off at every outcome (D16.7). A rule the family
 #' doesn't return at all stays expected, so the self-test lists it.
+#'
+#' A rule that checks units (it has unit outcomes beside its not_run ones) writes each of its
+#' not_run outcomes as one row with "*" groups counting the one table or column it couldn't
+#' check; a record rule's not_run rows count records by group (D16.29, R12). A rule none of
+#' whose outcomes could run is taken for a record rule, there being nothing to tell it by.
 #' @noRd
 record_layer <- function(found, layer, input, context, state, run_id) {
   # Worked out before the brackets: `layer` is also a column of the run's rules.
   in_layer <- context$run_rules$layer == layer
   rules <- context$run_rules[in_layer]
+  unit_not_run <- function(outcome, rule, severity) {
+    state$results[[length(state$results) + 1L]] <- results_rows(
+      run_id, rule, severity, context, outcome$table_name, outcome$column_name,
+      star_groups(input),
+      n_checked = 0L, n_fail = 0L, n_not_evaluated = 1L, n_distinct = 0L,
+      examples = NA_character_, status = "not_run", reason = outcome$reason
+    )
+  }
   for (k in seq_len(nrow(rules))) {
     rule <- rules[k]
     if (!rule$rule_id %chin% names(found)) {
@@ -333,14 +373,23 @@ record_layer <- function(found, layer, input, context, state, run_id) {
       state$not_expected <- c(state$not_expected, rule$rule_id)
       next
     }
+    kinds <- vapply(outcomes, function(outcome) as.character(outcome$kind)[1L], "")
     for (i in on) {
       outcome <- outcomes[[i]]
-      switch(outcome$kind,
+      switch(kinds[[i]],
         unit = record_unit(outcome, rule, values$severity[[i]], input, context, state, run_id),
         record = record_records(
           outcome, rule, values$severity[[i]], layer, input, context, state, run_id
         ),
-        not_run = record_not_run(outcome, rule, values$severity[[i]], input, context, state, run_id)
+        not_run = if ("unit" %chin% kinds) {
+          unit_not_run(outcome, rule, values$severity[[i]])
+        } else {
+          record_not_run(outcome, rule, values$severity[[i]], input, context, state, run_id)
+        },
+        stop(sprintf(
+          "Rule %s returned an outcome of kind \"%s\", which the run can't record.",
+          rule$rule_id, kinds[[i]]
+        ), call. = FALSE)
       )
     }
   }
@@ -442,9 +491,10 @@ record_unit <- function(outcome, rule, severity, input, context, state, run_id) 
   invisible(state)
 }
 
-#' A not_run outcome recorded: one row per group of the table's records, each counting them
-#' as not evaluated; "*" groups and no records where the table wasn't given, has no rows or
-#' the outcome names no table (6.2; D7.3, D9.24)
+#' A record rule's not_run outcome recorded: one row per group of the table's records, each
+#' counting them as not evaluated; "*" groups and no records where the table wasn't given,
+#' has no rows or the outcome names no table (6.2; D7.3, D9.24). A unit rule's not_run
+#' outcome is written by record_layer() (D16.29).
 #' @noRd
 record_not_run <- function(outcome, rule, severity, input, context, state, run_id) {
   table <- outcome$table_name

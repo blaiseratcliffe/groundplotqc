@@ -34,6 +34,18 @@ test_that("an empty table is still checked as a unit, counting no records", {
   expect_equal(missing$n_records, 0L)
 })
 
+test_that("with no table of the spec given, each is missing and each given one unexpected", {
+  # MAGPlot's group columns are set, and no table of the spec reaches any report unit.
+  upper <- fx_magp_clean()
+  names(upper) <- toupper(names(upper))
+  results <- fx_caught(upper)
+  open <- results$issues[results$issues$status == "open"]
+  expect_equal(
+    as.vector(table(open$rule_id)[c("table_missing", "table_unexpected")]), c(17L, 17L)
+  )
+  expect_equal(nrow(open), 34L)
+})
+
 test_that("an exact name wins over a near one, which is then an extra column", {
   fish <- fx_fish_clean()
   fish$hauls$GEAR <- "x"

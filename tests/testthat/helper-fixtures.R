@@ -268,18 +268,30 @@ fx_answer_sheet <- function() {
   ))
 }
 
-# A defect block that sets one cell of a copy of the base: `value` at `row` of `column`.
+# A defect block that sets one cell of a copy of the base: `value` at `row` of `column`. The
+# cell must read back as `value` (a missing value as a missing value); a value of another
+# class than the column's is a change of class, which fx_set_column() makes.
 fx_set_cell <- function(table, column, row, value) {
   function(tables) {
+    fx_require_fixture(tables)
     tables <- fx_mark_fixture(lapply(tables, data.table::copy))
     data.table::set(tables[[table]], i = row, j = column, value = value)
+    stored <- tables[[table]][[column]][row]
+    if (!(identical(stored, value) || (all(is.na(value)) && all(is.na(stored))))) {
+      stop(
+        "fx_set_cell() can't store the value as it is in ", table, "$", column, ", of class ",
+        class(tables[[table]][[column]])[[1L]], ": a change of class is fx_set_column()'s."
+      )
+    }
     tables
   }
 }
 
-# A defect block that replaces one column of a copy of the base with `make(column)`.
+# A defect block that sets, adds or, when `make()` returns NULL, removes one column of a copy
+# of the base: `make(column)` is the new column.
 fx_set_column <- function(table, column, make) {
   function(tables) {
+    fx_require_fixture(tables)
     tables <- fx_mark_fixture(lapply(tables, data.table::copy))
     data.table::set(tables[[table]], j = column, value = make(tables[[table]][[column]]))
     tables
@@ -293,9 +305,11 @@ fx_defect_blocks <- function() {
   list(
     # ---- Layer 0 (task 3) ----
     table_missing = function(tables) {
+      fx_require_fixture(tables)
       fx_mark_fixture(lapply(tables[names(tables) != "magp_tree_age"], data.table::copy))
     },
     table_unexpected = function(tables) {
+      fx_require_fixture(tables)
       tables <- lapply(tables, data.table::copy)
       tables$magp_notes <- data.table::data.table(note = "t1")
       fx_mark_fixture(tables)
@@ -303,6 +317,7 @@ fx_defect_blocks <- function() {
     column_missing = fx_set_column("magp_trees", "comments", function(x) NULL),
     column_unexpected = fx_set_column("magp_plots", "colour", function(x) "red"),
     column_name_mismatch = function(tables) {
+      fx_require_fixture(tables)
       tables <- fx_mark_fixture(lapply(tables, data.table::copy))
       data.table::setnames(tables$magp_tree_meas, "dbh", "DBH")
       tables
@@ -312,11 +327,12 @@ fx_defect_blocks <- function() {
   )
 }
 
-# The open issues gpq_check_conformance() raises on fixture tables, Layers 0 to 2, with
-# MAGPlot's spec, rule set and group columns; pre-flight's warning about the spec is muffled.
+# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 2, with MAGPlot's
+# spec, rule set and group columns; pre-flight's warning about the spec is muffled. What a
+# planted defect must raise are the open issues: `results$issues[status == "open"]`.
 fx_caught <- function(tables) {
   fx_require_fixture(tables)
-  results <- withCallingHandlers(
+  withCallingHandlers(
     gpq_check_conformance(
       tables, magp_spec(),
       group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
@@ -324,6 +340,4 @@ fx_caught <- function(tables) {
     ),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
-  issues <- results$issues
-  issues[issues$status == "open"]
 }

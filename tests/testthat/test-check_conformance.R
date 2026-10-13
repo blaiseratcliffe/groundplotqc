@@ -138,6 +138,80 @@ test_that("Layer 0 finds missing, extra and misnamed tables and columns (D16.8, 
   expect_true(all(rows$n_fail <= rows$n_checked))
 })
 
+test_that("a unit rule's not_run row is one row of \"*\" counting the table or column (D16.29)", {
+  fish <- fx_fish_clean()
+  fish$stations <- NULL
+  hauls <- data.table::copy(fish$hauls)
+  hauls$minutes <- NULL
+  fish$hauls <- hauls
+  results <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    group_cols = c("water_body", "gear"), layers = 0
+  )
+  rows <- results$results
+  not_run <- rows[rows$status == "not_run"]
+  # Whatever the records' groups: one row for each rule, table and column, groups "*", and the
+  # one table or column it couldn't check counted.
+  expect_equal(anyDuplicated(not_run, by = c("rule_id", "table_name", "column_name")), 0L)
+  expect_true(all(not_run$water_body == "*" & not_run$gear == "*"))
+  expect_true(all(not_run$n_not_evaluated == 1L))
+  expect_true(all(not_run$n_checked == 0L & not_run$n_fail == 0L))
+  # The column that wasn't found, for the rule that reads its name, and each attribute of the
+  # table that wasn't given, for the rules that read its columns.
+  expect_equal(
+    paste(not_run$rule_id, not_run$table_name, not_run$column_name, not_run$not_run_reason)[
+      not_run$table_name == "hauls"
+    ],
+    "column_name_mismatch hauls minutes no_column"
+  )
+  absent <- not_run[not_run$table_name == "stations"]
+  expect_equal(nrow(absent), 2L * 5L)
+  expect_true(all(absent$not_run_reason == "no_table"))
+  expect_no_error(new_results(rows, c("water_body", "gear"), rule_registry()))
+})
+
+test_that("a rule with unit outcomes records its not_run outcomes as units, others by group", {
+  local_stand_in_rules()
+  run <- assembly(group_cols = "gear")
+  record_layer(list(test_cast = list(
+    unit_outcome("test_cast", "catches", "weight", failed = FALSE, n_records = 5L),
+    not_run_outcome("test_cast", "hauls", "gear", "no_column"),
+    not_run_outcome("test_cast", "stations", "water_body", "no_table")
+  )), 1L, run$input, run$context, run$state, run_id)
+  record_layer(list(test_spell = list(
+    record_outcome("test_spell", "catches", "weight", integer(), character()),
+    not_run_outcome("test_spell", "hauls", "gear", "no_column")
+  )), 2L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  unit <- done$results[done$results$rule_id == "test_cast" & done$results$status == "not_run"]
+  expect_equal(unit$gear, c("*", "*"))
+  expect_equal(unit$n_not_evaluated, c(1L, 1L))
+  expect_equal(unit$not_run_reason, c("no_column", "no_table"))
+  grouped <- done$results[done$results$rule_id == "test_spell" & done$results$status == "not_run"]
+  expect_equal(grouped$n_not_evaluated, as.vector(table(run$input$groups$hauls$row_group)))
+  expect_no_error(new_results(done$results, "gear", rule_registry()))
+})
+
+test_that("a family's outcomes are checked when made and when recorded", {
+  expect_error(record_outcome("test_cast", "catches", "weight", 1:2, "a"), "one text for each")
+  for (fail in list(c(TRUE, FALSE), 0L, 1.5, NA_integer_, "1")) {
+    expect_error(
+      record_outcome("test_cast", "catches", "weight", fail, rep("a", length(fail))),
+      "must be row numbers"
+    )
+  }
+  expect_no_error(record_outcome("test_cast", "catches", "weight", integer(), character()))
+  local_stand_in_rules()
+  run <- assembly()
+  mystery <- list(kind = "mystery", table_name = "catches", column_name = "weight")
+  expect_error(
+    record_layer(
+      list(test_cast = list(mystery)), 1L, run$input, run$context, run$state, run_id
+    ),
+    "test_cast returned an outcome of kind \"mystery\""
+  )
+})
+
 test_that("rule-set rows give severity and enabled, the most specific winning (D16.6, D16.7)", {
   withr::local_options(groundplotqc.severity = NULL)
   fish <- fx_fish_clean()
@@ -352,7 +426,7 @@ test_that("a failure of the same layer masks nothing (6.2)", {
     record_outcome("test_spell", "catches", "weight", 1L, "x"),
     record_outcome("test_spell", "catches", "weight", 1L, "x")
   )), 2L, run$input, run$context, run$state, run_id)
-  expect_true(all(recorded(run$state)$issues$status == "open"))
+  expect_equal(recorded(run$state)$issues$status, c("open", "open"))
 })
 
 test_that("column-level failures and results are per group (6.3, D7.5)", {

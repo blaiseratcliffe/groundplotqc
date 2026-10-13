@@ -256,7 +256,20 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
 })
 
 test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
-  expect_equal(nrow(fx_caught(fx_magp_clean())), 0L)
+  results <- fx_caught(fx_magp_clean())
+  expect_equal(sum(results$issues$status == "open"), 0L)
+  # Nothing fails, and every rule reports: a row that couldn't run (not_run) is allowed.
+  expect_equal(sum(results$results$status == "fail"), 0L)
+  expect_equal(nrow(results$metadata$self_test), 0L)
+})
+
+test_that("every defect block stops on tables that aren't fixtures (18.3)", {
+  # lapply() returns a plain list, which lacks the marker the guard reads.
+  unmarked <- lapply(fx_magp_clean(), data.table::copy)
+  blocks <- fx_defect_blocks()
+  for (id in names(blocks)) {
+    expect_error(blocks[[id]](unmarked), "fixtures only", info = id)
+  }
 })
 
 test_that("planted vs caught: each block caught by its rule with its witness, and nothing else", {
@@ -267,13 +280,17 @@ test_that("planted vs caught: each block caught by its rule with its witness, an
   blocks <- fx_defect_blocks()
   for (i in seq_len(nrow(sheet))) {
     row <- sheet[i]
-    caught <- fx_caught(blocks[[row$defect_id]](base))
+    results <- fx_caught(blocks[[row$defect_id]](base))
+    caught <- results$issues[results$issues$status == "open"]
     is_hit <- caught$rule_id == row$rule_id & caught$table_name == row$table_name &
       caught$column_name == row$column_name & caught$record_pk %in% row$record_pk
     hit <- caught[is_hit]
     expect_equal(nrow(hit), 1L, info = row$defect_id)
     expect_identical(hit$value, row$witness, info = row$defect_id)
-    allowed <- c(row$rule_id, split_joined(row$cascade_rule_ids))
+    cascade <- split_joined(row$cascade_rule_ids)
+    allowed <- c(row$rule_id, cascade)
     expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
+    # Nor does another issue of the planted rule, elsewhere, pass: all but the hit are cascade.
+    expect_equal(sum(!is_hit & !caught$rule_id %in% cascade), 0L, info = row$defect_id)
   }
 })
