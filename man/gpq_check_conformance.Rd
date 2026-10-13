@@ -17,7 +17,7 @@ gpq_check_conformance(
 }
 \arguments{
 \item{tables}{A named list of data.frames, one per table, named as the specification
-names its tables.}
+names its tables. A table holding text marked as bytes is refused.}
 
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}} or \code{\link[=magp_spec]{magp_spec()}}.}
 
@@ -95,8 +95,8 @@ records sharing one root collapse the same way.
 A record's group values are read from its own table, or from the nearest table that holds
 the column, through the foreign keys; a record that can't reach one, or whose keys on the
 way don't match, has "*" there. A group value marked latin1 is converted to UTF-8 and runs;
-one whose bytes aren't valid UTF-8, or that is marked as bytes, stops the run, naming the
-column, the table it is read from and its first such row.
+one whose bytes aren't valid UTF-8 stops the run, naming the column, the table it is read
+from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},

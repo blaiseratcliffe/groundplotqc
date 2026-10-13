@@ -51,7 +51,7 @@ test_that("each planted defect gives its check's findings", {
     site_id_range_invalid = "stop 2", lineage_spec_unparseable = "stop 2",
     lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
-    rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 4",
+    rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
     rule_set_override_invalid = "stop 1", rule_set_duplicate_row = "stop 1",
     text_id_missing = "pass 0",
     text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1"
@@ -86,15 +86,12 @@ test_that("each planted defect gives its check's findings", {
     paste("Row 3", in_memory, "names table stands, which isn't in the dictionary."),
     paste("Row 1", in_memory, "names rule no_such_rule, which isn't registered."),
     paste("Row 3", in_memory, "names rule other_rule, which isn't registered."),
-    paste("Row 4", in_memory, "names rule no_such_rule, which isn't registered."),
     "The severity setting given as an argument names rule also_unknown, which isn't registered.",
     paste(
       "Row 2", in_memory, "names dd_pk_missing, a pre-flight check,",
       "which a rule set can't change."
     ),
-    paste(
-      "Row 4", in_memory, "names rule no_such_rule for plots.plot_id, as an earlier row does."
-    )
+    paste("Row 5", in_memory, "names rule raw_na for plots.*, as an earlier row does.")
   ))
   expect_equal(
     results$detail[results$rule_id == "text_slot_unknown"],

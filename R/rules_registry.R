@@ -83,7 +83,33 @@ rule_registry <- function() {
       "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
     ),
     conformance("integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map"),
-    conformance("value_not_finite", 1L, "error", "harmonization", "attributes; type_map")
+    conformance("value_not_finite", 1L, "error", "harmonization", "attributes; type_map"),
+    # ---- M4a: Layer 2, missing-value codes (6.1; D1.8a, D7.4, D7.9, D8.8, D8.11, D16.11) ----
+    conformance(
+      "raw_na", 2L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:raw_na_policy", "sentinel_fix"
+    ),
+    conformance(
+      "blank_string", 2L, "error", "harmonization", "attributes; keys; type_map; sentinels",
+      "sentinel_fix"
+    ),
+    conformance(
+      "sentinel_wrong_type", 2L, "error", "harmonization", "attributes; type_map; sentinels",
+      "sentinel_fix"
+    ),
+    conformance(
+      "sentinel_rogue_code", 2L, "error", "depends",
+      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+    ),
+    conformance(
+      "species_unknown_code", 2L, "error", "harmonization",
+      "attributes; type_map; sentinels; settings:unknown_codes"
+    ),
+    conformance(
+      "whitespace_padding", 2L, "warning", "harmonization", "attributes; keys; code_list_map",
+      "trim_whitespace"
+    ),
+    conformance("na_text_in_id", 2L, "error", "harmonization", "attributes; keys")
   ))
 }
 

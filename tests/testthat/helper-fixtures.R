@@ -288,8 +288,42 @@ fx_answer_sheet <- function() {
       "value_not_finite", "magp_tree_meas", "dbh", "magp_tree_meas_1",
       "magp_tree_meas$dbh row 1 Inf", "value_not_finite",
       witness = "Inf"
-    )
+    ),
     # ---- Layer 2 (task 5) ----
+    fx_defect(
+      "raw_na", "magp_trees", "tree_dist", "magp_trees_1", "magp_trees$tree_dist row 1 NA",
+      "raw_na"
+    ),
+    fx_defect(
+      "blank_string", "magp_trees", "comments", "magp_trees_1", "magp_trees$comments row 1 \"\"",
+      "blank_string",
+      witness = ""
+    ),
+    fx_defect(
+      "sentinel_wrong_type", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"-9\"", "sentinel_wrong_type",
+      witness = "-9"
+    ),
+    fx_defect(
+      "sentinel_rogue_code", "magp_trees", "comments", "magp_trees_1",
+      "magp_trees$comments row 1 \"N/A\"", "sentinel_rogue_code",
+      witness = "N/A"
+    ),
+    fx_defect(
+      "species_unknown_code", "magp_tree_meas", "species", "magp_tree_meas_1",
+      "magp_tree_meas$species row 1 \"UNKN.SPP\"", "species_unknown_code",
+      witness = "UNKN.SPP"
+    ),
+    fx_defect(
+      "whitespace_padding", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"AP \"", "whitespace_padding",
+      witness = "AP "
+    ),
+    fx_defect(
+      "na_text_in_id", "magp_trees", "src_tree_id", "magp_trees_1",
+      "magp_trees$src_tree_id row 1 \"NA\"", "na_text_in_id",
+      witness = "NA"
+    )
   ))
 }
 
@@ -356,8 +390,15 @@ fx_defect_blocks <- function() {
     },
     date_unparseable = fx_set_cell("magp_site_visits", "meas_date", 1L, "2020-02-30"),
     integer_stored_as_double = fx_set_column("magp_tree_meas", "visit_num", as.double),
-    value_not_finite = fx_set_cell("magp_tree_meas", "dbh", 1L, Inf)
+    value_not_finite = fx_set_cell("magp_tree_meas", "dbh", 1L, Inf),
     # ---- Layer 2 (task 5) ----
+    raw_na = fx_set_cell("magp_trees", "tree_dist", 1L, NA_real_),
+    blank_string = fx_set_cell("magp_trees", "comments", 1L, ""),
+    sentinel_wrong_type = fx_set_cell("magp_trees", "tree_origin", 1L, "-9"),
+    sentinel_rogue_code = fx_set_cell("magp_trees", "comments", 1L, "N/A"),
+    species_unknown_code = fx_set_cell("magp_tree_meas", "species", 1L, "UNKN.SPP"),
+    whitespace_padding = fx_set_cell("magp_trees", "tree_origin", 1L, "AP "),
+    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA")
   )
 }
 

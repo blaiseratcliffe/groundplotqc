@@ -265,12 +265,6 @@ test_that("the self-test lists a registered rule its family didn't report (9.7, 
 })
 
 test_that("group columns named like the engine's own variables are read as columns", {
-  # The masked records come from a Layer 1 and a Layer 2 rule checking a record column, which
-  # tasks 4 and 5 register; until then the run has no masked record to read.
-  testthat::skip_if_not(
-    all(c("coercion_loss", "raw_na") %in% rule_registry()$rule_id),
-    "Layers 1 and 2 have no registered rules yet"
-  )
   for (name in c("whole", "rows", "row_group")) {
     spec <- fx_fish_spec()
     attributes <- data.table::copy(spec$attributes)
@@ -424,10 +418,10 @@ test_that("masked records sharing one root collapse into one column-level issue 
 test_that("a failure of the same layer masks nothing (6.2)", {
   local_stand_in_rules()
   run <- assembly(settings = list(column_level_min_n = 100L))
-  record_layer(list(test_spell = list(
-    record_outcome("test_spell", "catches", "weight", 1L, "x"),
-    record_outcome("test_spell", "catches", "weight", 1L, "x")
-  )), 2L, run$input, run$context, run$state, run_id)
+  record_layer(list(
+    test_spell = list(record_outcome("test_spell", "catches", "weight", 1L, "x")),
+    blank_string = list(record_outcome("blank_string", "catches", "weight", 1L, "x"))
+  ), 2L, run$input, run$context, run$state, run_id)
   expect_equal(recorded(run$state)$issues$status, c("open", "open"))
 })
 

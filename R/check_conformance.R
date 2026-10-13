@@ -43,8 +43,8 @@
 #' A record's group values are read from its own table, or from the nearest table that holds
 #' the column, through the foreign keys; a record that can't reach one, or whose keys on the
 #' way don't match, has "*" there. A group value marked latin1 is converted to UTF-8 and runs;
-#' one whose bytes aren't valid UTF-8, or that is marked as bytes, stops the run, naming the
-#' column, the table it is read from and its first such row.
+#' one whose bytes aren't valid UTF-8 stops the run, naming the column, the table it is read
+#' from and its first such row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
@@ -54,7 +54,7 @@
 #' `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no rows there.
 #'
 #' @param tables A named list of data.frames, one per table, named as the specification
-#'   names its tables.
+#'   names its tables. A table holding text marked as bytes is refused.
 #' @param spec A specification from [gpq_read_spec()] or [magp_spec()].
 #' @param group_cols `NULL`, or the grouping columns, report unit first: results and issues
 #'   carry them under these names.
