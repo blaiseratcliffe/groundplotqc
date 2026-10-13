@@ -585,6 +585,15 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   kept <- !outcome$fail %in% masked$row_number
   fail <- outcome$fail[kept]
   value <- outcome$value[kept]
+  # A value marked as bytes keeps its bytes but loses the mark, which data.table's grouping
+  # and the results' writer stop on; it is then held as unmarked text, as text that isn't
+  # valid UTF-8 is (D16.36).
+  marked <- which(Encoding(value) == "bytes")
+  if (length(marked) > 0L) {
+    unmarked <- value[marked]
+    Encoding(unmarked) <- "unknown"
+    value[marked] <- unmarked
+  }
   expected <- if (length(outcome$expected) == 1L) {
     rep(outcome$expected, length(fail))
   } else {

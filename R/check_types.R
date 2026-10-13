@@ -1,12 +1,13 @@
-# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32 to D16.34):
-# each column's class against the type map, and the values its coercion to that class would
-# lose. The storage-class rules check columns, not records (D16.8); the record rules read the
-# values as given. A value Layer 2 reports (a blank outside the keys, another type's
-# sentinel, a rogue code outside the keys, the text "NA" in an ID) is left to Layer 2, so it
-# is reported once (D8.8). A blank in a key column is Layer 4's (D7.9), which Layer 1 leaves
-# alone too. A value that isn't valid UTF-8, or a date longer than its format can write, is
-# read by nothing that stops or warns on it: it is lost or unparseable as given (D16.33,
-# D16.34).
+# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32 to D16.34,
+# D16.36): each column's class against the type map, and the values its coercion to that
+# class would lose. The storage-class rules check columns, not records (D16.8); the record
+# rules read the values as given. A value Layer 2 reports (a blank outside the keys, another
+# type's sentinel, a rogue code outside the keys, the text "NA" in an ID) is left to Layer 2,
+# so it is reported once (D8.8). A blank in a key column is Layer 4's (D7.9), which Layer 1
+# leaves alone too. Text marked latin1 is read as UTF-8 (D16.36). Text marked as bytes, text
+# that isn't valid UTF-8 even so, and a date longer than its format can write are read by
+# nothing that stops or warns on them: each is lost or unparseable as given (D16.33, D16.34,
+# D16.36).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -15,9 +16,16 @@
 #' `text` is the values as text; `row` the attribute's row of the input's columns table.
 #' Key columns take no rogue codes: Layer 2 leaves their values to Layer 4 (D7.9). A sentinel
 #' of another type is Layer 2's only where the column's own type has sentinels, since
-#' `sentinel_wrong_type` has nothing to check it against otherwise (D16.32).
+#' `sentinel_wrong_type` has nothing to check it against otherwise (D16.32). Text marked as
+#' bytes is none of these, so the rule reading it reports it (D16.36).
 #' @noRd
 missing_like <- function(text, row, context) {
+  # %chin% stops on text marked as bytes, which has no encoding to compare it in: it is
+  # compared as NA, which no blank, sentinel or code is.
+  plain <- Encoding(text) != "bytes"
+  if (!all(plain)) {
+    text[!plain] <- NA_character_
+  }
   sentinels <- context$spec$sentinels
   own <- sentinels$value[sentinels$data_type == row$family]
   other <- if (length(own) > 0L) {
@@ -35,7 +43,7 @@ missing_like <- function(text, row, context) {
     )
   }
   id <- key || isTRUE(row$id_marked)
-  is_blank(text) | text %chin% other | text %chin% rogue | (id & text %chin% "NA")
+  plain & (is_blank(text) | text %chin% other | text %chin% rogue | (id & text %chin% "NA"))
 }
 
 #' Layer 1's outcomes, by rule
@@ -89,19 +97,37 @@ check_types <- function(input, context) {
         # Each distinct value is read once, in UTC so that a time in the format reads back as
         # written; every row holding a value that doesn't read back fails.
         distinct <- unique(given)
-        distinct <- distinct[!missing_like(distinct, row, context) & !distinct %chin% own]
-        # Text that isn't valid UTF-8 is no date and is not read: strptime() stops on it in a
-        # UTF-8 locale (D16.33). Nor is a value longer than the longest date the format writes,
-        # in the bytes of this locale's month and weekday names: it can't read back as written,
-        # and strptime() stops on one of more than 1000 bytes (D16.34).
-        first_days <- rep(seq(as.Date("2021-01-01"), by = "month", length.out = 12L), each = 7L)
-        longest <- max(nchar(enc2utf8(format(first_days + 0:6, row$date_format)), type = "bytes"))
-        valid <- validUTF8(distinct) & nchar(distinct, type = "bytes") <= longest
-        readable <- distinct[valid]
-        parsed <- strptime(readable, row$date_format, tz = "UTC")
+        # Text marked as bytes has no encoding to read it in: it is no sentinel and no date,
+        # and is never compared, since %chin% and strptime() stop on it (D16.36).
+        bytes <- Encoding(distinct) == "bytes"
+        read <- distinct[!bytes]
+        read <- read[!missing_like(read, row, context) & !read %chin% own]
+        # Text that isn't valid UTF-8 is read as UTF-8 where it converts to it (marked latin1,
+        # or native in a locale that isn't UTF-8); text that still isn't is no date and is not
+        # read: strptime() stops on it in a UTF-8 locale (D16.33, D16.36).
+        utf8 <- read
+        valid <- validUTF8(read)
+        convert <- which(!valid)
+        utf8[convert] <- enc2utf8(read[convert])
+        valid[convert] <- validUTF8(utf8[convert])
+        # Nor is a value longer, in bytes, than the longest date the format writes in this
+        # locale: it can't read back as written. Counting bytes is safe though strptime(),
+        # which stops on more than 1000 characters, counts characters: every date the format
+        # writes is within the bound, and a value within it has no more characters than the
+        # longest date. The format is written for every month with every weekday, before noon
+        # and after, on two-digit days and hours, so names, AM and PM are at their longest
+        # (D16.34).
+        days <- rep(seq(as.Date("2021-01-22"), by = "month", length.out = 12L), each = 7L) + 0:6
+        moments <- as.POSIXct(rep(days, 2L)) + rep(c(43199, 86399), each = length(days))
+        written <- format(moments, row$date_format, tz = "UTC")
+        longest <- max(nchar(enc2utf8(written), type = "bytes"))
+        valid <- valid & nchar(utf8, type = "bytes") <= longest
+        parsed <- strptime(utf8[valid], row$date_format, tz = "UTC")
         unread <- !valid
-        unread[valid] <- is.na(parsed) | format(parsed, row$date_format) != readable
-        bad <- open[given %chin% distinct[unread]]
+        unread[valid] <- is.na(parsed) | format(parsed, row$date_format) != utf8[valid]
+        # Each row's value is looked up with %in%, which takes text marked as bytes, where
+        # %chin% stops.
+        bad <- open[given %in% c(distinct[bytes], read[unread])]
         record_outcome("date_unparseable", table, attribute, bad, text[bad], row$date_format)
       }
     ),

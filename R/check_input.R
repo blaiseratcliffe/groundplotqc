@@ -1,9 +1,10 @@
 # The tables a conformance run reads, matched to its specification (plan 6.1, 6.2, 16.2;
-# D7.5, D9.24, D16.9, D16.13, D16.14, D16.33, D16.35). Each spec table is matched to the
-# input table of its name, and each dictionary attribute to its column: exactly, or failing
-# that by letter case and spaces. A column is coerced to its expected class only when a check
-# asks, one column at a time. Each record finds its group values and the problem unit's key
-# through the foreign keys. The caller's tables are read, never changed or copied whole.
+# D7.5, D9.24, D16.9, D16.13, D16.14, D16.33, D16.35, D16.36). Each spec table is matched to
+# the input table of its name, and each dictionary attribute to its column: exactly, or
+# failing that by letter case and spaces. A column is coerced to its expected class only when
+# a check asks, one column at a time. Each record finds its group values and the problem
+# unit's key through the foreign keys. The caller's tables are read, never changed or copied
+# whole.
 
 #' The caller's tables checked: a list of data.frames, each named once by its table, each
 #' column named once and holding one value per row
@@ -106,18 +107,26 @@ stored_text <- function(x) {
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
 #' integer is wanted. A value that isn't finite (NaN, Inf) is never lost but becomes NA where
 #' an integer is wanted: value_not_finite reports it. A date column stored as a date is
-#' written in the type's date format; text is never lost. Text that isn't valid UTF-8 is no
-#' number, so it is lost without being read: as.numeric() stops on it in a UTF-8 locale.
+#' written in the type's date format; text is never lost. Text that isn't valid UTF-8 is read
+#' as UTF-8 where it converts to it (marked latin1, or native in a locale that isn't UTF-8);
+#' text marked as bytes, or that isn't valid UTF-8 even so, is no number, so it is lost
+#' without being read: as.numeric() stops on it in a UTF-8 locale (D16.33, D16.36).
 #' @noRd
 coerce_column <- function(x, r_class, date_format = NA_character_) {
   n <- length(x)
   as_number <- function(text) {
-    valid <- validUTF8(text)
+    bytes <- Encoding(text) == "bytes"
+    valid <- !bytes & validUTF8(text)
     if (all(valid)) {
       return(suppressWarnings(as.numeric(text)))
     }
     number <- rep(NA_real_, length(text))
     number[valid] <- suppressWarnings(as.numeric(text[valid]))
+    # Only the values that aren't valid UTF-8 are converted (16.2).
+    convert <- which(!valid & !bytes)
+    utf8 <- enc2utf8(text[convert])
+    readable <- validUTF8(utf8)
+    number[convert[readable]] <- suppressWarnings(as.numeric(utf8[readable]))
     number
   }
   if (r_class == "character") {
@@ -376,8 +385,9 @@ reached_values <- function(input, reached, column_name) {
 #'
 #' Without group columns every row is in group 1 and `values` is NULL. Otherwise each group
 #' column's value is read where the record reaches it, "*" where it reaches none or the
-#' value is blank; the groups are numbered in the order of their text. A group value that
-#' isn't valid UTF-8 stops the run, naming its column, table and first row (D16.35).
+#' value is blank; the groups are numbered in the order of their text, each written as UTF-8.
+#' A group value marked as bytes, or that isn't valid UTF-8 once converted to it, stops the
+#' run, naming its column, table and first row (D16.35, D16.36).
 #' @noRd
 group_index <- function(input, table) {
   n <- nrow(input$data[[table]])
@@ -394,26 +404,33 @@ group_index <- function(input, table) {
     # Each distinct value as text, "*" for a blank or a value no record reached, so values
     # that read the same are one group.
     text <- value_text(distinct)
-    # A group value goes into every results row and file, so it must be valid UTF-8; the
-    # caller is told the column, the table it is read from and its first such row (D16.35).
-    if (!all(validUTF8(text))) {
+    # A group value goes into every results row and file, so it is written as UTF-8. Each
+    # distinct value is converted: text marked latin1, or native in a locale that isn't UTF-8,
+    # becomes UTF-8, and valid UTF-8 that fread() leaves unmarked is marked so, which the order
+    # below needs. Text marked as bytes has no encoding to convert from. A value marked so, or
+    # that isn't valid UTF-8 even so, stops the run: the caller is told the column, the table
+    # it is read from and its first such row (D16.35, D16.36).
+    bytes <- Encoding(text) == "bytes"
+    text[!bytes] <- enc2utf8(text[!bytes])
+    if (any(bytes) || !all(validUTF8(text))) {
       at <- which(
         input$columns$table_name == reached$home & input$columns$attribute_name == column_name
       )
       whole <- value_text(input$data[[reached$home]][[input$columns$column[[at]]]])
+      marked <- Encoding(whole) == "bytes"
+      odd <- marked | !validUTF8(whole)
+      # Only the values that aren't valid UTF-8 as given are converted (16.2).
+      convert <- which(odd & !marked)
+      odd[convert] <- !validUTF8(enc2utf8(whole[convert]))
       stop(sprintf(
         paste0(
           "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
           "the table may have been read with the wrong encoding."
         ),
-        mark_invalid_utf8(column_name), mark_invalid_utf8(reached$home),
-        which(!validUTF8(whole))[[1L]]
+        mark_invalid_utf8(column_name), mark_invalid_utf8(reached$home), which(odd)[[1L]]
       ), call. = FALSE)
     }
     text[is.na(text) | is_blank(text)] <- "*"
-    # Marked as UTF-8 so the order below reads it: fread() leaves valid non-ASCII text
-    # unmarked, which order() refuses. The bytes don't change (D16.35).
-    Encoding(text) <- "UTF-8"
     labels[[column_name]] <- unique(text)
     codes[[column_name]] <- match(text, labels[[column_name]])[match(value, distinct)]
   }

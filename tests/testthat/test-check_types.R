@@ -162,6 +162,18 @@ test_that("missing_like() leaves a key, an ID and a plain column's values as D8.
   expect_false(missing_like(text, row, context)[[3L]])
 })
 
+test_that("missing_like() reads text marked as bytes as no blank, sentinel or code (D16.36)", {
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(rogue_codes = "UNK"), 1L)
+  columns <- conformance_input(fx_fish_clean(), spec)$columns
+  row <- as.list(columns[columns$attribute_name == "fish_count"])
+  marked <- "é"
+  Encoding(marked) <- "bytes"
+  expect_identical(
+    missing_like(c(marked, "?", "UNK", ""), row, context), c(FALSE, TRUE, TRUE, TRUE)
+  )
+})
+
 test_that("a factor, a Date and an all-NA logical column read as their class says (D2.33)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
@@ -328,9 +340,12 @@ test_that("a value that isn't valid UTF-8 is reported as given, never a stop or 
 })
 
 test_that("a date longer than its format can write is unparseable, never a stop (D16.34)", {
+  # In another locale the weekday and month names below may be written in other bytes.
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
   fish <- fx_fish_clean()
   hauls <- data.table::copy(fish$hauls)
-  # strptime() stops on 1001 bytes; "2020-06-011" is one over the 10 the format writes.
+  # strptime() stops on more than 1000 characters; "2020-06-011" is one over the 10 the
+  # format writes.
   long <- strrep("2", 1001L)
   over <- "2020-06-011"
   hauls$haul_date <- c("2020-06-01", long, over, "2020-06-04")
@@ -354,6 +369,81 @@ test_that("a date longer than its format can write is unparseable, never a stop 
   issues <- gpq_check_conformance(fish, spec, layers = 1)$issues
   bad <- issues[issues$status == "open" & issues$rule_id == "date_unparseable"]
   expect_equal(bad$value, c(paste0(longest, "x"), strrep(longest, 40L)))
+})
+
+test_that("a format writing AM and PM is bounded by the longer of the two (D16.34)", {
+  # Malay writes AM as "PG" and PM as "PTG": a bound from times before noon alone is a byte
+  # short of a time after noon.
+  old <- Sys.getlocale("LC_TIME")
+  withr::defer(Sys.setlocale("LC_TIME", old))
+  # The first of these names the system takes is set.
+  malay <- Find(
+    function(name) nzchar(suppressWarnings(Sys.setlocale("LC_TIME", name))),
+    c("ms-MY", "ms_MY.UTF-8", "ms_MY.utf8")
+  )
+  testthat::skip_if(is.null(malay), "needs a Malay time locale")
+  layout <- "%Y-%m-%d %I:%M %p"
+  afternoon <- format(as.POSIXct("2021-03-01 13:30", tz = "UTC"), layout, tz = "UTC")
+  testthat::skip_if_not(afternoon == "2021-03-01 01:30 PTG", "the locale writes PM otherwise")
+  spec <- fx_fish_spec()
+  spec$type_map$date_format[spec$type_map$data_type == "day"] <- layout
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date <- c(
+    "2021-03-01 01:30 PG", afternoon, "2021-03-01 11:59 PTG", paste0(afternoon, "x")
+  )
+  fish$hauls <- hauls
+  stations <- data.table::copy(fish$stations)
+  stations$first_visit <- c("2021-03-02 12:00 PG", "2021-03-02 12:00 PTG")
+  fish$stations <- stations
+  expect_silent(issues <- gpq_check_conformance(fish, spec, layers = 1)$issues)
+  bad <- issues[issues$status == "open" & issues$rule_id == "date_unparseable"]
+  expect_equal(bad$value, paste0(afternoon, "x"))
+  expect_equal(bad$row_number, 4L)
+})
+
+test_that("latin1-marked text is read as UTF-8; text marked as bytes is unreadable (D16.36)", {
+  # Each value below is checked by its bytes and how it is marked, in a UTF-8 locale.
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
+  layout <- "%d/%m/%Y à %Hh%M"
+  written <- "01/06/2020 à 13h45"
+  latin <- iconv(written, "UTF-8", "latin1")
+  marked <- written
+  Encoding(marked) <- "bytes"
+  expect_identical(Encoding(c(latin, marked)), c("latin1", "bytes"))
+  expect_true(validUTF8(marked))
+  spec <- fx_fish_spec()
+  spec$type_map$date_format[spec$type_map$data_type == "day"] <- layout
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date <- c(latin, marked, written, "01/06/2020 à 25h61")
+  fish$hauls <- hauls
+  stations <- data.table::copy(fish$stations)
+  stations$first_visit <- c(written, latin)
+  fish$stations <- stations
+  catches <- data.table::copy(fish$catches)
+  weight <- as.character(catches$weight)
+  weight[1:2] <- c(iconv("7é", "UTF-8", "latin1"), marked)
+  catches$weight <- weight
+  count <- as.character(catches$fish_count)
+  count[[3L]] <- marked
+  catches$fish_count <- count
+  fish$catches <- catches
+  expect_silent(results <- gpq_check_conformance(fish, spec, layers = 1))
+  # Each value keeps its bytes, without the mark the results' writer stops on.
+  expect_no_error(gpq_write_results(results, withr::local_tempdir()))
+  issues <- results$issues
+  open <- issues[issues$status == "open"]
+  # The latin1 date reads back as written; the one marked as bytes is never read.
+  bad <- open[open$rule_id == "date_unparseable"]
+  expect_equal(paste(bad$table_name, bad$row_number), c("hauls 2", "hauls 4"))
+  expect_identical(charToRaw(bad$value[[1L]]), charToRaw(marked))
+  # Neither is a number: both are lost, as given.
+  loss <- open[open$rule_id == "coercion_loss"]
+  expect_equal(
+    paste(loss$column_name, loss$row_number), c("fish_count 3", "weight 1", "weight 2")
+  )
+  expect_identical(lapply(loss$value, charToRaw), lapply(c(marked, weight[1:2]), charToRaw))
 })
 
 test_that("a Layer 1 rule failing every record of a column collapses (6.3)", {

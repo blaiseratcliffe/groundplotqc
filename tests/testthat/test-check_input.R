@@ -84,6 +84,15 @@ test_that("coerce_column loses text that isn't valid UTF-8 without reading it (D
   # A factor's level can't be made by factor() from such text.
   level <- structure(1:2, levels = c("3", invalid), class = "factor")
   expect_identical(coerce_column(level, "double")$lost, c(FALSE, TRUE))
+  # Latin-1-marked text is read as UTF-8 and text marked as bytes isn't read: neither is a
+  # number (D16.36).
+  marked <- "1é"
+  Encoding(marked) <- "bytes"
+  text <- c("12", iconv("1é", "UTF-8", "latin1"), marked, invalid)
+  expect_silent(as_double <- coerce_column(text, "double"))
+  expect_identical(as_double$value, c(12, NA, NA, NA))
+  expect_identical(as_double$lost, c(FALSE, TRUE, TRUE, TRUE))
+  expect_identical(coerce_column(text, "integer")$lost, c(FALSE, TRUE, TRUE, TRUE))
 })
 
 test_that("an exact name wins; a near one differs only in letter case or spaces (D16.14)", {
@@ -203,6 +212,29 @@ test_that("an unmarked non-ASCII group value, as fread() leaves it, is a group a
   expect_true(paste(charToRaw(name), collapse = "") %in% written)
 })
 
+test_that("a latin1-marked group value is converted to UTF-8 and written so (D16.36)", {
+  name <- iconv("Zürich", "UTF-8", "latin1")
+  # Latin-1 bytes that happen to be valid UTF-8 are converted too, never relabelled.
+  odd <- iconv("Ã¼", "UTF-8", "latin1")
+  expect_identical(Encoding(c(name, odd)), c("latin1", "latin1"))
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  stations$water_body <- c(name, odd)
+  fish$stations <- stations
+  spec <- fx_fish_spec()
+  values <- conformance_input(fish, spec, group_cols = "water_body")$groups$stations$values
+  utf8 <- c("Zürich", "Ã¼")
+  expect_identical(lapply(values$water_body, charToRaw), lapply(utf8, charToRaw))
+  expect_identical(Encoding(values$water_body), c("UTF-8", "UTF-8"))
+  results <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 1)
+  run_dir <- gpq_write_results(results, withr::local_tempdir())
+  path <- file.path(run_dir, "tables", "results.csv")
+  bytes <- readBin(path, "raw", file.size(path))
+  for (text in utf8) {
+    expect_true(length(grepRaw(charToRaw(text), bytes, fixed = TRUE)) > 0L, info = text)
+  }
+})
+
 test_that("a group value that isn't valid UTF-8 is a caller error naming its column and row", {
   invalid <- rawToChar(as.raw(c(0x6C, 0x61, 0x97)))
   expect_false(validUTF8(invalid))
@@ -226,14 +258,26 @@ test_that("a group value that isn't valid UTF-8 is a caller error naming its col
   hauls <- data.table::copy(fish$hauls)
   hauls$gear <- c("GN", invalid, "GN", invalid)
   fish$hauls <- hauls
-  expect_error(
-    conformance_input(fish, spec, group_cols = "gear"),
+  in_gear <- function(row) {
     paste0(
-      "Group column gear of table hauls holds text that isn't valid UTF-8, first in row 2; ",
-      "the table may have been read with the wrong encoding."
-    ),
-    fixed = TRUE
-  )
+      "Group column gear of table hauls holds text that isn't valid UTF-8, first in row ",
+      row, "; the table may have been read with the wrong encoding."
+    )
+  }
+  expect_error(conformance_input(fish, spec, group_cols = "gear"), in_gear(2L), fixed = TRUE)
+  # A latin1-marked value converts to UTF-8, so the first row it can't is named (D16.36).
+  hauls$gear <- c(iconv("Gé", "UTF-8", "latin1"), "GN", invalid, "GN")
+  fish$hauls <- hauls
+  expect_error(conformance_input(fish, spec, group_cols = "gear"), in_gear(3L), fixed = TRUE)
+  # Text marked as bytes has no encoding to convert from, even where its bytes are valid
+  # UTF-8 (D16.36).
+  marked <- "Gé"
+  Encoding(marked) <- "bytes"
+  expect_true(validUTF8(marked))
+  hauls$gear <- c("GN", "GN", "GN", marked)
+  fish$hauls <- hauls
+  expect_error(conformance_input(fish, spec, group_cols = "gear"), in_gear(4L), fixed = TRUE)
+  expect_error(gpq_check_conformance(fish, spec, group_cols = "gear"), in_gear(4L), fixed = TRUE)
 })
 
 test_that("a table name that isn't valid UTF-8 is checked, not a stop", {
