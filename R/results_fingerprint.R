@@ -106,7 +106,10 @@ rule_fingerprint <- function(rule_ids, spec, rules = NULL, settings = list(),
         value <- if (setting == "severity") {
           entries$severity[match(id, entries$rule_id)]
         } else {
-          setting_text(resolve_setting(setting, settings, rules)$value)
+          written <- setting_text(resolve_setting(setting, settings, rules)$value)
+          # A value with no element is labelled with nothing, as it was before setting_text(),
+          # so that it differs from the one code "NA" (setting_text() never gives "" itself).
+          if (is.na(written)) "" else written
         }
         parts <- c(parts, list(label(paste0(input, "=", value))))
       }

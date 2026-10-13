@@ -347,6 +347,9 @@ test_that("a code or name the settings rows' forms can't hold is refused in ever
 test_that("setting_text writes a value as settings.csv and the fingerprints read it", {
   expect_equal(setting_text("en"), "en")
   expect_equal(setting_text(10L), "10")
+  # A number is written in full, whether it came as an integer or a double (D12.45).
+  expect_equal(setting_text(1e5), "100000")
+  expect_equal(setting_text(100000L), "100000")
   expect_equal(setting_text(c("-999", "N/A")), "-999; N/A")
   expect_equal(
     setting_text(c(species = "UNKN.SPP", species = "XX")), "species=UNKN.SPP; species=XX"
@@ -372,4 +375,32 @@ test_that("a rule fingerprint follows a named setting's names as well as its cod
     settings = list(unknown_codes = c(genus = "X")), registry = registry
   )
   expect_false(identical(one, other))
+})
+
+test_that("a rule fingerprint tells no codes from the one code \"NA\"", {
+  local_results_registry()
+  registry <- rbind(rule_registry(), data.table::data.table(
+    rule_id = "uses_rogue", stage = "conformance", layer = 2L, check_type = "test",
+    default_severity = "error", default_class = "harmonization",
+    inputs = "settings:rogue_codes", strategy = "none", message_id = "preflight_title",
+    rule_version = 1L
+  ))
+  spec <- fx_fish_spec()
+  none <- rule_fingerprint(
+    "uses_rogue", spec,
+    settings = list(rogue_codes = character()), registry = registry
+  )
+  text_na <- rule_fingerprint(
+    "uses_rogue", spec,
+    settings = list(rogue_codes = "NA"), registry = registry
+  )
+  expect_false(identical(none, text_na))
+  # The same codes, as an argument or as a rule-set row's text, give one fingerprint.
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "rogue_codes", value = "NA", type = "character")
+  ))
+  expect_identical(
+    rule_fingerprint("uses_rogue", spec, rules = rows, registry = registry), text_na
+  )
 })

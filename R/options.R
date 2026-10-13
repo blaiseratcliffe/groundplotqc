@@ -28,7 +28,6 @@
 #'   rows' `severity` column gives this tier. Pre-flight checks each entry
 #'   (`rule_id_unknown`, `rule_set_override_invalid`); a pre-flight check's own
 #'   outcome can't be changed.
-#'
 #' - `groundplotqc.example_cap`: how many distinct failing values a results row
 #'   shows in its `examples` column. Built-in: `5`.
 #' - `groundplotqc.column_level_min_n`: the fewest records a column must have in

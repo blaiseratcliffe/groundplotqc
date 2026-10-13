@@ -229,9 +229,9 @@ test_that("the enabled stop names the file's line when the component has its ori
   set <- a_rule_set()
   set$rules$enabled <- c("TRUE", "")
   expect_error(validate_rule_set(set), "in row 2.", fixed = TRUE)
-  # An origin that doesn't match the rows is dropped, so the stop gives R's rows.
-  attr(set$rules, "source_file") <- "rules_rules.csv"
-  attr(set$rules, "source_lines") <- 3L
+  # An origin whose lines don't match the rows is dropped, so the stop gives R's rows: the
+  # hash is of these rows, so the one line for two rows is what drops it.
+  set$rules <- set_origin(set$rules, "rules_rules.csv", 3L)
   expect_error(validate_rule_set(set), "in row 2.", fixed = TRUE)
 })
 
@@ -346,7 +346,7 @@ test_that("rule_set_bytes() is one text whether the rule set came from files or 
   expect_match(text, "\nsettings\n\"setting\",\"value\",\"type\"\n", fixed = TRUE)
   changed <- in_memory
   changed$meta <- data.table::copy(in_memory$meta)
-  data.table::set(changed$meta, j = "version", value = "2")
+  data.table::set(changed$meta, j = "version", value = paste0(in_memory$meta$version, "1"))
   expect_false(identical(rule_set_bytes(changed), rule_set_bytes(in_memory)))
   # No components, no bytes: still a raw vector, which sha256_bytes() takes.
   expect_identical(rule_set_bytes(NULL), raw())
@@ -377,12 +377,20 @@ test_that("a component keeps its origin only while its rows are as read (D16.15)
   data.table::setattr(reordered$rules, "source_lines", 2:3)
   data.table::setattr(reordered$rules, "source_sha256", attr(read$rules, "source_sha256"))
   expect_null(attr(validate_rule_set(reordered)$rules, "source_file"))
-  # A changed component's finding gives R's row, not a stale line.
-  context <- preflight_context(list(rules = data.frame(
-    rule_id = c("r1", "no_rule"), table_name = "*", attribute_name = "*", severity = NA,
-    class = NA, enabled = TRUE
-  )))
-  expect_true(is.na(rule_set_rows(context)$file[[1L]]))
+  filtered <- read
+  filtered$rules <- read$rules[1L]
+  data.table::setattr(filtered$rules, "source_file", "rules_rules.csv")
+  data.table::setattr(filtered$rules, "source_lines", 2L)
+  data.table::setattr(filtered$rules, "source_sha256", attr(read$rules, "source_sha256"))
+  expect_null(attr(validate_rule_set(filtered)$rules, "source_file"))
+  # A changed component's finding gives R's row, not a stale line; the unchanged one's gives
+  # its file's line.
+  rows <- rule_set_rows(preflight_context(edited))
+  expect_true(all(is.na(rows$file)))
+  expect_equal(rows$position[[1L]], "Row 1 of the rule set's rules (as R counts rows)")
+  from_file <- rule_set_rows(preflight_context(read))
+  expect_equal(from_file$file, rep("rules_rules.csv", 2L))
+  expect_equal(from_file$position[[1L]], "Line 2 of rules_rules.csv")
 })
 
 test_that("MAGPlot's rule set keeps its origin, and a copy with a row changed doesn't (D16.15)", {
@@ -396,21 +404,22 @@ test_that("MAGPlot's rule set keeps its origin, and a copy with a row changed do
 
 test_that("rule_row_values takes each value from the most specific row giving one (D16.6)", {
   rows <- validate_rule_set(list(rules = data.frame(
-    rule_id = c("r", "r", "r", "r", "s"),
-    table_name = c("*", "t", "*", "t", "*"),
-    attribute_name = c("*", "*", "a", "a", "*"),
-    severity = c("error", NA, "warning", NA, "warning"),
-    class = c(NA, "source", NA, NA, NA),
-    enabled = c(TRUE, TRUE, TRUE, FALSE, TRUE)
+    rule_id = c("r", "r", "r", "r", "s", "q", "q"),
+    table_name = c("*", "t", "*", "t", "*", "t", "*"),
+    attribute_name = c("*", "*", "a", "a", "*", "*", "a"),
+    severity = c("error", NA, "warning", NA, "warning", "error", "warning"),
+    class = c(NA, "source", NA, NA, NA, NA, NA),
+    enabled = c(TRUE, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE)
   )))$rules
   found <- rule_row_values(
-    rows, c("r", "r", "r", "r", "s", "x"),
-    c("t", "t", "u", "u", "t", "t"), c("a", "b", "a", "b", "a", "a")
+    rows, c("r", "r", "r", "r", "s", "x", "q"),
+    c("t", "t", "u", "u", "t", "t", "t"), c("a", "b", "a", "b", "a", "a", "a")
   )
-  # t.a: its own row gives enabled; t.* gives class; *.a gives severity (above *.*).
-  expect_equal(found$severity, c("warning", "error", "warning", "error", "warning", NA))
-  expect_equal(found$class, c("source", "source", NA, NA, NA, NA))
-  expect_equal(found$enabled, c(FALSE, TRUE, TRUE, TRUE, TRUE, NA))
+  # t.a: its own row gives enabled; t.* gives class; *.a gives severity (above *.*). For q at
+  # t.a, the row for t.* (error) is above the row for *.a (warning).
+  expect_equal(found$severity, c("warning", "error", "warning", "error", "warning", NA, "error"))
+  expect_equal(found$class, c("source", "source", NA, NA, NA, NA, NA))
+  expect_equal(found$enabled, c(FALSE, TRUE, TRUE, TRUE, TRUE, NA, TRUE))
   expect_equal(nrow(rule_row_values(NULL, "r", "t", "a")), 1L)
   expect_true(is.na(rule_row_values(NULL, "r", "t", "a")$enabled))
   expect_equal(nrow(rule_row_values(rows, character(), character(), character())), 0L)

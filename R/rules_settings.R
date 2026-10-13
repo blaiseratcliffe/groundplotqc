@@ -250,14 +250,14 @@ severity_entries <- function(settings = list()) {
 
 #' A setting's value as one text, as settings.csv and a rule's fingerprint write it
 #'
-#' The elements "; "-joined, each "name=value" when the value has names (D16.12, R13); NA when
-#' the value has no element.
+#' The elements "; "-joined, each "name=value" when the value has names (D16.12; M3b's R13),
+#' a number written in full (D12.45); NA when the value has no element.
 #' @noRd
 setting_text <- function(value) {
   if (length(value) == 0L) {
     return(NA_character_)
   }
-  text <- as.character(value)
+  text <- as_text(value)
   if (!is.null(names(value))) {
     text <- paste0(names(value), "=", text)
   }

@@ -245,7 +245,7 @@ rule_set_bytes <- function(rules) {
 #' no row gives one (the caller falls back to the option entry and the registry, or to TRUE
 #' for enabled). `rows` is a checked rules component or NULL; `rule_ids`, `table_names` and
 #' `column_names` are one per question. Returns a data.table with `severity`, `class` and
-#' `enabled`, one row per question. pre-flight's rule_set_duplicate_row stops a rule set with
+#' `enabled`, one row per question. Pre-flight's rule_set_duplicate_row stops a rule set with
 #' two rows at one level.
 #' @noRd
 rule_row_values <- function(rows, rule_ids, table_names, column_names) {
