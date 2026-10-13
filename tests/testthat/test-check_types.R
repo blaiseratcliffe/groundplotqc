@@ -154,11 +154,12 @@ test_that("missing_like() leaves a key, an ID and a plain column's values as D8.
   context <- conformance_context(spec, NULL, list(rogue_codes = c("-999", "UNK")), 1L)
   expect_equal(missing_like(text, row, context)[1:2], c(TRUE, FALSE))
   expect_equal(missing_like(text, id, context)[1:2], c(TRUE, TRUE))
-  # A type with no sentinels leaves another type's to nobody (D16.32).
+  # A type with no sentinels of its own leaves another type's to Layer 1 (D16.32): "?" is a
+  # character sentinel, and the numeric type has none left.
   bare <- spec
   bare$sentinels <- bare$sentinels[bare$sentinels$data_type == "character"]
   context <- conformance_context(bare, NULL, list(), 1L)
-  expect_equal(missing_like(text, row, context)[c(3L, 5L)], c(FALSE, FALSE))
+  expect_false(missing_like(text, row, context)[[3L]])
 })
 
 test_that("a factor, a Date and an all-NA logical column read as their class says (D2.33)", {
@@ -242,7 +243,9 @@ test_that("another type's sentinel is Layer 2's only where the column's type has
   expect_setequal(
     paste(full$rule_id, full$value), c("date_unparseable 2020-02-30", "coercion_loss abc")
   )
-  # Without sentinels of their own, no rule would report the values: Layer 1 does.
+  # Only the character type keeps its sentinels. A type with none of its own leaves another
+  # type's to Layer 1, which reports "?" in the date and the number column (D16.32); "-88" is
+  # no one's sentinel now.
   bare <- fx_fish_spec()
   bare$sentinels <- bare$sentinels[bare$sentinels$data_type == "character"]
   found <- reported(bare)
@@ -271,6 +274,45 @@ test_that("value_not_finite finds NaN and Inf, stored or written as text", {
     paste(finite$table_name, finite$value), c("stations -Inf", "catches Inf", "catches NaN")
   )
   expect_false("coercion_loss" %in% open$rule_id)
+})
+
+test_that("a number column stored as dates is lost as text and holds no NaN or Inf (16.2)", {
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  stations$depth <- data.table::as.IDate(c("2020-06-01", "2020-06-01"))
+  fish$stations <- stations
+  open <- fish_open(fish, layers = 1)
+  expect_setequal(placed(open), c("class_mismatch stations depth", "coercion_loss stations depth"))
+  expect_equal(open$value[open$rule_id == "coercion_loss"], rep("2020-06-01", 2L))
+})
+
+test_that("a value that isn't valid UTF-8 is reported as given, never a stop or a warning", {
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale, where R stops on it")
+  invalid <- rawToChar(as.raw(c(0x32, 0x30, 0x97)))
+  expect_false(validUTF8(invalid))
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date <- c("2020-06-01", invalid, "2020-06-03", "2020-06-04")
+  fish$hauls <- hauls
+  catches <- data.table::copy(fish$catches)
+  weight <- as.character(catches$weight)
+  weight[[1L]] <- invalid
+  catches$weight <- weight
+  count <- as.character(catches$fish_count)
+  count[[2L]] <- invalid
+  catches$fish_count <- count
+  fish$catches <- catches
+  expect_silent(open <- fish_open(fish, layers = 1))
+  expect_setequal(placed(open), c(
+    "date_unparseable hauls haul_date", "class_mismatch catches weight",
+    "coercion_loss catches weight", "class_mismatch catches fish_count",
+    "coercion_loss catches fish_count"
+  ))
+  for (rule in c("date_unparseable", "coercion_loss")) {
+    found <- open[open$rule_id == rule]
+    expect_identical(charToRaw(found$value[[1L]]), charToRaw(invalid), info = rule)
+  }
+  expect_equal(open$row_number[open$rule_id == "date_unparseable"], 2L)
 })
 
 test_that("a Layer 1 rule failing every record of a column collapses (6.3)", {

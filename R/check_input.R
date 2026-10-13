@@ -106,10 +106,20 @@ stored_text <- function(x) {
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
 #' integer is wanted. A value that isn't finite (NaN, Inf) is never lost but becomes NA where
 #' an integer is wanted: value_not_finite reports it. A date column stored as a date is
-#' written in the type's date format; text is never lost.
+#' written in the type's date format; text is never lost. Text that isn't valid UTF-8 is no
+#' number, so it is lost without being read: as.numeric() stops on it in a UTF-8 locale.
 #' @noRd
 coerce_column <- function(x, r_class, date_format = NA_character_) {
   n <- length(x)
+  as_number <- function(text) {
+    valid <- validUTF8(text)
+    if (all(valid)) {
+      return(suppressWarnings(as.numeric(text)))
+    }
+    number <- rep(NA_real_, length(text))
+    number[valid] <- suppressWarnings(as.numeric(text[valid]))
+    number
+  }
   if (r_class == "character") {
     if (is.character(x)) {
       return(list(value = x, lost = logical(n)))
@@ -128,7 +138,7 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
       return(list(value = as.double(x), lost = logical(n)))
     }
     text <- value_text(x)
-    number <- suppressWarnings(as.numeric(text))
+    number <- as_number(text)
     return(list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number)))
   }
   if (is.integer(x) && !is.object(x)) {
@@ -139,7 +149,7 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     given <- !is.na(x)
   } else {
     text <- value_text(x)
-    number <- suppressWarnings(as.numeric(text))
+    number <- as_number(text)
     given <- !is.na(text)
   }
   finite <- is.finite(number)

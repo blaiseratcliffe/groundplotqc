@@ -1,10 +1,11 @@
-# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32): each
-# column's class against the type map, and the values its coercion to that class would lose.
-# The storage-class rules check columns, not records (D16.8); the record rules read the
+# Layer 1, data types (plan 6.1, 16.2; D2.33, D8.8, D9.23, D16.8, D16.9, D16.32, D16.33):
+# each column's class against the type map, and the values its coercion to that class would
+# lose. The storage-class rules check columns, not records (D16.8); the record rules read the
 # values as given. A value Layer 2 reports (a blank outside the keys, another type's
 # sentinel, a rogue code outside the keys, the text "NA" in an ID) is left to Layer 2, so it
 # is reported once (D8.8). A blank in a key column is Layer 4's (D7.9), which Layer 1 leaves
-# alone too.
+# alone too. A value that isn't valid UTF-8 is read by nothing that stops or warns on it: it
+# is lost or unparseable as given (D16.33).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -88,8 +89,13 @@ check_types <- function(input, context) {
         # written; every row holding a value that doesn't read back fails.
         distinct <- unique(given)
         distinct <- distinct[!missing_like(distinct, row, context) & !distinct %chin% own]
-        parsed <- strptime(distinct, row$date_format, tz = "UTC")
-        unread <- is.na(parsed) | format(parsed, row$date_format) != distinct
+        # Text that isn't valid UTF-8 is no date and is not read: strptime() stops on it in a
+        # UTF-8 locale (D16.33).
+        valid <- validUTF8(distinct)
+        readable <- distinct[valid]
+        parsed <- strptime(readable, row$date_format, tz = "UTC")
+        unread <- !valid
+        unread[valid] <- is.na(parsed) | format(parsed, row$date_format) != readable
         bad <- open[given %chin% distinct[unread]]
         record_outcome("date_unparseable", table, attribute, bad, text[bad], row$date_format)
       }
@@ -110,11 +116,18 @@ check_types <- function(input, context) {
         number <- if (is.numeric(x) && !is.object(x)) {
           x
         } else if (is.character(x)) {
-          suppressWarnings(as.numeric(x))
+          coerce_column(x, "double")$value
         } else {
-          # Any other column is written as text once for each distinct value (16.2).
+          # Any other column is written as text once for each distinct value, and each row
+          # takes its value's number (16.2). A Date is matched on its days: match() would
+          # write every row as text.
           distinct <- unique(x)
-          suppressWarnings(as.numeric(value_text(distinct)))[match(x, distinct)]
+          at <- if (inherits(x, "Date")) {
+            match(unclass(x), unclass(distinct))
+          } else {
+            match(x, distinct)
+          }
+          coerce_column(distinct, "double")$value[at]
         }
         bad <- which(is.nan(number) | is.infinite(number))
         record_outcome("value_not_finite", table, attribute, bad, value_text(x[bad]))

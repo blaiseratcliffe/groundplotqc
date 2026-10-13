@@ -72,6 +72,20 @@ test_that("coerce_column keeps a column of its class and names what a coercion l
   expect_identical(coerce_column(c("a", NA), "character")$lost, c(FALSE, FALSE))
 })
 
+test_that("coerce_column loses text that isn't valid UTF-8 without reading it (D16.33)", {
+  # as.numeric() stops on such text in a UTF-8 locale.
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale, where R stops on it")
+  invalid <- rawToChar(as.raw(c(0x32, 0x30, 0x97)))
+  text <- c("12", invalid, NA)
+  expect_identical(coerce_column(text, "double")$value, c(12, NA, NA))
+  expect_identical(coerce_column(text, "double")$lost, c(FALSE, TRUE, FALSE))
+  expect_identical(coerce_column(text, "integer")$value, c(12L, NA, NA))
+  expect_identical(coerce_column(text, "integer")$lost, c(FALSE, TRUE, FALSE))
+  # A factor's level can't be made by factor() from such text.
+  level <- structure(1:2, levels = c("3", invalid), class = "factor")
+  expect_identical(coerce_column(level, "double")$lost, c(FALSE, TRUE))
+})
+
 test_that("an exact name wins; a near one differs only in letter case or spaces (D16.14)", {
   matched <- match_columns(
     c("Depth ", "station_id", "water body", "STATION_ID", "extra"),
