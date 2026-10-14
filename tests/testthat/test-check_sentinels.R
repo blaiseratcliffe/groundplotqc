@@ -43,17 +43,21 @@ test_that("check_sentinels returns an outcome list for each Layer 2 rule", {
 })
 
 test_that("the generic fixtures pass every layer, so the engine assumes no MAGPlot name (18.3)", {
-  results <- fish_run(fx_fish_clean(), layers = 0:5)
-  expect_equal(nrow(opened(results)), 0L)
-  expect_equal(nrow(results$metadata$self_test), 0L)
   registry <- rule_registry()
-  expect_setequal(
-    unique(results$results$rule_id), registry$rule_id[registry$check_type != "preflight"]
-  )
-  # The fish spec gives no unknown codes, so that rule's one row says why it didn't run.
-  expect_equal(
-    results$results$not_run_reason[results$results$rule_id == "species_unknown_code"], "no_input"
-  )
+  data_rules <- registry$rule_id[registry$check_type != "preflight"]
+  # Both toy specs: the fish survey's, and the forest ground plots' with its upper-case names,
+  # YYYYMMDD dates and sentinels that read as numbers.
+  for (spec in list(fx_fish_spec(), fx_forest_spec())) {
+    results <- fish_run(fx_clean_tables(spec), layers = 0:5, spec = spec)
+    expect_equal(nrow(opened(results)), 0L)
+    expect_equal(nrow(results$metadata$self_test), 0L)
+    expect_setequal(unique(results$results$rule_id), data_rules)
+    # Neither spec gives unknown codes, so that rule's one row says why it didn't run.
+    expect_equal(
+      results$results$not_run_reason[results$results$rule_id == "species_unknown_code"],
+      "no_input"
+    )
+  }
 })
 
 test_that("raw_na finds NA outside the keys, as raw_na_policy says (D1.8a, D7.4, D7.9)", {
@@ -83,6 +87,14 @@ test_that("blank_string finds empty and blank text outside the keys", {
   found <- opened(fish_run(fish), "blank_string")
   expect_equal(found$value, c("", "  "))
   expect_equal(unique(found$table_name), "stations")
+  # A blank date is Layer 2's, not date_unparseable's, and its type's sentinels are expected.
+  fish <- edited("hauls", "haul_date", 1L, "", fish)
+  open <- opened(fish_run(fish))
+  expect_equal(placed_at(open), c(
+    "stations station_name 1", "stations station_name 2", "hauls haul_date 1"
+  ))
+  expect_setequal(open$rule_id, "blank_string")
+  expect_equal(open$expected, rep("?; ~", 3L))
 })
 
 test_that("sentinel_wrong_type finds another type's sentinel, expecting the same role's own", {
@@ -91,10 +103,12 @@ test_that("sentinel_wrong_type finds another type's sentinel, expecting the same
   catches$weight <- as.character(catches$weight)
   catches$weight[[1L]] <- "?"
   fish$catches <- catches
+  # A key holds one too (D7.9 leaves only NA, blanks and rogue codes in keys to Layer 4).
+  fish <- edited("hauls", "station_id", 1L, "-99", fish)
   open <- opened(fish_run(fish))
   wrong <- open[open$rule_id == "sentinel_wrong_type"]
   expect_equal(paste(wrong$column_name, wrong$value, wrong$expected), c(
-    "station_name -99 ?", "station_name -88 ~", "weight ? -99"
+    "station_name -99 ?", "station_name -88 ~", "station_id -99 ?", "weight ? -99"
   ))
   # Reported once: coercion_loss leaves "?" to Layer 2 (D8.8).
   expect_setequal(unique(open$rule_id), c("sentinel_wrong_type", "class_mismatch"))
@@ -111,6 +125,59 @@ test_that("sentinel_rogue_code finds rogue codes that aren't codes of the column
   )
   expect_equal(paste(rogue$column_name, rogue$value), c("station_name N/A", "weight -999"))
   expect_equal(rogue$expected, c("?; ~", "-99; -88"))
+})
+
+test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16.40, D16.41)", {
+  # The column's own sentinels pass, though listed as rogue codes (D7.3).
+  fish <- edited("stations", "station_name", 1L, "?")
+  fish <- edited("catches", "weight", 1L, -99, fish)
+  own <- fish_run(fish, list(rogue_codes = c("?", "-99")))
+  expect_equal(nrow(opened(own)), 0L)
+  # Another type's declared sentinel is sentinel_wrong_type's alone, in a text column and in a
+  # column of text stored as numbers.
+  fish <- edited("stations", "station_name", 1L, "-99")
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date <- c(-99, 20200602, 20200603, 20200604)
+  fish$hauls <- hauls
+  other <- fish_run(fish, list(rogue_codes = c("-99", "UNK"), column_level_min_n = 100L))
+  found <- opened(other)
+  found <- found[found$rule_id != "class_mismatch" & found$rule_id != "date_unparseable"]
+  expect_equal(
+    paste(found$rule_id, found$table_name, found$column_name, found$row_number, found$value),
+    c(
+      "sentinel_wrong_type stations station_name 1 -99",
+      "sentinel_wrong_type hauls haul_date 1 -99"
+    )
+  )
+  expect_equal(found$expected, c("?", "?"))
+  # An unknown code that is also a rogue code (built in) is species_unknown_code's alone.
+  fish <- edited("catches", "species", 1L, "UNK")
+  unknown <- opened(fish_run(fish, list(unknown_codes = c(species = "UNK"))))
+  expect_equal(
+    paste(unknown$rule_id, unknown$column_name, unknown$value), "species_unknown_code species UNK"
+  )
+  # Without it as an unknown code, it is rogue.
+  rogue <- opened(fish_run(fish))
+  expect_equal(
+    paste(rogue$rule_id, rogue$column_name, rogue$value), "sentinel_rogue_code species UNK"
+  )
+})
+
+test_that("a column stored as numbers holds no text code, so a real 0 isn't a sentinel (D16.20)", {
+  # The forest spec's date sentinels, "00000000" and "99999999", read as numbers.
+  spec <- fx_forest_spec()
+  forest <- fx_clean_tables(spec)
+  forest <- edited("TREE_MEAS", "DBH", 1L, 0, forest)
+  forest <- edited("TREES", "TREE_NO", 1L, 0L, forest)
+  forest <- edited("PLOTS", "PLOT_AREA", 1L, 99999999, forest)
+  expect_equal(nrow(opened(fish_run(forest, spec = spec))), 0L)
+  # A text code in a date column is still another type's: "-" is the character sentinel.
+  forest <- edited("PLOTS", "ESTABLISHED", 1L, "-", forest)
+  open <- opened(fish_run(forest, spec = spec))
+  expect_equal(
+    paste(open$rule_id, open$column_name, open$value, open$expected),
+    "sentinel_wrong_type ESTABLISHED - 99999999"
+  )
 })
 
 test_that("species_unknown_code finds the unknown codes; without any it doesn't run (D16.11)", {
@@ -204,7 +271,12 @@ test_that("a value that isn't valid UTF-8 is reported as given, with no stop or 
   fish <- edited("hauls", "gear", 1:2, c(padded, plain))
   fish <- edited("catches", "haul_id", 1L, padded, fish)
   fish <- edited("stations", "station_name", 1:2, c(padded, plain), fish)
+  before <- lapply(fish, data.table::copy)
   expect_silent(results <- fish_run(fish))
+  # The caller's tables are as they were (16.2).
+  for (table in names(fish)) {
+    expect_identical(fish[[table]], before[[table]], info = table)
+  }
   found <- opened(results)
   expect_equal(placed_at(found), c("hauls gear 1", "catches haul_id 1"))
   expect_setequal(found$rule_id, "whitespace_padding")
@@ -214,7 +286,7 @@ test_that("a value that isn't valid UTF-8 is reported as given, with no stop or 
   expect_no_error(gpq_write_results(results, withr::local_tempdir()))
 })
 
-test_that("Layer 2 reads latin1 text as UTF-8 and text marked as bytes by no rule (D16.36)", {
+test_that("latin1 text is read as UTF-8; text marked as bytes matches no code (D16.36)", {
   testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
   latin <- iconv(" é", "UTF-8", "latin1")
   marked <- " é"
@@ -226,6 +298,7 @@ test_that("Layer 2 reads latin1 text as UTF-8 and text marked as bytes by no rul
   fish <- edited("hauls", "gear", 1:2, c(latin, marked))
   fish <- edited("stations", "station_name", 1:2, c("-99", marked), fish)
   fish <- edited("catches", "haul_id", 1L, marked, fish)
+  before <- lapply(fish, data.table::copy)
   input <- conformance_input(fish, spec)
   context <- conformance_context(spec, NULL, list(), 2L)
   # The run refuses text marked as bytes (D16.38), so the rules and the recording, its second
@@ -233,6 +306,10 @@ test_that("Layer 2 reads latin1 text as UTF-8 and text marked as bytes by no rul
   expect_silent(found <- check_sentinels(input, context))
   state <- new_run_state()
   record_layer(found, 2L, input, context, state, "20261215T140312Z_3fa9c1")
+  # The caller's tables are as they were (16.2).
+  for (table in names(fish)) {
+    expect_identical(fish[[table]], before[[table]], info = table)
+  }
   issues <- data.table::rbindlist(state$issues, use.names = TRUE)
   expect_false("bytes" %in% Encoding(issues$value))
   expect_no_error(compiled_bytes(issues))
@@ -254,6 +331,28 @@ test_that("Layer 2 reads latin1 text as UTF-8 and text marked as bytes by no rul
   expect_true(all(validUTF8(padding$expected)))
   expect_false("bytes" %in% Encoding(padding$expected))
   expect_identical(charToRaw(padding$expected[[2L]]), charToRaw("é"))
+})
+
+test_that("a whole column failing an open Layer 2 rule is one column-level issue per group (6.3)", {
+  fish <- edited("hauls", "gear", 1:4, paste0(" ", fx_fish_clean()$hauls$gear))
+  # Ungrouped: all 4 records fail, and at least column_level_min_n were checked.
+  whole <- opened(fish_run(fish, list(column_level_min_n = 3L)), "whitespace_padding")
+  expect_equal(whole$level, "column")
+  expect_equal(whole$n_records, 4L)
+  expect_true(is.na(whole$expected))
+  # Grouped by the station's water body: each of the two groups fails whole.
+  grouped <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    layers = 2, group_cols = "water_body",
+    settings = list(column_level_min_n = 2L)
+  )
+  issues <- opened(grouped, "whitespace_padding")
+  expect_equal(issues$level, c("column", "column"))
+  expect_equal(issues$n_records, c(2L, 2L))
+  expect_equal(sort(issues$water_body), sort(unique(fish$stations$water_body)))
+  rows <- grouped$results[grouped$results$rule_id == "whitespace_padding"]
+  rows <- rows[rows$column_name == "gear"]
+  expect_equal(rows$n_fail, c(2L, 2L))
 })
 
 test_that("a run's results pass the results model's checks and round-trip (18.4)", {
