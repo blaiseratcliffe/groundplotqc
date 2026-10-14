@@ -14,6 +14,8 @@ reference:
   - title: "Generic engine: checks and results"
     contents:
       - gpq_check_conformance
+      - gpq_read_results
+      - gpq_write_results
   - title: MAGPlot 2.0 layer
     contents:
       - magp_example

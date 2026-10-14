@@ -180,7 +180,7 @@ test_that("a file the write would make that is already there stops it before any
   expect_no_error(gpq_write_results(object, dir))
 })
 
-test_that("a file in the way of metadata/ stops the write before any table file (D15.27)", {
+test_that("a file in the way of metadata/ stops the write before any table file (D15.27, D16.5)", {
   local_results_registry()
   object <- fx_results()
   dir <- withr::local_tempdir()
@@ -188,9 +188,11 @@ test_that("a file in the way of metadata/ stops the write before any table file 
   dir.create(run_dir)
   in_the_way <- file.path(run_dir, "metadata")
   writeLines("kept", in_the_way)
+  # A file named metadata is a file the run didn't write, so the used run folder is refused
+  # before the folder is tried (D16.5).
   expect_error(
     gpq_write_results(object, dir),
-    paste0("Can't create the folder ", in_the_way, " for the run's metadata"),
+    paste0(run_dir, " already holds metadata, and a run's files are never written over."),
     fixed = TRUE
   )
   expect_false(file.exists(file.path(run_dir, "tables", "results.csv")))
@@ -289,4 +291,85 @@ test_that("writing refuses what isn't a gpq_results object or a folder", {
   writeLines("x", file)
   expect_error(gpq_write_results(object, file), "one folder, not an existing file")
   expect_error(gpq_write_results(object, NA_character_), "one folder")
+})
+
+test_that("a used run folder is refused before any file; its own pre-flight files aren't (D16.5)", {
+  local_results_registry()
+  object <- fx_results()
+  dir <- withr::local_tempdir()
+  run_dir <- file.path(dir, object$metadata$run$run_id)
+  dir.create(file.path(run_dir, "reports"), recursive = TRUE)
+  writeLines("another run's page", file.path(run_dir, "reports", "u1.html"))
+  writeLines("kept", file.path(run_dir, "notes.txt"))
+  expect_error(
+    gpq_write_results(object, dir),
+    paste0(
+      run_dir, " already holds notes.txt and reports/u1.html, and a run's files are never ",
+      "written over."
+    ),
+    fixed = TRUE
+  )
+  expect_false(dir.exists(file.path(run_dir, "tables")))
+  expect_false(dir.exists(file.path(run_dir, "metadata")))
+  # The files the write would make come first, then the others in C order.
+  dir.create(file.path(run_dir, "tables"))
+  writeLines("kept", file.path(run_dir, "tables", "results_old.csv"))
+  writeLines("kept", file.path(run_dir, "tables", "corrections.csv"))
+  expect_error(
+    gpq_write_results(object, dir),
+    paste0(
+      run_dir, " already holds tables/corrections.csv, notes.txt, reports/u1.html and ",
+      "tables/results_old.csv, and a run's files are never written over."
+    ),
+    fixed = TRUE
+  )
+  # A folder holding only the run's own pre-flight files is written.
+  unlink(run_dir, recursive = TRUE)
+  gpq_preflight(fx_fish_spec(), output_dir = run_dir)
+  expect_no_error(gpq_write_results(object, dir))
+})
+
+test_that("a key column named with \"; \" round trips (D15.40; M3b m22)", {
+  local_results_registry()
+  object <- fx_results()
+  issues <- data.table::copy(object$issues)
+  data.table::setnames(issues, "plot", "plot; 2")
+  changed <- new_gpq_results(object$results, issues, object$corrections, object$metadata)
+  run_dir <- gpq_write_results(changed, withr::local_tempdir())
+  back <- gpq_read_results(run_dir)
+  expect_true("plot; 2" %in% names(back$issues))
+  expect_identical(back, changed)
+})
+
+test_that("a value with an invalid byte and a quote round trips, with no warning", {
+  local_results_registry()
+  object <- fx_results()
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97, 0x20, 0x22, 0x71, 0x22)))
+  Encoding(bad) <- "UTF-8"
+  issues <- data.table::copy(object$issues)
+  data.table::set(issues, i = 1L, j = "value", value = bad)
+  object$issues <- issues
+  run_dir <- gpq_write_results(object, withr::local_tempdir())
+  expect_no_warning(back <- gpq_read_results(run_dir))
+  expect_identical(back, object)
+})
+
+test_that("gpq_write_results and gpq_read_results are exported (D15.4)", {
+  exports <- getNamespaceExports("groundplotqc")
+  expect_true(all(c("gpq_write_results", "gpq_read_results") %in% exports))
+})
+
+test_that("a conformance run on magp_example is written and read back identical (18.4, D15.34)", {
+  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  testthat::skip_on_cran()
+  results <- withCallingHandlers(
+    gpq_check_conformance(
+      magp_example, magp_spec(),
+      group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  run_dir <- gpq_write_results(results, withr::local_tempdir())
+  expect_identical(gpq_read_results(run_dir), results)
 })

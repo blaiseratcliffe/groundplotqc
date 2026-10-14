@@ -3,22 +3,40 @@
 # metadata to metadata/, and gpq_read_results() reads them back with each column's class
 # from its schema, so a round trip is identical. A run stopped at pre-flight writes only its
 # run and spec_manifest tables (write_run_metadata()) beside the two pre-flight files. Both
-# functions are internal until M4 exports them with examples (D15.4). Every file is the
+# functions' help pages give runnable examples on magp_example (D15.34). Every file is the
 # compiled writer's bytes: UTF-8, LF, every text field quoted, NA as an empty field. Each
-# file is written once: every check runs before any file is written, and a file that is
-# already there stops the write (D7.11, D15.17, D15.27).
+# file is written once: every check runs before any file is written, and a run folder that
+# holds any file but that run's own pre-flight files stops the write (D7.11, D15.17, D15.27,
+# D16.5). Both functions are exported from M4a, with gpq_check_conformance() to make the
+# object their examples write (D15.4).
 
-#' A run's results written to its folder, `<output_dir>/<run_id>/`
+#' Write a run's results to its folder
 #'
-#' `results` is a gpq_results object, checked first; `output_dir` one folder, made if it
-#' doesn't exist. Writes `tables/results.csv`, `issues.csv`, `corrections.csv` and every
-#' metadata table as `metadata/<table>.csv` (9.5, D7.11). A run folder that already holds
-#' a run's results is never written over. The pre-flight files a run wrote there first
-#' stay as they are: preflight.csv must hold the results' pre-flight table, byte for byte,
-#' or the call stops before writing anything (D15.17). Any other file the call would write
-#' that already exists stops it too, before any file is written (D15.27). Returns the run
-#' folder's path, invisibly.
-#' @noRd
+#' @description
+#' Writes a `gpq_results` object to `<output_dir>/<run_id>/`: the results summary,
+#' issues and corrections to `tables/`, and the run metadata to `metadata/`, one
+#' CSV file each.
+#'
+#' @details
+#' Every file is UTF-8 with LF line endings, every text field quoted and a missing
+#' value an empty field, so [gpq_read_results()] reads back the same object. A
+#' run's files are written once. Before writing anything the call stops when the
+#' run folder already holds a file other than that run's own pre-flight files:
+#' `reports/preflight.html`, and `metadata/preflight.csv`, which must hold the
+#' results' pre-flight table byte for byte and is then left as it is.
+#'
+#' @param results A `gpq_results` object, such as [gpq_check_conformance()]
+#'   returns.
+#' @param output_dir The folder that holds run folders, made if it doesn't exist.
+#' @return The run folder's path, invisibly.
+#' @examples
+#' results <- gpq_check_conformance(
+#'   magp_example, magp_spec(),
+#'   rules = magp_rules(), layers = 0:2
+#' )
+#' run_dir <- gpq_write_results(results, tempfile("runs"))
+#' list.files(run_dir, recursive = TRUE)
+#' @export
 gpq_write_results <- function(results, output_dir) {
   if (!inherits(results, "gpq_results")) {
     stop("`results` must be a gpq_results object.", call. = FALSE)
@@ -52,14 +70,24 @@ gpq_write_results <- function(results, output_dir) {
     metadata$preflight <- NULL
   }
   # Every file the call would write, the run's pre-flight CSV left out when it is kept
-  # (D15.27). Each one that is there is named by its path inside the run folder, the last two
-  # joined by " and " (R69).
+  # (D15.27), then any other file in the run folder but the run's own pre-flight files: a
+  # used run ID (D16.5). Each one that is there is named by its path inside the run folder,
+  # the files the call would write first, the last two joined by " and " (R69).
   table_names <- c("results", "issues", "corrections")
   inside <- c(
     file.path("tables", paste0(table_names, ".csv")),
     file.path("metadata", paste0(names(metadata), ".csv"))
   )
-  existing <- inside[file.exists(file.path(run_dir, inside))]
+  present <- if (dir.exists(run_dir)) {
+    list.files(run_dir, recursive = TRUE, all.files = TRUE, no.. = TRUE)
+  } else {
+    character()
+  }
+  own_preflight <- c("metadata/preflight.csv", "reports/preflight.html")
+  existing <- c(
+    inside[inside %in% present],
+    sort(setdiff(present, c(inside, own_preflight)), method = "radix")
+  )
   if (length(existing) > 0L) {
     last <- length(existing)
     stop(
@@ -132,14 +160,27 @@ write_run_metadata <- function(metadata, run_dir) {
   invisible(paths)
 }
 
-#' A run's results read back from its folder
+#' Read a run's results back from its folder
 #'
-#' `run_dir` is one run folder, as gpq_write_results() returns it. Each file is read with
-#' its columns' classes from the schema, the caller's columns as text, and the whole
-#' checked as a gpq_results object, so the round trip is identical. A run that stopped at
-#' pre-flight has no results to read; a missing file, or one that doesn't read cleanly,
-#' stops naming it.
-#' @noRd
+#' @description
+#' Reads the files [gpq_write_results()] wrote back into a `gpq_results` object,
+#' each column with its class.
+#'
+#' @details
+#' The object read is identical to the one written. A run that stopped at
+#' pre-flight has no results to read, and the call stops; so does a missing file,
+#' or one that doesn't read cleanly, naming the file.
+#'
+#' @param run_dir A run folder, as [gpq_write_results()] returns it.
+#' @return An object of class `gpq_results`.
+#' @examples
+#' results <- gpq_check_conformance(
+#'   magp_example, magp_spec(),
+#'   rules = magp_rules(), layers = 0:2
+#' )
+#' run_dir <- gpq_write_results(results, tempfile("runs"))
+#' identical(gpq_read_results(run_dir), results)
+#' @export
 gpq_read_results <- function(run_dir) {
   dir_ok <- is.character(run_dir) && length(run_dir) == 1L && !is.na(run_dir) &&
     dir.exists(run_dir)

@@ -47,15 +47,20 @@ fix_invalid_utf8 <- function(data) {
 #' fread() keeps them; undoing them is exact for RFC 4180 files. Each cell of the character
 #' columns `columns` (all of `data`'s by default) has every `""` turned into `"`, an NA
 #' left as it is. `data` is changed in place, so it must be a table the caller owns, never
-#' a user's; each column named must be a character column of it. Returns `data`,
-#' invisibly.
+#' a user's; each column named must be a character column of it. A cell that isn't valid
+#' UTF-8 is undone byte by byte, the rest as characters, so its encoding is kept. Returns
+#' `data`, invisibly.
 #' @noRd
 undo_doubled_quotes <- function(data, columns = names(data)) {
   for (column in columns) {
     x <- data[[column]]
-    hit <- which(grepl("\"\"", x, fixed = TRUE))
+    hit <- which(grepl("\"\"", x, fixed = TRUE, useBytes = TRUE))
     if (length(hit) > 0L) {
-      set(data, i = hit, j = column, value = gsub("\"\"", "\"", x[hit], fixed = TRUE))
+      cells <- x[hit]
+      valid <- validUTF8(cells)
+      cells[valid] <- gsub("\"\"", "\"", cells[valid], fixed = TRUE)
+      cells[!valid] <- gsub("\"\"", "\"", cells[!valid], fixed = TRUE, useBytes = TRUE)
+      set(data, i = hit, j = column, value = cells)
     }
   }
   invisible(data)
