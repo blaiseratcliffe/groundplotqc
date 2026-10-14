@@ -147,8 +147,9 @@ test_that("coerce_column reads a factor, a date or a logical column once per dis
 
 test_that("a class whose stored numbers aren't its values is read as match() reads it (D16.49)", {
   # integer64, as fread() reads integers beyond 32 bits, stores each value's 64 bits as a
-  # double: NA as -0, which equals 0, and every negative as NaN. This stand-in class stores
-  # them the same way without bit64, its methods registered for the session.
+  # double: NA as -0, which equals 0, and each negative down to about -4.5e15 as NaN. This
+  # stand-in class stores them the same way without bit64, its methods registered for the
+  # session.
   stand_in <- function(values) {
     high <- floor(values / 2^32)
     low <- values - high * 2^32

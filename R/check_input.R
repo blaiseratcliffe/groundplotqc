@@ -170,10 +170,10 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     not_finite <- is.nan(number) | is.infinite(number)
     list(value = value, lost = given & !whole & !not_finite)
   }
-  # Each row's distinct value. A factor, Date, IDate, POSIXct or logical column is matched on
-  # its codes, days, seconds or values, since match() would write every row as text (16.2).
-  # Any other class is matched as match() reads it: its stored numbers needn't be its values,
-  # as integer64's aren't, whose NA is stored as a number equal to 0 (D16.49).
+  # Each row's distinct value. A factor, Date, IDate or POSIXct column is matched on its codes,
+  # days or seconds, since match() would write every row as text (16.2), and a logical column
+  # on its values. Any other class is matched as match() reads it: its stored numbers needn't
+  # be its values, as integer64's aren't, whose NA is stored as a number equal to 0 (D16.49).
   distinct_at <- function(distinct) {
     if (is.logical(x) || is.factor(x) || inherits(x, c("Date", "POSIXct"))) {
       match(unclass(x), unclass(distinct))
@@ -539,10 +539,10 @@ group_index <- function(input, table) {
     }
     text[is.na(text) | is_blank(text)] <- "*"
     labels[[column_name]] <- unique(text)
-    # Each row takes its value's group. A factor, Date, IDate, POSIXct or logical column is
-    # matched on its codes, days, seconds or values, since match() would write every row as
-    # text (16.2); any other class as match() reads it, since its stored numbers needn't be its
-    # values, as integer64's aren't (D16.49).
+    # Each row takes its value's group. A factor, Date, IDate or POSIXct column is matched on
+    # its codes, days or seconds, since match() would write every row as text (16.2), and a
+    # logical column on its values; any other class as match() reads it, since its stored
+    # numbers needn't be its values, as integer64's aren't (D16.49).
     at <- if (is.logical(value) || is.factor(value) || inherits(value, c("Date", "POSIXct"))) {
       match(unclass(value), unclass(distinct))
     } else {
