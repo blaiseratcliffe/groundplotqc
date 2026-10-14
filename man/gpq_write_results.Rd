@@ -18,17 +18,20 @@ The run folder's path, invisibly.
 \description{
 Writes a \code{gpq_results} object to \verb{<output_dir>/<run_id>/}: the results summary,
 issues and corrections to \verb{tables/}, and the run metadata to \verb{metadata/}, one
-CSV file each.
+CSV file for each table: \code{results.csv}, \code{issues.csv} and \code{corrections.csv}, and
+the eight metadata tables.
 }
 \details{
 Every file is UTF-8 with LF line endings, every text field quoted and a missing
 value an empty field, so \code{\link[=gpq_read_results]{gpq_read_results()}} reads back the same object. A
 run's files are written once. Before writing anything the call stops when the
-run folder already holds a file other than that run's own pre-flight files:
-\code{reports/preflight.html}, and \code{metadata/preflight.csv}, which must hold the
-results' pre-flight table byte for byte and is then left as it is.
+run folder already holds a file other than that run's own pre-flight files,
+which \code{\link[=gpq_preflight]{gpq_preflight()}} writes: \code{reports/preflight.html} and
+\code{metadata/preflight.csv}. The second must hold the results' pre-flight table
+byte for byte, and is then left as it is.
 }
 \examples{
+# MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 results <- gpq_check_conformance(
   magp_example, magp_spec(),
   rules = magp_rules(), layers = 0:2

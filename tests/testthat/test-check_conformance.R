@@ -195,8 +195,10 @@ test_that("a rule with unit outcomes records its not_run outcomes as units, othe
 test_that("a family's outcomes are checked when made and when recorded", {
   expect_error(record_outcome("test_cast", "catches", "weight", 1:2, "a"), "one text for each")
   # Not row numbers: logical, below 1, fractional, missing, text, infinite, beyond the integer
-  # range, or a row twice.
-  for (fail in list(c(TRUE, FALSE), 0L, 1.5, NA_integer_, "1", Inf, 3e9, c(2L, 2L))) {
+  # range, a row twice, or a matrix of whole numbers.
+  for (fail in list(
+    c(TRUE, FALSE), 0L, 1.5, NA_integer_, "1", Inf, 3e9, c(2L, 2L), matrix(1:2, nrow = 1L)
+  )) {
     expect_error(
       record_outcome("test_cast", "catches", "weight", fail, rep("a", length(fail))),
       "must be row numbers"

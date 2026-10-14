@@ -121,13 +121,17 @@ stored_text <- function(x) {
 #' `value` is the column itself when it already has the class, otherwise a new vector of the
 #' class (16.2's coercion copy); `lost` is TRUE where a value that isn't NA can't be held:
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
-#' integer is wanted. A value that isn't finite (NaN, Inf) is never lost but becomes NA where
-#' an integer is wanted: value_not_finite reports it. A date column stored as a date is
-#' written in the type's date format; text is never lost. Text that isn't valid UTF-8 is read
-#' as UTF-8 where it converts to it (marked latin1, or native in a locale that isn't UTF-8);
-#' text marked as bytes, or that isn't valid UTF-8 even so, is no number, so it is lost
-#' without being read: as.numeric() stops on it in a UTF-8 locale (D16.33, D16.36; a run
-#' refuses text marked as bytes before, D16.38).
+#' integer is wanted. Text is a number only when written as a decimal number: a sign, digits,
+#' one point and an exponent, with spaces, tabs and line breaks around, or as one of the
+#' spellings of Inf and NaN that as.numeric() reads; hexadecimal is lost (D16.42, m26). A
+#' value that isn't finite (NaN, Inf) is never lost but becomes NA where an integer is wanted:
+#' value_not_finite reports it. A date column stored as a date is written in the type's date
+#' format; text is never lost. A column that is neither text nor plain numbers (a factor, a
+#' date, a logical) is written as text once for each distinct value (16.2). Text that isn't
+#' valid UTF-8 is read as UTF-8 where it converts to it (marked latin1, or native in a locale
+#' that isn't UTF-8); text marked as bytes, or that isn't valid UTF-8 even so, is no number,
+#' so it is lost without being read: as.numeric() stops on it in a UTF-8 locale (D16.33,
+#' D16.36; a run refuses text marked as bytes before, D16.38).
 #' @noRd
 coerce_column <- function(x, r_class, date_format = NA_character_) {
   n <- length(x)
@@ -135,16 +139,35 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     bytes <- Encoding(text) == "bytes"
     valid <- !bytes & validUTF8(text)
     if (all(valid)) {
-      return(suppressWarnings(as.numeric(text)))
+      number <- suppressWarnings(as.numeric(text))
+    } else {
+      number <- rep(NA_real_, length(text))
+      number[valid] <- suppressWarnings(as.numeric(text[valid]))
+      # Only the values that aren't valid UTF-8 are converted (16.2).
+      convert <- which(!valid & !bytes)
+      utf8 <- enc2utf8(text[convert])
+      readable <- validUTF8(utf8)
+      number[convert[readable]] <- suppressWarnings(as.numeric(utf8[readable]))
     }
-    number <- rep(NA_real_, length(text))
-    number[valid] <- suppressWarnings(as.numeric(text[valid]))
-    # Only the values that aren't valid UTF-8 are converted (16.2).
-    convert <- which(!valid & !bytes)
-    utf8 <- enc2utf8(text[convert])
-    readable <- validUTF8(utf8)
-    number[convert[readable]] <- suppressWarnings(as.numeric(utf8[readable]))
+    # as.numeric() also reads hexadecimal ("0x10" as 16): a value it reads is kept only when
+    # written as a decimal number, Inf or NaN. A number is plain ASCII, so its bytes are read.
+    read <- which(!is.na(number))
+    decimal <- paste0(
+      "^[ \t\n\v\f\r]*[+-]?(([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?|",
+      "[Ii][Nn][Ff]([Ii][Nn][Ii][Tt][Yy])?|[Nn][Aa][Nn])[ \t\n\v\f\r]*$"
+    )
+    number[read[!grepl(decimal, text[read], useBytes = TRUE)]] <- NA_real_
     number
+  }
+  # Whole numbers as integers: a fraction, a number beyond an integer's range or a value that
+  # isn't a number is lost where `given`, NaN and Inf are left to value_not_finite.
+  as_whole <- function(number, given) {
+    finite <- is.finite(number)
+    whole <- finite & number == trunc(number) & abs(number) <= .Machine$integer.max
+    value <- rep(NA_integer_, length(number))
+    value[whole] <- as.integer(number[whole])
+    not_finite <- is.nan(number) | is.infinite(number)
+    list(value = value, lost = given & !whole & !not_finite)
   }
   if (r_class == "character") {
     if (is.character(x)) {
@@ -155,43 +178,42 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     }
     return(list(value = value_text(x), lost = logical(n)))
   }
-  plain_number <- is.numeric(x) && !is.object(x)
-  if (r_class == "double") {
-    if (is.double(x) && !is.object(x)) {
+  if (is.numeric(x) && !is.object(x)) {
+    if (r_class == "double") {
+      return(list(value = if (is.double(x)) x else as.double(x), lost = logical(n)))
+    }
+    if (is.integer(x)) {
       return(list(value = x, lost = logical(n)))
     }
-    if (plain_number) {
-      return(list(value = as.double(x), lost = logical(n)))
-    }
-    text <- value_text(x)
-    number <- as_number(text)
-    return(list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number)))
+    return(as_whole(x, !is.na(x)))
   }
-  if (is.integer(x) && !is.object(x)) {
-    return(list(value = x, lost = logical(n)))
-  }
-  if (plain_number) {
-    number <- x
-    given <- !is.na(x)
+  # Text is read as it is. Any other column is written as text once for each distinct value,
+  # each row taking its value's result; it is matched on its codes or days, since match()
+  # would write every row as text (16.2).
+  at <- NULL
+  if (is.character(x)) {
+    text <- x
   } else {
-    text <- value_text(x)
-    number <- as_number(text)
-    given <- !is.na(text)
+    distinct <- unique(x)
+    at <- match(unclass(x), unclass(distinct))
+    text <- value_text(distinct)
   }
-  finite <- is.finite(number)
-  whole <- finite & number == trunc(number) & abs(number) <= .Machine$integer.max
-  value <- rep(NA_integer_, n)
-  value[whole] <- as.integer(number[whole])
-  not_finite <- is.nan(number) | is.infinite(number)
-  list(value = value, lost = given & !whole & !not_finite)
+  number <- as_number(text)
+  out <- if (r_class == "double") {
+    list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number))
+  } else {
+    as_whole(number, !is.na(text))
+  }
+  if (is.null(at)) out else list(value = out$value[at], lost = out$lost[at])
 }
 
 #' Each dictionary attribute matched to its column (D16.14)
 #'
 #' An exact name wins; an attribute left over then takes the first column left over whose
-#' name differs from it only in letter case or spaces (a name that isn't valid UTF-8 matches
-#' exactly or not at all). Returns `column` (the column's name, NA where none matched) and
-#' `near` per attribute, and `extra`, the columns no attribute took, in the table's order.
+#' name differs from it only in letter case or spaces, any Unicode space in a name that isn't
+#' plain ASCII (D16.42, m21). A name that isn't valid UTF-8, a column's or an attribute's,
+#' matches exactly or not at all. Returns `column` (the column's name, NA where none matched)
+#' and `near` per attribute, and `extra`, the columns no attribute took, in the table's order.
 #' @noRd
 match_columns <- function(given, attributes) {
   column <- given[match(attributes, given)]
@@ -201,10 +223,17 @@ match_columns <- function(given, attributes) {
     out <- rep(NA_character_, length(x))
     ok <- validUTF8(x)
     out[ok] <- tolower(gsub("[[:space:]]", "", x[ok]))
+    wide <- which(ok & grepl("[^\001-\177]", x, useBytes = TRUE))
+    out[wide] <- tolower(gsub("(*UCP)\\s", "", x[wide], perl = TRUE))
     out
   }
   for (i in which(is.na(column))) {
-    hit <- left[!is.na(squeeze(left)) & squeeze(left) == squeeze(attributes[[i]])]
+    target <- squeeze(attributes[[i]])
+    if (is.na(target)) {
+      next
+    }
+    squeezed <- squeeze(left)
+    hit <- left[!is.na(squeezed) & squeezed == target]
     if (length(hit) > 0L) {
       column[[i]] <- hit[[1L]]
       near[[i]] <- TRUE
@@ -261,8 +290,9 @@ fk_path <- function(keys, from, targets) {
 #'   `column`);
 #' - `n_rows`; `groups`, per given spec table: `row_group` (each row's group, an index into
 #'   `values`) and `values` (one row per group, the group columns as text, "*" where a
-#'   record can't reach a column, D9.24, D16.13), ordered by their text; `key_rows`, per
-#'   table, the home table and each row's row there for the key column;
+#'   record can't reach a column, D9.24, D16.13), ordered by their text, and `n`, the number
+#'   of groups, 1 without group columns; `key_rows`, per table, the home table and each row's
+#'   row there for the key column;
 #' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill.
 #' @noRd
 conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL) {
@@ -300,7 +330,7 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
   input <- list(
     spec = spec, data = tables[present],
     given = data.table(
-      table_name = names(tables),
+      table_name = as.character(names(tables)),
       n_rows = vapply(tables, nrow, integer(1), USE.NAMES = FALSE)
     ),
     missing = setdiff(spec_tables, present),
@@ -320,13 +350,16 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
   input
 }
 
-#' A key column's values for joining, and the sentinels a foreign key may hold there
+#' A key column's values for joining, and the sentinels of its type
 #'
-#' `value` is the column coerced to its expected class, the caller's column itself where its
-#' class is right: never masked or kept for the run (16.2). `open` holds the sentinels a
-#' foreign key of its type may hold (allowed_in_fk), which reach_column() makes incomparable,
-#' so no record reaches a parent through one (D12.31). `value` is NA throughout, and `open`
-#' empty, when the table or its column wasn't given.
+#' `value` is the caller's column itself where it is stored as plain numbers, whatever its
+#' type, or else the column coerced to its expected class, the caller's column itself where
+#' its class is right: never masked or kept for the run (16.2; D16.42, m9). `open` holds every
+#' sentinel of the key's type, which reach_column() makes incomparable on both sides of a
+#' join, so no record reaches a parent through one (D16.26; D16.42, m8). Where `value` is
+#' numbers, `open` is numbers too: another type's text code only where the number is written
+#' as the code, so a key 7 isn't the code "007". `value` is NA throughout, and `open` empty,
+#' when the table or its column wasn't given.
 #' @noRd
 key_values <- function(input, table, attribute) {
   n <- if (table %chin% names(input$data)) nrow(input$data[[table]]) else 0L
@@ -336,11 +369,20 @@ key_values <- function(input, table, attribute) {
     return(list(value = rep(NA, n), open = character()))
   }
   row <- input$columns[at]
-  value <- coerce_column(input$data[[table]][[column]], row$r_class, row$date_format)$value
+  x <- input$data[[table]][[column]]
+  value <- if (is.numeric(x) && !is.object(x)) {
+    x
+  } else {
+    coerce_column(x, row$r_class, row$date_format)$value
+  }
   sentinels <- input$spec$sentinels
-  open <- sentinels$value[sentinels$allowed_in_fk & sentinels$data_type == row$family]
+  open <- sentinels$value[sentinels$data_type == row$family]
   if (is.numeric(value)) {
-    open <- suppressWarnings(as.numeric(open))
+    number <- suppressWarnings(as.numeric(open))
+    if (row$family != "numeric") {
+      number <- number[!is.na(number) & value_text(number) == open]
+    }
+    open <- number
   }
   list(value = value, open = open)
 }
@@ -369,13 +411,23 @@ reach_column <- function(input, table, column_name) {
     parent <- path$reference_table[[k]]
     child <- key_values(input, current, path$attribute_name[[k]])
     parent_keys <- key_values(input, parent, path$reference_attribute[[k]])
-    # NA and the sentinels a foreign key may hold, the child's and the parent's types', match
-    # nothing, masked inside the match rather than in a copy of the column (16.2, D12.31,
-    # D16.26).
-    rows <- match(
-      child$value[rows], parent_keys$value,
-      incomparables = c(NA, child$open, parent_keys$open)
-    )
+    # The first step matches the child's column itself, a later one the rows reached (16.2).
+    from <- if (k == 1L) child$value else child$value[rows]
+    to <- parent_keys$value
+    from_open <- child$open
+    to_open <- parent_keys$open
+    # Numbers join numbers as stored; where one side is text and the other numbers, only the
+    # numeric side is written as text, its sentinels with it (D16.42, m9).
+    if (is.numeric(from) && is.character(to)) {
+      from <- value_text(from)
+      from_open <- value_text(from_open)
+    } else if (is.character(from) && is.numeric(to)) {
+      to <- value_text(to)
+      to_open <- value_text(to_open)
+    }
+    # NA and every sentinel of the child's and the parent's types match nothing, masked inside
+    # the match rather than in a copy of the column (16.2; D16.26; D16.42, m8).
+    rows <- match(from, to, incomparables = c(NA, from_open, to_open))
     current <- parent
   }
   list(home = current, rows = rows)
@@ -404,7 +456,9 @@ reached_values <- function(input, reached, column_name) {
 #' column's value is read where the record reaches it, "*" where it reaches none or the
 #' value is blank; the groups are numbered in the order of their text, each written as UTF-8.
 #' A group value marked as bytes, or that isn't valid UTF-8 once converted to it, stops the
-#' run, naming its column, table and first row (D16.35, D16.36).
+#' run, naming its column, table and first row (D16.35, D16.36). Returns `row_group` (each
+#' row's group), `values` (one row per group) and `n`, the number of groups, 1 without group
+#' columns.
 #' @noRd
 group_index <- function(input, table) {
   n <- nrow(input$data[[table]])
@@ -452,8 +506,8 @@ group_index <- function(input, table) {
     labels[[column_name]] <- unique(text)
     codes[[column_name]] <- match(text, labels[[column_name]])[match(value, distinct)]
   }
-  coded <- as.data.table(codes)
-  row_group <- if (n > 0L) as.integer(frank(coded, ties.method = "dense")) else integer()
+  # The codes are ranked as the list they are, not copied into a table (16.2).
+  row_group <- if (n > 0L) as.integer(frankv(codes, ties.method = "dense")) else integer()
   lead <- match(seq_len(max(c(0L, row_group))), row_group)
   values <- as.data.table(lapply(group_cols, function(column_name) {
     labels[[column_name]][codes[[column_name]][lead]]
@@ -493,8 +547,11 @@ key_text <- function(input, table, rows) {
 #' @noRd
 record_pk_text <- function(input, table, rows) {
   keys <- input$spec$keys
-  pk <- keys[keys$table_name == table & keys$key_type == "PK"]
-  pk <- pk[order(pk$key_part)]
+  # Worked out before the brackets, so no name inside them is taken for a column.
+  is_pk <- keys$table_name == table & keys$key_type == "PK"
+  pk <- keys[is_pk]
+  in_order <- order(pk$key_part)
+  pk <- pk[in_order]
   columns <- input$columns
   at <- match(
     paste(table, pk$attribute_name, sep = "\r"),
@@ -518,7 +575,13 @@ record_pk_text <- function(input, table, rows) {
     if (length(given) == 0L) {
       repeats <- logical(nrow(data))
     } else {
-      keyed <- as.data.table(lapply(given, function(column) data[[column]]))
+      # The caller's columns are read where they are: a one-column PK as it is, a composite
+      # one as a table made by reference over them, none copied (16.2).
+      keyed <- if (length(given) == 1L) {
+        data[[given]]
+      } else {
+        setDT(lapply(given, function(column) data[[column]]))
+      }
       repeats <- duplicated(keyed) | duplicated(keyed, fromLast = TRUE)
     }
     assign(name, repeats, envir = input$cache)

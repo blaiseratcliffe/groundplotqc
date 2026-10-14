@@ -98,7 +98,7 @@ setting_definitions <- function() {
         ))
       },
       wants = paste(
-        "a character vector of codes named by attribute, such as c(species = \"UNKN.SPP\"),",
+        "a character vector of codes named by attribute, such as c(colour = \"unknown\"),",
         "no code NA, empty, padded with spaces or holding \";\" or \"=\",",
         "and no name empty, padded with spaces or holding \";\" or \"=\""
       ),

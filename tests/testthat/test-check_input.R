@@ -108,6 +108,39 @@ test_that("coerce_column keeps a column of its class and names what a coercion l
   expect_identical(coerce_column(c("a", NA), "character")$lost, c(FALSE, FALSE))
 })
 
+test_that("coerce_column reads a factor, a date or a logical column once per distinct value", {
+  # Each row takes its value's result, NA included (16.2).
+  level <- factor(c("3", "x", "3", NA, "2.5"))
+  expect_identical(coerce_column(level, "double")$value, c(3, NA, 3, NA, 2.5))
+  expect_identical(coerce_column(level, "double")$lost, c(FALSE, TRUE, FALSE, FALSE, FALSE))
+  expect_identical(coerce_column(level, "integer")$value, c(3L, NA, 3L, NA, NA))
+  expect_identical(coerce_column(level, "integer")$lost, c(FALSE, TRUE, FALSE, FALSE, TRUE))
+  days <- data.table::as.IDate(c("2020-06-01", NA, "2020-06-01"))
+  expect_identical(coerce_column(days, "integer")$lost, c(TRUE, FALSE, TRUE))
+  stamps <- as.POSIXct(c("2020-06-01 10:00", "2020-06-02 10:00"), tz = "UTC")
+  expect_identical(coerce_column(stamps, "double")$lost, c(TRUE, TRUE))
+  expect_identical(
+    coerce_column(c(TRUE, NA, FALSE, TRUE), "double")$lost, c(TRUE, FALSE, TRUE, TRUE)
+  )
+})
+
+test_that("text is a number only when written as a decimal number (D16.42, m26)", {
+  # A sign, digits, one point and an exponent, with spaces around; Inf and NaN spellings stay
+  # numbers, value_not_finite's; hexadecimal and anything else is lost.
+  text <- c(
+    "0x10", "0X1p3", "0x1p9999", "1e3", " 7 ", "+.5", "-5.", "\t2E-2\n", "Inf", "-inf",
+    "Infinity", "NaN", "1e", "1.2.3", paste0("5", intToUtf8(0xA0))
+  )
+  as_double <- coerce_column(text, "double")
+  expect_identical(
+    as_double$value, c(NA, NA, NA, 1000, 7, 0.5, -5, 0.02, Inf, -Inf, Inf, NaN, NA, NA, NA)
+  )
+  expect_identical(as_double$lost, rep(c(TRUE, FALSE, TRUE), c(3L, 9L, 3L)))
+  as_integer <- coerce_column(c("0x10", "16", " 16 ", "1e1"), "integer")
+  expect_identical(as_integer$value, c(NA, 16L, 16L, 10L))
+  expect_identical(as_integer$lost, c(TRUE, FALSE, FALSE, FALSE))
+})
+
 test_that("coerce_column loses text that isn't valid UTF-8 without reading it (D16.33)", {
   # as.numeric() stops on such text in a UTF-8 locale.
   testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale, where R stops on it")
@@ -139,9 +172,22 @@ test_that("an exact name wins; a near one differs only in letter case or spaces 
   expect_identical(matched$column, c("station_id", "Depth ", "water body", NA))
   expect_identical(matched$near, c(FALSE, TRUE, TRUE, FALSE))
   expect_identical(matched$extra, c("STATION_ID", "extra"))
-  # A name that isn't valid UTF-8 matches exactly or not at all.
+  # A name that isn't valid UTF-8 matches exactly or not at all, an attribute's too.
   bad <- rawToChar(as.raw(c(0x64, 0xe9, 0x70)))
   expect_identical(match_columns(c(bad, "x"), c(bad, "dep"))$column, c(bad, NA))
+  unmatched <- match_columns(c("x", "dep"), c(bad, "dep"))
+  expect_identical(unmatched$column, c(NA, "dep"))
+  expect_identical(unmatched$near, c(FALSE, FALSE))
+  expect_identical(unmatched$extra, "x")
+  # Unicode spaces count in a name that isn't plain ASCII (D16.42, m21): a no-break space and
+  # an em space.
+  nbsp <- intToUtf8(0xA0)
+  given <- c(
+    paste0("dbh", nbsp), paste0("Sp", intToUtf8(c(0xE9, 0x2003)), "cies"), paste0("a", nbsp, "b")
+  )
+  spaced <- match_columns(given, c("dbh", paste0("sp", intToUtf8(0xE9), "cies"), "a b"))
+  expect_identical(spaced$column, given)
+  expect_identical(spaced$near, c(TRUE, TRUE, TRUE))
 })
 
 test_that("fk_path walks the shortest path of keys, the dictionary's first key on a tie", {
@@ -157,6 +203,16 @@ test_that("fk_path walks the shortest path of keys, the dictionary's first key o
   expect_equal(path$reference_table, c("mid", "top"))
   expect_equal(fk_path(keys, "leaf", "side")$reference_table, "side")
   expect_null(fk_path(keys, "top", "leaf"))
+  # The shortest path wins over the dictionary's first key: one step by top_id, though the key
+  # to mid comes first.
+  keys <- data.table::data.table(
+    table_name = c("leaf", "leaf", "mid"), attribute_name = c("mid_id", "top_id", "top_id"),
+    key_type = "FK", key_part = 1L, reference_table = c("mid", "top", "top"),
+    reference_attribute = c("mid_id", "top_id", "top_id")
+  )
+  path <- fk_path(keys, "leaf", "top")
+  expect_equal(path$attribute_name, "top_id")
+  expect_equal(path$table_name, "leaf")
 })
 
 test_that("conformance_input matches tables and columns and lists what is missing or extra", {
@@ -182,6 +238,12 @@ test_that("conformance_input matches tables and columns and lists what is missin
   keyed <- columns$attribute_name %in% c("haul_id", "catch_id")
   expect_equal(columns$key_type[keyed], c("PK", "PK", "FK"))
   expect_true(columns$coded[columns$attribute_name == "species"])
+  # No table given: every table is missing, and `given` keeps its columns.
+  none <- conformance_input(list(), fx_fish_spec())
+  expect_identical(
+    none$given, data.table::data.table(table_name = character(), n_rows = integer())
+  )
+  expect_equal(none$missing, c("stations", "hauls", "catches"))
 })
 
 test_that("records find their group values through the shortest path, \"*\" where it breaks", {
@@ -329,7 +391,7 @@ test_that("a table name that isn't valid UTF-8 is checked, not a stop", {
   expect_error(validate_tables(structure(list(data.frame(a = 1)), names = " ")), "each named once")
 })
 
-test_that("a sentinel a key may hold reaches no parent, nor does a key of the wrong class", {
+test_that("a sentinel a key may hold reaches no parent", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
   # "~" is the fish spec's character not-applicable sentinel, allowed in a foreign key.
@@ -343,6 +405,23 @@ test_that("a sentinel a key may hold reaches no parent, nor does a key of the wr
   expect_equal(reached[[2L]], "*")
 })
 
+test_that("every sentinel of a key's type is matched on neither side of a join (D16.42, m8)", {
+  # "?", the fish spec's character missing sentinel, isn't one a foreign key may hold, and
+  # still reaches no haul whose PK is "?".
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$haul_id[[2L]] <- "?"
+  fish$catches <- catches
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_id[[1L]] <- "?"
+  fish$hauls <- hauls
+  input <- conformance_input(fish, fx_fish_spec(), group_cols = "gear")
+  reached <- reach_column(input, "catches", "gear")
+  expect_true(is.na(reached$rows[[2L]]))
+  expect_false(1L %in% reached$rows)
+  expect_equal(input$groups$catches$values$gear[input$groups$catches$row_group][[2L]], "*")
+})
+
 test_that("a key column is joined as given, its sentinels masked inside the match (R41, D16.26)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
@@ -354,7 +433,7 @@ test_that("a key column is joined as given, its sentinels masked inside the matc
   input <- conformance_input(fish, fx_fish_spec(), group_cols = "gear")
   keys <- key_values(input, "catches", "haul_id")
   expect_identical(data.table::address(keys$value), data.table::address(catches$haul_id))
-  expect_identical(keys$open, "~")
+  expect_identical(keys$open, c("?", "~"))
   expect_identical(catches$haul_id[[2L]], "~")
   # No key column is kept for the run (16.2).
   expect_identical(ls(input$cache), character())
@@ -383,6 +462,56 @@ test_that("a key column is joined as given, its sentinels masked inside the matc
   reached <- reach_column(conformance_input(fish, spec), "catches", "gear")
   expect_true(is.na(reached$rows[[1L]]))
   expect_equal(reached$rows[catches$haul_id == "2"], rep(2L, sum(catches$haul_id == "2")))
+})
+
+test_that("a text-typed key chain stored as numbers groups as its text twin (D16.42, m9)", {
+  spec <- fx_fish_spec()
+  # Character sentinels written in digits: as numbers they match only a number written as the
+  # code, as in text ("007" isn't 7).
+  sentinels <- data.table::copy(spec$sentinels)
+  data.table::set(
+    sentinels,
+    i = which(sentinels$data_type == "character"), j = "value", value = c("-1", "007")
+  )
+  spec$sentinels <- sentinels
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  hauls <- data.table::copy(fish$hauls)
+  catches <- data.table::copy(fish$catches)
+  # Every key stored as a number, each foreign key its parent's: haul 4 is numbered 7, and
+  # catch 1 holds the sentinel -1.
+  hauls$station_id <- match(hauls$station_id, stations$station_id)
+  catches$haul_id <- match(catches$haul_id, hauls$haul_id)
+  stations$station_id <- seq_len(nrow(stations))
+  hauls$haul_id <- c(seq_len(nrow(hauls) - 1L), 7L)
+  catches$haul_id[catches$haul_id == nrow(hauls)] <- 7L
+  catches$haul_id[[1L]] <- -1L
+  numbers <- list(stations = stations, hauls = hauls, catches = catches)
+  twin <- lapply(numbers, data.table::copy)
+  for (key in list(
+    c("stations", "station_id"), c("hauls", "station_id"), c("hauls", "haul_id"),
+    c("catches", "haul_id")
+  )) {
+    data.table::set(twin[[key[[1L]]]], j = key[[2L]], value = as.character(twin[[key]]))
+  }
+  group_cols <- c("water_body", "gear")
+  stored <- conformance_input(numbers, spec, group_cols = group_cols)
+  as_text <- conformance_input(twin, spec, group_cols = group_cols)
+  for (table in names(numbers)) {
+    expect_identical(stored$groups[[table]], as_text$groups[[table]], info = table)
+  }
+  reached <- stored$groups$catches$values$gear[stored$groups$catches$row_group]
+  expect_equal(reached[[1L]], "*")
+  expect_false(any(reached[catches$haul_id == 7L] == "*"))
+  # Joined as stored: the key is the caller's column, no text made of it.
+  keys <- key_values(stored, "catches", "haul_id")
+  expect_identical(data.table::address(keys$value), data.table::address(catches$haul_id))
+  # One side text and the other numbers: only the numeric side is written as text.
+  mixed <- numbers
+  mixed$catches <- twin$catches
+  expect_identical(
+    conformance_input(mixed, spec, group_cols = group_cols)$groups$catches, as_text$groups$catches
+  )
 })
 
 test_that("the problem unit's key is read where each record reaches it", {
@@ -427,14 +556,45 @@ test_that("a composite PK's parts are joined with \"|\"", {
   )
 })
 
+test_that("a record's PK is found whatever the keys table's other columns are named", {
+  # Columns named like record_pk_text()'s variables are never read in their place.
+  spec <- fx_fish_spec()
+  keys <- data.table::copy(spec$keys)
+  data.table::set(keys, j = c("table", "keys", "pk"), value = list("catches", "x", "y"))
+  spec$keys <- keys
+  fish <- fx_fish_clean()
+  pk <- record_pk_text(conformance_input(fish, spec), "hauls", 1:2)
+  expect_identical(pk$record_pk, fish$hauls$haul_id[1:2])
+})
+
 test_that("matching the input changes no table and copies none whole (16.2)", {
   fish <- fx_fish_clean()
   before <- lapply(fish, data.table::copy)
   catches_address <- data.table::address(fish$catches$weight)
-  input <- conformance_input(fish, fx_fish_spec(), group_cols = c("water_body", "gear"))
+  input <- conformance_input(
+    fish, fx_fish_spec(),
+    group_cols = c("water_body", "gear"), key_col = "station_id"
+  )
   expect_identical(data.table::address(input$data$catches$weight), catches_address)
+  # The PK helpers read the tables too.
+  for (table in names(fish)) {
+    record_pk_text(input, table, seq_len(nrow(fish[[table]])))
+  }
   for (table in names(fish)) {
     expect_identical(fish[[table]], before[[table]], info = table)
     expect_null(data.table::indices(fish[[table]]), info = table)
+  }
+  # data.frames are kept as the caller's, never made data.tables.
+  frames <- lapply(fx_fish_clean(), as.data.frame)
+  frames_before <- lapply(frames, data.table::copy)
+  input <- conformance_input(frames, fx_fish_spec(), group_cols = "gear", key_col = "station_id")
+  expect_identical(input$data, frames)
+  expect_identical(
+    data.table::address(input$data$catches$weight), data.table::address(frames$catches$weight)
+  )
+  for (table in names(frames)) {
+    record_pk_text(input, table, seq_len(nrow(frames[[table]])))
+    expect_false(data.table::is.data.table(frames[[table]]), info = table)
+    expect_identical(frames[[table]], frames_before[[table]], info = table)
   }
 })

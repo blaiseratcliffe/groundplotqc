@@ -311,11 +311,13 @@ test_that("a used run folder is refused before any file; its own pre-flight file
   expect_false(dir.exists(file.path(run_dir, "tables")))
   expect_false(dir.exists(file.path(run_dir, "metadata")))
   # The files the write would make come first, then the others in C order: "Z.txt" before
-  # "notes.txt", which the locale's order wouldn't give.
+  # "notes.txt", which the locale's order wouldn't give. testthat sets the C collation; the
+  # machine's own is put back for this call.
   dir.create(file.path(run_dir, "tables"))
   writeLines("kept", file.path(run_dir, "tables", "results_old.csv"))
   writeLines("kept", file.path(run_dir, "tables", "corrections.csv"))
   writeLines("kept", file.path(run_dir, "Z.txt"))
+  withr::local_collate("")
   expect_error(
     gpq_write_results(object, dir),
     paste0(

@@ -111,6 +111,7 @@ trees <- data.table::copy(magp_example$magp_trees)
 trees$tree_dist[1] <- NA
 planted <- magp_example
 planted$magp_trees <- trees
+# MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 results <- gpq_check_conformance(
   planted, magp_spec(),
   group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),

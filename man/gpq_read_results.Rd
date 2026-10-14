@@ -10,7 +10,8 @@ gpq_read_results(run_dir)
 \item{run_dir}{A run folder, as \code{\link[=gpq_write_results]{gpq_write_results()}} returns it.}
 }
 \value{
-An object of class \code{gpq_results}.
+An object of class \code{gpq_results}, the four tables \code{\link[=gpq_check_conformance]{gpq_check_conformance()}}
+describes.
 }
 \description{
 Reads the files \code{\link[=gpq_write_results]{gpq_write_results()}} wrote back into a \code{gpq_results} object,
@@ -22,6 +23,7 @@ pre-flight has no results to read, and the call stops; so does a missing file,
 or one that doesn't read cleanly, naming the file.
 }
 \examples{
+# MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 results <- gpq_check_conformance(
   magp_example, magp_spec(),
   rules = magp_rules(), layers = 0:2

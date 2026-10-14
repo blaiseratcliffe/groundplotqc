@@ -544,10 +544,11 @@ test_that("rule_set_duplicate_row names each row repeating a rule, table and att
     enabled = c(TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE)
   )
   found <- check("rule_set_duplicate_row", test_context(rules))
+  # Each repeat names the first row it repeats, a blank rule ID's included (D16.42, D16.43).
   expect_equal(found$detail, c(
-    paste(memory_position(2L), "names rule conform for stations.*, as an earlier row does."),
-    paste(memory_position(5L), "names rule conform for stations.*, as an earlier row does."),
-    paste(memory_position(7L), "names rule (blank) for hauls.gear, as an earlier row does.")
+    paste(memory_position(2L), "names rule conform for stations.*, as row 1 does."),
+    paste(memory_position(5L), "names rule conform for stations.*, as row 1 does."),
+    paste(memory_position(7L), "names rule (blank) for hauls.gear, as row 6 does.")
   ))
   expect_true(all(is.na(found$file)))
   expect_equal(nrow(check("rule_set_duplicate_row", test_context(fx_empty_rule_set()))), 0L)
@@ -558,14 +559,17 @@ test_that("a repeated row read from a file is placed by its line (D14.19, D16.6)
   writeLines(
     c(
       "rule_id,table_name,attribute_name,severity,class,enabled",
-      "conform,stations,*,,,TRUE", "conform,stations,*,warning,,TRUE"
+      "conform,stations,*,,,TRUE", "plaus,stations,*,,,TRUE", "conform,stations,*,warning,,TRUE"
     ),
     file.path(dir, "rules_rules.csv")
   )
   found <- check("rule_set_duplicate_row", test_context(read_rule_set(dir)))
   expect_equal(found$file, "rules_rules.csv")
-  expect_equal(found$source_cell, "rules_rules.csv:3")
-  expect_match(found$detail, "^Line 3 of rules_rules.csv names rule conform")
+  expect_equal(found$source_cell, "rules_rules.csv:4")
+  expect_equal(
+    found$detail,
+    "Line 4 of rules_rules.csv names rule conform for stations.*, as line 2 does."
+  )
 })
 
 test_that("MAGPlot's rule set has no repeated row (D16.6)", {

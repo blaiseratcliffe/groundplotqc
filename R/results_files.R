@@ -15,21 +15,24 @@
 #' @description
 #' Writes a `gpq_results` object to `<output_dir>/<run_id>/`: the results summary,
 #' issues and corrections to `tables/`, and the run metadata to `metadata/`, one
-#' CSV file each.
+#' CSV file for each table: `results.csv`, `issues.csv` and `corrections.csv`, and
+#' the eight metadata tables.
 #'
 #' @details
 #' Every file is UTF-8 with LF line endings, every text field quoted and a missing
 #' value an empty field, so [gpq_read_results()] reads back the same object. A
 #' run's files are written once. Before writing anything the call stops when the
-#' run folder already holds a file other than that run's own pre-flight files:
-#' `reports/preflight.html`, and `metadata/preflight.csv`, which must hold the
-#' results' pre-flight table byte for byte and is then left as it is.
+#' run folder already holds a file other than that run's own pre-flight files,
+#' which [gpq_preflight()] writes: `reports/preflight.html` and
+#' `metadata/preflight.csv`. The second must hold the results' pre-flight table
+#' byte for byte, and is then left as it is.
 #'
 #' @param results A `gpq_results` object, such as [gpq_check_conformance()]
 #'   returns.
 #' @param output_dir The folder that holds run folders, made if it doesn't exist.
 #' @return The run folder's path, invisibly.
 #' @examples
+#' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 #' results <- gpq_check_conformance(
 #'   magp_example, magp_spec(),
 #'   rules = magp_rules(), layers = 0:2
@@ -69,11 +72,11 @@ gpq_write_results <- function(results, output_dir) {
     }
     metadata$preflight <- NULL
   }
-  # Every file the call would write, the run's pre-flight CSV left out when it is kept
-  # (D15.27) that is there, a folder in its place too, then any other file in the run folder
-  # but the run's own pre-flight files: a used run ID (D16.5). Each one is named by its path
-  # inside the run folder, the files the call would write first, the last two joined by " and "
-  # (R69).
+  # What stops the write: a file the call would write that is already there, or a folder in
+  # its place (D15.27; the run's pre-flight CSV is left out when it is kept), then any other
+  # file in the run folder but the run's own pre-flight files, as a run ID used before leaves
+  # (D16.5). Each is named by its path inside the run folder, the files the call would write
+  # first and the rest in C order, the last two joined by " and " (R69).
   table_names <- c("results", "issues", "corrections")
   inside <- c(
     file.path("tables", paste0(table_names, ".csv")),
@@ -173,8 +176,10 @@ write_run_metadata <- function(metadata, run_dir) {
 #' or one that doesn't read cleanly, naming the file.
 #'
 #' @param run_dir A run folder, as [gpq_write_results()] returns it.
-#' @return An object of class `gpq_results`.
+#' @return An object of class `gpq_results`, the four tables [gpq_check_conformance()]
+#'   describes.
 #' @examples
+#' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 #' results <- gpq_check_conformance(
 #'   magp_example, magp_spec(),
 #'   rules = magp_rules(), layers = 0:2

@@ -91,7 +91,7 @@ test_that("each planted defect gives its check's findings", {
       "Row 2", in_memory, "names dd_pk_missing, a pre-flight check,",
       "which a rule set can't change."
     ),
-    paste("Row 5", in_memory, "names rule raw_na for plots.*, as an earlier row does.")
+    paste("Row 5", in_memory, "names rule raw_na for plots.*, as row 4 does.")
   ))
   expect_equal(
     results$detail[results$rule_id == "text_slot_unknown"],

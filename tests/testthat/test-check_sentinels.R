@@ -47,15 +47,18 @@ test_that("the generic fixtures pass every layer, so the engine assumes no MAGPl
   data_rules <- registry$rule_id[registry$check_type != "preflight"]
   # Both toy specs: the fish survey's, and the forest ground plots' with its upper-case names,
   # YYYYMMDD dates and sentinels that read as numbers.
-  for (spec in list(fx_fish_spec(), fx_forest_spec())) {
+  specs <- list(fish = fx_fish_spec(), forest = fx_forest_spec())
+  for (name in names(specs)) {
+    spec <- specs[[name]]
     results <- fish_run(fx_clean_tables(spec), layers = 0:5, spec = spec)
-    expect_equal(nrow(opened(results)), 0L)
-    expect_equal(nrow(results$metadata$self_test), 0L)
+    expect_equal(nrow(opened(results)), 0L, info = name)
+    expect_equal(nrow(results$metadata$self_test), 0L, info = name)
     expect_setequal(unique(results$results$rule_id), data_rules)
     # Neither spec gives unknown codes, so that rule's one row says why it didn't run.
     expect_equal(
       results$results$not_run_reason[results$results$rule_id == "species_unknown_code"],
-      "no_input"
+      "no_input",
+      info = name
     )
   }
 })
@@ -87,7 +90,8 @@ test_that("blank_string finds empty and blank text outside the keys", {
   found <- opened(fish_run(fish), "blank_string")
   expect_equal(found$value, c("", "  "))
   expect_equal(unique(found$table_name), "stations")
-  # A blank date is Layer 2's, not date_unparseable's, and its type's sentinels are expected.
+  # A blank date is Layer 2's, not date_unparseable's. The fish spec's text and date types
+  # share their sentinels, "?" and "~".
   fish <- edited("hauls", "haul_date", 1L, "", fish)
   open <- opened(fish_run(fish))
   expect_equal(placed_at(open), c(
@@ -95,6 +99,36 @@ test_that("blank_string finds empty and blank text outside the keys", {
   ))
   expect_setequal(open$rule_id, "blank_string")
   expect_equal(open$expected, rep("?; ~", 3L))
+  # The forest spec's differ: a blank date expects the date type's own.
+  spec <- fx_forest_spec()
+  forest <- edited("PLOTS", "ESTABLISHED", 1L, "", fx_clean_tables(spec))
+  blank <- opened(fish_run(forest, spec = spec))
+  expect_equal(paste(blank$rule_id, blank$column_name, blank$expected), paste(
+    "blank_string ESTABLISHED", paste(spec$sentinels$value[spec$sentinels$data_type == "date"],
+      collapse = "; "
+    )
+  ))
+})
+
+test_that("Unicode spaces count in values that aren't plain ASCII (D16.42, m35)", {
+  gear <- fx_fish_clean()$hauls$gear[[1L]]
+  nbsp <- intToUtf8(0xA0)
+  em <- intToUtf8(0x2003)
+  summer <- intToUtf8(c(0xE9, 0x74, 0xE9))
+  # Only Unicode spaces: blank, in a coded column too, and never also padded.
+  fish <- edited("stations", "station_name", 1:2, c(nbsp, paste0(em, " ")))
+  fish <- edited("hauls", "gear", 1:2, c(nbsp, paste0(gear, nbsp)), fish)
+  # A padded ID and a padded value that isn't plain ASCII, trimmed as characters.
+  fish <- edited("catches", "haul_id", 1L, paste0(em, fish$catches$haul_id[[1L]]), fish)
+  fish <- edited("catches", "species", 1L, paste0(summer, " "), fish)
+  open <- opened(fish_run(fish))
+  expect_equal(paste(open$rule_id, placed_at(open)), c(
+    "blank_string stations station_name 1", "blank_string stations station_name 2",
+    "blank_string hauls gear 1", "whitespace_padding hauls gear 2",
+    "whitespace_padding catches haul_id 1", "whitespace_padding catches species 1"
+  ))
+  padding <- open[open$rule_id == "whitespace_padding"]
+  expect_equal(padding$expected, c(gear, fx_fish_clean()$catches$haul_id[[1L]], summer))
 })
 
 test_that("sentinel_wrong_type finds another type's sentinel, expecting the same role's own", {
@@ -134,7 +168,7 @@ test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16
   own <- fish_run(fish, list(rogue_codes = c("?", "-99")))
   expect_equal(nrow(opened(own)), 0L)
   # Another type's declared sentinel is sentinel_wrong_type's alone, in a text column and in a
-  # column of text stored as numbers.
+  # date column stored as numbers.
   fish <- edited("stations", "station_name", 1L, "-99")
   hauls <- data.table::copy(fish$hauls)
   hauls$haul_date <- c(-99, 20200602, 20200603, 20200604)
@@ -163,8 +197,8 @@ test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16
   )
 })
 
-test_that("a column stored as numbers holds no text code, so a real 0 isn't a sentinel (D16.20)", {
-  # The forest spec's date sentinels, "00000000" and "99999999", read as numbers.
+test_that("a number column stored as numbers holds no text code, so a real 0 isn't a sentinel", {
+  # The forest spec's date sentinels, "00000000" and "99999999", read as numbers (R68).
   spec <- fx_forest_spec()
   forest <- fx_clean_tables(spec)
   forest <- edited("TREE_MEAS", "DBH", 1L, 0, forest)
@@ -178,6 +212,63 @@ test_that("a column stored as numbers holds no text code, so a real 0 isn't a se
     paste(open$rule_id, open$column_name, open$value, open$expected),
     "sentinel_wrong_type ESTABLISHED - 99999999"
   )
+  # A number that isn't a code of another rule is a rogue code where rogue_codes names it:
+  # 99999999 in DBH is a real number, no date sentinel (D16.42, m36).
+  forest <- edited("TREE_MEAS", "DBH", 1L, 99999999, fx_clean_tables(spec))
+  rogue <- opened(fish_run(forest, list(rogue_codes = "99999999"), spec = spec))
+  expect_equal(
+    paste(rogue$rule_id, rogue$column_name, rogue$value), "sentinel_rogue_code DBH 99999999"
+  )
+})
+
+test_that("stored as numbers, a column whose type isn't numeric takes text codes as numbers", {
+  # The forest spec with "-1" as its character not-applicable code (D16.42, m37).
+  spec <- fx_forest_spec()
+  sentinels <- data.table::copy(spec$sentinels)
+  at <- which(sentinels$data_type == "character" & sentinels$role == "not_applicable")
+  data.table::set(sentinels, i = at, j = "value", value = "-1")
+  spec$sentinels <- sentinels
+  forest <- fx_clean_tables(spec)
+  plots <- data.table::copy(forest$PLOTS)
+  # A date column held as numbers, as fread() reads YYYYMMDD: -1 is the character code, and
+  # 99999999 the column's own, which passes though listed as a rogue code (m39).
+  plots$ESTABLISHED <- as.integer(plots$ESTABLISHED)
+  plots$ESTABLISHED[1:2] <- c(-1L, 99999999L)
+  forest$PLOTS <- plots
+  results <- fish_run(forest, list(rogue_codes = c("-1", "99999999")), spec = spec)
+  open <- opened(results)
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, placed_at(open), open$value, open$expected),
+    "sentinel_wrong_type PLOTS ESTABLISHED 1 -1 99999999"
+  )
+  # A text column stored as numbers: another type's code is found as if stored as text, so a
+  # real 0 still isn't the date code "00000000".
+  forest <- fx_clean_tables(fx_forest_spec())
+  meas <- data.table::copy(forest$TREE_MEAS)
+  meas$MEAS_ID <- seq_len(nrow(meas))
+  meas$MEAS_ID[1:2] <- c(99999999L, 0L)
+  forest$TREE_MEAS <- meas
+  open <- opened(fish_run(forest, spec = fx_forest_spec()))
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, placed_at(open), open$value, open$expected),
+    "sentinel_wrong_type TREE_MEAS MEAS_ID 1 99999999 -"
+  )
+})
+
+test_that("in a column whose type has no sentinels, another type's is a rogue code (m36)", {
+  # sentinel_wrong_type doesn't run there, so a rogue code isn't left to it.
+  spec <- fx_fish_spec()
+  spec$sentinels <- spec$sentinels[spec$sentinels$data_type != "numeric"]
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- "?"
+  fish$catches <- catches
+  open <- opened(fish_run(fish, list(rogue_codes = "?"), spec = spec))
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(paste(open$rule_id, placed_at(open)), "sentinel_rogue_code catches weight 1")
 })
 
 test_that("species_unknown_code finds the unknown codes; without any it doesn't run (D16.11)", {

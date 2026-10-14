@@ -10,15 +10,16 @@
 #' the rule-set place in the settings precedence (see [groundplotqc_options]).
 #'
 #' @return A named list of data.tables, in this order:
-#'   - `meta`, one row: `rule_set_name`, `version` (raised by one at each change),
-#'     `date` (of the last change) and `spec_version` (the date of the specification files
-#'     it was written for);
+#'   - `meta`, one row: `rule_set_name`, `version` (raised by one in each pull request that
+#'     changes a `rules_*.csv`), `date` (the day of the last change) and `spec_version` (the
+#'     date of the specification files it was written for);
 #'   - `rules`: `rule_id`, `table_name`, `attribute_name` (`"*"` for all), `severity` and
 #'     `class` (blank for the rule's default) and `enabled`;
 #'   - `settings`: `setting`, `value` and `type`.
 #'
-#'   Each carries the attributes `source_file`, the name of the file it was read from, and
-#'   `source_lines`, the file line each row starts on, which pre-flight's findings cite.
+#'   Each carries the attributes `source_file`, the name of the file it was read from,
+#'   `source_lines`, the file line each row starts on, and `source_sha256`, the SHA-256 of its
+#'   rows; pre-flight's findings cite the lines while the rows are unchanged.
 #' @examples
 #' rules <- magp_rules()
 #' rules$meta

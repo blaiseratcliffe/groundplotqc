@@ -9,16 +9,17 @@ magp_rules()
 \value{
 A named list of data.tables, in this order:
 \itemize{
-\item \code{meta}, one row: \code{rule_set_name}, \code{version} (raised by one at each change),
-\code{date} (of the last change) and \code{spec_version} (the date of the specification files
-it was written for);
+\item \code{meta}, one row: \code{rule_set_name}, \code{version} (raised by one in each pull request that
+changes a \code{rules_*.csv}), \code{date} (the day of the last change) and \code{spec_version} (the
+date of the specification files it was written for);
 \item \code{rules}: \code{rule_id}, \code{table_name}, \code{attribute_name} (\code{"*"} for all), \code{severity} and
 \code{class} (blank for the rule's default) and \code{enabled};
 \item \code{settings}: \code{setting}, \code{value} and \code{type}.
 }
 
-Each carries the attributes \code{source_file}, the name of the file it was read from, and
-\code{source_lines}, the file line each row starts on, which pre-flight's findings cite.
+Each carries the attributes \code{source_file}, the name of the file it was read from,
+\code{source_lines}, the file line each row starts on, and \code{source_sha256}, the SHA-256 of its
+rows; pre-flight's findings cite the lines while the rows are unchanged.
 }
 \description{
 The rule set that configures the engine for MAGPlot 2.0. Its \code{rules} rows say where and

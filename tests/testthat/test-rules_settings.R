@@ -302,6 +302,12 @@ test_that("a code or name the settings rows' forms can't hold is refused in ever
       fixed = TRUE
     )
   }
+  # The engine's message gives a generic example, no MAGPlot code (D16.42, m2).
+  expect_error(
+    resolve_setting("unknown_codes", rules = rows("unknown_codes", "=X")),
+    "named by attribute, such as c(colour = \"unknown\"), no code NA",
+    fixed = TRUE
+  )
   for (text in c("-999;UNK", "-999;  UNK", "; -999", "-999; ")) {
     expect_error(
       resolve_setting("rogue_codes", rules = rows("rogue_codes", text)),

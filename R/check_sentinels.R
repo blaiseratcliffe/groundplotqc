@@ -1,9 +1,10 @@
 # Layer 2, missing-value codes (plan 6.1, 3.5; D1.8a, D7.3, D7.4, D7.9, D8.8, D8.11, D9.18,
-# D16.11): how a missing value is written. Each rule reads the values as given, since it
-# checks their spelling (a coerced copy has lost it). PK and FK columns are left to Layer 4
+# D16.11, D16.42): how a missing value is written. Each rule reads the values as given, since
+# it checks their spelling (a coerced copy has lost it). PK and FK columns are left to Layer 4
 # by raw_na, blank_string and sentinel_rogue_code (D7.9). Without a matrix both sentinels
-# pass (D7.3). The engine fixes no code: the sentinels, rogue codes and unknown codes are
-# inputs (CLAUDE.md "Code").
+# pass (D7.3). Each value is reported by the one rule that owns it. In text that isn't plain
+# ASCII any Unicode space counts as a space (D16.42, m35). The engine fixes no code: the
+# sentinels, rogue codes and unknown codes are inputs (CLAUDE.md "Code").
 
 #' The values of `x` among `codes`, compared as numbers when `x` is stored as numbers (a code
 #' that isn't a number then matches nothing) and as text otherwise; returns their rows
@@ -38,15 +39,18 @@ rows_holding <- function(x, codes) {
 #' attribute; "when_sentinels" records not_run (no_sentinels) where the attribute's type
 #' has none. `blank_string` per attribute outside the keys, on text. `sentinel_wrong_type`
 #' per attribute: a sentinel of another type that isn't one of its own, not_run
-#' (no_sentinels) where its type has none; a column stored as numbers holds only a number
-#' code, since the text codes of the character and date families, which read as numbers when
-#' they are digits, aren't numbers (D16.20). `sentinel_rogue_code` per attribute outside the
-#' keys: a rogue code that isn't a code of the column, a sentinel the spec declares or an
-#' unknown code of the attribute, which other rules own (D7.3, D16.40, D16.41); the text "NA"
-#' in an ID column is left to `na_text_in_id`. `species_unknown_code` per attribute
-#' `unknown_codes` names, one not_run (no_input) without any. `whitespace_padding` per coded
-#' or ID attribute, on text that isn't blank. `na_text_in_id` per ID attribute (a key, or
-#' marked by the spec's ID pattern): the text "NA".
+#' (no_sentinels) where its type has none. In a column stored as numbers the numeric
+#' family's codes match as numbers; where the column's type isn't numeric, the character and
+#' date families' codes match too, where the value's text is the code, so a real 0 isn't the
+#' date code "00000000" (R68; D16.42, m37). `sentinel_rogue_code` per attribute outside the
+#' keys: a rogue code that isn't a code of the column, and isn't a value another rule owns:
+#' one of the column's own sentinels, in a column stored as numbers also where the value's
+#' text is one, another type's sentinel that `sentinel_wrong_type` reports, or an unknown code
+#' of the attribute (D7.3, D16.40, D16.41; D16.42, m36, m39); the text "NA" in an ID column
+#' is left to `na_text_in_id`. `species_unknown_code` per attribute `unknown_codes` names, one
+#' not_run (no_input) without any. `whitespace_padding` per coded or ID attribute, on text
+#' that isn't blank. `na_text_in_id` per ID attribute (a key, or marked by the spec's ID
+#' pattern): the text "NA".
 #' @noRd
 check_sentinels <- function(input, context) {
   columns <- input$columns
@@ -62,11 +66,37 @@ check_sentinels <- function(input, context) {
   policy <- context$raw_na_policy
   unknown <- context$unknown_codes
   unknown_of <- function(attribute) unname(unknown[names(unknown) == attribute])
-  # The rows of `from` (sentinels) that the storage of `x` can hold: a column stored as
-  # numbers holds only a number code, the text codes of the other families being no numbers
-  # (a real 0 isn't the date sentinel "00000000", D16.20).
-  held_by <- function(x, from) {
-    if (is.numeric(x) && !is.object(x)) from[from$data_type == "numeric"] else from
+  # The rows of `x` holding another type's sentinel that isn't one of the column's own, each
+  # with its sentinel's role, and the column's own sentinels; NULL where the column's type has
+  # none. Stored as text, a value is compared as text. Stored as numbers, it is compared with
+  # the numeric family's codes as numbers, and where the column's type isn't numeric, with
+  # the other families' codes as numbers where its text is the code (R68; D16.42, m37).
+  wrong_type <- function(x, row) {
+    right <- own(row)
+    if (nrow(right) == 0L) {
+      return(NULL)
+    }
+    is_wrong <- sentinels$data_type != row$family & !sentinels$value %chin% right$value
+    codes <- sentinels$value[is_wrong]
+    roles <- sentinels$role[is_wrong]
+    if (!(is.numeric(x) && !is.object(x))) {
+      fail <- rows_holding(x, codes)
+      return(list(fail = fail, role = roles[match(value_text(x[fail]), codes)], right = right))
+    }
+    by_number <- sentinels$data_type[is_wrong] == "numeric"
+    fail <- rows_holding(x, codes[by_number])
+    role <- roles[by_number][match(x[fail], suppressWarnings(as.numeric(codes[by_number])))]
+    if (row$family != "numeric") {
+      written <- setdiff(rows_holding(x, codes[!by_number]), fail)
+      text <- value_text(x[written])
+      hit <- text %chin% codes[!by_number]
+      fail <- c(fail, written[hit])
+      role <- c(role, roles[!by_number][match(text[hit], codes[!by_number])])
+      in_order <- order(fail)
+      fail <- fail[in_order]
+      role <- role[in_order]
+    }
+    list(fail = fail, role = role, right = right)
   }
   list(
     raw_na = if (policy == "never") {
@@ -86,7 +116,14 @@ check_sentinels <- function(input, context) {
     blank_string = rule_outcomes(
       "blank_string", outside_keys, input, function(table, attribute, x, row) {
         text <- stored_text(x)
-        fail <- if (is.null(text)) integer() else which(is_blank(text))
+        # One pass over the column; space_padding() reads the values that may be blank, those
+        # of ASCII spaces only or that aren't plain ASCII (16.2; D16.42, m35).
+        fail <- if (is.null(text)) {
+          integer()
+        } else {
+          maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", text, useBytes = TRUE))
+          maybe[space_padding(text[maybe])$blank]
+        }
         record_outcome(
           "blank_string", table, attribute, fail, text[fail], joined(own(row)$value)
         )
@@ -94,23 +131,16 @@ check_sentinels <- function(input, context) {
     ),
     sentinel_wrong_type = rule_outcomes(
       "sentinel_wrong_type", columns, input, function(table, attribute, x, row) {
-        right <- own(row)
-        if (nrow(right) == 0L) {
+        found <- wrong_type(x, row)
+        if (is.null(found)) {
           return(not_run_outcome("sentinel_wrong_type", table, attribute, "no_sentinels"))
         }
-        wrong <- held_by(
-          x, sentinels[sentinels$data_type != row$family & !sentinels$value %chin% right$value]
+        right <- found$right
+        expected <- right$value[match(found$role, right$role)]
+        record_outcome(
+          "sentinel_wrong_type", table, attribute, found$fail, value_text(x[found$fail]),
+          expected
         )
-        fail <- rows_holding(x, wrong$value)
-        text <- value_text(x[fail])
-        number <- suppressWarnings(as.numeric(wrong$value))
-        found <- if (is.numeric(x) && !is.object(x)) {
-          match(x[fail], number)
-        } else {
-          match(text, wrong$value)
-        }
-        expected <- right$value[match(wrong$role[found], right$role)]
-        record_outcome("sentinel_wrong_type", table, attribute, fail, text, expected)
       }
     ),
     sentinel_rogue_code = rule_outcomes(
@@ -121,12 +151,20 @@ check_sentinels <- function(input, context) {
           rogue <- setdiff(rogue, "NA")
         }
         fail <- rows_holding(x, rogue)
-        # The column's own sentinels pass (D7.3), another type's are sentinel_wrong_type's and
-        # the attribute's unknown codes species_unknown_code's, so no value is reported by two
-        # rules (D16.40, D16.41). Each is compared as that rule compares it, among the failing
-        # rows only.
+        # A value another rule owns is left to it, so no value is reported by two rules: the
+        # column's own sentinels pass (D7.3), compared as rows_holding() compares them and, in
+        # a column stored as numbers whose type isn't numeric, where the value's text is one
+        # (m39); another type's are sentinel_wrong_type's where that rule reports them (none
+        # where the column's type has no sentinels, m36, m37); the attribute's unknown codes
+        # are species_unknown_code's (D16.40, D16.41). Among the failing rows only.
         if (length(fail) > 0L) {
-          owned <- rows_holding(x[fail], c(held_by(x, sentinels)$value, unknown_of(attribute)))
+          held <- x[fail]
+          mine <- own(row)$value
+          as_text <- is.numeric(held) && !is.object(held) && row$family != "numeric"
+          owned <- c(
+            if (as_text) which(value_text(held) %chin% mine) else rows_holding(held, mine),
+            wrong_type(held, row)$fail, rows_holding(held, unknown_of(attribute))
+          )
           fail <- fail[!seq_along(fail) %in% owned]
         }
         record_outcome(
@@ -156,23 +194,15 @@ check_sentinels <- function(input, context) {
         if (is.null(text)) {
           return(record_outcome("whitespace_padding", table, attribute, integer(), character()))
         }
-        # One pass over the column; the blanks are looked for among the padded values only.
-        fail <- which(grepl("^[ \t\r\n]|[ \t\r\n]$", text, useBytes = TRUE))
-        fail <- fail[!is_blank(text[fail])]
-        # The fix is the value trimmed. Text marked latin1, or native in a locale that isn't
-        # UTF-8, is converted to UTF-8 first, only the values that aren't valid UTF-8 as they
-        # are; what is valid is trimmed as characters, so its encoding is kept. Text marked as
-        # bytes, or that isn't valid UTF-8 even so, is trimmed byte by byte, since trimws()
-        # stops on it, and held without the mark, as the failing value is (D16.33, D16.36).
-        trimmed <- text[fail]
-        bytes <- Encoding(trimmed) == "bytes"
-        valid <- !bytes & validUTF8(trimmed)
-        convert <- which(!valid & !bytes)
-        trimmed[convert] <- enc2utf8(trimmed[convert])
-        valid[convert] <- validUTF8(trimmed[convert])
-        trimmed[valid] <- trimws(trimmed[valid], whitespace = "[ \t\r\n]")
-        trimmed[!valid] <- gsub("^[ \t\r\n]+|[ \t\r\n]+$", "", trimmed[!valid], useBytes = TRUE)
-        marked <- which(bytes)
+        # One pass over the column for the values that may be padded: a space, tab, CR or LF
+        # at either end, or text that isn't plain ASCII, read by space_padding() (16.2;
+        # D16.42, m35). The fix is the value trimmed: text read as UTF-8 is held so, and text
+        # marked as bytes without the mark, as the failing value is (D16.33, D16.36, R67).
+        maybe <- which(grepl("^[ \t\r\n]|[ \t\r\n]$|[^\001-\177]", text, useBytes = TRUE))
+        read <- space_padding(text[maybe])
+        fail <- maybe[read$padded]
+        trimmed <- read$trimmed[read$padded]
+        marked <- which(Encoding(trimmed) == "bytes")
         if (length(marked) > 0L) {
           unmarked <- trimmed[marked]
           Encoding(unmarked) <- "unknown"

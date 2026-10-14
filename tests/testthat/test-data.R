@@ -272,7 +272,7 @@ test_that("every defect block stops on tables that aren't fixtures (18.3)", {
   }
 })
 
-test_that("planted vs caught: each block caught by its rule with its witness, and nothing else", {
+test_that("planted vs caught: each block caught by its rule with its witness, its cascade too", {
   # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
   testthat::skip_on_cran()
   base <- fx_magp_clean()
@@ -290,6 +290,8 @@ test_that("planted vs caught: each block caught by its rule with its witness, an
     cascade <- split_joined(row$cascade_rule_ids)
     allowed <- c(row$rule_id, cascade)
     expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
+    # Each cascade rule the sheet lists raises an open issue too (D16.42, m27).
+    expect_equal(setdiff(cascade, caught$rule_id), character(), info = row$defect_id)
     # Nor does another issue of the planted rule, elsewhere, pass: all but the hit are cascade.
     expect_equal(sum(!is_hit & !caught$rule_id %in% cascade), 0L, info = row$defect_id)
   }

@@ -76,11 +76,17 @@ rule_registry <- function() {
     conformance("class_mismatch", 1L, "error", "harmonization", "attributes; type_map"),
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
-      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+      paste(
+        "attributes; keys; type_map; sentinels; codes; code_list_map; settings:rogue_codes;",
+        "settings:unknown_codes"
+      )
     ),
     conformance(
       "date_unparseable", 1L, "error", "depends",
-      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+      paste(
+        "attributes; keys; type_map; sentinels; codes; code_list_map; settings:rogue_codes;",
+        "settings:unknown_codes"
+      )
     ),
     conformance("integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map"),
     conformance("value_not_finite", 1L, "error", "harmonization", "attributes; type_map"),
@@ -99,7 +105,7 @@ rule_registry <- function() {
     ),
     conformance(
       "sentinel_rogue_code", 2L, "error", "depends",
-      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes"
+      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes; settings:unknown_codes"
     ),
     conformance(
       "species_unknown_code", 2L, "error", "harmonization",

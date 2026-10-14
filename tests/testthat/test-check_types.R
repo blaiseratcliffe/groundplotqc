@@ -174,6 +174,89 @@ test_that("missing_like() reads text marked as bytes as no blank, sentinel or co
   )
 })
 
+test_that("an unknown code of the attribute is Layer 2's, in a number or date column (m25)", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- "UNK.W"
+  fish$catches <- catches
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date[[1L]] <- "unknown"
+  fish$hauls <- hauls
+  settings <- list(unknown_codes = c(weight = "UNK.W", haul_date = "unknown"))
+  open <- fish_open(fish, settings = settings)
+  expect_setequal(paste(open$rule_id, open$column_name, open$value), c(
+    "class_mismatch weight character", "species_unknown_code weight UNK.W",
+    "species_unknown_code haul_date unknown"
+  ))
+})
+
+test_that("a padded value whose trimmed form passes is whitespace_padding's alone (m25)", {
+  # haul_date and fish_count are ID-marked here, so whitespace_padding checks them; weight and
+  # first_visit aren't, and keep their padded values Layer 1's.
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  marked <- which(attributes$attribute_name %in% c("haul_date", "fish_count"))
+  data.table::set(attributes, i = marked, j = "id_marked", value = TRUE)
+  spec$attributes <- attributes
+  # A no-break space, which as.numeric() doesn't take for a space.
+  nbsp <- intToUtf8(0xA0)
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date <- c(" 2020-06-01", paste0("2020-06-02", nbsp), " 2020-02-30", "2020-06-04")
+  fish$hauls <- hauls
+  catches <- data.table::copy(fish$catches)
+  catches$fish_count <- as.character(catches$fish_count)
+  catches$fish_count[1:2] <- c(paste0("5", nbsp), " abc")
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- paste0("5", nbsp)
+  fish$catches <- catches
+  stations <- data.table::copy(fish$stations)
+  stations$first_visit[[1L]] <- paste0(" ", stations$first_visit[[1L]])
+  fish$stations <- stations
+  issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  expect_setequal(
+    paste(open$rule_id, open$column_name, open$row_number, open$expected),
+    c(
+      "whitespace_padding haul_date 1 2020-06-01", "whitespace_padding haul_date 2 2020-06-02",
+      "date_unparseable haul_date 3 %Y-%m-%d", "whitespace_padding fish_count 1 5",
+      "coercion_loss fish_count 2 integer", "coercion_loss weight 1 double",
+      "date_unparseable first_visit 1 %Y-%m-%d"
+    )
+  )
+})
+
+test_that("hexadecimal text is lost, not a number (D16.42, m26)", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[1:4] <- c("0x10", "0X1p3", "0x1p9999", "Infinity")
+  fish$catches <- catches
+  open <- fish_open(fish, layers = 1)
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(paste(open$rule_id, open$value), c(
+    "coercion_loss 0x10", "coercion_loss 0X1p3", "coercion_loss 0x1p9999",
+    "value_not_finite Infinity"
+  ))
+})
+
+test_that("a value of only Unicode spaces outside the keys is blank_string's (m35, D8.8)", {
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  hauls$haul_date[[1L]] <- intToUtf8(0xA0)
+  fish$hauls <- hauls
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- intToUtf8(c(0x2003, 0x20, 0xA0))
+  fish$catches <- catches
+  open <- fish_open(fish)
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, open$column_name), c("blank_string haul_date", "blank_string weight")
+  )
+})
+
 test_that("a factor, a Date and an all-NA logical column read as their class says (D2.33)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)

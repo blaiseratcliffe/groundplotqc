@@ -90,6 +90,7 @@
 #' trees$tree_dist[1] <- NA
 #' planted <- magp_example
 #' planted$magp_trees <- trees
+#' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 #' results <- gpq_check_conformance(
 #'   planted, magp_spec(),
 #'   group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
@@ -258,13 +259,13 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
   )
 }
 
-#' A rule's outcome on a column's records: the rows that fail (row numbers), each failing
-#' value as text (one per failing row), and what was expected (one text, or one per failing
-#' row)
+#' A rule's outcome on a column's records: the rows that fail (row numbers, a vector without
+#' dimensions), each failing value as text (one per failing row), and what was expected (one
+#' text, or one per failing row)
 #' @noRd
 record_outcome <- function(rule_id, table_name, column_name, fail, value,
                            expected = NA_character_) {
-  rows <- is.numeric(fail) && !anyNA(fail) && all(is.finite(fail)) &&
+  rows <- is.numeric(fail) && is.null(dim(fail)) && !anyNA(fail) && all(is.finite(fail)) &&
     all(fail >= 1L & fail <= .Machine$integer.max & fail == trunc(fail)) &&
     anyDuplicated(fail) == 0L
   if (!rows) {
