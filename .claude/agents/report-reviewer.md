@@ -48,6 +48,11 @@ tier and severity, every Tier 1 question verbatim, and the report file's path.
 - In a skill, which runs in the main session, you are the orchestrator: put Tier 1
   decisions and consent requests to the user directly, and add Tier 2 rulings to the
   milestone's rulings digest.
+- For a finding or Tier 1 item about how the package handles some input, name that
+  input first, and probe only with inputs inside CLAUDE.md's "Supported inputs". If it
+  is outside that list, list the finding only under "Outside supported inputs" (one
+  line: what fails, on what input), with no tier, severity or question. On a
+  re-review, follow CLAUDE.md's re-review rule.
 
 ## Report format
 1. Verdict: approved, or needs fixes.
@@ -55,3 +60,5 @@ tier and severity, every Tier 1 question verbatim, and the report file's path.
 3. Wording suggestions, each tagged T2 (a typo, grammar or writing-rule fix) or T1 (a
    change to what the text means, which the user decides).
 4. Tier 1 questions for the user, each with the options and your recommendation.
+5. Outside supported inputs: one line per finding (what fails, on what input), or
+   "none".

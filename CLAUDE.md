@@ -66,6 +66,22 @@ Reviewers grade each finding Critical, Important or Minor and tag its tier.
   `HEAD` is left for me. The copies, the listing and a restore from a copy run from one
   R script the session writes in its scratchpad with Write, an exception to "Files" for
   this check only.
+- Out of scope. For a finding about how the package handles some input, the reviewer
+  first names that input. A finding whose input is outside "Supported inputs" gets no
+  tier, severity or question: it goes in the report's "Outside supported inputs" list,
+  and the session copies that list under its own heading in the milestone's minors
+  file, which the PR description carries. Reviewers build no probes for such inputs. A
+  finding that isn't about input (names, wording, requirements, performance) is graded
+  as before.
+- Re-reviews. A re-review checks what it was dispatched to check: each finding is
+  resolved, and the change broke nothing a supported input reaches. A regression the
+  fix caused on a supported input is graded as usual. Anything else it notices goes on
+  the minors list and never starts another fix round, except a wrong result, a stop or
+  a confidentiality leak on a supported input, which comes to me as a question.
+- A fix stays as small as its finding. It doesn't widen to cover inputs outside
+  "Supported inputs". In a final fix wave, a Minor whose fix changes code, rather than
+  comments, documentation or tests, goes on the minors list for the next milestone
+  instead of into the wave.
 
 ## Before you start
 
@@ -103,6 +119,32 @@ Reviewers grade each finding Critical, Important or Minor and tag its tier.
   synthetic data and test fixtures. To ask: name the file, say why, and wait.
 - At most 2 agents at a time may run R on real data.
 - Tests, examples and vignettes use synthetic data only.
+
+## Supported inputs
+
+The package is built and reviewed for these inputs:
+
+- An R session in a UTF-8 locale (the default on Windows since R 4.2, and on Linux and
+  macOS).
+- Tables as data.table::fread(), utils::read.csv() or a DBI query returns them, or as
+  saveRDS() kept them, and as the package's own readers return them (CSV paths and a
+  DBI connection, plan 15); text that is valid UTF-8 (unmarked or marked UTF-8) or
+  marked latin1.
+- Columns of class character, integer, double, logical, factor, Date, IDate, POSIXct or
+  integer64.
+- A specification that passes pre-flight (warnings allowed), with date formats built
+  from %Y, %m, %d, %H, %M and %S. The spec readers and pre-flight themselves are
+  reviewed on any specification, since finding one that fails is their job.
+- Run folders the package made, holding only the files it wrote there.
+- Sizes up to plan section 16.1's targets.
+
+MAGPlot's own data, specification and rule set are always supported. A defect that
+only an input outside this list can trigger is out of scope: it is listed once, not
+fixed, and not asked about. A defect a supported input can trigger is in scope,
+however rare. If it isn't clear whether an input is inside the list, treat it as
+inside. What the decisions log already decided for inputs outside the list (text that
+isn't valid UTF-8, D16.33 to D16.38; another locale, D16.47) stands, and its tests stay
+and keep passing; nothing new is built or tested for such inputs.
 
 ## Code
 
