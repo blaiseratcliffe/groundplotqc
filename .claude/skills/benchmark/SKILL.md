@@ -31,3 +31,8 @@ description: Measure groundplotqc run time and peak memory on synthetic data at 
 - In a skill, which runs in the main session, you are the orchestrator: put Tier 1
   decisions and consent requests to the user directly, and add Tier 2 rulings to the
   milestone's rulings digest.
+- For a finding or Tier 1 item about how the package handles some input, name that
+  input first, and probe only with inputs inside CLAUDE.md's "Supported inputs". If it
+  is outside that list, list the finding only under "Outside supported inputs" (one
+  line: what fails, on what input), with no tier, severity or question. On a
+  re-review, follow CLAUDE.md's re-review rule.

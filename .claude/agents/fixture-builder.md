@@ -35,8 +35,15 @@ expected rule, allowed cascade rules and witness value. Run the planted-vs-caugh
 - In a skill, which runs in the main session, you are the orchestrator: put Tier 1
   decisions and consent requests to the user directly, and add Tier 2 rulings to the
   milestone's rulings digest.
+- For a finding or Tier 1 item about how the package handles some input, name that
+  input first, and probe only with inputs inside CLAUDE.md's "Supported inputs". If it
+  is outside that list, list the finding only under "Outside supported inputs" (one
+  line: what fails, on what input), with no tier, severity or question. On a
+  re-review, follow CLAUDE.md's re-review rule.
 
 ## Report format
 1. Defect IDs added, one line each.
 2. Planted-vs-caught result (verbatim summary).
 3. Edge cases you could not express, and decisions for the user.
+4. Outside supported inputs: one line per finding (what fails, on what input), or
+   "none".
