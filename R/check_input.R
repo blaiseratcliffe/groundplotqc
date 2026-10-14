@@ -170,15 +170,25 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     not_finite <- is.nan(number) | is.infinite(number)
     list(value = value, lost = given & !whole & !not_finite)
   }
+  # Each row's distinct value. A factor, Date, IDate, POSIXct or logical column is matched on
+  # its codes, days, seconds or values, since match() would write every row as text (16.2).
+  # Any other class is matched as match() reads it: its stored numbers needn't be its values,
+  # as integer64's aren't, whose NA is stored as a number equal to 0 (D16.49).
+  distinct_at <- function(distinct) {
+    if (is.logical(x) || is.factor(x) || inherits(x, c("Date", "POSIXct"))) {
+      match(unclass(x), unclass(distinct))
+    } else {
+      match(x, distinct)
+    }
+  }
   if (r_class == "character") {
     if (is.character(x)) {
       return(list(value = x, lost = logical(n)))
     }
     # Any other column is written as text once for each distinct value, a date stored as a
-    # date in the type's date format, and each row takes its value's text, matched on its
-    # codes, numbers or days (16.2).
+    # date in the type's date format, and each row takes its value's text (16.2).
     distinct <- unique(x)
-    at <- match(unclass(x), unclass(distinct))
+    at <- distinct_at(distinct)
     text <- if (inherits(x, c("Date", "POSIXt")) && !is.na(date_format)) {
       format(distinct, date_format)
     } else {
@@ -196,14 +206,13 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     return(as_whole(x, !is.na(x)))
   }
   # Text is read as it is. Any other column is written as text once for each distinct value,
-  # each row taking its value's result; it is matched on its codes or days, since match()
-  # would write every row as text (16.2).
+  # each row taking its value's result (16.2).
   at <- NULL
   if (is.character(x)) {
     text <- x
   } else {
     distinct <- unique(x)
-    at <- match(unclass(x), unclass(distinct))
+    at <- distinct_at(distinct)
     text <- value_text(distinct)
   }
   number <- as_number(text)
@@ -530,9 +539,15 @@ group_index <- function(input, table) {
     }
     text[is.na(text) | is_blank(text)] <- "*"
     labels[[column_name]] <- unique(text)
-    # Each row takes its value's group, matched on its codes, numbers or days, since match()
-    # would write a factor or a date column as text (16.2).
-    at <- match(unclass(value), unclass(distinct))
+    # Each row takes its value's group. A factor, Date, IDate, POSIXct or logical column is
+    # matched on its codes, days, seconds or values, since match() would write every row as
+    # text (16.2); any other class as match() reads it, since its stored numbers needn't be its
+    # values, as integer64's aren't (D16.49).
+    at <- if (is.logical(value) || is.factor(value) || inherits(value, c("Date", "POSIXct"))) {
+      match(unclass(value), unclass(distinct))
+    } else {
+      match(value, distinct)
+    }
     codes[[column_name]] <- match(text, labels[[column_name]])[at]
   }
   # The codes are ranked as the list they are, not copied into a table (16.2).

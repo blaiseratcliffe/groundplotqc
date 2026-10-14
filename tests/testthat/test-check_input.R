@@ -145,6 +145,54 @@ test_that("coerce_column reads a factor, a date or a logical column once per dis
   expect_identical(given, 3L)
 })
 
+test_that("a class whose stored numbers aren't its values is read as match() reads it (D16.49)", {
+  # integer64, as fread() reads integers beyond 32 bits, stores each value's 64 bits as a
+  # double: NA as -0, which equals 0, and every negative as NaN. This stand-in class stores
+  # them the same way without bit64, its methods registered for the session.
+  stand_in <- function(values) {
+    high <- floor(values / 2^32)
+    low <- values - high * 2^32
+    low <- ifelse(low >= 2^31, low - 2^32, low)
+    words <- as.integer(rbind(ifelse(is.na(values), 0, low), high))
+    bits <- writeBin(words, raw(), endian = "little")
+    structure(
+      readBin(bits, "double", n = length(values), endian = "little"),
+      class = "int64_stand_in"
+    )
+  }
+  registerS3method("as.character", "int64_stand_in", function(x, ...) {
+    bits <- writeBin(unclass(x), raw(), endian = "little")
+    words <- readBin(bits, "integer", n = 2L * length(x), endian = "little")
+    low <- words[c(TRUE, FALSE)]
+    high <- words[c(FALSE, TRUE)]
+    as.character(high * 2^32 + ifelse(low < 0, low + 2^32, low))
+  })
+  registerS3method("[", "int64_stand_in", function(x, i, ...) {
+    structure(unclass(x)[i], class = oldClass(x))
+  })
+  registerS3method("unique", "int64_stand_in", function(x, incomparables = FALSE, ...) {
+    x[!duplicated(as.character(x))]
+  })
+  x <- stand_in(c(5, 0, NA, -1, -2))
+  expect_identical(as.character(x), c("5", "0", NA, "-1", "-2"))
+  # Its stored numbers make NA one with 0, and -1 one with -2.
+  expect_identical(match(unclass(x), unclass(x)), c(1L, 2L, 2L, 4L, 4L))
+  expect_identical(coerce_column(x, "character")$value, c("5", "0", NA, "-1", "-2"))
+  expect_identical(coerce_column(x, "double")$value, c(5, 0, NA, -1, -2))
+  expect_identical(coerce_column(x, "integer")$value, c(5L, 0L, NA, -1L, -2L))
+  # A group column of the class: four groups, NA's "*" among them, in its table and the next.
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  data.table::set(hauls, j = "gear", value = stand_in(c(0, NA, -1, -2)))
+  fish$hauls <- hauls
+  groups <- conformance_input(fish, fx_fish_spec(), group_cols = "gear")$groups
+  expect_identical(groups$hauls$values$gear[groups$hauls$row_group], c("0", "*", "-1", "-2"))
+  expect_identical(
+    groups$catches$values$gear[groups$catches$row_group],
+    rep(c("0", "*", "-1", "-2"), each = 2L)
+  )
+})
+
 test_that("text is a number only when written as a decimal number (D16.42, m26)", {
   # A sign, digits, one point and an exponent, with spaces around; Inf and NaN spellings stay
   # numbers, value_not_finite's; hexadecimal and anything else is lost.
@@ -624,6 +672,35 @@ test_that("a composite PK's parts are joined with \"|\"", {
   expect_identical(
     pk$record_pk, paste(fish$catches$catch_id[1:2], fish$catches$species[1:2], sep = "|")
   )
+})
+
+test_that("a composite PK's unmarked UTF-8 part is joined as written outside UTF-8 (D16.47, R83)", {
+  # Beside a part marked UTF-8, paste() would read an unmarked one in the session's encoding.
+  spec <- fx_fish_spec()
+  keys <- data.table::copy(spec$keys)
+  keys <- rbind(keys, data.table::data.table(
+    table_name = "catches", attribute_name = "species", key_type = "PK", key_part = 2L,
+    reference_table = NA_character_, reference_attribute = NA_character_
+  ))
+  spec$keys <- keys
+  catch <- intToUtf8(c(0x70, 0x72, 0xE9, 0x31))
+  Encoding(catch) <- "unknown"
+  species <- intToUtf8(c(0x42, 0xE9, 0x72))
+  expect_identical(Encoding(c(catch, species)), c("unknown", "UTF-8"))
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$catch_id[[1L]] <- catch
+  catches$species[[1L]] <- species
+  fish$catches <- catches
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  pk <- record_pk_text(conformance_input(fish, spec), "catches", 1L)
+  expect_identical(charToRaw(pk$record_pk), c(charToRaw(catch), charToRaw("|"), charToRaw(species)))
+  expect_identical(Encoding(pk$record_pk), "UTF-8")
 })
 
 test_that("a record's PK is found whatever the keys table's other columns are named", {

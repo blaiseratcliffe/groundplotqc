@@ -420,6 +420,7 @@ test_that("a run on unmarked UTF-8 text round trips in a session that isn't UTF-
   catches$catch_id[[1L]] <- catch
   catches$weight <- as.character(catches$weight)
   catches$weight[[1L]] <- cafe
+  catches$species[[3L]] <- paste0(cafe, " ")
   catches[[colour]] <- "x"
   fish$stations <- stations
   fish$hauls <- hauls
@@ -443,6 +444,11 @@ test_that("a run on unmarked UTF-8 text round trips in a session that isn't UTF-
   expect_identical(unique(Encoding(given)), "UTF-8")
   shown <- results$results[results$results$rule_id == "coercion_loss"]$examples
   expect_identical(bytes(shown[!is.na(shown)]), bytes(cafe))
+  # A padded value's fix, the caller's text as expected.
+  padded <- issues[issues$rule_id == "whitespace_padding"]
+  fixed <- c(padded$value, padded$expected)
+  expect_identical(bytes(fixed), bytes(c(paste0(cafe, " "), cafe)))
+  expect_identical(unique(Encoding(fixed)), "UTF-8")
   names_given <- c(
     issues$table_name[issues$rule_id == "table_unexpected"],
     issues$column_name[issues$rule_id == "column_unexpected"]
