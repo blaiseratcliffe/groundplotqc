@@ -127,6 +127,30 @@ test_that("the record rules name column_level_min_n in their inputs (D16.47, m60
   }
 })
 
+test_that("a severity setting entry changes its conformance rule's fingerprint only (D16.54)", {
+  # The severity setting gives a conformance rule its severity, so every one reads it, the
+  # settings entries in their names' order (R86); the fingerprint takes in the rule's own
+  # entry, the argument's before the option's (9.6, D4.7, R20).
+  registry <- rule_registry()
+  open <- registry[registry$check_type == "conformance"]
+  for (k in seq_len(nrow(open))) {
+    inputs <- strsplit(open$inputs[[k]], "; ", fixed = TRUE)[[1L]]
+    named <- inputs[startsWith(inputs, "settings:")]
+    expect_true("settings:severity" %in% named, info = open$rule_id[[k]])
+    expect_identical(named, sort(named, method = "radix"), info = open$rule_id[[k]])
+  }
+  spec <- fx_fish_spec()
+  ids <- c("raw_na", "class_mismatch", "table_missing")
+  plain <- rule_fingerprint(ids, spec)
+  given <- rule_fingerprint(ids, spec, settings = list(severity = c(raw_na = "warning")))
+  expect_false(given[["raw_na"]] == plain[["raw_na"]])
+  expect_identical(given[ids[-1L]], plain[ids[-1L]])
+  withr::local_options(groundplotqc.severity = c(class_mismatch = "warning"))
+  option <- rule_fingerprint(ids, spec)
+  expect_false(option[["class_mismatch"]] == plain[["class_mismatch"]])
+  expect_identical(option[ids[-2L]], plain[ids[-2L]])
+})
+
 test_that("every rule has a rule_version, a whole number from 1 (D15.6)", {
   registry <- rule_registry()
   expect_type(registry$rule_version, "integer")

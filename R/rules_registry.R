@@ -26,7 +26,14 @@ rule_registry <- function() {
       strategy = "none", message_id = rule_id, rule_version = 1L
     )
   }
+  # Every conformance rule reads the severity setting, which gives its severity (D16.6), so
+  # its fingerprint takes in the rule's entry (D16.54); the settings entries follow the
+  # specification components, in their names' order.
   conformance <- function(rule_id, layer, severity, class, inputs, strategy = "none") {
+    read <- strsplit(inputs, "; ", fixed = TRUE)[[1L]]
+    named <- startsWith(read, "settings:")
+    settings <- sort(unique(c(read[named], "settings:severity")), method = "radix")
+    inputs <- paste(c(read[!named], settings), collapse = "; ")
     data.table(
       rule_id = rule_id, stage = "conformance", layer = layer, check_type = "conformance",
       default_severity = severity, default_class = class, inputs = inputs,
