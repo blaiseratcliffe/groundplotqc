@@ -76,7 +76,31 @@ so each rule keeps its registered severity. In a rule set the <code>rules</code>
 rows' <code>severity</code> column gives this tier. Pre-flight checks each entry
 (<code>rule_id_unknown</code>, <code>rule_set_override_invalid</code>); a pre-flight check's own
 outcome can't be changed.</p></li>
-</ul><p>More options are added by the versions that bring the settings they control.</p>
+<li><p><code>groundplotqc.example_cap</code>: how many distinct failing values a results row
+shows in its <code>examples</code> column. Built-in: <code>5</code>.</p></li>
+<li><p><code>groundplotqc.column_level_min_n</code>: the fewest records a column must have in
+a group before a rule that fails on all of them is recorded as one
+column-level issue. Built-in: <code>10</code>.</p></li>
+<li><p><code>groundplotqc.raw_na_policy</code>: when a raw <code>NA</code> is an error (<code>raw_na</code>) in a
+column outside the primary and foreign keys, whose missing values Layer 4
+reports: <code>"when_sentinels"</code>, only in a column whose type has missing-value
+codes; <code>"always"</code>; or <code>"never"</code>. Built-in: <code>"when_sentinels"</code>.</p></li>
+<li><p><code>groundplotqc.rogue_codes</code>: values that stand in for a missing value but
+aren't the agreed codes (<code>sentinel_rogue_code</code>), compared as numbers in a
+column stored as numbers, as text otherwise. A value is never one when it
+is a code of the column's code list, a missing-value code of the column's
+type, an unknown code of the attribute, or another type's missing-value
+code that <code>sentinel_wrong_type</code> reports. Built-in:
+<code>c("-999", "UNK", "NA", "N/A")</code>.</p></li>
+<li><p><code>groundplotqc.unknown_codes</code>: codes for "unknown" by attribute, such as
+<code>c(species = "UNKN.SPP")</code> (<code>species_unknown_code</code>); an attribute may be
+named more than once. Built-in: none.</p></li>
+</ul><p>In a rule set's settings rows, a whole number has type <code>integer</code>, a setting
+with several values gives them joined by "; ", and a named one gives
+"name=value" parts. In every tier, a code can't be empty, begin or end with
+a space, tab or line break, or hold ";". In <code>groundplotqc.unknown_codes</code> the
+same holds for each name, and neither a code nor a name can hold "=".</p>
+<p>More options are added by the versions that bring the settings they control.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

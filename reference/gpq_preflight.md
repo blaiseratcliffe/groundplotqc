@@ -36,9 +36,10 @@ gpq_preflight(
 
   A named list of settings, which come before the rule set's, the
   options' and the built-in values (see
-  [groundplotqc_options](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)):
-  `lang`, the run language, whose text `text_id_fallback` checks, and
-  `severity`, severities by rule ID.
+  [groundplotqc_options](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)).
+  Pre-flight reads `lang`, the run language, whose text
+  `text_id_fallback` checks, and `severity`, severities by rule ID; it
+  accepts the other settings by name and doesn't read them.
 
 - text:
 
@@ -94,12 +95,13 @@ itself contain "; " or ", ", so for exact values read the
 `spec_encoding_invalid`, `spec_csv_malformed`, `site_id_range_invalid`,
 `lineage_spec_unparseable`, `lineage_name_unknown`,
 `lineage_spec_row_unflagged`, `lineage_id_unflagged`,
-`crosswalk_unreadable`; with a rule set, `rule_set_unknown_column`; with
-a rule set or a severity setting, `rule_id_unknown` and
-`rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback`
-and `text_slot_unknown`, on the report text of the registered rules in
-English and in the run language and on a caller's text table. No rule
-set or setting changes what a check stops or warns on.
+`crosswalk_unreadable`; with a rule set, `rule_set_unknown_column` and
+`rule_set_duplicate_row`; with a rule set or a severity setting,
+`rule_id_unknown` and `rule_set_override_invalid`; and
+`text_id_missing`, `text_id_fallback` and `text_slot_unknown`, on the
+report text of the registered rules in English and in the run language
+and on a caller's text table. No rule set or setting changes what a
+check stops or warns on.
 
 ## Examples
 
@@ -120,7 +122,7 @@ results <- gpq_preflight(forest)
 table(results$outcome)
 #> 
 #> not_run    pass 
-#>      12      16 
+#>      13      16 
 
 # A dictionary row written twice stops pre-flight.
 twice <- data.frame(

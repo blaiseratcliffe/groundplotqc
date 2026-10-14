@@ -13,6 +13,16 @@
 - [`gpq_type_map()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_type_map.md)
   : Map dictionary types to R classes
 
+## Generic engine: checks and results
+
+- [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  : Check tables against a specification: structure, types and
+  missing-value codes
+- [`gpq_read_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_results.md)
+  : Read a run's results back from its folder
+- [`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md)
+  : Write a run's results to its folder
+
 ## MAGPlot 2.0 layer
 
 - [`magp_example`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_example.md)

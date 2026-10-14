@@ -77,8 +77,9 @@ registered rules, and its <code>settings</code> rows give settings.</p></dd>
 
 <dt id="arg-settings">settings<a class="anchor" aria-label="anchor" href="#arg-settings"></a></dt>
 <dd><p>A named list of settings, which come before the rule set's, the
-options' and the built-in values (see <a href="groundplotqc_options.html">groundplotqc_options</a>): <code>lang</code>, the run
-language, whose text <code>text_id_fallback</code> checks, and <code>severity</code>, severities by rule ID.</p></dd>
+options' and the built-in values (see <a href="groundplotqc_options.html">groundplotqc_options</a>). Pre-flight reads <code>lang</code>,
+the run language, whose text <code>text_id_fallback</code> checks, and <code>severity</code>, severities by
+rule ID; it accepts the other settings by name and doesn't read them.</p></dd>
 
 
 <dt id="arg-text">text<a class="anchor" aria-label="anchor" href="#arg-text"></a></dt>
@@ -134,11 +135,11 @@ the specification's <code>clashes</code> component.</p>
 <code>datasets_row_missing</code>, <code>spec_encoding_invalid</code>, <code>spec_csv_malformed</code>,
 <code>site_id_range_invalid</code>, <code>lineage_spec_unparseable</code>, <code>lineage_name_unknown</code>,
 <code>lineage_spec_row_unflagged</code>, <code>lineage_id_unflagged</code>, <code>crosswalk_unreadable</code>; with a rule
-set, <code>rule_set_unknown_column</code>; with a rule set or a severity setting, <code>rule_id_unknown</code>
-and <code>rule_set_override_invalid</code>; and <code>text_id_missing</code>, <code>text_id_fallback</code> and
-<code>text_slot_unknown</code>, on the report text of the registered rules in English and in the run
-language and on a caller's text table. No rule set or setting changes what a check stops
-or warns on.</p>
+set, <code>rule_set_unknown_column</code> and <code>rule_set_duplicate_row</code>; with a rule set or a severity
+setting, <code>rule_id_unknown</code> and <code>rule_set_override_invalid</code>; and <code>text_id_missing</code>,
+<code>text_id_fallback</code> and <code>text_slot_unknown</code>, on the report text of the registered rules in
+English and in the run language and on a caller's text table. No rule set or setting
+changes what a check stops or warns on.</p>
     </div>
 
     <div class="section level2">
@@ -159,7 +160,7 @@ or warns on.</p>
 <span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/table.html" class="external-link">table</a></span><span class="op">(</span><span class="va">results</span><span class="op">$</span><span class="va">outcome</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> not_run    pass </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>      12      16 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>      13      16 </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># A dictionary row written twice stops pre-flight.</span></span></span>
 <span class="r-in"><span><span class="va">twice</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span></span>
