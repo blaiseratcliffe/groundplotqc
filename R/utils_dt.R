@@ -59,7 +59,13 @@ undo_doubled_quotes <- function(data, columns = names(data)) {
       cells <- x[hit]
       valid <- validUTF8(cells)
       cells[valid] <- gsub("\"\"", "\"", cells[valid], fixed = TRUE)
-      cells[!valid] <- gsub("\"\"", "\"", cells[!valid], fixed = TRUE, useBytes = TRUE)
+      if (!all(valid)) {
+        # A byte-wise gsub() returns its cells unmarked, so each one's mark is put back.
+        marks <- Encoding(cells[!valid])
+        undone <- gsub("\"\"", "\"", cells[!valid], fixed = TRUE, useBytes = TRUE)
+        Encoding(undone) <- marks
+        cells[!valid] <- undone
+      }
       set(data, i = hit, j = column, value = cells)
     }
   }

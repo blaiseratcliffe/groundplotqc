@@ -195,8 +195,7 @@ test_that("a file in the way of metadata/ stops the write before any table file 
     paste0(run_dir, " already holds metadata, and a run's files are never written over."),
     fixed = TRUE
   )
-  expect_false(file.exists(file.path(run_dir, "tables", "results.csv")))
-  expect_identical(list.files(file.path(run_dir, "tables")), character())
+  expect_false(dir.exists(file.path(run_dir, "tables")))
   expect_identical(readLines(in_the_way), "kept")
 })
 
@@ -311,14 +310,16 @@ test_that("a used run folder is refused before any file; its own pre-flight file
   )
   expect_false(dir.exists(file.path(run_dir, "tables")))
   expect_false(dir.exists(file.path(run_dir, "metadata")))
-  # The files the write would make come first, then the others in C order.
+  # The files the write would make come first, then the others in C order: "Z.txt" before
+  # "notes.txt", which the locale's order wouldn't give.
   dir.create(file.path(run_dir, "tables"))
   writeLines("kept", file.path(run_dir, "tables", "results_old.csv"))
   writeLines("kept", file.path(run_dir, "tables", "corrections.csv"))
+  writeLines("kept", file.path(run_dir, "Z.txt"))
   expect_error(
     gpq_write_results(object, dir),
     paste0(
-      run_dir, " already holds tables/corrections.csv, notes.txt, reports/u1.html and ",
+      run_dir, " already holds tables/corrections.csv, Z.txt, notes.txt, reports/u1.html and ",
       "tables/results_old.csv, and a run's files are never written over."
     ),
     fixed = TRUE
@@ -327,6 +328,25 @@ test_that("a used run folder is refused before any file; its own pre-flight file
   unlink(run_dir, recursive = TRUE)
   gpq_preflight(fx_fish_spec(), output_dir = run_dir)
   expect_no_error(gpq_write_results(object, dir))
+})
+
+test_that("an empty folder named like a file the write makes is refused before any file (D15.27)", {
+  local_results_registry()
+  object <- fx_results()
+  dir <- withr::local_tempdir()
+  run_dir <- file.path(dir, object$metadata$run$run_id)
+  dir.create(file.path(run_dir, "tables", "issues.csv"), recursive = TRUE)
+  dir.create(file.path(run_dir, "metadata", "run.csv"), recursive = TRUE)
+  expect_error(
+    gpq_write_results(object, dir),
+    paste0(
+      run_dir, " already holds tables/issues.csv and metadata/run.csv, and a run's files are ",
+      "never written over."
+    ),
+    fixed = TRUE
+  )
+  expect_false(file.exists(file.path(run_dir, "tables", "results.csv")))
+  expect_false(file.exists(file.path(run_dir, "metadata", "settings.csv")))
 })
 
 test_that("a key column named with \"; \" round trips (D15.40; M3b m22)", {
@@ -351,6 +371,26 @@ test_that("a value with an invalid byte and a quote round trips, with no warning
   object$issues <- issues
   run_dir <- gpq_write_results(object, withr::local_tempdir())
   expect_no_warning(back <- gpq_read_results(run_dir))
+  expect_identical(back, object)
+})
+
+test_that("that round trip keeps the value's UTF-8 mark in a session that isn't UTF-8 (R37)", {
+  local_results_registry()
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  object <- fx_results()
+  bad <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97, 0x20, 0x22, 0x71, 0x22)))
+  Encoding(bad) <- "UTF-8"
+  issues <- data.table::copy(object$issues)
+  data.table::set(issues, i = 1L, j = "value", value = bad)
+  object$issues <- issues
+  run_dir <- gpq_write_results(object, withr::local_tempdir())
+  expect_no_warning(back <- gpq_read_results(run_dir))
+  expect_identical(Encoding(back$issues$value[[1L]]), "UTF-8")
   expect_identical(back, object)
 })
 

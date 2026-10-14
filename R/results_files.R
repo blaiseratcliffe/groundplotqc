@@ -70,9 +70,10 @@ gpq_write_results <- function(results, output_dir) {
     metadata$preflight <- NULL
   }
   # Every file the call would write, the run's pre-flight CSV left out when it is kept
-  # (D15.27), then any other file in the run folder but the run's own pre-flight files: a
-  # used run ID (D16.5). Each one that is there is named by its path inside the run folder,
-  # the files the call would write first, the last two joined by " and " (R69).
+  # (D15.27) that is there, a folder in its place too, then any other file in the run folder
+  # but the run's own pre-flight files: a used run ID (D16.5). Each one is named by its path
+  # inside the run folder, the files the call would write first, the last two joined by " and "
+  # (R69).
   table_names <- c("results", "issues", "corrections")
   inside <- c(
     file.path("tables", paste0(table_names, ".csv")),
@@ -85,7 +86,7 @@ gpq_write_results <- function(results, output_dir) {
   }
   own_preflight <- c("metadata/preflight.csv", "reports/preflight.html")
   existing <- c(
-    inside[inside %in% present],
+    inside[file.exists(file.path(run_dir, inside))],
     sort(setdiff(present, c(inside, own_preflight)), method = "radix")
   )
   if (length(existing) > 0L) {
