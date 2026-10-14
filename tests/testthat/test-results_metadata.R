@@ -75,20 +75,24 @@ test_that("the git commit is HEAD's in a checkout, NA outside one", {
 test_that("settings: each declared setting with its tier, then severity entries (D15.2)", {
   plain <- settings_metadata()
   expect_equal(names(plain), c("setting", "value", "tier"))
-  expect_equal(plain$setting, "lang")
-  expect_equal(plain$tier, "built-in")
+  declared <- c(
+    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes"
+  )
+  expect_equal(plain$setting, declared)
+  expect_equal(plain$value, c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA))
+  expect_true(all(plain$tier == "built-in"))
   rule_set <- list(
     rules = fx_empty_rule_set()$rules,
     settings = data.frame(setting = "lang", value = "fr", type = "character")
   )
-  expect_equal(settings_metadata(rules = rule_set)[, c(value, tier)], c("fr", "rule set"))
+  expect_equal(settings_metadata(rules = rule_set)[1L, c(value, tier)], c("fr", "rule set"))
   withr::local_options(groundplotqc.severity = c(fk_orphan = "warning", pk_missing = "error"))
   rows <- settings_metadata(list(lang = "en", severity = c(fk_orphan = "error")), rule_set)
   expect_equal(rows$setting, c(
-    "lang", "severity:fk_orphan", "severity:fk_orphan", "severity:pk_missing"
+    declared, "severity:fk_orphan", "severity:fk_orphan", "severity:pk_missing"
   ))
-  expect_equal(rows$value, c("en", "error", "warning", "error"))
-  expect_equal(rows$tier, c("argument", "argument", "option", "option"))
+  expect_equal(rows$value[-(2:6)], c("en", "error", "warning", "error"))
+  expect_equal(rows$tier[-(2:6)], c("argument", "argument", "option", "option"))
   expect_no_error(validate_schema(rows, "settings", metadata_schema()$settings))
   for (column in c("setting", "tier")) {
     blank <- data.table::copy(rows)
@@ -104,7 +108,7 @@ test_that("settings: each declared setting with its tier, then severity entries 
     class = NA_character_, enabled = TRUE
   ))
   withr::local_options(groundplotqc.severity = NULL)
-  expect_equal(settings_metadata(rules = severe)$setting, "lang")
+  expect_equal(settings_metadata(rules = severe)$setting, declared)
   expect_error(settings_metadata(list(colour = "red")), "settings the package doesn't have")
 })
 
@@ -149,7 +153,10 @@ test_that("a run's metadata has 9.5's tables in order, checked", {
   expect_named(metadata, names(metadata_schema()))
   expect_equal(metadata$spec_manifest, fx_fish_spec()$manifest)
   expect_true(all(metadata$clashes$rule_id == "spec_clash_resolved"))
-  expect_equal(metadata$settings$setting, c("lang", "severity:value_odd"))
+  expect_equal(metadata$settings$setting, c(
+    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
+    "severity:value_odd"
+  ))
   bad_id <- data.table::copy(metadata)
   bad_id$run <- data.table::copy(metadata$run)
   data.table::set(bad_id$run, j = "run_id", value = "run 1")

@@ -3,7 +3,9 @@
 # apply (R/rules_registry.R says what they are); the two share only rule_id. The schemas of
 # meta, rules and settings are checked here; the other components of 3.5 pass through as
 # tables until the milestone that reads one checks its schema. A component read from a file
-# keeps its origin, the file's name and each row's line, so a finding can place a row.
+# keeps its origin, the file's name and each row's line, so a finding can place a row, while
+# its rows stay as they were read (D16.15). rule_row_values() gives a rule's severity, class
+# and enabled at a table and attribute from the most specific rows (D16.6).
 
 #' The rule set's components in 3.5's order, with the columns and classes checked
 #'
@@ -151,30 +153,46 @@ rule_set_component <- function(x, name, columns) {
     }
     set(table, j = column, value = flag == "TRUE")
   }
-  table
+  # The origin's hash is of the rows as returned, a logical column read (D16.15), so a later
+  # check of this component keeps the origin.
+  set_origin(
+    table, attr(table, "source_file", exact = TRUE), attr(table, "source_lines", exact = TRUE)
+  )
 }
 
-#' A component's origin set by reference: the name of the file it was read from and the
-#' file line each row starts on, or none where both are NULL (D14.19)
+#' A component's origin set by reference: the name of the file it was read from, the file
+#' line each row starts on, and the SHA-256 of the rows as they are now (`source_sha256`), or
+#' none of the three where `file` is NULL (D14.19, D16.15)
 #'
 #' Only on a table the package made, never a caller's. Returns `table`.
 #' @noRd
 set_origin <- function(table, file, lines) {
   setattr(table, "source_file", file)
-  setattr(table, "source_lines", lines)
+  setattr(table, "source_lines", if (!is.null(file)) lines)
+  setattr(
+    table, "source_sha256",
+    if (!is.null(file)) sha256_bytes(compiled_bytes(as.data.table(table)))
+  )
   table
 }
 
-#' A new component's origin carried over from the table it was made from, when that has one:
-#' a file name of valid UTF-8 and one whole line number from 1 up per row; otherwise none
-#' (D14.19)
+#' A new component's origin carried over from the table it was made from, when that has one
+#' and its rows are still the ones its origin was set on: a file name of valid UTF-8, one
+#' whole line number from 1 up per row, and `source_sha256` matching the rows; otherwise none
+#' (D14.19, D16.15)
+#'
+#' A component edited, reordered or filtered after it was read loses its origin, so its
+#' findings give R's row numbers rather than another row's line.
 #' @noRd
 carry_origin <- function(table, from) {
   file <- attr(from, "source_file", exact = TRUE)
   lines <- attr(from, "source_lines", exact = TRUE)
+  recorded <- attr(from, "source_sha256", exact = TRUE)
   kept <- is.character(file) && length(file) == 1L && !is.na(file) && nzchar(file) &&
     validUTF8(file) && is.numeric(lines) && length(lines) == nrow(table) && !anyNA(lines) &&
-    all(lines >= 1 & lines <= .Machine$integer.max & lines == trunc(lines))
+    all(lines >= 1 & lines <= .Machine$integer.max & lines == trunc(lines)) &&
+    is.character(recorded) && length(recorded) == 1L &&
+    identical(recorded, sha256_bytes(compiled_bytes(as.data.table(from))))
   set_origin(table, if (kept) file, if (kept) as.integer(lines))
 }
 
@@ -217,4 +235,41 @@ rule_set_bytes <- function(rules) {
   c(raw(), unlist(lapply(names(rules), function(name) {
     c(charToRaw(paste0(name, "\n")), compiled_bytes(rules[[name]]))
   }), use.names = FALSE))
+}
+
+#' A rule's severity, class and enabled at each table and attribute asked, from the rule
+#' set's rules rows (D16.6)
+#'
+#' For each of the three, the most specific matching row that gives a value: the table and
+#' attribute, then the table and "*", then "*" and the attribute, then "*" and "*"; NA where
+#' no row gives one (the caller falls back to the option entry and the registry, or to TRUE
+#' for enabled). `rows` is a checked rules component or NULL; `rule_ids`, `table_names` and
+#' `column_names` are one per question. Returns a data.table with `severity`, `class` and
+#' `enabled`, one row per question. Pre-flight's rule_set_duplicate_row stops a rule set with
+#' two rows at one level.
+#' @noRd
+rule_row_values <- function(rows, rule_ids, table_names, column_names) {
+  n <- length(rule_ids)
+  out <- data.table(
+    severity = rep(NA_character_, n), class = rep(NA_character_, n), enabled = rep(NA, n)
+  )
+  if (is.null(rows) || nrow(rows) == 0L || n == 0L) {
+    return(out)
+  }
+  levels <- list(c(TRUE, TRUE), c(TRUE, FALSE), c(FALSE, TRUE), c(FALSE, FALSE))
+  join_on <- c("rule_id", "table_name", "attribute_name")
+  for (level in levels) {
+    asked <- data.table(
+      rule_id = rule_ids,
+      table_name = if (level[[1L]]) table_names else rep("*", n),
+      attribute_name = if (level[[2L]]) column_names else rep("*", n)
+    )
+    at <- rows[asked, on = join_on, which = TRUE, mult = "first"]
+    for (field in c("severity", "class", "enabled")) {
+      value <- rows[[field]][at]
+      open <- which(is.na(out[[field]]) & !is.na(value))
+      set(out, i = open, j = field, value = value[open])
+    }
+  }
+  out
 }

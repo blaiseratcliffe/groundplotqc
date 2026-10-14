@@ -10,8 +10,11 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("M3a declares lang and severity only (D14.9)", {
-  expect_named(setting_definitions(), c("lang", "severity"))
+test_that("the declared settings are M3a's two and M4a's five (D14.9, D16.11, D16.12)", {
+  expect_named(setting_definitions(), c(
+    "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
+    "unknown_codes"
+  ))
 })
 
 test_that("lang resolves argument > rule set > option > built-in, with its tier", {
@@ -103,7 +106,10 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
   severity_row$settings$setting <- "severity"
   expect_error(
     check_settings(rules = severity_row),
-    "can't give there: severity. A settings row can give only lang.",
+    paste(
+      "can't give there: severity. A settings row can give only lang, example_cap,",
+      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes."
+    ),
     fixed = TRUE
   )
   unknown_row <- lang_rule_set()
@@ -180,4 +186,227 @@ test_that("an invalid byte or a matrix stops with the setting's own message", {
   unknown <- list(1)
   names(unknown) <- bad
   expect_error(check_settings(unknown), "doesn't have: ok<97>.", fixed = TRUE)
+})
+
+test_that("M4a's settings resolve through the tiers, a rule-set row read from its text (D16.12)", {
+  withr::local_options(
+    groundplotqc.example_cap = NULL, groundplotqc.column_level_min_n = NULL,
+    groundplotqc.raw_na_policy = NULL, groundplotqc.rogue_codes = NULL,
+    groundplotqc.unknown_codes = NULL
+  )
+  expect_equal(resolve_setting("example_cap"), list(value = 5L, tier = "built-in"))
+  expect_equal(resolve_setting("column_level_min_n"), list(value = 10L, tier = "built-in"))
+  expect_equal(resolve_setting("raw_na_policy")$value, "when_sentinels")
+  expect_equal(resolve_setting("rogue_codes")$value, c("-999", "UNK", "NA", "N/A"))
+  expect_equal(resolve_setting("unknown_codes")$value, structure(character(), names = character()))
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("example_cap", "rogue_codes", "unknown_codes", "raw_na_policy"),
+      value = c("3", "-1; ZZ", "species=UNKN.SPP; species=XX; genus=G", "never"),
+      type = c("integer", "character", "character", "character")
+    )
+  ))
+  expect_equal(resolve_setting("example_cap", rules = rows), list(value = 3, tier = "rule set"))
+  expect_equal(resolve_setting("rogue_codes", rules = rows)$value, c("-1", "ZZ"))
+  expect_equal(
+    resolve_setting("unknown_codes", rules = rows)$value,
+    c(species = "UNKN.SPP", species = "XX", genus = "G")
+  )
+  expect_equal(resolve_setting("raw_na_policy", rules = rows)$value, "never")
+  # A blank row gives no codes, as a blank rogue_codes row does.
+  blank <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("unknown_codes", "rogue_codes"), value = NA_character_, type = "character"
+    )
+  ))
+  expect_equal(
+    resolve_setting("unknown_codes", rules = blank)$value,
+    structure(character(), names = character())
+  )
+  expect_identical(resolve_setting("rogue_codes", rules = blank)$value, character())
+  withr::local_options(groundplotqc.example_cap = 2)
+  expect_equal(resolve_setting("example_cap"), list(value = 2, tier = "option"))
+  expect_equal(
+    resolve_setting("example_cap", list(example_cap = 7L), rows),
+    list(value = 7L, tier = "argument")
+  )
+})
+
+test_that("a bad value of M4a's settings stops, naming the setting and its tier", {
+  withr::local_options(groundplotqc.column_level_min_n = NULL, groundplotqc.unknown_codes = NULL)
+  expect_error(
+    resolve_setting("column_level_min_n", list(column_level_min_n = 0)),
+    "Setting column_level_min_n (argument) must be one whole number, 1 or more",
+    fixed = TRUE
+  )
+  for (bad in list(2.5, -1, NA, c(1, 2), "3", Inf)) {
+    expect_error(resolve_setting("example_cap", list(example_cap = bad)), "example_cap (argument)",
+      fixed = TRUE
+    )
+  }
+  expect_error(
+    resolve_setting("raw_na_policy", list(raw_na_policy = "sometimes")), "raw_na_policy (argument)",
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("rogue_codes", list(rogue_codes = c("UNK", NA))), "rogue_codes (argument)",
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("unknown_codes", list(unknown_codes = "UNKN.SPP")), "unknown_codes (argument)",
+    fixed = TRUE
+  )
+  rows <- function(setting, value, type) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = setting, value = value, type = type)
+    ))
+  }
+  expect_error(
+    resolve_setting("column_level_min_n", rules = rows("column_level_min_n", "ten", "integer")),
+    "Setting column_level_min_n (rule set)",
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("unknown_codes", rules = rows("unknown_codes", "UNKN.SPP", "character")),
+    "Setting unknown_codes (rule set)",
+    fixed = TRUE
+  )
+  expect_error(
+    check_settings(rules = rows("example_cap", "5", "character")),
+    "example_cap, which takes integer",
+    fixed = TRUE
+  )
+})
+
+test_that("a code or name the settings rows' forms can't hold is refused in every tier (D16.21)", {
+  withr::local_options(groundplotqc.rogue_codes = NULL, groundplotqc.unknown_codes = NULL)
+  rows <- function(setting, value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = setting, value = value, type = "character")
+    ))
+  }
+  # No space after ";", an empty code, a code holding "=", spaces around a name, a trailing
+  # "; " (D16.23), a name holding ";" (D16.24), an empty name.
+  typos <- c(
+    "species=A;species=B", "species=", "species=A=B", "species = UNKN.SPP",
+    "species=A;  species=B", "species=A; ", "x;species=A", "=X"
+  )
+  for (text in typos) {
+    expect_error(
+      resolve_setting("unknown_codes", rules = rows("unknown_codes", text)),
+      "Setting unknown_codes (rule set) must be a character vector of codes named by attribute",
+      fixed = TRUE
+    )
+  }
+  # The engine's message gives a generic example, no MAGPlot code (D16.42, m2).
+  expect_error(
+    resolve_setting("unknown_codes", rules = rows("unknown_codes", "=X")),
+    "named by attribute, such as c(colour = \"unknown\"), no code NA",
+    fixed = TRUE
+  )
+  for (text in c("-999;UNK", "-999;  UNK", "; -999", "-999; ")) {
+    expect_error(
+      resolve_setting("rogue_codes", rules = rows("rogue_codes", text)),
+      paste(
+        "Setting rogue_codes (rule set) must be a character vector of codes, none of them NA,",
+        "empty, padded with spaces or holding \";\"."
+      ),
+      fixed = TRUE
+    )
+  }
+  expect_error(
+    resolve_setting("unknown_codes", list(unknown_codes = c(species = ""))),
+    "unknown_codes (argument)",
+    fixed = TRUE
+  )
+  # Names padded, holding "=" or ";" (D16.24), or empty.
+  named <- list(
+    c(" species" = "X"), c("a=b" = "X"), c("x;species" = "X"), c(species = "A", "B")
+  )
+  for (codes in named) {
+    expect_error(
+      resolve_setting("unknown_codes", list(unknown_codes = codes)),
+      "unknown_codes (argument)",
+      fixed = TRUE
+    )
+  }
+  expect_error(
+    resolve_setting("rogue_codes", list(rogue_codes = "N/A ")), "rogue_codes (argument)",
+    fixed = TRUE
+  )
+  withr::local_options(groundplotqc.rogue_codes = c("-999", ""))
+  expect_error(
+    resolve_setting("rogue_codes"), "rogue_codes (option groundplotqc.rogue_codes)",
+    fixed = TRUE
+  )
+  # Rows in D16.12's form still read.
+  expect_equal(
+    resolve_setting("unknown_codes", rules = rows("unknown_codes", "species=A; species=B"))$value,
+    c(species = "A", species = "B")
+  )
+})
+
+test_that("setting_text writes a value as settings.csv and the fingerprints read it", {
+  expect_equal(setting_text("en"), "en")
+  expect_equal(setting_text(10L), "10")
+  # A number is written in full, whether it came as an integer or a double (D12.45).
+  expect_equal(setting_text(1e5), "100000")
+  expect_equal(setting_text(100000L), "100000")
+  expect_equal(setting_text(c("-999", "N/A")), "-999; N/A")
+  expect_equal(
+    setting_text(c(species = "UNKN.SPP", species = "XX")), "species=UNKN.SPP; species=XX"
+  )
+  expect_identical(setting_text(character()), NA_character_)
+})
+
+test_that("a rule fingerprint follows a named setting's names as well as its codes", {
+  local_results_registry()
+  registry <- rbind(rule_registry(), data.table::data.table(
+    rule_id = "uses_codes", stage = "conformance", layer = 2L, check_type = "test",
+    default_severity = "error", default_class = "harmonization",
+    inputs = "settings:unknown_codes", strategy = "none", message_id = "preflight_title",
+    rule_version = 1L
+  ))
+  spec <- fx_fish_spec()
+  one <- rule_fingerprint(
+    "uses_codes", spec,
+    settings = list(unknown_codes = c(species = "X")), registry = registry
+  )
+  other <- rule_fingerprint(
+    "uses_codes", spec,
+    settings = list(unknown_codes = c(genus = "X")), registry = registry
+  )
+  expect_false(identical(one, other))
+})
+
+test_that("a rule fingerprint tells no codes from the one code \"NA\"", {
+  local_results_registry()
+  registry <- rbind(rule_registry(), data.table::data.table(
+    rule_id = "uses_rogue", stage = "conformance", layer = 2L, check_type = "test",
+    default_severity = "error", default_class = "harmonization",
+    inputs = "settings:rogue_codes", strategy = "none", message_id = "preflight_title",
+    rule_version = 1L
+  ))
+  spec <- fx_fish_spec()
+  none <- rule_fingerprint(
+    "uses_rogue", spec,
+    settings = list(rogue_codes = character()), registry = registry
+  )
+  text_na <- rule_fingerprint(
+    "uses_rogue", spec,
+    settings = list(rogue_codes = "NA"), registry = registry
+  )
+  expect_false(identical(none, text_na))
+  # The same codes, as an argument or as a rule-set row's text, give one fingerprint.
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "rogue_codes", value = "NA", type = "character")
+  ))
+  expect_identical(
+    rule_fingerprint("uses_rogue", spec, rules = rows, registry = registry), text_na
+  )
 })

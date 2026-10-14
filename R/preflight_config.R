@@ -79,7 +79,7 @@ allowed_text <- function(allowed, rule_ids) {
   texts
 }
 
-#' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19)
+#' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19, D16.6)
 #' @noRd
 preflight_rule_set_checks <- function() {
   list(
@@ -219,6 +219,35 @@ preflight_rule_set_checks <- function() {
           allowed = allowed_text(allowed$severity, entry_open$rule_id)
         ))
       ))
+    },
+    rule_set_duplicate_row = function(spec, context) {
+      if (is.null(context$rules)) {
+        return("no_input")
+      }
+      # Each row after the first that names the same rule, table and attribute (D16.6), with
+      # the first such row: its file line, or its row as R counts rows (D16.42, D16.43). A
+      # blank cell matches a blank cell.
+      rows <- rule_set_rows(context)
+      naming <- c("rule_id", "table_name", "attribute_name")
+      again <- duplicated(rows, by = naming)
+      repeats <- rows[again]
+      lead <- rows[repeats, on = naming, which = TRUE, mult = "first"]
+      lines <- attr(context$rules$rules, "source_lines", exact = TRUE)
+      first <- if (is.null(attr(context$rules$rules, "source_file", exact = TRUE))) {
+        report_text("rule_set_position_memory_short", row = lead)
+      } else {
+        report_text("rule_set_position_file_short", line = lines[lead])
+      }
+      findings_of(
+        repeats$file,
+        report_text(
+          "preflight_detail_rule_set_duplicate_row",
+          position = repeats$position, rule_id = repeats$rule_id,
+          table_name = repeats$table_name, attribute_name = repeats$attribute_name,
+          first = first
+        ),
+        repeats$source_cell
+      )
     }
   )
 }

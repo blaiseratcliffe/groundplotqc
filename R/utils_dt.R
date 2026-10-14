@@ -47,15 +47,26 @@ fix_invalid_utf8 <- function(data) {
 #' fread() keeps them; undoing them is exact for RFC 4180 files. Each cell of the character
 #' columns `columns` (all of `data`'s by default) has every `""` turned into `"`, an NA
 #' left as it is. `data` is changed in place, so it must be a table the caller owns, never
-#' a user's; each column named must be a character column of it. Returns `data`,
-#' invisibly.
+#' a user's; each column named must be a character column of it. A cell that isn't valid
+#' UTF-8 is undone byte by byte, the rest as characters, so its encoding is kept. Returns
+#' `data`, invisibly.
 #' @noRd
 undo_doubled_quotes <- function(data, columns = names(data)) {
   for (column in columns) {
     x <- data[[column]]
-    hit <- which(grepl("\"\"", x, fixed = TRUE))
+    hit <- which(grepl("\"\"", x, fixed = TRUE, useBytes = TRUE))
     if (length(hit) > 0L) {
-      set(data, i = hit, j = column, value = gsub("\"\"", "\"", x[hit], fixed = TRUE))
+      cells <- x[hit]
+      valid <- validUTF8(cells)
+      cells[valid] <- gsub("\"\"", "\"", cells[valid], fixed = TRUE)
+      if (!all(valid)) {
+        # A byte-wise gsub() returns its cells unmarked, so each one's mark is put back.
+        marks <- Encoding(cells[!valid])
+        undone <- gsub("\"\"", "\"", cells[!valid], fixed = TRUE, useBytes = TRUE)
+        Encoding(undone) <- marks
+        cells[!valid] <- undone
+      }
+      set(data, i = hit, j = column, value = cells)
     }
   }
   invisible(data)
@@ -410,4 +421,15 @@ read_csv_text <- function(path) {
     data = data, invalid = invalid, malformed = malformed, lines = lines,
     blank_header = blank_header
   )
+}
+
+#' Which groups of records become one column-level issue (6.3; D4.1, D16.10)
+#'
+#' A rule's failures in a group collapse when every record it checked there failed and at
+#' least `min_n` were checked; masked records sharing one root collapse when there are at
+#' least `min_n` (pass their count as both `n_records` and `n_checked`). Vectorised over
+#' groups.
+#' @noRd
+collapse_column_level <- function(n_records, n_checked, min_n) {
+  n_records > 0L & n_records == n_checked & n_checked >= min_n
 }

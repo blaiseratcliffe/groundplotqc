@@ -35,7 +35,10 @@ test_that("a group column named with \"; \" is refused, a key column isn't (D15.
   # run.csv's group_cols joins the names with "; " (R11, D9.29), so a name holding it could
   # not be told from two names when the run is read back.
   expect_error(results_schema("a; b"), "have \"; \" in their names")
-  expect_error(results_schema(c("unit", "x; y", "z; w")), "x; y, z; w have \"; \" in their names")
+  expect_error(
+    results_schema(c("unit", "x; y", "z; w")), "\"x; y\", \"z; w\" have \"; \" in their names",
+    fixed = TRUE
+  )
   expect_error(new_results(NULL, group_cols = "a; b"), "have \"; \" in their names")
   # The key column isn't recorded in group_cols, so its name may hold the separator (D15.40).
   kept <- results_schema("unit", "plot; 2")
@@ -188,8 +191,17 @@ test_that("results rows agree with their status and are one per rule, place, gro
   expect_error(check(1L, "not_run_reason", "no_table"), "gives a not-run reason")
   expect_error(check(2L, "not_run_reason", NA_character_), "gives a not-run reason")
   expect_error(check(2L, "n_checked", 3L), "counts checked or failing records on a not_run row")
-  expect_error(check(1L, "n_fail", 0L), "a pass with failures or a fail without one")
+  # A fail without failures has no distinct failing values either, or the bound stops it.
+  expect_error(
+    check(1L, c("n_fail", "n_distinct_fail_values"), list(0L, 0L)),
+    "a pass with failures or a fail without one"
+  )
   expect_error(check(1L, "n_easy_fix", -1L), "negative counts")
+  # The bounds between the counts (m24, D16.8).
+  expect_error(check(1L, "n_fail", 9L), "more failing records than records checked")
+  expect_error(check(1L, "n_easy_fix", 4L), "more easy fixes or distinct failing values")
+  expect_error(check(1L, "n_distinct_fail_values", 4L), "more easy fixes or distinct failing")
+  expect_no_error(check(1L, "n_easy_fix", 3L))
   # A conformance rule's reason code is "*" (R3); a plausibility rule's is its own.
   expect_error(check(1L, "reason_code", "value_jump"), "conformance row a reason code")
   expect_no_error(check(3L, "reason_code", "other_reason"))
@@ -216,6 +228,9 @@ test_that("issues: IDs once, record and column levels, positional PKs, roots (6.
   expect_error(check(3L, "pk_positional", FALSE), "without a PK that aren't marked positional")
   expect_error(check(5L, "record_pk", "c9"), "column-level issues without record_pk")
   expect_error(check(5L, "n_records", NA_integer_), "column-level issues without record_pk")
+  expect_error(check(5L, "n_records", -1L), "column-level issues without record_pk")
+  # A table rule's issue on a missing table counts no records (D16.8).
+  expect_no_error(check(5L, "n_records", 0L))
   expect_error(check(5L, "row_number", 4L), "or with a row number")
   expect_error(check(1L, "root_issue_id", 2L), "has a root on an issue that isn't not_evaluated")
   expect_error(check(4L, "root_issue_id", NA_integer_), "a not_evaluated one without")

@@ -38,7 +38,32 @@ so each rule keeps its registered severity. In a rule set the \code{rules}
 rows' \code{severity} column gives this tier. Pre-flight checks each entry
 (\code{rule_id_unknown}, \code{rule_set_override_invalid}); a pre-flight check's own
 outcome can't be changed.
+\item \code{groundplotqc.example_cap}: how many distinct failing values a results row
+shows in its \code{examples} column. Built-in: \code{5}.
+\item \code{groundplotqc.column_level_min_n}: the fewest records a column must have in
+a group before a rule that fails on all of them is recorded as one
+column-level issue. Built-in: \code{10}.
+\item \code{groundplotqc.raw_na_policy}: when a raw \code{NA} is an error (\code{raw_na}) in a
+column outside the primary and foreign keys, whose missing values Layer 4
+reports: \code{"when_sentinels"}, only in a column whose type has missing-value
+codes; \code{"always"}; or \code{"never"}. Built-in: \code{"when_sentinels"}.
+\item \code{groundplotqc.rogue_codes}: values that stand in for a missing value but
+aren't the agreed codes (\code{sentinel_rogue_code}), compared as numbers in a
+column stored as numbers, as text otherwise. A value is never one when it
+is a code of the column's code list, a missing-value code of the column's
+type, an unknown code of the attribute, or another type's missing-value
+code that \code{sentinel_wrong_type} reports. Built-in:
+\code{c("-999", "UNK", "NA", "N/A")}.
+\item \code{groundplotqc.unknown_codes}: codes for "unknown" by attribute, such as
+\code{c(species = "UNKN.SPP")} (\code{species_unknown_code}); an attribute may be
+named more than once. Built-in: none.
 }
+
+In a rule set's settings rows, a whole number has type \code{integer}, a setting
+with several values gives them joined by "; ", and a named one gives
+"name=value" parts. In every tier, a code can't be empty, begin or end with
+a space, tab or line break, or hold ";". In \code{groundplotqc.unknown_codes} the
+same holds for each name, and neither a code nor a name can hold "=".
 
 More options are added by the versions that bring the settings they control.
 }

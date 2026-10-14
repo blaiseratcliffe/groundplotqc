@@ -22,8 +22,8 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
     lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
     lineage_id_unflagged = "warn", crosswalk_unreadable = "stop",
     rule_set_unknown_column = "stop", rule_id_unknown = "stop",
-    rule_set_override_invalid = "stop", text_id_missing = "stop", text_id_fallback = "warn",
-    text_slot_unknown = "stop"
+    rule_set_override_invalid = "stop", rule_set_duplicate_row = "stop",
+    text_id_missing = "stop", text_id_fallback = "warn", text_slot_unknown = "stop"
   ))
 })
 
@@ -52,7 +52,8 @@ test_that("each planted defect gives its check's findings", {
     lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
     rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
-    rule_set_override_invalid = "stop 1", text_id_missing = "pass 0",
+    rule_set_override_invalid = "stop 1", rule_set_duplicate_row = "stop 1",
+    text_id_missing = "pass 0",
     text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1"
   ))
   site <- results[results$rule_id == "site_id_range_invalid", ]
@@ -78,7 +79,8 @@ test_that("each planted defect gives its check's findings", {
   }
   in_memory <- "of the rule set's rules (as R counts rows)"
   rule_set <- results[results$rule_id %in% c(
-    "rule_set_unknown_column", "rule_id_unknown", "rule_set_override_invalid"
+    "rule_set_unknown_column", "rule_id_unknown", "rule_set_override_invalid",
+    "rule_set_duplicate_row"
   ), ]
   expect_equal(rule_set$detail, c(
     paste("Row 3", in_memory, "names table stands, which isn't in the dictionary."),
@@ -88,7 +90,8 @@ test_that("each planted defect gives its check's findings", {
     paste(
       "Row 2", in_memory, "names dd_pk_missing, a pre-flight check,",
       "which a rule set can't change."
-    )
+    ),
+    paste("Row 5", in_memory, "names rule raw_na for plots.*, as row 4 does.")
   ))
   expect_equal(
     results$detail[results$rule_id == "text_slot_unknown"],

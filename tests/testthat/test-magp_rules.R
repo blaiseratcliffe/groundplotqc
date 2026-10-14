@@ -9,7 +9,7 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_identical(rules, validate_rule_set(rules))
   # Each component keeps the file it was read from and each row's line (D14.19).
   expect_equal(attr(rules$rules, "source_file"), "rules_rules.csv")
-  expect_equal(attr(rules$settings, "source_lines"), 2L)
+  expect_equal(attr(rules$settings, "source_lines"), 2:7)
 })
 
 test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (D14.15)", {
@@ -19,10 +19,25 @@ test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (
   )
 })
 
-test_that("MAGPlot's settings rows are the settings it restates: the language", {
+test_that("MAGPlot's settings rows restate the settings, with its own values (D1.8a, D16.12)", {
   expect_equal(
     as.data.frame(magp_rules()$settings),
-    data.frame(setting = "lang", value = "en", type = "character"),
-    ignore_attr = c("source_file", "source_lines")
+    data.frame(
+      setting = c(
+        "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
+        "unknown_codes"
+      ),
+      value = c("en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP"),
+      type = c("character", "integer", "integer", "character", "character", "character")
+    ),
+    ignore_attr = c("source_file", "source_lines", "source_sha256")
   )
+  rules <- magp_rules()
+  withr::local_options(groundplotqc.raw_na_policy = NULL, groundplotqc.unknown_codes = NULL)
+  expect_equal(
+    resolve_setting("unknown_codes", rules = rules),
+    list(value = c(species = "UNKN.SPP"), tier = "rule set")
+  )
+  expect_equal(resolve_setting("raw_na_policy", rules = rules)$value, "always")
+  expect_identical(resolve_setting("column_level_min_n", rules = rules)$value, 10)
 })

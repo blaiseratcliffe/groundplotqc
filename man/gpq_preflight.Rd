@@ -20,8 +20,9 @@ gpq_preflight(
 registered rules, and its \code{settings} rows give settings.}
 
 \item{settings}{A named list of settings, which come before the rule set's, the
-options' and the built-in values (see \link{groundplotqc_options}): \code{lang}, the run
-language, whose text \code{text_id_fallback} checks, and \code{severity}, severities by rule ID.}
+options' and the built-in values (see \link{groundplotqc_options}). Pre-flight reads \code{lang},
+the run language, whose text \code{text_id_fallback} checks, and \code{severity}, severities by
+rule ID; it accepts the other settings by name and doesn't read them.}
 
 \item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
 \code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}
@@ -73,11 +74,11 @@ the specification's \code{clashes} component.
 \code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
 \code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
 \code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable}; with a rule
-set, \code{rule_set_unknown_column}; with a rule set or a severity setting, \code{rule_id_unknown}
-and \code{rule_set_override_invalid}; and \code{text_id_missing}, \code{text_id_fallback} and
-\code{text_slot_unknown}, on the report text of the registered rules in English and in the run
-language and on a caller's text table. No rule set or setting changes what a check stops
-or warns on.
+set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a severity
+setting, \code{rule_id_unknown} and \code{rule_set_override_invalid}; and \code{text_id_missing},
+\code{text_id_fallback} and \code{text_slot_unknown}, on the report text of the registered rules in
+English and in the run language and on a caller's text table. No rule set or setting
+changes what a check stops or warns on.
 }
 
 \examples{

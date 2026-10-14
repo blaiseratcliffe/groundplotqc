@@ -533,3 +533,49 @@ test_that("allowed_text lists each rule's allowed values in order, blank for a r
     c("", "error, warning", "flag", "info")
   )
 })
+
+test_that("rule_set_duplicate_row names each row repeating a rule, table and attribute (D16.6)", {
+  expect_equal(check("rule_set_duplicate_row", preflight_context()), "no_input")
+  rules <- rule_rows(
+    rule_id = c("conform", "conform", "conform", "plaus", "conform", NA, NA),
+    table_name = c("stations", "stations", "*", "stations", "stations", "hauls", "hauls"),
+    attribute_name = c("*", "*", "*", "*", "*", "gear", "gear"),
+    severity = c(NA, "warning", NA, NA, NA, NA, NA), class = NA,
+    enabled = c(TRUE, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE)
+  )
+  found <- check("rule_set_duplicate_row", test_context(rules))
+  # Each repeat names the first row it repeats, a blank rule ID's included (D16.42, D16.43).
+  expect_equal(found$detail, c(
+    paste(memory_position(2L), "names rule conform for stations.*, as row 1 does."),
+    paste(memory_position(5L), "names rule conform for stations.*, as row 1 does."),
+    paste(memory_position(7L), "names rule (blank) for hauls.gear, as row 6 does.")
+  ))
+  expect_true(all(is.na(found$file)))
+  expect_equal(nrow(check("rule_set_duplicate_row", test_context(fx_empty_rule_set()))), 0L)
+})
+
+test_that("a repeated row read from a file is placed by its line (D14.19, D16.6)", {
+  dir <- withr::local_tempdir()
+  writeLines(
+    c(
+      "rule_id,table_name,attribute_name,severity,class,enabled",
+      # A quoted cell over two lines: the rows below start on lines 4, 5 and 6, so the first
+      # row is named by its own line, not by its row number.
+      "plaus,hauls,\"gear", "note\",,,TRUE",
+      "conform,stations,*,,,TRUE", "plaus,stations,*,,,TRUE", "conform,stations,*,warning,,TRUE"
+    ),
+    file.path(dir, "rules_rules.csv")
+  )
+  found <- check("rule_set_duplicate_row", test_context(read_rule_set(dir)))
+  expect_equal(found$file, "rules_rules.csv")
+  expect_equal(found$source_cell, "rules_rules.csv:6")
+  expect_equal(
+    found$detail,
+    "Line 6 of rules_rules.csv names rule conform for stations.*, as line 4 does."
+  )
+})
+
+test_that("MAGPlot's rule set has no repeated row (D16.6)", {
+  context <- preflight_context(magp_rules())
+  expect_equal(nrow(preflight_check_functions()$rule_set_duplicate_row(magp_spec(), context)), 0L)
+})

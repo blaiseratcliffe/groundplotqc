@@ -555,8 +555,9 @@ preflight_check_functions <- function() {
 #'   [magp_rules()] returns. Its `rules` rows are checked against the specification and the
 #'   registered rules, and its `settings` rows give settings.
 #' @param settings A named list of settings, which come before the rule set's, the
-#'   options' and the built-in values (see [groundplotqc_options]): `lang`, the run
-#'   language, whose text `text_id_fallback` checks, and `severity`, severities by rule ID.
+#'   options' and the built-in values (see [groundplotqc_options]). Pre-flight reads `lang`,
+#'   the run language, whose text `text_id_fallback` checks, and `severity`, severities by
+#'   rule ID; it accepts the other settings by name and doesn't read them.
 #' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
 #'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`
 #'   when pre-flight checks the registered rules' text; pre-flight's own page and table use
@@ -590,11 +591,11 @@ preflight_check_functions <- function() {
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`; with a rule
-#' set, `rule_set_unknown_column`; with a rule set or a severity setting, `rule_id_unknown`
-#' and `rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback` and
-#' `text_slot_unknown`, on the report text of the registered rules in English and in the run
-#' language and on a caller's text table. No rule set or setting changes what a check stops
-#' or warns on.
+#' set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a severity
+#' setting, `rule_id_unknown` and `rule_set_override_invalid`; and `text_id_missing`,
+#' `text_id_fallback` and `text_slot_unknown`, on the report text of the registered rules in
+#' English and in the run language and on a caller's text table. No rule set or setting
+#' changes what a check stops or warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(

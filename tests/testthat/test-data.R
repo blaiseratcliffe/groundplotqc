@@ -244,6 +244,12 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
   expect_true(all(sheet$rule_id %in% data_rules))
   # Every data rule has a defect block; pre-flight checks have their planted spec.
   expect_equal(setdiff(data_rules, sheet$rule_id), character())
+  # No row lists its own rule as a cascade, which would let the rule's other issues pass.
+  own_cascade <- mapply(function(rule, cascade) rule %in% split_joined(cascade),
+    sheet$rule_id, sheet$cascade_rule_ids,
+    USE.NAMES = FALSE
+  )
+  expect_false(any(own_cascade))
 })
 
 test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
@@ -253,4 +259,48 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
   expect_true(all(vapply(magp_example, function(table) {
     data.table::is.data.table(table) && isTRUE(attr(table, "gpq_fixture"))
   }, logical(1))))
+})
+
+test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
+  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  testthat::skip_on_cran()
+  results <- fx_caught(fx_magp_clean())
+  expect_equal(sum(results$issues$status == "open"), 0L)
+  # Nothing fails, and every rule reports: a row that couldn't run (not_run) is allowed.
+  expect_equal(sum(results$results$status == "fail"), 0L)
+  expect_equal(nrow(results$metadata$self_test), 0L)
+})
+
+test_that("every defect block stops on tables that aren't fixtures (18.3)", {
+  # lapply() returns a plain list, which lacks the marker the guard reads.
+  unmarked <- lapply(fx_magp_clean(), data.table::copy)
+  blocks <- fx_defect_blocks()
+  for (id in names(blocks)) {
+    expect_error(blocks[[id]](unmarked), "fixtures only", info = id)
+  }
+})
+
+test_that("planted vs caught: each block caught by its rule with its witness, its cascade too", {
+  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  testthat::skip_on_cran()
+  base <- fx_magp_clean()
+  sheet <- fx_answer_sheet()
+  blocks <- fx_defect_blocks()
+  for (i in seq_len(nrow(sheet))) {
+    row <- sheet[i]
+    results <- fx_caught(blocks[[row$defect_id]](base))
+    caught <- results$issues[results$issues$status == "open"]
+    is_hit <- caught$rule_id == row$rule_id & caught$table_name == row$table_name &
+      caught$column_name == row$column_name & caught$record_pk %in% row$record_pk
+    hit <- caught[is_hit]
+    expect_equal(nrow(hit), 1L, info = row$defect_id)
+    expect_identical(hit$value, row$witness, info = row$defect_id)
+    cascade <- split_joined(row$cascade_rule_ids)
+    allowed <- c(row$rule_id, cascade)
+    expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
+    # Each cascade rule the sheet lists raises an open issue too (D16.42, m27).
+    expect_equal(setdiff(cascade, caught$rule_id), character(), info = row$defect_id)
+    # Nor does another issue of the planted rule, elsewhere, pass: all but the hit are cascade.
+    expect_equal(sum(!is_hit & !caught$rule_id %in% cascade), 0L, info = row$defect_id)
+  }
 })

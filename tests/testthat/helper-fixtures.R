@@ -1,7 +1,7 @@
 # The clean base and the fixture scaffold (plan 18.3; D5.11, D8.21, D12.38, D15.10): clean
 # tables built in code from a spec (MAGPlot's from magp_spec(), the generic ones from the
 # fish toy spec), the fixture marker and the guard that refuses tables without it, and the
-# answer sheet with its defect blocks, empty until M4 registers the first data rules.
+# answer sheet with its defect blocks, one or more for each registered data rule.
 # data-raw/build_magp_example.R sources this file to build magp_example.
 
 # Clean tables for every table of `spec`, in the dictionary's order, each with its
@@ -226,20 +226,193 @@ fx_require_fixture <- function(x) {
   invisible(x)
 }
 
-# The answer sheet (18.3): one row per defect block, each a single edit to the clean base:
-# the record it edits, the edit, the rule that must catch it, the cascade rules allowed
-# ("; "-joined) and the witness value the rule must report. Empty until M4.
-fx_answer_sheet <- function() {
+# One answer-sheet row: the defect, where it is (record "*" for a table or column), the edit,
+# the rule that must catch it, the other rules allowed open issues with it ("; "-joined) and
+# the witness value the rule must report (NA where its issue has none).
+fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_id,
+                      cascade_rule_ids = NA_character_, witness = NA_character_) {
   data.table::data.table(
-    defect_id = character(), table_name = character(), column_name = character(),
-    record_pk = character(), edit = character(), rule_id = character(),
-    cascade_rule_ids = character(), witness = character()
+    defect_id = defect_id, table_name = table_name, column_name = column_name,
+    record_pk = record_pk, edit = edit, rule_id = rule_id,
+    cascade_rule_ids = cascade_rule_ids, witness = witness
   )
 }
 
+# The answer sheet (18.3): one row per defect block, each a single edit to MAGPlot's clean
+# base (fx_magp_clean()), caught by gpq_check_conformance() with magp_rules() (fx_caught()).
+fx_answer_sheet <- function() {
+  data.table::rbindlist(list(
+    fx_defect(character(), character(), character(), character(), character(), character()),
+    # ---- Layer 0 (task 3) ----
+    fx_defect(
+      "table_missing", "magp_tree_age", "*", "*", "magp_tree_age left out", "table_missing"
+    ),
+    fx_defect(
+      "table_unexpected", "magp_notes", "*", "*", "a table magp_notes added", "table_unexpected"
+    ),
+    fx_defect(
+      "column_missing", "magp_trees", "comments", "*", "magp_trees$comments removed",
+      "column_missing"
+    ),
+    fx_defect(
+      "column_unexpected", "magp_plots", "colour", "*", "a column colour added to magp_plots",
+      "column_unexpected"
+    ),
+    fx_defect(
+      "column_name_mismatch", "magp_tree_meas", "dbh", "*", "magp_tree_meas$dbh renamed DBH",
+      "column_name_mismatch",
+      witness = "DBH"
+    ),
+    # ---- Layer 1 (task 4) ----
+    fx_defect(
+      "class_mismatch", "magp_tree_meas", "height", "*", "magp_tree_meas$height stored as text",
+      "class_mismatch",
+      witness = "character"
+    ),
+    fx_defect(
+      "coercion_loss", "magp_tree_meas", "height", "magp_tree_meas_1",
+      "magp_tree_meas$height stored as text, row 1 \"tall\"", "coercion_loss",
+      cascade_rule_ids = "class_mismatch", witness = "tall"
+    ),
+    fx_defect(
+      "date_unparseable", "magp_site_visits", "meas_date", "magp_site_visits_1",
+      "magp_site_visits$meas_date row 1 \"2020-02-30\"", "date_unparseable",
+      witness = "2020-02-30"
+    ),
+    fx_defect(
+      "integer_stored_as_double", "magp_tree_meas", "visit_num", "*",
+      "magp_tree_meas$visit_num stored as double", "integer_stored_as_double",
+      witness = "double"
+    ),
+    fx_defect(
+      "value_not_finite", "magp_tree_meas", "dbh", "magp_tree_meas_1",
+      "magp_tree_meas$dbh row 1 Inf", "value_not_finite",
+      witness = "Inf"
+    ),
+    # ---- Layer 2 (task 5) ----
+    fx_defect(
+      "raw_na", "magp_trees", "tree_dist", "magp_trees_1", "magp_trees$tree_dist row 1 NA",
+      "raw_na"
+    ),
+    fx_defect(
+      "blank_string", "magp_trees", "comments", "magp_trees_1", "magp_trees$comments row 1 \"\"",
+      "blank_string",
+      witness = ""
+    ),
+    fx_defect(
+      "sentinel_wrong_type", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"-9\"", "sentinel_wrong_type",
+      witness = "-9"
+    ),
+    fx_defect(
+      "sentinel_rogue_code", "magp_trees", "comments", "magp_trees_1",
+      "magp_trees$comments row 1 \"N/A\"", "sentinel_rogue_code",
+      witness = "N/A"
+    ),
+    fx_defect(
+      "species_unknown_code", "magp_tree_meas", "species", "magp_tree_meas_1",
+      "magp_tree_meas$species row 1 \"UNKN.SPP\"", "species_unknown_code",
+      witness = "UNKN.SPP"
+    ),
+    fx_defect(
+      "whitespace_padding", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"AP \"", "whitespace_padding",
+      witness = "AP "
+    ),
+    fx_defect(
+      "na_text_in_id", "magp_trees", "src_tree_id", "magp_trees_1",
+      "magp_trees$src_tree_id row 1 \"NA\"", "na_text_in_id",
+      witness = "NA"
+    )
+  ))
+}
+
+# A defect block that sets one cell of a copy of the base: `value` at `row` of `column`. The
+# cell must read back as `value` (a missing value as a missing value); a value of another
+# class than the column's is a change of class, which fx_set_column() makes.
+fx_set_cell <- function(table, column, row, value) {
+  function(tables) {
+    fx_require_fixture(tables)
+    tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+    data.table::set(tables[[table]], i = row, j = column, value = value)
+    stored <- tables[[table]][[column]][row]
+    if (!(identical(stored, value) || (all(is.na(value)) && all(is.na(stored))))) {
+      stop(
+        "fx_set_cell() can't store the value as it is in ", table, "$", column, ", of class ",
+        class(tables[[table]][[column]])[[1L]], ": a change of class is fx_set_column()'s."
+      )
+    }
+    tables
+  }
+}
+
+# A defect block that sets, adds or, when `make()` returns NULL, removes one column of a copy
+# of the base: `make(column)` is the new column.
+fx_set_column <- function(table, column, make) {
+  function(tables) {
+    fx_require_fixture(tables)
+    tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+    data.table::set(tables[[table]], j = column, value = make(tables[[table]][[column]]))
+    tables
+  }
+}
+
 # The defect blocks, named by defect ID: each a function of the clean base's tables that
-# returns them with its one edit made on a copy (data.table::copy()), so no block changes
-# the tables another block or test reads. Empty until M4.
+# returns them with its one edit made on copies (data.table::copy()), so no block changes
+# the tables another block or test reads.
 fx_defect_blocks <- function() {
-  structure(list(), names = character())
+  list(
+    # ---- Layer 0 (task 3) ----
+    table_missing = function(tables) {
+      fx_require_fixture(tables)
+      fx_mark_fixture(lapply(tables[names(tables) != "magp_tree_age"], data.table::copy))
+    },
+    table_unexpected = function(tables) {
+      fx_require_fixture(tables)
+      tables <- lapply(tables, data.table::copy)
+      tables$magp_notes <- data.table::data.table(note = "t1")
+      fx_mark_fixture(tables)
+    },
+    column_missing = fx_set_column("magp_trees", "comments", function(x) NULL),
+    column_unexpected = fx_set_column("magp_plots", "colour", function(x) "red"),
+    column_name_mismatch = function(tables) {
+      fx_require_fixture(tables)
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      data.table::setnames(tables$magp_tree_meas, "dbh", "DBH")
+      tables
+    },
+    # ---- Layer 1 (task 4) ----
+    class_mismatch = fx_set_column("magp_tree_meas", "height", as.character),
+    coercion_loss = function(tables) {
+      tables <- fx_set_column("magp_tree_meas", "height", as.character)(tables)
+      data.table::set(tables$magp_tree_meas, i = 1L, j = "height", value = "tall")
+      tables
+    },
+    date_unparseable = fx_set_cell("magp_site_visits", "meas_date", 1L, "2020-02-30"),
+    integer_stored_as_double = fx_set_column("magp_tree_meas", "visit_num", as.double),
+    value_not_finite = fx_set_cell("magp_tree_meas", "dbh", 1L, Inf),
+    # ---- Layer 2 (task 5) ----
+    raw_na = fx_set_cell("magp_trees", "tree_dist", 1L, NA_real_),
+    blank_string = fx_set_cell("magp_trees", "comments", 1L, ""),
+    sentinel_wrong_type = fx_set_cell("magp_trees", "tree_origin", 1L, "-9"),
+    sentinel_rogue_code = fx_set_cell("magp_trees", "comments", 1L, "N/A"),
+    species_unknown_code = fx_set_cell("magp_tree_meas", "species", 1L, "UNKN.SPP"),
+    whitespace_padding = fx_set_cell("magp_trees", "tree_origin", 1L, "AP "),
+    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA")
+  )
+}
+
+# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 2, with MAGPlot's
+# spec, rule set and group columns; pre-flight's warning about the spec is muffled. What a
+# planted defect must raise are the open issues: `results$issues[status == "open"]`.
+fx_caught <- function(tables) {
+  fx_require_fixture(tables)
+  withCallingHandlers(
+    gpq_check_conformance(
+      tables, magp_spec(),
+      group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
 }

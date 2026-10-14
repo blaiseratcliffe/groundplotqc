@@ -714,6 +714,26 @@ test_that("undo_doubled_quotes undoes doubled quotes in the columns named, in pl
   expect_equal(dt$a, c("say \"hi\"", NA, "plain", "\""))
 })
 
+test_that("undo_doubled_quotes undoes a cell that isn't valid UTF-8 byte by byte, its mark kept", {
+  as_bytes <- function(bytes, mark) {
+    x <- rawToChar(as.raw(bytes))
+    Encoding(x) <- mark
+    x
+  }
+  # Each cell holds "", a byte that isn't valid UTF-8 (0xE9 or 0x97) and "" again.
+  quoted <- c(0x22, 0x22)
+  latin <- as_bytes(c(quoted, 0x61, 0xE9, quoted), "latin1")
+  marked <- as_bytes(c(quoted, 0x97, quoted), "bytes")
+  plain <- as_bytes(c(0x62, quoted, 0x97), "unknown")
+  expect_false(any(validUTF8(c(latin, marked, plain))))
+  dt <- data.table::data.table(a = c(latin, marked, plain, "say \"\"hi\"\""))
+  undo_doubled_quotes(dt)
+  undone <- list(c(0x22, 0x61, 0xE9, 0x22), c(0x22, 0x97, 0x22), c(0x62, 0x22, 0x97))
+  expect_identical(lapply(dt$a[1:3], charToRaw), lapply(undone, as.raw))
+  expect_identical(Encoding(dt$a[1:3]), c("latin1", "bytes", "unknown"))
+  expect_identical(dt$a[[4L]], "say \"hi\"")
+})
+
 test_that("undo_doubled_quotes leaves a table with no column or no match as it is", {
   none <- data.table::data.table()
   expect_identical(undo_doubled_quotes(none), data.table::data.table())
