@@ -262,6 +262,8 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
 })
 
 test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
+  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())
   expect_equal(sum(results$issues$status == "open"), 0L)
   # Nothing fails, and every rule reports: a row that couldn't run (not_run) is allowed.
