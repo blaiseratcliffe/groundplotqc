@@ -13,14 +13,15 @@ is_blank <- function(x) {
 #' checks read spaces in values (D16.42, m21 and m35; D16.44)
 #'
 #' In plain ASCII text a space, tab, CR or LF counts; in text that isn't plain ASCII any
-#' Unicode space does (`(*UCP)\s`). Text marked latin1, or native in a locale that isn't
-#' UTF-8, is read as UTF-8, only the values that aren't valid UTF-8 as they are converted, so
-#' the rest keep their encoding (D16.36). Text marked as bytes, or that isn't valid UTF-8 even
-#' so, is read byte by byte, its ASCII spaces only, since trimws() and a Unicode pattern stop
-#' on it, and keeps its mark (D16.33, D16.36). Returns `blank` (empty once trimmed), `padded`
-#' (not blank, with a space at either end) and `trimmed` (the value without those spaces, as
-#' UTF-8 where it was read so), one per value; NA is neither, and stays NA. is_blank() is
-#' unchanged for the specification reader.
+#' Unicode space does (`(*UCP)\s`). Valid UTF-8 left unmarked, as fread() leaves it, is read
+#' as UTF-8 in any locale. Text marked latin1, or native in a locale that isn't UTF-8, is read
+#' as UTF-8, only the values that aren't valid UTF-8 as they are converted, so the rest keep
+#' their encoding (D16.36). Text marked as bytes, or that isn't valid UTF-8 even so, is read
+#' byte by byte, its ASCII spaces only, since trimws() and a Unicode pattern stop on it, and
+#' keeps its mark (D16.33, D16.36). Returns `blank` (empty once trimmed), `padded` (not blank,
+#' with a space at either end) and `trimmed` (a padded value without those spaces, any other
+#' value as read, as UTF-8 where it was read so), one per value; NA is neither, and stays NA.
+#' is_blank() is unchanged for the specification reader.
 #' @noRd
 space_padding <- function(text) {
   bytes <- Encoding(text) == "bytes"
@@ -30,16 +31,29 @@ space_padding <- function(text) {
   utf8[convert] <- enc2utf8(text[convert])
   valid[convert] <- validUTF8(utf8[convert])
   wide <- valid & grepl("[^\001-\177]", utf8, useBytes = TRUE)
+  # A Unicode pattern reads unmarked text in the session's encoding, byte by byte outside a
+  # UTF-8 locale, where the last byte of a UTF-8 a-grave reads as a no-break space: valid
+  # UTF-8 left unmarked is marked so on this copy, those values only (16.2).
+  unmarked <- which(wide & Encoding(utf8) == "unknown")
+  if (length(unmarked) > 0L) {
+    marked <- utf8[unmarked]
+    Encoding(marked) <- "UTF-8"
+    utf8[unmarked] <- marked
+  }
   blank <- is_blank(text)
   blank[wide] <- grepl("(*UCP)^\\s*$", utf8[wide], perl = TRUE)
   padded <- grepl("^[ \t\r\n]|[ \t\r\n]$", text, useBytes = TRUE)
   padded[wide] <- grepl("(*UCP)^\\s|\\s$", utf8[wide], perl = TRUE)
+  padded <- padded & !blank
+  # Only the padded values are trimmed.
   trimmed <- utf8
-  ascii <- valid & !wide
+  ascii <- padded & valid & !wide
   trimmed[ascii] <- trimws(utf8[ascii], whitespace = "[ \t\r\n]")
-  trimmed[wide] <- gsub("(*UCP)^\\s+|\\s+$", "", utf8[wide], perl = TRUE)
-  trimmed[!valid] <- gsub("^[ \t\r\n]+|[ \t\r\n]+$", "", utf8[!valid], useBytes = TRUE)
-  list(blank = blank, padded = padded & !blank, trimmed = trimmed)
+  spaced <- padded & wide
+  trimmed[spaced] <- gsub("(*UCP)^\\s+|\\s+$", "", utf8[spaced], perl = TRUE)
+  raw <- padded & !valid
+  trimmed[raw] <- gsub("^[ \t\r\n]+|[ \t\r\n]+$", "", utf8[raw], useBytes = TRUE)
+  list(blank = blank, padded = padded, trimmed = trimmed)
 }
 
 #' Blank cells as NA

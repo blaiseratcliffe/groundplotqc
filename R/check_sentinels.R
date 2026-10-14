@@ -42,15 +42,16 @@ rows_holding <- function(x, codes) {
 #' (no_sentinels) where its type has none. In a column stored as numbers the numeric
 #' family's codes match as numbers; where the column's type isn't numeric, the character and
 #' date families' codes match too, where the value's text is the code, so a real 0 isn't the
-#' date code "00000000" (R68; D16.42, m37). `sentinel_rogue_code` per attribute outside the
+#' date code "00000000" (R68; D16.42, m37); an unknown code of the attribute is left to
+#' `species_unknown_code` (D16.45, m51). `sentinel_rogue_code` per attribute outside the
 #' keys: a rogue code that isn't a code of the column, and isn't a value another rule owns:
 #' one of the column's own sentinels, in a column stored as numbers also where the value's
 #' text is one, another type's sentinel that `sentinel_wrong_type` reports, or an unknown code
 #' of the attribute (D7.3, D16.40, D16.41; D16.42, m36, m39); the text "NA" in an ID column
 #' is left to `na_text_in_id`. `species_unknown_code` per attribute `unknown_codes` names, one
-#' not_run (no_input) without any. `whitespace_padding` per coded or ID attribute, on text
-#' that isn't blank. `na_text_in_id` per ID attribute (a key, or marked by the spec's ID
-#' pattern): the text "NA".
+#' not_run (no_input) without any; the column's own sentinels pass (D7.3; D16.45, m51).
+#' `whitespace_padding` per coded or ID attribute, on text that isn't blank. `na_text_in_id`
+#' per ID attribute (a key, or marked by the spec's ID pattern): the text "NA".
 #' @noRd
 check_sentinels <- function(input, context) {
   columns <- input$columns
@@ -66,11 +67,24 @@ check_sentinels <- function(input, context) {
   policy <- context$raw_na_policy
   unknown <- context$unknown_codes
   unknown_of <- function(attribute) unname(unknown[names(unknown) == attribute])
+  # The rows of `x` holding one of the column's own sentinels, which pass (D7.3): compared as
+  # rows_holding() compares them and, in a column stored as numbers whose type isn't numeric,
+  # where the value's text is one, so a real 0 isn't the date code "00000000" (m39).
+  own_rows <- function(x, row) {
+    mine <- own(row)$value
+    if (is.numeric(x) && !is.object(x) && row$family != "numeric") {
+      which(value_text(x) %chin% mine)
+    } else {
+      rows_holding(x, mine)
+    }
+  }
   # The rows of `x` holding another type's sentinel that isn't one of the column's own, each
   # with its sentinel's role, and the column's own sentinels; NULL where the column's type has
   # none. Stored as text, a value is compared as text. Stored as numbers, it is compared with
   # the numeric family's codes as numbers, and where the column's type isn't numeric, with
-  # the other families' codes as numbers where its text is the code (R68; D16.42, m37).
+  # the other families' codes as numbers where its text is the code (R68; D16.42, m37). An
+  # unknown code of the attribute is left to species_unknown_code, compared as that rule
+  # compares it (D16.45, m51).
   wrong_type <- function(x, row) {
     right <- own(row)
     if (nrow(right) == 0L) {
@@ -81,22 +95,25 @@ check_sentinels <- function(input, context) {
     roles <- sentinels$role[is_wrong]
     if (!(is.numeric(x) && !is.object(x))) {
       fail <- rows_holding(x, codes)
-      return(list(fail = fail, role = roles[match(value_text(x[fail]), codes)], right = right))
+      role <- roles[match(value_text(x[fail]), codes)]
+    } else {
+      by_number <- sentinels$data_type[is_wrong] == "numeric"
+      fail <- rows_holding(x, codes[by_number])
+      role <- roles[by_number][match(x[fail], suppressWarnings(as.numeric(codes[by_number])))]
+      if (row$family != "numeric") {
+        written <- setdiff(rows_holding(x, codes[!by_number]), fail)
+        text <- value_text(x[written])
+        hit <- text %chin% codes[!by_number]
+        fail <- c(fail, written[hit])
+        role <- c(role, roles[!by_number][match(text[hit], codes[!by_number])])
+        in_order <- order(fail)
+        fail <- fail[in_order]
+        role <- role[in_order]
+      }
     }
-    by_number <- sentinels$data_type[is_wrong] == "numeric"
-    fail <- rows_holding(x, codes[by_number])
-    role <- roles[by_number][match(x[fail], suppressWarnings(as.numeric(codes[by_number])))]
-    if (row$family != "numeric") {
-      written <- setdiff(rows_holding(x, codes[!by_number]), fail)
-      text <- value_text(x[written])
-      hit <- text %chin% codes[!by_number]
-      fail <- c(fail, written[hit])
-      role <- c(role, roles[!by_number][match(text[hit], codes[!by_number])])
-      in_order <- order(fail)
-      fail <- fail[in_order]
-      role <- role[in_order]
-    }
-    list(fail = fail, role = role, right = right)
+    unknown_rows <- rows_holding(x[fail], unknown_of(row$attribute_name))
+    keep <- !seq_along(fail) %in% unknown_rows
+    list(fail = fail[keep], role = role[keep], right = right)
   }
   list(
     raw_na = if (policy == "never") {
@@ -159,11 +176,9 @@ check_sentinels <- function(input, context) {
         # are species_unknown_code's (D16.40, D16.41). Among the failing rows only.
         if (length(fail) > 0L) {
           held <- x[fail]
-          mine <- own(row)$value
-          as_text <- is.numeric(held) && !is.object(held) && row$family != "numeric"
           owned <- c(
-            if (as_text) which(value_text(held) %chin% mine) else rows_holding(held, mine),
-            wrong_type(held, row)$fail, rows_holding(held, unknown_of(attribute))
+            own_rows(held, row), wrong_type(held, row)$fail,
+            rows_holding(held, unknown_of(attribute))
           )
           fail <- fail[!seq_along(fail) %in% owned]
         }
@@ -180,6 +195,11 @@ check_sentinels <- function(input, context) {
         "species_unknown_code", columns[columns$attribute_name %chin% names(unknown)], input,
         function(table, attribute, x, row) {
           fail <- rows_holding(x, unknown_of(attribute))
+          # The column's own sentinels pass, though listed as unknown codes (D7.3; D16.45,
+          # m51). Among the failing rows only.
+          if (length(fail) > 0L) {
+            fail <- fail[!seq_along(fail) %in% own_rows(x[fail], row)]
+          }
           missing <- own(row)$value[own(row)$role == "missing"]
           record_outcome(
             "species_unknown_code", table, attribute, fail, value_text(x[fail]),

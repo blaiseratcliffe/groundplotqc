@@ -222,9 +222,18 @@ match_columns <- function(given, attributes) {
   squeeze <- function(x) {
     out <- rep(NA_character_, length(x))
     ok <- validUTF8(x)
-    out[ok] <- tolower(gsub("[[:space:]]", "", x[ok]))
-    wide <- which(ok & grepl("[^\001-\177]", x, useBytes = TRUE))
-    out[wide] <- tolower(gsub("(*UCP)\\s", "", x[wide], perl = TRUE))
+    wide <- ok & grepl("[^\001-\177]", x, useBytes = TRUE)
+    narrow <- ok & !wide
+    out[narrow] <- tolower(gsub("[[:space:]]", "", x[narrow]))
+    # A name that isn't plain ASCII is read as UTF-8, marked so on a copy where it is
+    # unmarked, as fread() leaves it, since a Unicode pattern reads unmarked text byte by byte
+    # outside a UTF-8 locale (D16.36).
+    unicode <- x[wide]
+    unmarked <- which(Encoding(unicode) == "unknown")
+    marked <- unicode[unmarked]
+    Encoding(marked) <- "UTF-8"
+    unicode[unmarked] <- marked
+    out[wide] <- tolower(gsub("(*UCP)\\s", "", unicode, perl = TRUE))
     out
   }
   for (i in which(is.na(column))) {

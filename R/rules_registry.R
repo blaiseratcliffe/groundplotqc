@@ -100,8 +100,8 @@ rule_registry <- function() {
       "sentinel_fix"
     ),
     conformance(
-      "sentinel_wrong_type", 2L, "error", "harmonization", "attributes; type_map; sentinels",
-      "sentinel_fix"
+      "sentinel_wrong_type", 2L, "error", "harmonization",
+      "attributes; type_map; sentinels; settings:unknown_codes", "sentinel_fix"
     ),
     conformance(
       "sentinel_rogue_code", 2L, "error", "depends",

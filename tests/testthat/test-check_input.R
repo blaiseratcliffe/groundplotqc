@@ -122,6 +122,18 @@ test_that("coerce_column reads a factor, a date or a logical column once per dis
   expect_identical(
     coerce_column(c(TRUE, NA, FALSE, TRUE), "double")$lost, c(TRUE, FALSE, TRUE, TRUE)
   )
+  # Six rows of three distinct values: value_text() writes three.
+  real <- value_text
+  given <- integer()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    given <<- c(given, length(x))
+    real(x)
+  })
+  repeated <- factor(c("3", "x", "3", "x", "2.5", "3"))
+  expect_identical(
+    coerce_column(repeated, "double")$lost, c(FALSE, TRUE, FALSE, TRUE, FALSE, FALSE)
+  )
+  expect_identical(given, 3L)
 })
 
 test_that("text is a number only when written as a decimal number (D16.42, m26)", {
@@ -188,6 +200,21 @@ test_that("an exact name wins; a near one differs only in letter case or spaces 
   spaced <- match_columns(given, c("dbh", paste0("sp", intToUtf8(0xE9), "cies"), "a b"))
   expect_identical(spaced$column, given)
   expect_identical(spaced$near, c(TRUE, TRUE, TRUE))
+})
+
+test_that("a name's Unicode spaces count in a locale that isn't UTF-8 (D16.36, F1)", {
+  # Unmarked UTF-8, as fread() leaves a header, read as UTF-8 there too.
+  given <- c(paste0("dbh", intToUtf8(0xA0)), intToUtf8(c(0x76, 0x6F, 0x69, 0x6C, 0xE0)))
+  Encoding(given) <- "unknown"
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  matched <- match_columns(given, c("dbh", "voil"))
+  expect_identical(matched$column, c(given[[1L]], NA))
+  expect_identical(matched$near, c(TRUE, FALSE))
 })
 
 test_that("fk_path walks the shortest path of keys, the dictionary's first key on a tie", {
@@ -462,6 +489,18 @@ test_that("a key column is joined as given, its sentinels masked inside the matc
   reached <- reach_column(conformance_input(fish, spec), "catches", "gear")
   expect_true(is.na(reached$rows[[1L]]))
   expect_equal(reached$rows[catches$haul_id == "2"], rep(2L, sum(catches$haul_id == "2")))
+  # A number-typed FK stored as text is read as numbers first (R41; D16.44, T1-Q1 (a)): "02"
+  # reaches the PK stored as 2, and "-88" is still the sentinel.
+  at <- which(typed$table_name == "catches" & typed$attribute_name == "haul_id")
+  data.table::set(typed, i = at, j = "data_type", value = whole$data_type)
+  data.table::set(typed, i = at, j = "r_class", value = whole$r_class)
+  spec$attributes <- typed
+  catches$haul_id <- sprintf("%02d", as.integer(catches$haul_id))
+  fish$catches <- catches
+  reached <- reach_column(conformance_input(fish, spec), "catches", "gear")
+  expect_true(is.na(reached$rows[[1L]]))
+  expect_true("02" %in% catches$haul_id)
+  expect_equal(reached$rows[catches$haul_id == "02"], rep(2L, sum(catches$haul_id == "02")))
 })
 
 test_that("a text-typed key chain stored as numbers groups as its text twin (D16.42, m9)", {
@@ -478,13 +517,17 @@ test_that("a text-typed key chain stored as numbers groups as its text twin (D16
   stations <- data.table::copy(fish$stations)
   hauls <- data.table::copy(fish$hauls)
   catches <- data.table::copy(fish$catches)
-  # Every key stored as a number, each foreign key its parent's: haul 4 is numbered 7, and
-  # catch 1 holds the sentinel -1.
+  # Every key stored as a number, each foreign key its parent's: haul 1 is numbered -1, the
+  # sentinel, and its catches moved to haul 2; the last haul is numbered 7; catch 1 holds -1,
+  # which reaches no haul, though one has the PK -1.
   hauls$station_id <- match(hauls$station_id, stations$station_id)
-  catches$haul_id <- match(catches$haul_id, hauls$haul_id)
+  at <- match(catches$haul_id, hauls$haul_id)
   stations$station_id <- seq_len(nrow(stations))
-  hauls$haul_id <- c(seq_len(nrow(hauls) - 1L), 7L)
-  catches$haul_id[catches$haul_id == nrow(hauls)] <- 7L
+  numbered <- c(-1L, seq_len(nrow(hauls) - 1L)[-1L], 7L)
+  hauls$haul_id <- numbered
+  moved <- numbered
+  moved[[1L]] <- 2L
+  catches$haul_id <- moved[at]
   catches$haul_id[[1L]] <- -1L
   numbers <- list(stations = stations, hauls = hauls, catches = catches)
   twin <- lapply(numbers, data.table::copy)
@@ -506,9 +549,22 @@ test_that("a text-typed key chain stored as numbers groups as its text twin (D16
   # Joined as stored: the key is the caller's column, no text made of it.
   keys <- key_values(stored, "catches", "haul_id")
   expect_identical(data.table::address(keys$value), data.table::address(catches$haul_id))
-  # One side text and the other numbers: only the numeric side is written as text.
+  # One side text and the other numbers: only the numeric side is written as text, the text
+  # side read as it is, so a catch "07" reaches no haul 7.
   mixed <- numbers
-  mixed$catches <- twin$catches
+  mixed$catches <- data.table::copy(twin$catches)
+  seven <- which(catches$haul_id == 7L)[[1L]]
+  data.table::set(mixed$catches, i = seven, j = "haul_id", value = "07")
+  twin_seven <- lapply(twin, data.table::copy)
+  data.table::set(twin_seven$catches, i = seven, j = "haul_id", value = "07")
+  groups <- conformance_input(mixed, spec, group_cols = group_cols)$groups$catches
+  expect_identical(
+    groups, conformance_input(twin_seven, spec, group_cols = group_cols)$groups$catches
+  )
+  expect_equal(groups$values$gear[groups$row_group][[seven]], "*")
+  # A numeric child against a text parent: the child is written as text.
+  mixed <- numbers
+  mixed$hauls <- twin$hauls
   expect_identical(
     conformance_input(mixed, spec, group_cols = group_cols)$groups$catches, as_text$groups$catches
   )

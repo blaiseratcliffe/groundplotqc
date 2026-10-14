@@ -244,6 +244,12 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
   expect_true(all(sheet$rule_id %in% data_rules))
   # Every data rule has a defect block; pre-flight checks have their planted spec.
   expect_equal(setdiff(data_rules, sheet$rule_id), character())
+  # No row lists its own rule as a cascade, which would let the rule's other issues pass.
+  own_cascade <- mapply(function(rule, cascade) rule %in% split_joined(cascade),
+    sheet$rule_id, sheet$cascade_rule_ids,
+    USE.NAMES = FALSE
+  )
+  expect_false(any(own_cascade))
 })
 
 test_that("magp_example is the clean base, marked as synthetic (D15.10)", {

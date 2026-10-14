@@ -105,6 +105,30 @@ test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8
   expect_equal(loss$value, c("UNK", "abc"))
 })
 
+test_that("a key of only Unicode spaces, as M4a leaves it until M5 decides (D16.45, m53)", {
+  # A key's blank is Layer 4's as is_blank() reads it (R74), and a no-break space is none: in
+  # a number-typed key stored as text it is coercion_loss's, and in a text-typed key no rule
+  # of Layers 0 to 2 reports it (whitespace_padding skips blanks, blank_string keys).
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  key <- which(attributes$attribute_name == "catch_id")
+  data.table::set(attributes, i = key, j = "data_type", value = "whole")
+  data.table::set(attributes, i = key, j = "r_class", value = "integer")
+  spec$attributes <- attributes
+  nbsp <- intToUtf8(0xA0)
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$catch_id <- c(nbsp, as.character(seq_len(nrow(catches))[-1L]))
+  catches$haul_id[[2L]] <- nbsp
+  fish$catches <- catches
+  issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value),
+    paste("coercion_loss catches catch_id 1", nbsp)
+  )
+})
+
 test_that("an ID column's \"NA\" is Layer 2's and a plain column's is coercion_loss's (D8.8)", {
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
@@ -185,10 +209,10 @@ test_that("an unknown code of the attribute is Layer 2's, in a number or date co
   fish$hauls <- hauls
   settings <- list(unknown_codes = c(weight = "UNK.W", haul_date = "unknown"))
   open <- fish_open(fish, settings = settings)
-  expect_setequal(paste(open$rule_id, open$column_name, open$value), c(
+  expect_equal(sort(paste(open$rule_id, open$column_name, open$value)), sort(c(
     "class_mismatch weight character", "species_unknown_code weight UNK.W",
     "species_unknown_code haul_date unknown"
-  ))
+  )))
 })
 
 test_that("a padded value whose trimmed form passes is whitespace_padding's alone (m25)", {
@@ -202,12 +226,13 @@ test_that("a padded value whose trimmed form passes is whitespace_padding's alon
   # A no-break space, which as.numeric() doesn't take for a space.
   nbsp <- intToUtf8(0xA0)
   fish <- fx_fish_clean()
+  # A padded sentinel, " ?", trimmed is Layer 2's, so it too is whitespace_padding's (R73).
   hauls <- data.table::copy(fish$hauls)
-  hauls$haul_date <- c(" 2020-06-01", paste0("2020-06-02", nbsp), " 2020-02-30", "2020-06-04")
+  hauls$haul_date <- c(" 2020-06-01", paste0("2020-06-02", nbsp), " 2020-02-30", " ?")
   fish$hauls <- hauls
   catches <- data.table::copy(fish$catches)
   catches$fish_count <- as.character(catches$fish_count)
-  catches$fish_count[1:2] <- c(paste0("5", nbsp), " abc")
+  catches$fish_count[1:3] <- c(paste0("5", nbsp), " abc", " ?")
   catches$weight <- as.character(catches$weight)
   catches$weight[[1L]] <- paste0("5", nbsp)
   fish$catches <- catches
@@ -216,14 +241,28 @@ test_that("a padded value whose trimmed form passes is whitespace_padding's alon
   fish$stations <- stations
   issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
   open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
-  expect_setequal(
-    paste(open$rule_id, open$column_name, open$row_number, open$expected),
-    c(
+  expect_equal(
+    sort(paste(open$rule_id, open$column_name, open$row_number, open$expected)),
+    sort(c(
       "whitespace_padding haul_date 1 2020-06-01", "whitespace_padding haul_date 2 2020-06-02",
-      "date_unparseable haul_date 3 %Y-%m-%d", "whitespace_padding fish_count 1 5",
-      "coercion_loss fish_count 2 integer", "coercion_loss weight 1 double",
+      "date_unparseable haul_date 3 %Y-%m-%d", "whitespace_padding haul_date 4 ?",
+      "whitespace_padding fish_count 1 5", "coercion_loss fish_count 2 integer",
+      "whitespace_padding fish_count 3 ?", "coercion_loss weight 1 double",
       "date_unparseable first_visit 1 %Y-%m-%d"
-    )
+    ))
+  )
+  # A factor is read by its labels, as whitespace_padding reads it (R72).
+  catches <- data.table::copy(fx_fish_clean()$catches)
+  counts <- as.character(catches$fish_count)
+  counts[[1L]] <- paste0("1", nbsp)
+  catches$fish_count <- factor(counts)
+  fish <- fx_fish_clean()
+  fish$catches <- catches
+  issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, open$column_name, open$row_number, open$expected),
+    "whitespace_padding fish_count 1 1"
   )
 })
 
@@ -244,16 +283,18 @@ test_that("hexadecimal text is lost, not a number (D16.42, m26)", {
 test_that("a value of only Unicode spaces outside the keys is blank_string's (m35, D8.8)", {
   fish <- fx_fish_clean()
   hauls <- data.table::copy(fish$hauls)
-  hauls$haul_date[[1L]] <- intToUtf8(0xA0)
+  blanks <- c(intToUtf8(0xA0), intToUtf8(c(0x2003, 0x20, 0xA0)))
+  hauls$haul_date[[1L]] <- blanks[[1L]]
   fish$hauls <- hauls
   catches <- data.table::copy(fish$catches)
   catches$weight <- as.character(catches$weight)
-  catches$weight[[1L]] <- intToUtf8(c(0x2003, 0x20, 0xA0))
+  catches$weight[[2L]] <- blanks[[2L]]
   fish$catches <- catches
   open <- fish_open(fish)
   open <- open[open$rule_id != "class_mismatch"]
   expect_equal(
-    paste(open$rule_id, open$column_name), c("blank_string haul_date", "blank_string weight")
+    paste(open$rule_id, open$column_name, open$row_number, open$value),
+    paste(c("blank_string haul_date 1", "blank_string weight 2"), blanks)
   )
 })
 

@@ -88,6 +88,19 @@ test_that("empty override tables for pre-flight checks have the whole registry's
   expect_named(full$class, c("rule_id", "value"))
 })
 
+test_that("the rules that read unknown codes or code lists name them in their inputs", {
+  # A rule's fingerprint covers what it reads (D15.6, 9.6; D16.42, m25; R75; D16.45, m51).
+  registry <- rule_registry()
+  inputs <- strsplit(registry$inputs, "; ", fixed = TRUE)
+  names(inputs) <- registry$rule_id
+  for (rule in c("coercion_loss", "date_unparseable")) {
+    expect_true(all(c("code_list_map", "settings:unknown_codes") %in% inputs[[rule]]), info = rule)
+  }
+  for (rule in c("sentinel_wrong_type", "sentinel_rogue_code", "species_unknown_code")) {
+    expect_true("settings:unknown_codes" %in% inputs[[rule]], info = rule)
+  }
+})
+
 test_that("every rule has a rule_version, a whole number from 1 (D15.6)", {
   registry <- rule_registry()
   expect_type(registry$rule_version, "integer")
@@ -113,8 +126,10 @@ r_objects <- function(root) {
 # A check's hash (D15.6, D15.13, D15.20): the SHA-256 of its code and of every object of
 # `own` it reaches through the names its code uses, in its body, its argument defaults and
 # the functions defined inside it, each written out by deparse(), so comments and layout
-# don't count. Objects outside `own` (R/report_text.R, R/report_html.R and
-# R/rules_registry.R, and other packages') aren't followed. The walk's limits: a call by
+# don't count. `name` is the check, or the check with the builders of the input it reads,
+# whose code and helpers are taken in the same way (D16.45, m52). Objects outside `own`
+# (R/report_text.R, R/report_html.R and R/rules_registry.R, and other packages') aren't
+# followed. The walk's limits: a call by
 # string (D15.13) isn't followed; a helper built inside local() and a function held in a
 # non-function object aren't scanned; a non-function object is hashed by its deparse(), so a
 # top-level data.table constant would carry a pointer that changes with the session (none
@@ -196,7 +211,13 @@ test_that("each check family's hash is recorded; a change needs rule_version (D1
     grepl("^check_", objects$object) & grepl("^check_.*[.]R$", objects$file)
   ]
   ns <- asNamespace("groundplotqc")
-  current <- vapply(families, check_hash, character(1), env = ns, own = own)
+  # Every family reads the input conformance_input() builds, so its hash takes in that builder
+  # and what it calls (match_columns(), key_values() and the rest), and a change there fails
+  # the test too (D16.45, m52).
+  expect_identical(objects$file[objects$object == "conformance_input"], "check_input.R")
+  current <- vapply(families, function(family) {
+    check_hash(c(family, "conformance_input"), ns, own)
+  }, character(1))
   names(current) <- families
   recorded <- data.table::fread(
     testthat::test_path("fixtures", "check_body_hashes.csv"),
@@ -205,7 +226,7 @@ test_that("each check family's hash is recorded; a change needs rule_version (D1
   expect_hashes_recorded(current, recorded)
 })
 
-test_that("a changed check or helper fails the hash check until it is recorded (D15.11)", {
+test_that("a changed check, helper or input builder fails the hash check until recorded (D15.11)", {
   env <- new.env()
   env$check_demo <- function(x) {
     text_demo(helper_demo(x) + 1L)
@@ -267,6 +288,18 @@ test_that("a changed check or helper fails the hash check until it is recorded (
   recorded$sha256 <- hash()[[1L]]
   expect_success(expect_hashes_recorded(hash(), recorded))
   env$nested_demo <- function() 2L
+  expect_failure(expect_hashes_recorded(hash(), recorded))
+  recorded$sha256 <- hash()[[1L]]
+  expect_success(expect_hashes_recorded(hash(), recorded))
+  # A builder of the input the check reads, named beside it, and the builder's helper are
+  # followed too, though the check never calls them (D16.45, m52).
+  env$builder_demo <- function(x) match_demo(x)
+  env$match_demo <- function(x) x
+  own <- c(own, "builder_demo", "match_demo")
+  hash <- function() c(check_demo = check_hash(c("check_demo", "builder_demo"), env, own))
+  recorded$sha256 <- hash()[[1L]]
+  expect_success(expect_hashes_recorded(hash(), recorded))
+  env$match_demo <- function(x) tolower(x)
   expect_failure(expect_hashes_recorded(hash(), recorded))
   recorded$sha256 <- hash()[[1L]]
   expect_success(expect_hashes_recorded(hash(), recorded))

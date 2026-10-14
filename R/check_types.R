@@ -65,9 +65,9 @@ missing_like <- function(text, row, context) {
 #' a value that isn't a sentinel and doesn't read back as written in the type's date format.
 #' `integer_stored_as_double` per numeric attribute. `value_not_finite` per numeric
 #' attribute: NaN, Inf or -Inf, as stored or as text. In a column whitespace_padding checks
-#' (a key, an ID or a coded column, stored as text), `coercion_loss` and `date_unparseable`
-#' leave it a padded value whose trimmed form they would pass; one whose trimmed form still
-#' fails is theirs (D16.42, m25).
+#' (a key, an ID or a coded column, stored as text or a factor), `coercion_loss` and
+#' `date_unparseable` leave it a padded value whose trimmed form they would pass; one whose
+#' trimmed form still fails is theirs (D16.42, m25).
 #' @noRd
 check_types <- function(input, context) {
   columns <- input$columns
@@ -76,7 +76,7 @@ check_types <- function(input, context) {
   sentinels <- context$spec$sentinels
   numbers <- c("integer", "double")
   # Whether whitespace_padding checks the column: a key, an ID or a coded column, stored as
-  # text (D16.42, m25).
+  # text or a factor (D16.42, m25).
   padding_checked <- function(x, row) {
     (!is.na(row$key_type) || isTRUE(row$id_marked) || isTRUE(row$coded)) &&
       (is.character(x) || is.factor(x))

@@ -131,6 +131,25 @@ test_that("Unicode spaces count in values that aren't plain ASCII (D16.42, m35)"
   expect_equal(padding$expected, c(gear, fx_fish_clean()$catches$haul_id[[1L]], summer))
 })
 
+test_that("in a locale that isn't UTF-8, unmarked UTF-8 values are read as UTF-8 (D16.36, F1)", {
+  spec <- fx_fish_spec()
+  # A coded value ending in the bytes C3 A0 isn't padded; a no-break space alone is blank.
+  voila <- intToUtf8(c(0x76, 0x6F, 0x69, 0x6C, 0xE0))
+  nbsp <- intToUtf8(0xA0)
+  Encoding(voila) <- "unknown"
+  Encoding(nbsp) <- "unknown"
+  fish <- edited("hauls", "gear", 1L, voila)
+  fish <- edited("stations", "station_name", 1L, nbsp, fish)
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  open <- opened(fish_run(fish, spec = spec))
+  expect_equal(paste(open$rule_id, placed_at(open)), "blank_string stations station_name 1")
+})
+
 test_that("sentinel_wrong_type finds another type's sentinel, expecting the same role's own", {
   fish <- edited("stations", "station_name", 1:2, c("-99", "-88"))
   catches <- data.table::copy(fish$catches)
@@ -197,6 +216,24 @@ test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16
   )
 })
 
+test_that("an unknown code that is also a sentinel is reported once (D16.45, m51)", {
+  # Another type's sentinel listed as the attribute's unknown code is species_unknown_code's.
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- "?"
+  fish$catches <- catches
+  open <- opened(fish_run(fish, list(unknown_codes = c(weight = "?"))))
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(paste(open$rule_id, placed_at(open)), "species_unknown_code catches weight 1")
+  # The column's own sentinel passes, though listed as an unknown code (D7.3), stored as
+  # numbers or as text.
+  fish <- edited("catches", "weight", 1L, -99)
+  fish <- edited("stations", "station_name", 1L, "?", fish)
+  own <- fish_run(fish, list(unknown_codes = c(weight = "-99", station_name = "?")))
+  expect_equal(nrow(opened(own)), 0L)
+})
+
 test_that("a number column stored as numbers holds no text code, so a real 0 isn't a sentinel", {
   # The forest spec's date sentinels, "00000000" and "99999999", read as numbers (R68).
   spec <- fx_forest_spec()
@@ -241,6 +278,18 @@ test_that("stored as numbers, a column whose type isn't numeric takes text codes
   expect_equal(
     paste(open$rule_id, placed_at(open), open$value, open$expected),
     "sentinel_wrong_type PLOTS ESTABLISHED 1 -1 99999999"
+  )
+  # The column's own codes are compared as text there, so a real 0 isn't the date code
+  # "00000000" and is a rogue code where rogue_codes names it (m39).
+  forest <- fx_clean_tables(spec)
+  plots <- data.table::copy(forest$PLOTS)
+  plots$ESTABLISHED <- as.integer(plots$ESTABLISHED)
+  plots$ESTABLISHED[[1L]] <- 0L
+  forest$PLOTS <- plots
+  open <- opened(fish_run(forest, list(rogue_codes = "0"), spec = spec))
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, placed_at(open), open$value), "sentinel_rogue_code PLOTS ESTABLISHED 1 0"
   )
   # A text column stored as numbers: another type's code is found as if stored as text, so a
   # real 0 still isn't the date code "00000000".

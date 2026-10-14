@@ -559,16 +559,19 @@ test_that("a repeated row read from a file is placed by its line (D14.19, D16.6)
   writeLines(
     c(
       "rule_id,table_name,attribute_name,severity,class,enabled",
+      # A quoted cell over two lines: the rows below start on lines 4, 5 and 6, so the first
+      # row is named by its own line, not by its row number.
+      "plaus,hauls,\"gear", "note\",,,TRUE",
       "conform,stations,*,,,TRUE", "plaus,stations,*,,,TRUE", "conform,stations,*,warning,,TRUE"
     ),
     file.path(dir, "rules_rules.csv")
   )
   found <- check("rule_set_duplicate_row", test_context(read_rule_set(dir)))
   expect_equal(found$file, "rules_rules.csv")
-  expect_equal(found$source_cell, "rules_rules.csv:4")
+  expect_equal(found$source_cell, "rules_rules.csv:6")
   expect_equal(
     found$detail,
-    "Line 4 of rules_rules.csv names rule conform for stations.*, as line 2 does."
+    "Line 6 of rules_rules.csv names rule conform for stations.*, as line 4 does."
   )
 })
 

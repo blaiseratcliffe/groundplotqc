@@ -55,6 +55,8 @@ test_that("space_padding finds blank and padded values and trims them (D16.42, D
   )
   expect_identical(read$trimmed[c(3:5, 8:11)], c("AP", "AP", "AP", "AP", summer, "A B", "AP\f"))
   expect_true(is.na(read$trimmed[[12L]]))
+  # is_blank() is unchanged for the specification reader: a no-break space isn't blank there.
+  expect_false(is_blank(nbsp))
   expect_identical(space_padding(character()), list(
     blank = logical(), padded = logical(), trimmed = character()
   ))
@@ -77,6 +79,25 @@ test_that("space_padding reads latin1 as UTF-8 and other text byte by byte (D16.
   expect_identical(charToRaw(read$trimmed[[2L]]), charToRaw(intToUtf8(0xE9)))
   expect_identical(Encoding(read$trimmed[[2L]]), "bytes")
   expect_identical(charToRaw(read$trimmed[[3L]]), as.raw(c(0x41, 0x97)))
+})
+
+test_that("space_padding reads unmarked UTF-8 as UTF-8 in a locale that isn't (D16.36, F1)", {
+  # fread() leaves UTF-8 text unmarked. "voila" with a grave a ends in the bytes C3 A0, whose
+  # A0 is a no-break space only when read byte by byte.
+  voila <- intToUtf8(c(0x76, 0x6F, 0x69, 0x6C, 0xE0))
+  text <- c(voila, intToUtf8(0xA0), paste0(intToUtf8(0x2003), "AP"), paste0(voila, " "))
+  Encoding(text) <- "unknown"
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  read <- space_padding(text)
+  expect_identical(read$blank, c(FALSE, TRUE, FALSE, FALSE))
+  expect_identical(read$padded, c(FALSE, FALSE, TRUE, TRUE))
+  expect_identical(lapply(read$trimmed[3:4], charToRaw), lapply(c("AP", voila), charToRaw))
+  expect_true(all(validUTF8(read$trimmed)))
 })
 
 test_that("column letters and numbers convert both ways", {

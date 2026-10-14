@@ -57,11 +57,17 @@ test_that("an exact name wins over a near one, which is then an extra column", {
 test_that("a name with a Unicode space is a near name, and its column is checked (D16.42, m21)", {
   fish <- fx_fish_clean()
   spaced <- paste0("depth", intToUtf8(0xA0))
-  data.table::setnames(fish$stations, "depth", spaced)
+  # Stored as text with one value that isn't a number, which Layer 1 finds there.
+  stations <- data.table::copy(fish$stations)
+  stations$depth <- as.character(stations$depth)
+  stations$depth[[1L]] <- "deep"
+  data.table::setnames(stations, "depth", spaced)
+  fish$stations <- stations
   open <- gpq_check_conformance(fish, fx_fish_spec(), layers = 0:1)$issues
-  expect_equal(
-    paste(open$rule_id, open$column_name, open$value), paste("column_name_mismatch depth", spaced)
-  )
+  expect_equal(paste(open$rule_id, open$column_name, open$value), c(
+    paste("column_name_mismatch depth", spaced), "class_mismatch depth character",
+    "coercion_loss depth deep"
+  ))
 })
 
 # MAGPlot's tables below are each run with MAGPlot's group columns and problem unit (R52),
@@ -77,18 +83,19 @@ test_that("MAGPlot's tables or columns reordered, or a data.frame, trip nothing 
 
 test_that("two near columns: the first is the attribute's; keys renamed by case only mismatch", {
   tables <- fx_mark_fixture(lapply(fx_magp_clean(), data.table::copy))
-  data.table::setnames(tables$magp_tree_meas, "dbh", "DBH")
-  data.table::set(tables$magp_tree_meas, j = "Dbh", value = tables$magp_tree_meas$DBH)
+  # First in the table's order, though "DBH" comes first in C order.
+  data.table::setnames(tables$magp_tree_meas, "dbh", "Dbh")
+  data.table::set(tables$magp_tree_meas, j = "DBH", value = tables$magp_tree_meas$Dbh)
   # The problem unit's key and a group column.
   data.table::setnames(tables$magp_plots, "magp_plot_id", "MAGP_PLOT_ID")
   data.table::setnames(tables$magp_sites, "jurisdiction", "Jurisdiction")
   issues <- fx_caught(tables)$issues
   open <- issues[issues$status == "open"]
-  expect_setequal(paste(open$rule_id, open$table_name, open$column_name, open$value), c(
-    "column_name_mismatch magp_tree_meas dbh DBH", "column_unexpected magp_tree_meas Dbh NA",
+  expect_equal(sort(paste(open$rule_id, open$table_name, open$column_name, open$value)), sort(c(
+    "column_name_mismatch magp_tree_meas dbh Dbh", "column_unexpected magp_tree_meas DBH NA",
     "column_name_mismatch magp_plots magp_plot_id MAGP_PLOT_ID",
     "column_name_mismatch magp_sites jurisdiction Jurisdiction"
-  ))
+  )))
 })
 
 test_that("a parent table missing trips table_missing only (R52)", {
@@ -106,7 +113,7 @@ test_that("a key or a group column missing trips column_missing only (R52)", {
   data.table::set(tables$magp_sites, j = "jurisdiction", value = NULL)
   issues <- fx_caught(tables)$issues
   open <- issues[issues$status == "open"]
-  expect_setequal(paste(open$rule_id, open$table_name, open$column_name), c(
+  expect_equal(sort(paste(open$rule_id, open$table_name, open$column_name)), sort(c(
     "column_missing magp_plots magp_plot_id", "column_missing magp_sites jurisdiction"
-  ))
+  )))
 })
