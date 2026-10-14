@@ -73,49 +73,65 @@ rule_registry <- function() {
     conformance("column_unexpected", 0L, "warning", "harmonization", "attributes"),
     conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes"),
     # ---- M4a: Layer 1, data types (6.1; D2.33, D8.8, D8.11, D16.8, D16.9) ----
+    # Here and in Layer 2, every rule with record outcomes reads column_level_min_n, which
+    # decides whether its failures are record issues or one column-level issue (6.3; D16.47,
+    # m60); a unit rule's outcomes are never collapsed.
     conformance("class_mismatch", 1L, "error", "harmonization", "attributes; type_map"),
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
-        "attributes; keys; type_map; sentinels; codes; code_list_map; settings:rogue_codes;",
-        "settings:unknown_codes"
+        "attributes; keys; type_map; sentinels; codes; code_list_map;",
+        "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
       )
     ),
     conformance(
       "date_unparseable", 1L, "error", "depends",
       paste(
-        "attributes; keys; type_map; sentinels; codes; code_list_map; settings:rogue_codes;",
-        "settings:unknown_codes"
+        "attributes; keys; type_map; sentinels; codes; code_list_map;",
+        "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
       )
     ),
     conformance("integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map"),
-    conformance("value_not_finite", 1L, "error", "harmonization", "attributes; type_map"),
+    conformance(
+      "value_not_finite", 1L, "error", "harmonization",
+      "attributes; type_map; settings:column_level_min_n"
+    ),
     # ---- M4a: Layer 2, missing-value codes (6.1; D1.8a, D7.4, D7.9, D8.8, D8.11, D16.11) ----
     conformance(
       "raw_na", 2L, "error", "harmonization",
-      "attributes; keys; type_map; sentinels; settings:raw_na_policy", "sentinel_fix"
-    ),
-    conformance(
-      "blank_string", 2L, "error", "harmonization", "attributes; keys; type_map; sentinels",
+      paste(
+        "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
+        "settings:raw_na_policy"
+      ),
       "sentinel_fix"
     ),
     conformance(
+      "blank_string", 2L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n", "sentinel_fix"
+    ),
+    conformance(
       "sentinel_wrong_type", 2L, "error", "harmonization",
-      "attributes; type_map; sentinels; settings:unknown_codes", "sentinel_fix"
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes",
+      "sentinel_fix"
     ),
     conformance(
       "sentinel_rogue_code", 2L, "error", "depends",
-      "attributes; keys; type_map; sentinels; codes; settings:rogue_codes; settings:unknown_codes"
+      paste(
+        "attributes; keys; type_map; sentinels; codes; settings:column_level_min_n;",
+        "settings:rogue_codes; settings:unknown_codes"
+      )
     ),
     conformance(
       "species_unknown_code", 2L, "error", "harmonization",
-      "attributes; type_map; sentinels; settings:unknown_codes"
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
     ),
     conformance(
-      "whitespace_padding", 2L, "warning", "harmonization", "attributes; keys; code_list_map",
-      "trim_whitespace"
+      "whitespace_padding", 2L, "warning", "harmonization",
+      "attributes; keys; code_list_map; settings:column_level_min_n", "trim_whitespace"
     ),
-    conformance("na_text_in_id", 2L, "error", "harmonization", "attributes; keys")
+    conformance(
+      "na_text_in_id", 2L, "error", "harmonization", "attributes; keys; settings:column_level_min_n"
+    )
   ))
 }
 

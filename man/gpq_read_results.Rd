@@ -10,8 +10,8 @@ gpq_read_results(run_dir)
 \item{run_dir}{A run folder, as \code{\link[=gpq_write_results]{gpq_write_results()}} returns it.}
 }
 \value{
-An object of class \code{gpq_results}, the four tables \code{\link[=gpq_check_conformance]{gpq_check_conformance()}}
-describes.
+An object of class \code{gpq_results}, the tables and metadata
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}} describes.
 }
 \description{
 Reads the files \code{\link[=gpq_write_results]{gpq_write_results()}} wrote back into a \code{gpq_results} object,

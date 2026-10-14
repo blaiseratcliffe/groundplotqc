@@ -13,7 +13,9 @@ A named list of data.tables, in this order:
 changes a \code{rules_*.csv}), \code{date} (the day of the last change) and \code{spec_version} (the
 date of the specification files it was written for);
 \item \code{rules}: \code{rule_id}, \code{table_name}, \code{attribute_name} (\code{"*"} for all), \code{severity} and
-\code{class} (blank for the rule's default) and \code{enabled};
+\code{class} (blank to leave them to a less specific row, then to the registered value; for
+\code{severity}, the \code{severity} setting given as an option comes before the registered
+value, and given as an argument overrides every row) and \code{enabled};
 \item \code{settings}: \code{setting}, \code{value} and \code{type}.
 }
 

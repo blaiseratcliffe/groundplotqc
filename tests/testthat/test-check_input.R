@@ -134,6 +134,15 @@ test_that("coerce_column reads a factor, a date or a logical column once per dis
     coerce_column(repeated, "double")$lost, c(FALSE, TRUE, FALSE, TRUE, FALSE, FALSE)
   )
   expect_identical(given, 3L)
+  # A date column stored as numbers, written as text for date_unparseable, is written once per
+  # distinct value too: six rows, NA among them, of three distinct values.
+  given <- integer()
+  stored <- c(20200601L, 20200602L, 20200601L, NA, 20200602L, 20200601L)
+  expect_identical(
+    coerce_column(stored, "character", "%Y%m%d"),
+    list(value = as.character(stored), lost = logical(6L))
+  )
+  expect_identical(given, 3L)
 })
 
 test_that("text is a number only when written as a decimal number (D16.42, m26)", {
@@ -203,18 +212,22 @@ test_that("an exact name wins; a near one differs only in letter case or spaces 
 })
 
 test_that("a name's Unicode spaces count in a locale that isn't UTF-8 (D16.36, F1)", {
-  # Unmarked UTF-8, as fread() leaves a header, read as UTF-8 there too.
-  given <- c(paste0("dbh", intToUtf8(0xA0)), intToUtf8(c(0x76, 0x6F, 0x69, 0x6C, 0xE0)))
+  # Unmarked UTF-8, as fread() leaves a header, read as UTF-8 there too: "Voila" with an
+  # a-grave, whose last byte reads as a no-break space byte by byte, is a near match of its
+  # attribute in lower case, and a trailing no-break space is a space.
+  given <- c(paste0("dbh", intToUtf8(0xA0)), intToUtf8(c(0x56, 0x6F, 0x69, 0x6C, 0xE0)))
   Encoding(given) <- "unknown"
+  voila <- intToUtf8(c(0x76, 0x6F, 0x69, 0x6C, 0xE0))
+  expect_identical(Encoding(voila), "UTF-8")
   before <- Sys.getlocale("LC_CTYPE")
   withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
   set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
   testthat::skip_if(
     !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
   )
-  matched <- match_columns(given, c("dbh", "voil"))
-  expect_identical(matched$column, c(given[[1L]], NA))
-  expect_identical(matched$near, c(TRUE, FALSE))
+  matched <- match_columns(given, c("dbh", voila))
+  expect_identical(matched$column, given)
+  expect_identical(matched$near, c(TRUE, TRUE))
 })
 
 test_that("fk_path walks the shortest path of keys, the dictionary's first key on a tie", {
@@ -319,8 +332,8 @@ test_that("values that read the same are one group: a blank, NA and a broken pat
 })
 
 test_that("an unmarked non-ASCII group value, as fread() leaves it, is a group as written", {
-  # Unmarked text is UTF-8 only in a UTF-8 locale, and order() refused it there (D16.35).
-  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale")
+  # Valid UTF-8 left unmarked is marked UTF-8 in any locale, never converted (D16.47, I1);
+  # order() refused it unmarked in a UTF-8 locale (D16.35).
   name <- "Zürich"
   Encoding(name) <- "unknown"
   expect_identical(Encoding(name), "unknown")
@@ -331,6 +344,7 @@ test_that("an unmarked non-ASCII group value, as fread() leaves it, is a group a
   spec <- fx_fish_spec()
   values <- conformance_input(fish, spec, group_cols = "water_body")$groups$stations$values
   expect_identical(charToRaw(values$water_body[[1L]]), charToRaw(name))
+  expect_identical(Encoding(values$water_body[[1L]]), "UTF-8")
   expect_equal(values$water_body[[2L]], "lake")
   results <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 1)
   written <- vapply(results$results$water_body, function(v) paste(charToRaw(v), collapse = ""), "")

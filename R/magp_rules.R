@@ -14,7 +14,9 @@
 #'     changes a `rules_*.csv`), `date` (the day of the last change) and `spec_version` (the
 #'     date of the specification files it was written for);
 #'   - `rules`: `rule_id`, `table_name`, `attribute_name` (`"*"` for all), `severity` and
-#'     `class` (blank for the rule's default) and `enabled`;
+#'     `class` (blank to leave them to a less specific row, then to the registered value; for
+#'     `severity`, the `severity` setting given as an option comes before the registered
+#'     value, and given as an argument overrides every row) and `enabled`;
 #'   - `settings`: `setting`, `value` and `type`.
 #'
 #'   Each carries the attributes `source_file`, the name of the file it was read from,

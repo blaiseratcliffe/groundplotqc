@@ -19,9 +19,10 @@
 #' the eight metadata tables.
 #'
 #' @details
-#' Every file is UTF-8 with LF line endings, every text field quoted and a missing
-#' value an empty field, so [gpq_read_results()] reads back the same object. A
-#' run's files are written once. Before writing anything the call stops when the
+#' Every file has LF line endings, every text field quoted and a missing value an
+#' empty field. Text is written as UTF-8, except a value whose bytes aren't valid
+#' UTF-8, which is written as given. So [gpq_read_results()] reads back the same
+#' object. A run's files are written once. Before writing anything the call stops when the
 #' run folder already holds a file other than that run's own pre-flight files,
 #' which [gpq_preflight()] writes: `reports/preflight.html` and
 #' `metadata/preflight.csv`. The second must hold the results' pre-flight table
@@ -176,8 +177,8 @@ write_run_metadata <- function(metadata, run_dir) {
 #' or one that doesn't read cleanly, naming the file.
 #'
 #' @param run_dir A run folder, as [gpq_write_results()] returns it.
-#' @return An object of class `gpq_results`, the four tables [gpq_check_conformance()]
-#'   describes.
+#' @return An object of class `gpq_results`, the tables and metadata
+#'   [gpq_check_conformance()] describes.
 #' @examples
 #' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 #' results <- gpq_check_conformance(

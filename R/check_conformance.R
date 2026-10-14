@@ -41,10 +41,10 @@
 #' records sharing one root collapse the same way.
 #'
 #' A record's group values are read from its own table, or from the nearest table that holds
-#' the column, through the foreign keys; a record that can't reach one, or whose keys on the
-#' way don't match, has "*" there. A group value marked latin1 is converted to UTF-8 and runs;
-#' one whose bytes aren't valid UTF-8 stops the run, naming the column, the table it is read
-#' from and its first such row.
+#' the column, through the foreign keys; a record that can't reach one, whose keys on the way
+#' don't match, or whose value there is blank or missing, has `"*"` there. A group value
+#' marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
+#' run, naming the column, the table it is read from and its first such row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
@@ -65,7 +65,7 @@
 #' @param settings A named list of settings.
 #' @param run_id `NULL`, to make one from the run's start, or a run ID such as
 #'   `"20261215T140312Z_3fa9c1"`: the UTC start time and six hex characters.
-#' @return An object of class `gpq_results`, a list of four tables:
+#' @return An object of class `gpq_results`, a list of three tables and the run metadata:
 #'   - `results`: the summary, one row per rule, table, column and group: `run_id`,
 #'     `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`, `severity`, `table_name`,
 #'     `column_name`, the group columns, `n_checked`, `n_fail`, `n_not_evaluated`,
@@ -156,6 +156,33 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
   results <- new_results(rbindlist(state$results, use.names = TRUE), group_cols, registry)
   issues <- rbindlist(state$issues, use.names = TRUE)
   issues <- new_issues(if (nrow(issues) == 0L) NULL else issues, group_cols, key_col, registry)
+  # Where the caller's text enters the results (the names of its tables and columns, the
+  # failing values with what was expected and the examples, the PKs and the problem unit's
+  # key), valid UTF-8 left unmarked, as fread() leaves it, is marked UTF-8 in any locale and
+  # never converted, since the writer reads unmarked text in the session's encoding. Text
+  # marked latin1, which the writer converts, and text that isn't valid UTF-8 are left as
+  # given (D16.46; D16.47, I1); group_index() holds the group values as UTF-8, and
+  # validate_tables() has refused text marked as bytes. Only the run's own text that isn't
+  # plain ASCII is read, never a caller's column (16.2).
+  utf8_marked <- function(text) {
+    wide <- which(grepl("[^\001-\177]", text, useBytes = TRUE))
+    unmarked <- wide[Encoding(text[wide]) == "unknown" & validUTF8(text[wide])]
+    if (length(unmarked) > 0L) {
+      held <- text[unmarked]
+      Encoding(held) <- "UTF-8"
+      text[unmarked] <- held
+    }
+    text
+  }
+  for (column in c("table_name", "column_name", "examples")) {
+    set(results, j = column, value = utf8_marked(results[[column]]))
+  }
+  given_text <- c(
+    "table_name", "column_name", "record_pk", "value", "expected", setdiff(key_col, group_cols)
+  )
+  for (column in given_text) {
+    set(issues, j = column, value = utf8_marked(issues[[column]]))
+  }
   fingerprints <- issue_fingerprint(issues)
   set(issues, j = "fingerprint", value = fingerprints$fingerprint)
   set(issues, j = "fingerprint_pk", value = fingerprints$fingerprint_pk)
@@ -169,7 +196,8 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
     character()
   }
   inputs <- data.table(
-    input = paste0("tables:", input$given$table_name, recycle0 = TRUE), file = "in memory",
+    input = utf8_marked(paste0("tables:", input$given$table_name, recycle0 = TRUE)),
+    file = "in memory",
     sha256 = NA_character_, detail = paste(input$given$n_rows, "rows", recycle0 = TRUE)
   )
   run <- run_metadata(run_id, run_start, Sys.time(), group_cols, report_units)
@@ -229,7 +257,9 @@ problem_unit_key <- function(problem_unit, spec) {
 conformance_context <- function(spec, rules, settings, layers) {
   registry <- rule_registry()
   run_rules <- registry[registry$check_type != "preflight" & registry$stage == "conformance"]
-  run_rules <- run_rules[run_rules$layer %in% layers]
+  # Worked out before the brackets, so `layers` is never taken for a column of the registry.
+  asked <- run_rules$layer %in% layers
+  run_rules <- run_rules[asked]
   setting <- function(name) resolve_setting(name, settings, rules)$value
   codes <- spec$codes
   list(
@@ -587,6 +617,17 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   kept <- !outcome$fail %in% masked$row_number
   fail <- outcome$fail[kept]
   value <- outcome$value[kept]
+  # Valid UTF-8 left unmarked, as fread() leaves it, is marked UTF-8 before the values are
+  # grouped and joined into examples, as gpq_check_conformance() marks the rest of the
+  # caller's text, so neither reads it in the session's encoding; any other value is left as
+  # given (D16.46; D16.47, I1). Only values that aren't plain ASCII are read.
+  wide <- which(grepl("[^\001-\177]", value, useBytes = TRUE))
+  unmarked <- wide[Encoding(value[wide]) == "unknown" & validUTF8(value[wide])]
+  if (length(unmarked) > 0L) {
+    held <- value[unmarked]
+    Encoding(held) <- "UTF-8"
+    value[unmarked] <- held
+  }
   # A value marked as bytes keeps its bytes but loses the mark, which data.table's grouping
   # and the results' writer stop on; it is then held as unmarked text, as text that isn't
   # valid UTF-8 is (D16.36). validate_tables() refuses such text first (D16.38): this is a

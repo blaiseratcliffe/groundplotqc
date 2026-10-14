@@ -126,8 +126,9 @@ stored_text <- function(x) {
 #' spellings of Inf and NaN that as.numeric() reads; hexadecimal is lost (D16.42, m26). A
 #' value that isn't finite (NaN, Inf) is never lost but becomes NA where an integer is wanted:
 #' value_not_finite reports it. A date column stored as a date is written in the type's date
-#' format; text is never lost. A column that is neither text nor plain numbers (a factor, a
-#' date, a logical) is written as text once for each distinct value (16.2). Text that isn't
+#' format; text is never lost. A column that isn't text, where text is wanted, and one that
+#' is neither text nor plain numbers (a factor, a date, a logical), where numbers are wanted,
+#' is written as text once for each distinct value (16.2). Text that isn't
 #' valid UTF-8 is read as UTF-8 where it converts to it (marked latin1, or native in a locale
 #' that isn't UTF-8); text marked as bytes, or that isn't valid UTF-8 even so, is no number,
 #' so it is lost without being read: as.numeric() stops on it in a UTF-8 locale (D16.33,
@@ -173,10 +174,17 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     if (is.character(x)) {
       return(list(value = x, lost = logical(n)))
     }
-    if (inherits(x, c("Date", "POSIXt")) && !is.na(date_format)) {
-      return(list(value = format(x, date_format), lost = logical(n)))
+    # Any other column is written as text once for each distinct value, a date stored as a
+    # date in the type's date format, and each row takes its value's text, matched on its
+    # codes, numbers or days (16.2).
+    distinct <- unique(x)
+    at <- match(unclass(x), unclass(distinct))
+    text <- if (inherits(x, c("Date", "POSIXt")) && !is.na(date_format)) {
+      format(distinct, date_format)
+    } else {
+      value_text(distinct)
     }
-    return(list(value = value_text(x), lost = logical(n)))
+    return(list(value = text[at], lost = logical(n)))
   }
   if (is.numeric(x) && !is.object(x)) {
     if (r_class == "double") {
@@ -463,7 +471,8 @@ reached_values <- function(input, reached, column_name) {
 #'
 #' Without group columns every row is in group 1 and `values` is NULL. Otherwise each group
 #' column's value is read where the record reaches it, "*" where it reaches none or the
-#' value is blank; the groups are numbered in the order of their text, each written as UTF-8.
+#' value is blank; the groups are numbered in the order of their text, each held as UTF-8:
+#' unmarked valid UTF-8 marked so, latin1 and invalid text converted (D16.36; D16.47, I1).
 #' A group value marked as bytes, or that isn't valid UTF-8 once converted to it, stops the
 #' run, naming its column, table and first row (D16.35, D16.36). Returns `row_group` (each
 #' row's group), `values` (one row per group) and `n`, the number of groups, 1 without group
@@ -484,15 +493,23 @@ group_index <- function(input, table) {
     # Each distinct value as text, "*" for a blank or a value no record reached, so values
     # that read the same are one group.
     text <- value_text(distinct)
-    # A group value goes into every results row and file, so it is written as UTF-8. Each
-    # distinct value is converted: text marked latin1, or native in a locale that isn't UTF-8,
-    # becomes UTF-8, and valid UTF-8 that fread() leaves unmarked is marked so, which the order
-    # below needs. Text marked as bytes has no encoding to convert from. A value marked so, or
-    # that isn't valid UTF-8 even so, stops the run: the caller is told the column, the table
-    # it is read from and its first such row (D16.35, D16.36). validate_tables() refuses text
-    # marked as bytes first (D16.38), so for it this is a second line.
-    bytes <- Encoding(text) == "bytes"
-    text[!bytes] <- enc2utf8(text[!bytes])
+    # A group value goes into every results row and file, so it is held as UTF-8, which the
+    # order below needs too. Valid UTF-8 left unmarked, as fread() leaves it, is marked so in
+    # any locale, never converted; text marked latin1, and text that isn't valid UTF-8 (native
+    # in a locale that isn't UTF-8), is converted (D16.36; D16.47, I1). Text marked as bytes
+    # has no encoding to convert from. A value marked so, or that isn't valid UTF-8 even so,
+    # stops the run: the caller is told the column, the table it is read from and its first
+    # such row (D16.35, D16.36). validate_tables() refuses text marked as bytes first
+    # (D16.38), so for it this is a second line.
+    mark <- Encoding(text)
+    bytes <- mark == "bytes"
+    valid <- !bytes & validUTF8(text)
+    unmarked <- which(valid & mark == "unknown" & grepl("[^\001-\177]", text, useBytes = TRUE))
+    held <- text[unmarked]
+    Encoding(held) <- "UTF-8"
+    text[unmarked] <- held
+    convert <- which(!bytes & (mark == "latin1" | !valid))
+    text[convert] <- enc2utf8(text[convert])
     if (any(bytes) || !all(validUTF8(text))) {
       at <- which(
         input$columns$table_name == reached$home & input$columns$attribute_name == column_name
@@ -513,7 +530,10 @@ group_index <- function(input, table) {
     }
     text[is.na(text) | is_blank(text)] <- "*"
     labels[[column_name]] <- unique(text)
-    codes[[column_name]] <- match(text, labels[[column_name]])[match(value, distinct)]
+    # Each row takes its value's group, matched on its codes, numbers or days, since match()
+    # would write a factor or a date column as text (16.2).
+    at <- match(unclass(value), unclass(distinct))
+    codes[[column_name]] <- match(text, labels[[column_name]])[at]
   }
   # The codes are ranked as the list they are, not copied into a table (16.2).
   row_group <- if (n > 0L) as.integer(frankv(codes, ties.method = "dense")) else integer()
@@ -575,6 +595,19 @@ record_pk_text <- function(input, table, rows) {
     return(list(record_pk = rep(NA_character_, length(rows)), positional = rep(TRUE, length(rows))))
   }
   missing <- Reduce(`|`, lapply(parts, function(part) is.na(part) | is_blank(part)))
+  # A composite PK's parts that are valid UTF-8 left unmarked are marked UTF-8 before they are
+  # joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the PK
+  # is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
+  if (length(parts) > 1L) {
+    parts <- lapply(parts, function(part) {
+      wide <- which(grepl("[^\001-\177]", part, useBytes = TRUE))
+      unmarked <- wide[Encoding(part[wide]) == "unknown" & validUTF8(part[wide])]
+      held <- part[unmarked]
+      Encoding(held) <- "UTF-8"
+      part[unmarked] <- held
+      part
+    })
+  }
   record_pk <- do.call(paste, c(parts, sep = "|"))
   record_pk[missing] <- NA_character_
   name <- paste("pk_repeats", table, sep = "\r")

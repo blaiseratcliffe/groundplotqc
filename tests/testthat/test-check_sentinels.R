@@ -69,8 +69,8 @@ test_that("raw_na finds NA outside the keys, as raw_na_policy says (D1.8a, D7.4,
   found <- opened(fish_run(fish), "raw_na")
   expect_equal(placed_at(found), "catches weight 1")
   expect_equal(found$expected, "-99; -88")
-  expect_equal(nrow(opened(fish_run(fish, list(raw_na_policy = "never")), "raw_na")), 0L)
   never <- fish_run(fish, list(raw_na_policy = "never"))
+  expect_equal(nrow(opened(never, "raw_na")), 0L)
   expect_false("raw_na" %in% never$results$rule_id)
   expect_false("raw_na" %in% never$metadata$self_test$rule_id)
   # A spec with no numeric sentinels: raw_na can't run on numbers unless always.

@@ -189,22 +189,9 @@ check_types <- function(input, context) {
     ),
     value_not_finite = rule_outcomes(
       "value_not_finite", numeric, input, function(table, attribute, x, row) {
-        number <- if (is.numeric(x) && !is.object(x)) {
-          x
-        } else if (is.character(x)) {
-          coerce_column(x, "double")$value
-        } else {
-          # Any other column is written as text once for each distinct value, and each row
-          # takes its value's number (16.2). A Date is matched on its days: match() would
-          # write every row as text.
-          distinct <- unique(x)
-          at <- if (inherits(x, "Date")) {
-            match(unclass(x), unclass(distinct))
-          } else {
-            match(x, distinct)
-          }
-          coerce_column(distinct, "double")$value[at]
-        }
+        # A column not stored as plain numbers is read as coerce_column() reads it: text as
+        # it is, any other column once for each distinct value (16.2).
+        number <- if (is.numeric(x) && !is.object(x)) x else coerce_column(x, "double")$value
         bad <- which(is.nan(number) | is.infinite(number))
         record_outcome("value_not_finite", table, attribute, bad, value_text(x[bad]))
       }

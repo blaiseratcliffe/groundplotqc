@@ -396,6 +396,65 @@ test_that("that round trip keeps the value's UTF-8 mark in a session that isn't 
   expect_identical(back, object)
 })
 
+test_that("a run on unmarked UTF-8 text round trips in a session that isn't UTF-8 (D16.47, I1)", {
+  # Valid UTF-8 left unmarked, as fread() leaves it, is marked UTF-8 wherever it enters the
+  # results, never read in the session's encoding: a group value, a failing value, and the
+  # names, PK and problem unit's key that come from the caller's tables.
+  unmarked <- function(...) {
+    text <- intToUtf8(c(...))
+    Encoding(text) <- "unknown"
+    text
+  }
+  quebec <- unmarked(0x51, 0x75, 0xE9, 0x62, 0x65, 0x63)
+  cafe <- unmarked(0x63, 0x61, 0x66, 0xE9)
+  station <- unmarked(0x73, 0x74, 0xE9, 0x31)
+  catch <- unmarked(0x70, 0x72, 0xE9, 0x31)
+  colour <- unmarked(0x63, 0x6F, 0x75, 0x6C, 0x65, 0x75, 0x72, 0x5F, 0xE9)
+  fish <- fx_fish_clean()
+  stations <- data.table::copy(fish$stations)
+  hauls <- data.table::copy(fish$hauls)
+  catches <- data.table::copy(fish$catches)
+  stations$water_body[[1L]] <- quebec
+  hauls$station_id[hauls$station_id == stations$station_id[[1L]]] <- station
+  stations$station_id[[1L]] <- station
+  catches$catch_id[[1L]] <- catch
+  catches$weight <- as.character(catches$weight)
+  catches$weight[[1L]] <- cafe
+  catches[[colour]] <- "x"
+  fish$stations <- stations
+  fish$hauls <- hauls
+  fish$catches <- catches
+  fish[[quebec]] <- data.frame(a = 1)
+  before <- Sys.getlocale("LC_CTYPE")
+  withr::defer(suppressWarnings(Sys.setlocale("LC_CTYPE", before)))
+  set <- suppressWarnings(Sys.setlocale("LC_CTYPE", "C"))
+  testthat::skip_if(
+    !nzchar(set) || l10n_info()[["UTF-8"]], "LC_CTYPE can't be set to a locale that isn't UTF-8."
+  )
+  results <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    group_cols = "water_body", problem_unit = list("stations", "station_id"), layers = 0:2
+  )
+  bytes <- function(x) lapply(x, charToRaw)
+  issues <- results$issues
+  lost <- issues[issues$rule_id == "coercion_loss"]
+  given <- c(lost$value, lost$water_body, lost$record_pk, lost$station_id)
+  expect_identical(bytes(given), bytes(c(cafe, quebec, catch, station)))
+  expect_identical(unique(Encoding(given)), "UTF-8")
+  shown <- results$results[results$results$rule_id == "coercion_loss"]$examples
+  expect_identical(bytes(shown[!is.na(shown)]), bytes(cafe))
+  names_given <- c(
+    issues$table_name[issues$rule_id == "table_unexpected"],
+    issues$column_name[issues$rule_id == "column_unexpected"]
+  )
+  expect_identical(bytes(names_given), bytes(c(quebec, colour)))
+  expect_identical(
+    bytes(results$metadata$inputs$input[[4L]]), bytes(paste0("tables:", quebec))
+  )
+  run_dir <- gpq_write_results(results, withr::local_tempdir())
+  expect_identical(gpq_read_results(run_dir), results)
+})
+
 test_that("gpq_write_results and gpq_read_results are exported (D15.4)", {
   exports <- getNamespaceExports("groundplotqc")
   expect_true(all(c("gpq_write_results", "gpq_read_results") %in% exports))

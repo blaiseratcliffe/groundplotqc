@@ -101,6 +101,32 @@ test_that("the rules that read unknown codes or code lists name them in their in
   }
 })
 
+test_that("the record rules name column_level_min_n in their inputs (D16.47, m60)", {
+  # column_level_min_n decides whether a record rule's failures are record issues or one
+  # column-level issue (6.3), so the fingerprint of every rule with record outcomes covers it
+  # (9.6, D4.7); a unit rule's outcomes are never collapsed. The record rules are found by
+  # their outcomes on the fish survey, with an unknown code so species_unknown_code runs.
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(unknown_codes = c(species = "UNK")), 0:2)
+  input <- conformance_input(fx_fish_clean(), spec)
+  found <- c(
+    check_structure(input, context), check_types(input, context), check_sentinels(input, context)
+  )
+  records <- vapply(found, function(outcomes) {
+    any(vapply(outcomes, function(outcome) identical(outcome$kind, "record"), logical(1)))
+  }, logical(1))
+  expect_identical(sum(records), 10L)
+  registry <- rule_registry()
+  inputs <- strsplit(registry$inputs, "; ", fixed = TRUE)
+  names(inputs) <- registry$rule_id
+  for (rule in names(found)) {
+    expect_identical(
+      "settings:column_level_min_n" %in% inputs[[rule]], records[[rule]],
+      info = rule
+    )
+  }
+})
+
 test_that("every rule has a rule_version, a whole number from 1 (D15.6)", {
   registry <- rule_registry()
   expect_type(registry$rule_version, "integer")
@@ -126,8 +152,9 @@ r_objects <- function(root) {
 # A check's hash (D15.6, D15.13, D15.20): the SHA-256 of its code and of every object of
 # `own` it reaches through the names its code uses, in its body, its argument defaults and
 # the functions defined inside it, each written out by deparse(), so comments and layout
-# don't count. `name` is the check, or the check with the builders of the input it reads,
-# whose code and helpers are taken in the same way (D16.45, m52). Objects outside `own`
+# don't count. `name` is the check, or the check with the builders of the input and the
+# context it reads, whose code and helpers are taken in the same way (D16.45, m52; D16.47,
+# m61). Objects outside `own`
 # (R/report_text.R, R/report_html.R and R/rules_registry.R, and other packages') aren't
 # followed. The walk's limits: a call by
 # string (D15.13) isn't followed; a helper built inside local() and a function held in a
@@ -211,12 +238,17 @@ test_that("each check family's hash is recorded; a change needs rule_version (D1
     grepl("^check_", objects$object) & grepl("^check_.*[.]R$", objects$file)
   ]
   ns <- asNamespace("groundplotqc")
-  # Every family reads the input conformance_input() builds, so its hash takes in that builder
-  # and what it calls (match_columns(), key_values() and the rest), and a change there fails
-  # the test too (D16.45, m52).
+  # Every family reads the input conformance_input() builds and the context
+  # conformance_context() builds (the code lists and the settings), so its hash takes in both
+  # builders and what they call (match_columns(), key_values(), resolve_setting() and the
+  # rest), and a change there fails the test too (D16.45, m52; D16.47, m61). The walk doesn't
+  # follow rule_fingerprint(), which builds nothing a family reads.
   expect_identical(objects$file[objects$object == "conformance_input"], "check_input.R")
+  expect_identical(objects$file[objects$object == "conformance_context"], "check_conformance.R")
+  expect_true("rule_fingerprint" %in% own)
+  walked <- setdiff(own, "rule_fingerprint")
   current <- vapply(families, function(family) {
-    check_hash(c(family, "conformance_input"), ns, own)
+    check_hash(c(family, "conformance_input", "conformance_context"), ns, walked)
   }, character(1))
   names(current) <- families
   recorded <- data.table::fread(

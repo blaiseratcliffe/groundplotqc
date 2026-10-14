@@ -22,9 +22,10 @@ CSV file for each table: \code{results.csv}, \code{issues.csv} and \code{correct
 the eight metadata tables.
 }
 \details{
-Every file is UTF-8 with LF line endings, every text field quoted and a missing
-value an empty field, so \code{\link[=gpq_read_results]{gpq_read_results()}} reads back the same object. A
-run's files are written once. Before writing anything the call stops when the
+Every file has LF line endings, every text field quoted and a missing value an
+empty field. Text is written as UTF-8, except a value whose bytes aren't valid
+UTF-8, which is written as given. So \code{\link[=gpq_read_results]{gpq_read_results()}} reads back the same
+object. A run's files are written once. Before writing anything the call stops when the
 run folder already holds a file other than that run's own pre-flight files,
 which \code{\link[=gpq_preflight]{gpq_preflight()}} writes: \code{reports/preflight.html} and
 \code{metadata/preflight.csv}. The second must hold the results' pre-flight table

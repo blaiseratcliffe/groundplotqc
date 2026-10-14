@@ -37,7 +37,7 @@ unit problem plots are ranked by; issues carry that key under its name.}
 \code{"20261215T140312Z_3fa9c1"}: the UTC start time and six hex characters.}
 }
 \value{
-An object of class \code{gpq_results}, a list of four tables:
+An object of class \code{gpq_results}, a list of three tables and the run metadata:
 \itemize{
 \item \code{results}: the summary, one row per rule, table, column and group: \code{run_id},
 \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer}, \code{severity}, \code{table_name},
@@ -93,10 +93,10 @@ rule fails on every checked record of a column in a group, and at least
 records sharing one root collapse the same way.
 
 A record's group values are read from its own table, or from the nearest table that holds
-the column, through the foreign keys; a record that can't reach one, or whose keys on the
-way don't match, has "*" there. A group value marked latin1 is converted to UTF-8 and runs;
-one whose bytes aren't valid UTF-8 stops the run, naming the column, the table it is read
-from and its first such row.
+the column, through the foreign keys; a record that can't reach one, whose keys on the way
+don't match, or whose value there is blank or missing, has \code{"*"} there. A group value
+marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
+run, naming the column, the table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
