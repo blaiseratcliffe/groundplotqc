@@ -133,7 +133,8 @@ The package is built and reviewed for these inputs:
 - Columns of class character, integer, double, logical, factor, Date, IDate, POSIXct or
   integer64.
 - A specification that passes pre-flight (warnings allowed), with date formats built
-  from %Y, %m, %d, %H, %M and %S.
+  from %Y, %m, %d, %H, %M and %S. The spec readers and pre-flight themselves are
+  reviewed on any specification, since finding one that fails is their job.
 - Run folders the package made, holding only the files it wrote there.
 - Sizes up to plan section 16.1's targets.
 
