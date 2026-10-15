@@ -369,7 +369,7 @@ test_that("a rule fingerprint follows a named setting's names as well as its cod
     rule_id = "uses_codes", stage = "conformance", layer = 2L, check_type = "test",
     default_severity = "error", default_class = "harmonization",
     inputs = "settings:unknown_codes", strategy = "none", message_id = "preflight_title",
-    rule_version = 1L
+    rule_version = 1L, unit = FALSE
   ))
   spec <- fx_fish_spec()
   one <- rule_fingerprint(
@@ -389,7 +389,7 @@ test_that("a rule fingerprint tells no codes from the one code \"NA\"", {
     rule_id = "uses_rogue", stage = "conformance", layer = 2L, check_type = "test",
     default_severity = "error", default_class = "harmonization",
     inputs = "settings:rogue_codes", strategy = "none", message_id = "preflight_title",
-    rule_version = 1L
+    rule_version = 1L, unit = FALSE
   ))
   spec <- fx_fish_spec()
   none <- rule_fingerprint(

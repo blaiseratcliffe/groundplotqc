@@ -14,7 +14,7 @@ test_registry <- function() {
     default_class = c("depends", "depends", "none", "source"), inputs = "attributes",
     strategy = "none",
     message_id = c("preflight_title", "preflight_title", "preflight_title", "no_text"),
-    rule_version = 1L
+    rule_version = 1L, unit = FALSE
   )
   rbind(rule_registry(), extra)
 }

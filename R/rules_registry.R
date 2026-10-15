@@ -14,7 +14,9 @@
 #' specification components, `rules`, `settings:<name>`, `text`); `strategy` (`none` for a
 #' rule that proposes nothing); `message_id` (its text_id in the report text); `rule_version`
 #' (from 1, raised by the add-rule skill whenever the rule's check behaves differently, so its
-#' rule fingerprint changes, D15.6). Layer 6 and 7 rules add their reason codes at M12 (D9.33).
+#' rule fingerprint changes, D15.6); `unit` (TRUE for a rule that checks a table or a column
+#' as one unit, D16.8, whose not_run rows are one "*" row each, D16.29, D17.15). Layer 6 and 7
+#' rules add their reason codes at M12 (D9.33).
 #' Conformance data rules have check type `conformance` (8.2) and the strategy 6.1's Fix
 #' column gives (`sentinel_fix`, `trim_whitespace`, else `none`), proposed from M11.
 #' @noRd
@@ -23,13 +25,14 @@ rule_registry <- function() {
     data.table(
       rule_id = rule_id, stage = "conformance", layer = NA_integer_, check_type = "preflight",
       default_severity = severity, default_class = "none", inputs = inputs,
-      strategy = "none", message_id = rule_id, rule_version = 1L
+      strategy = "none", message_id = rule_id, rule_version = 1L, unit = FALSE
     )
   }
   # Every conformance rule reads the severity setting, which gives its severity (D16.6), so
   # its fingerprint takes in the rule's entry (D16.54); the settings entries follow the
   # specification components, in their names' order.
-  conformance <- function(rule_id, layer, severity, class, inputs, strategy = "none") {
+  conformance <- function(rule_id, layer, severity, class, inputs, strategy = "none",
+                          unit = FALSE) {
     read <- strsplit(inputs, "; ", fixed = TRUE)[[1L]]
     named <- startsWith(read, "settings:")
     settings <- sort(unique(c(read[named], "settings:severity")), method = "radix")
@@ -37,7 +40,7 @@ rule_registry <- function() {
     data.table(
       rule_id = rule_id, stage = "conformance", layer = layer, check_type = "conformance",
       default_severity = severity, default_class = class, inputs = inputs,
-      strategy = strategy, message_id = rule_id, rule_version = 1L
+      strategy = strategy, message_id = rule_id, rule_version = 1L, unit = unit
     )
   }
   lists <- "code_list_map; code_lists; non_code_sheets"
@@ -74,16 +77,19 @@ rule_registry <- function() {
     preflight("text_id_fallback", "warning", "text; settings:lang"),
     preflight("text_slot_unknown", "error", "text"),
     # ---- M4a: Layer 0, structure (6.1; D2.34, D8.11, D16.8) ----
-    conformance("table_missing", 0L, "error", "harmonization", "attributes"),
-    conformance("table_unexpected", 0L, "warning", "harmonization", "attributes"),
-    conformance("column_missing", 0L, "error", "harmonization", "attributes"),
-    conformance("column_unexpected", 0L, "warning", "harmonization", "attributes"),
-    conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes"),
+    conformance("table_missing", 0L, "error", "harmonization", "attributes", unit = TRUE),
+    conformance("table_unexpected", 0L, "warning", "harmonization", "attributes", unit = TRUE),
+    conformance("column_missing", 0L, "error", "harmonization", "attributes", unit = TRUE),
+    conformance("column_unexpected", 0L, "warning", "harmonization", "attributes", unit = TRUE),
+    conformance("column_name_mismatch", 0L, "error", "harmonization", "attributes", unit = TRUE),
     # ---- M4a: Layer 1, data types (6.1; D2.33, D8.8, D8.11, D16.8, D16.9) ----
     # Here and in Layer 2, every rule with record outcomes reads column_level_min_n, which
     # decides whether its failures are record issues or one column-level issue (6.3; D16.47,
     # m60); a unit rule's outcomes are never collapsed.
-    conformance("class_mismatch", 1L, "error", "harmonization", "attributes; type_map"),
+    conformance(
+      "class_mismatch", 1L, "error", "harmonization", "attributes; type_map",
+      unit = TRUE
+    ),
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
@@ -98,7 +104,10 @@ rule_registry <- function() {
         "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
       )
     ),
-    conformance("integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map"),
+    conformance(
+      "integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map",
+      unit = TRUE
+    ),
     conformance(
       "value_not_finite", 1L, "error", "harmonization",
       "attributes; type_map; settings:column_level_min_n"

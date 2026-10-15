@@ -10,7 +10,7 @@
 # date longer than its format can write are read by nothing that stops or warns on them:
 # each is lost or unparseable as given (D16.33, D16.34, D16.36). A run refuses a table
 # holding text marked as bytes before Layer 1 (D16.38), so for such text this is a second
-# line.
+# line. A table read from CSV is all text, so the storage-class rules don't run on it (D9.23).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -60,7 +60,8 @@ missing_like <- function(text, row, context) {
 #' Layer 1's outcomes, by rule
 #'
 #' `class_mismatch` per attribute: integer and double storage stand in for each other,
-#' which `integer_stored_as_double` reports instead. `coercion_loss` per attribute: the
+#' which `integer_stored_as_double` reports instead. On a table read from CSV, every column
+#' text, neither runs: not_run with reason text_input (D9.23). `coercion_loss` per attribute: the
 #' values coerce_column() loses, Layer 2's left out. `date_unparseable` per date attribute:
 #' a value that isn't a sentinel and doesn't read back as written in the type's date format.
 #' `integer_stored_as_double` per numeric attribute. `value_not_finite` per numeric
@@ -75,6 +76,7 @@ check_types <- function(input, context) {
   dates <- columns[columns$family == "date"]
   sentinels <- context$spec$sentinels
   numbers <- c("integer", "double")
+  text_tables <- input$given$table_name[input$given$text_input]
   # Whether whitespace_padding checks the column: a key, an ID or a coded column, stored as
   # text or a factor (D16.42, m25).
   padding_checked <- function(x, row) {
@@ -84,6 +86,9 @@ check_types <- function(input, context) {
   list(
     class_mismatch = rule_outcomes(
       "class_mismatch", columns, input, function(table, attribute, x, row) {
+        if (table %chin% text_tables) {
+          return(not_run_outcome("class_mismatch", table, attribute, "text_input"))
+        }
         stored <- storage_class(x)
         fits <- stored == row$r_class || (row$r_class %chin% numbers && stored %chin% numbers)
         unit_outcome(
@@ -174,6 +179,9 @@ check_types <- function(input, context) {
     ),
     integer_stored_as_double = rule_outcomes(
       "integer_stored_as_double", numeric, input, function(table, attribute, x, row) {
+        if (table %chin% text_tables) {
+          return(not_run_outcome("integer_stored_as_double", table, attribute, "text_input"))
+        }
         stored <- storage_class(x)
         swapped <- (row$r_class == "integer" && stored == "double") ||
           (row$r_class == "double" && stored == "integer")

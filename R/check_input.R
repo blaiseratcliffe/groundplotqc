@@ -297,9 +297,11 @@ fk_path <- function(keys, from, targets) {
 #' The run's input matched to the spec
 #'
 #' `tables` as validate_tables() takes it; `group_cols` and `key_col` the caller's group
-#' columns and the problem unit's key column (D7.5). Returns a list:
+#' columns and the problem unit's key column (D7.5); `text_tables` the names of the tables
+#' read from CSV, every column text (D9.23). Returns a list:
 #' - `spec`; `data`: the spec's tables that were given, in the dictionary's order, as given;
-#'   `given`: every given table's name and row count; `missing` and `unexpected`: the spec
+#'   `given`: every given table's name, row count and whether it was read as text
+#'   (`text_input`); `missing` and `unexpected`: the spec
 #'   tables not given and the given tables the spec lacks;
 #' - `columns`: one row per dictionary attribute: `table_name`, `attribute_name`, `column`
 #'   (its column, NA where none), `near` (matched by case or spaces), `r_class`,
@@ -314,7 +316,8 @@ fk_path <- function(keys, from, targets) {
 #'   row there for the key column;
 #' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill.
 #' @noRd
-conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL) {
+conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL,
+                              text_tables = character()) {
   attributes <- spec$attributes
   spec_tables <- unique(attributes$table_name)
   present <- spec_tables[spec_tables %chin% names(tables)]
@@ -350,7 +353,8 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
     spec = spec, data = tables[present],
     given = data.table(
       table_name = as.character(names(tables)),
-      n_rows = vapply(tables, nrow, integer(1), USE.NAMES = FALSE)
+      n_rows = vapply(tables, nrow, integer(1), USE.NAMES = FALSE),
+      text_input = as.character(names(tables)) %chin% text_tables
     ),
     missing = setdiff(spec_tables, present),
     unexpected = setdiff(names(tables), spec_tables),

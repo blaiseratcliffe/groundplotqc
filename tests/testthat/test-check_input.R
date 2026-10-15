@@ -330,7 +330,10 @@ test_that("conformance_input matches tables and columns and lists what is missin
   # No table given: every table is missing, and `given` keeps its columns.
   none <- conformance_input(list(), fx_fish_spec())
   expect_identical(
-    none$given, data.table::data.table(table_name = character(), n_rows = integer())
+    none$given,
+    data.table::data.table(
+      table_name = character(), n_rows = integer(), text_input = logical()
+    )
   )
   expect_equal(none$missing, c("stations", "hauls", "catches"))
 })

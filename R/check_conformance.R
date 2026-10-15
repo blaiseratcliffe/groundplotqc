@@ -21,6 +21,13 @@
 #' the run where it would stop, and its warning reaches the caller. The checks never change
 #' `tables`.
 #'
+#' A CSV file is read with [data.table::fread()], which finds its separator. A file it
+#' can't read cleanly, such as one with a ragged line or a title line above its header,
+#' stops the run before any check, and so does a file that doesn't end with a line break,
+#' which may be cut off. The run's inputs
+#' metadata names each file with its SHA-256, its rows, its separator and how many values
+#' were read as Windows-1252.
+#'
 #' Layers and the rules they can raise:
 #' - Layer 0, structure: `table_missing`, `table_unexpected`, `column_missing`,
 #'   `column_unexpected`, `column_name_mismatch`.
@@ -33,7 +40,7 @@
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and
 #' checked as that attribute. Layer 0's rules and `class_mismatch` and
 #' `integer_stored_as_double` count tables or columns, not records, and their rows have `"*"`
-#' in every group column, except where none of a rule's tables or columns could be checked.
+#' in every group column.
 #' A value that failed Layer 1 is not evaluated by Layer 2: its
 #' issue there has status `not_evaluated` and names the earlier issue as its root. When a
 #' rule fails on every checked record of a column in a group, and at least
@@ -53,8 +60,14 @@
 #' specific row that gives a value wins (table and attribute, then table and `"*"`, then
 #' `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no rows there.
 #'
-#' @param tables A named list of data.frames, one per table, named as the specification
-#'   names its tables. A table holding text marked as bytes is refused.
+#' @param tables The tables, one per table of the specification, named as it names them: a
+#'   named list whose elements are data.frames or paths of CSV files, mixed as you like, or
+#'   a named character vector of paths. Every column of a CSV file is read as text, so
+#'   `class_mismatch` and `integer_stored_as_double` don't run on its tables. In a CSV file
+#'   an empty cell is a missing value and everything else is read as written, so write
+#'   files with data.table::fwrite() or write.csv(na = ""). A cell that isn't valid UTF-8 is
+#'   read as Windows-1252, unless it holds a byte Windows-1252 doesn't define. A table
+#'   holding text marked as bytes is refused.
 #' @param spec A specification from [gpq_read_spec()] or [magp_spec()].
 #' @param group_cols `NULL`, or the grouping columns, report unit first: results and issues
 #'   carry them under these names.
@@ -106,6 +119,8 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
   if (!inherits(spec, "gpq_spec")) {
     stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
   }
+  read <- read_tables(tables, spec)
+  tables <- read$tables
   validate_tables(tables)
   layers_ok <- is.numeric(layers) && is.null(dim(layers)) && length(layers) > 0L &&
     !anyNA(layers) && all(layers %in% 0:5)
@@ -138,7 +153,7 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
   preflight <- gpq_preflight(spec, rules = rules, settings = settings)
   rules <- validate_rule_set(rules)
   context <- conformance_context(spec, rules, settings, layers)
-  input <- conformance_input(tables, spec, group_cols, key_col)
+  input <- conformance_input(tables, spec, group_cols, key_col, read$text_tables)
   if (is.null(run_id)) {
     run_id <- new_run_id(run_start)
   }
@@ -190,6 +205,11 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
     file = "in memory",
     sha256 = NA_character_, detail = paste(input$given$n_rows, "rows", recycle0 = TRUE)
   )
+  # A table read from a file or a connection is recorded as read_tables() describes it.
+  read_from <- match(read$inputs$table_name, input$given$table_name)
+  for (column in c("file", "sha256", "detail")) {
+    set(inputs, i = read_from, j = column, value = utf8_marked(read$inputs[[column]]))
+  }
   run <- run_metadata(run_id, run_start, Sys.time(), group_cols, report_units)
   metadata <- new_metadata(
     run, spec, preflight,
@@ -364,10 +384,9 @@ outcome_values <- function(rule_id, table_names, column_names, default, context)
 #' self-test (D16.17); nor is a rule turned off at every outcome (D16.7). A rule the family
 #' doesn't return at all stays expected, so the self-test lists it.
 #'
-#' A rule that checks units (it has unit outcomes beside its not_run ones) writes each of its
-#' not_run outcomes as one row with "*" groups counting the one table or column it couldn't
-#' check; a record rule's not_run rows count records by group (D16.29, R12). A rule none of
-#' whose outcomes could run is taken for a record rule, there being nothing to tell it by.
+#' A unit rule (the registry's `unit`, D17.15) writes each of its not_run outcomes as one row
+#' with "*" groups counting the one table or column it couldn't check, whatever its other
+#' outcomes; a record rule's not_run rows count records by group (D16.29, R12).
 #' @noRd
 record_layer <- function(found, layer, input, context, state, run_id) {
   # Worked out before the brackets: `layer` is also a column of the run's rules.
@@ -408,7 +427,7 @@ record_layer <- function(found, layer, input, context, state, run_id) {
         record = record_records(
           outcome, rule, values$severity[[i]], layer, input, context, state, run_id
         ),
-        not_run = if ("unit" %chin% kinds) {
+        not_run = if (isTRUE(rule$unit)) {
           unit_not_run(outcome, rule, values$severity[[i]])
         } else {
           record_not_run(outcome, rule, values$severity[[i]], input, context, state, run_id)

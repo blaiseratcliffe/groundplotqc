@@ -6,10 +6,20 @@ test_that("the registry has its columns and one row per rule", {
   expect_equal(vapply(registry, function(x) class(x)[[1L]], ""), c(
     rule_id = "character", stage = "character", layer = "integer", check_type = "character",
     default_severity = "character", default_class = "character", inputs = "character",
-    strategy = "character", message_id = "character", rule_version = "integer"
+    strategy = "character", message_id = "character", rule_version = "integer",
+    unit = "logical"
   ))
   expect_equal(anyDuplicated(registry$rule_id), 0L)
   expect_false(anyNA(registry[, !"layer"], recursive = TRUE))
+})
+
+test_that("the unit rules are Layer 0's and the two storage-class rules (D16.8, D17.15)", {
+  registry <- rule_registry()
+  expect_setequal(registry$rule_id[registry$unit], c(
+    "table_missing", "table_unexpected", "column_missing", "column_unexpected",
+    "column_name_mismatch", "class_mismatch", "integer_stored_as_double"
+  ))
+  expect_false(anyNA(registry$unit))
 })
 
 test_that("every rule's severity and class fit its stage (D8.12, D9.21)", {
@@ -266,13 +276,16 @@ test_that("each check family's hash is recorded; a change needs rule_version (D1
   # conformance_context() builds (the code lists and the settings), so its hash takes in both
   # builders and what they call (match_columns(), key_values(), resolve_setting() and the
   # rest), and a change there fails the test too (D16.45, m52; D16.47, m61). The walk doesn't
-  # follow rule_fingerprint(), which builds nothing a family reads.
+  # follow rule_fingerprint(), which builds nothing a family reads. It takes in read_tables()
+  # too, which reads a CSV file's or a connection's tables into what conformance_input()
+  # matches, so a change to how a file is read fails the test (M4b, D17.17).
   expect_identical(objects$file[objects$object == "conformance_input"], "check_input.R")
   expect_identical(objects$file[objects$object == "conformance_context"], "check_conformance.R")
+  expect_identical(objects$file[objects$object == "read_tables"], "check_read.R")
   expect_true("rule_fingerprint" %in% own)
   walked <- setdiff(own, "rule_fingerprint")
   current <- vapply(families, function(family) {
-    check_hash(c(family, "conformance_input", "conformance_context"), ns, walked)
+    check_hash(c(family, "conformance_input", "conformance_context", "read_tables"), ns, walked)
   }, character(1))
   names(current) <- families
   recorded <- data.table::fread(
