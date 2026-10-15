@@ -94,6 +94,7 @@ row per file (D7.10):
 | Path | Purpose | Key functions (exported; internal) | Depends on |
 |---|---|---|---|
 | vignettes/specification.Rmd | The specification article, started at M2: reads the fish survey example with gpq_read_spec() and pre-flights it, a clean spec and one with a repeated code (plan 18.2; D5.22, D12.37) | none | gpq_read_spec(), gpq_column_map(), gpq_type_map(), gpq_sentinels(), gpq_preflight(), inst/extdata/examples/ (the fish files) |
+| vignettes/generic-engine.Rmd | The generic engine's article, started at M4b: the fish survey read as `specification.Rmd` reads it, its tables checked as data frames with two planted mistakes, as CSV files written to a temporary folder and from an in-memory SQLite with table_map (run only where DBI and RSQLite are installed), the results, issues and inputs read, and the run folder written and read (plan 18.2; D17.9) | none | gpq_read_spec(), gpq_check_conformance(), gpq_write_results(), gpq_read_results(), inst/extdata/examples/ (the fish files), data.table, DBI and RSQLite (Suggests) |
 | vignettes/.gitignore | Keeps built vignette files (`*.html`, `*.R`) out of git | none | none |
 
 ## inst/extdata/text/
