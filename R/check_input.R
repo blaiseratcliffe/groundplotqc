@@ -18,7 +18,13 @@ validate_tables <- function(tables) {
       !anyDuplicated(names(tables))
   ))
   if (!named) {
-    stop("`tables` must be a list of data.frames, each named once by its table.", call. = FALSE)
+    stop(
+      paste0(
+        "`tables` must be a list of data.frames or CSV paths, each named once by its table, ",
+        "a named character vector of paths, or a DBI connection."
+      ),
+      call. = FALSE
+    )
   }
   frames <- vapply(tables, is.data.frame, logical(1))
   if (!all(frames)) {
@@ -119,7 +125,9 @@ stored_text <- function(x) {
 #' A column coerced to its expected class, and which values the coercion loses (D16.9)
 #'
 #' `value` is the column itself when it already has the class, otherwise a new vector of the
-#' class (16.2's coercion copy); `lost` is TRUE where a value that isn't NA can't be held:
+#' class (16.2's coercion copy); for a class of numbers, `not_finite` is the rows whose value,
+#' read as a number, is NaN, Inf or -Inf, which value_not_finite reports (D17.22); `lost` is
+#' TRUE where a value that isn't NA can't be held:
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
 #' integer is wanted. Text is a number only when written as a decimal number: a sign, digits,
 #' one point and an exponent, with spaces, tabs and line breaks around, or as one of the
@@ -142,22 +150,23 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     if (all(valid)) {
       number <- suppressWarnings(as.numeric(text))
     } else {
-      number <- rep(NA_real_, length(text))
-      number[valid] <- suppressWarnings(as.numeric(text[valid]))
       # Only the values that aren't valid UTF-8 are converted (16.2).
-      convert <- which(!valid & !bytes)
-      utf8 <- enc2utf8(text[convert])
-      readable <- validUTF8(utf8)
-      number[convert[readable]] <- suppressWarnings(as.numeric(utf8[readable]))
+      utf8 <- utf8_converted(text)
+      readable <- !bytes & validUTF8(utf8)
+      number <- rep(NA_real_, length(text))
+      number[readable] <- suppressWarnings(as.numeric(utf8[readable]))
     }
-    # as.numeric() also reads hexadecimal ("0x10" as 16): a value it reads is kept only when
-    # written as a decimal number, Inf or NaN. A number is plain ASCII, so its bytes are read.
+    # as.numeric() also reads hexadecimal ("0x10" as 16), and on Windows a number with a
+    # Unicode space after it: a value it reads is kept only when written as a decimal number,
+    # Inf or NaN, in plain ASCII (D16.42, m26). Of the values it reads, those are the ones
+    # holding no "x" or "X" and no byte outside ASCII, which byte tests find at a tenth of a
+    # pattern's cost (D17.22). A number is plain ASCII, so its bytes are read.
     read <- which(!is.na(number))
-    decimal <- paste0(
-      "^[ \t\n\v\f\r]*[+-]?(([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?|",
-      "[Ii][Nn][Ff]([Ii][Nn][Ii][Tt][Yy])?|[Nn][Aa][Nn])[ \t\n\v\f\r]*$"
-    )
-    number[read[!grepl(decimal, text[read], useBytes = TRUE)]] <- NA_real_
+    held <- text[read]
+    refused <- grepl("x", held, fixed = TRUE, useBytes = TRUE) |
+      grepl("X", held, fixed = TRUE, useBytes = TRUE) |
+      grepl("[\\x80-\\xff]", held, perl = TRUE, useBytes = TRUE)
+    number[read[refused]] <- NA_real_
     number
   }
   # Whole numbers as integers: a fraction, a number beyond an integer's range or a value that
@@ -197,13 +206,16 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     return(list(value = text[at], lost = logical(n)))
   }
   if (is.numeric(x) && !is.object(x)) {
+    not_finite <- if (is.double(x)) which(is.nan(x) | is.infinite(x)) else integer()
     if (r_class == "double") {
-      return(list(value = if (is.double(x)) x else as.double(x), lost = logical(n)))
+      return(list(
+        value = if (is.double(x)) x else as.double(x), lost = logical(n), not_finite = not_finite
+      ))
     }
     if (is.integer(x)) {
-      return(list(value = x, lost = logical(n)))
+      return(list(value = x, lost = logical(n), not_finite = not_finite))
     }
-    return(as_whole(x, !is.na(x)))
+    return(c(as_whole(x, !is.na(x)), list(not_finite = not_finite)))
   }
   # Text is read as it is. Any other column is written as text once for each distinct value,
   # each row taking its value's result (16.2).
@@ -221,7 +233,11 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
   } else {
     as_whole(number, !is.na(text))
   }
-  if (is.null(at)) out else list(value = out$value[at], lost = out$lost[at])
+  not_finite <- is.nan(number) | is.infinite(number)
+  if (is.null(at)) {
+    return(c(out, list(not_finite = which(not_finite))))
+  }
+  list(value = out$value[at], lost = out$lost[at], not_finite = which(not_finite[at]))
 }
 
 #' Each dictionary attribute matched to its column (D16.14)
@@ -245,12 +261,7 @@ match_columns <- function(given, attributes) {
     # A name that isn't plain ASCII is read as UTF-8, marked so on a copy where it is
     # unmarked, as fread() leaves it, since a Unicode pattern reads unmarked text byte by byte
     # outside a UTF-8 locale (D16.36).
-    unicode <- x[wide]
-    unmarked <- which(Encoding(unicode) == "unknown")
-    marked <- unicode[unmarked]
-    Encoding(marked) <- "UTF-8"
-    unicode[unmarked] <- marked
-    out[wide] <- tolower(gsub("(*UCP)\\s", "", unicode, perl = TRUE))
+    out[wide] <- tolower(gsub("(*UCP)\\s", "", utf8_marked(x[wide]), perl = TRUE))
     out
   }
   for (i in which(is.na(column))) {
@@ -304,9 +315,11 @@ fk_path <- function(keys, from, targets) {
 #' The run's input matched to the spec
 #'
 #' `tables` as validate_tables() takes it; `group_cols` and `key_col` the caller's group
-#' columns and the problem unit's key column (D7.5). Returns a list:
+#' columns and the problem unit's key column (D7.5); `text_tables` the names of the tables
+#' read from CSV, every column text (D9.23). Returns a list:
 #' - `spec`; `data`: the spec's tables that were given, in the dictionary's order, as given;
-#'   `given`: every given table's name and row count; `missing` and `unexpected`: the spec
+#'   `given`: every given table's name, row count and whether it was read as text
+#'   (`text_input`); `missing` and `unexpected`: the spec
 #'   tables not given and the given tables the spec lacks;
 #' - `columns`: one row per dictionary attribute: `table_name`, `attribute_name`, `column`
 #'   (its column, NA where none), `near` (matched by case or spaces), `r_class`,
@@ -321,7 +334,8 @@ fk_path <- function(keys, from, targets) {
 #'   row there for the key column;
 #' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill.
 #' @noRd
-conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL) {
+conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL,
+                              text_tables = character()) {
   attributes <- spec$attributes
   spec_tables <- unique(attributes$table_name)
   present <- spec_tables[spec_tables %chin% names(tables)]
@@ -357,7 +371,8 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
     spec = spec, data = tables[present],
     given = data.table(
       table_name = as.character(names(tables)),
-      n_rows = vapply(tables, nrow, integer(1), USE.NAMES = FALSE)
+      n_rows = vapply(tables, nrow, integer(1), USE.NAMES = FALSE),
+      text_input = as.character(names(tables)) %chin% text_tables
     ),
     missing = setdiff(spec_tables, present),
     unexpected = setdiff(names(tables), spec_tables),
@@ -513,10 +528,7 @@ group_index <- function(input, table) {
     mark <- Encoding(text)
     bytes <- mark == "bytes"
     valid <- !bytes & validUTF8(text)
-    unmarked <- which(valid & mark == "unknown" & grepl("[^\001-\177]", text, useBytes = TRUE))
-    held <- text[unmarked]
-    Encoding(held) <- "UTF-8"
-    text[unmarked] <- held
+    text <- utf8_marked(text)
     convert <- which(!bytes & (mark == "latin1" | !valid))
     text[convert] <- enc2utf8(text[convert])
     if (any(bytes) || !all(validUTF8(text))) {
@@ -525,10 +537,8 @@ group_index <- function(input, table) {
       )
       whole <- value_text(input$data[[reached$home]][[input$columns$column[[at]]]])
       marked <- Encoding(whole) == "bytes"
-      odd <- marked | !validUTF8(whole)
       # Only the values that aren't valid UTF-8 as given are converted (16.2).
-      convert <- which(odd & !marked)
-      odd[convert] <- !validUTF8(enc2utf8(whole[convert]))
+      odd <- marked | !validUTF8(utf8_converted(whole))
       stop(sprintf(
         paste0(
           "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
@@ -614,14 +624,7 @@ record_pk_text <- function(input, table, rows) {
   # joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the PK
   # is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
   if (length(parts) > 1L) {
-    parts <- lapply(parts, function(part) {
-      wide <- which(grepl("[^\001-\177]", part, useBytes = TRUE))
-      unmarked <- wide[Encoding(part[wide]) == "unknown" & validUTF8(part[wide])]
-      held <- part[unmarked]
-      Encoding(held) <- "UTF-8"
-      part[unmarked] <- held
-      part
-    })
+    parts <- lapply(parts, utf8_marked)
   }
   record_pk <- do.call(paste, c(parts, sep = "|"))
   record_pk[missing] <- NA_character_

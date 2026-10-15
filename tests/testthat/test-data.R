@@ -262,7 +262,7 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
 })
 
 test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())
   expect_equal(sum(results$issues$status == "open"), 0L)
@@ -281,7 +281,7 @@ test_that("every defect block stops on tables that aren't fixtures (18.3)", {
 })
 
 test_that("planted vs caught: each block caught by its rule with its witness, its cascade too", {
-  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  # About 2 s a run since M4b cut the run's fixed cost (D16.18).
   testthat::skip_on_cran()
   base <- fx_magp_clean()
   sheet <- fx_answer_sheet()
@@ -303,4 +303,88 @@ test_that("planted vs caught: each block caught by its rule with its witness, it
     # Nor does another issue of the planted rule, elsewhere, pass: all but the hit are cascade.
     expect_equal(sum(!is_hit & !caught$rule_id %in% cascade), 0L, info = row$defect_id)
   }
+})
+
+test_that("fx_magp_scaled() builds the AB file's shape, its keys agreeing, marked (16.3, D17.7)", {
+  # About 3 s; skipped on CRAN. Of the helper's tests only the defect-rates test below runs
+  # there (about 0.4 s).
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  tables <- fx_magp_scaled(0.01)
+  expect_true(isTRUE(attr(tables, "gpq_fixture")))
+  expect_true(all(vapply(tables, function(t) isTRUE(attr(t, "gpq_fixture")), logical(1))))
+  expect_equal(names(tables), unique(spec$attributes$table_name))
+  # D1.9a's three counts at 0.01x, one contributor with its two datasets.
+  expect_equal(nrow(tables$magp_tree_cond), 20123L)
+  expect_equal(nrow(tables$magp_tree_meas), 16153L)
+  expect_equal(nrow(tables$magp_trees), 5175L)
+  # R6's other 14 tables at 0.01x: 4,000 sites, 12,485 visits (three or four a site, rounded),
+  # one plot of four subplots per site, one plot measurement per visit with four subplot
+  # measurements, a site disturbance and a site treatment per site, 10,000 tree ages, 8,000
+  # tally trees, and two designs per contributor with two frames per design. A change to the
+  # ratios fails here.
+  other <- c(
+    magp_contributors = 1L, magp_datasets = 2L, magp_sites = 40L, magp_site_dist = 40L,
+    magp_site_treat = 40L, magp_site_visits = 125L, magp_plots = 40L, magp_subplots = 160L,
+    magp_designs = 2L, magp_design_frames = 4L, magp_plot_meas = 125L,
+    magp_subplot_meas = 500L, magp_tree_age = 100L, magp_tally_trees = 80L
+  )
+  expect_equal(vapply(tables[names(other)], nrow, integer(1)), other)
+  expect_clean_base(tables, spec)
+})
+
+test_that("fx_magp_scaled()'s many groups: each sheet dataset in its contributor, jurisdiction", {
+  # About 3 s; skipped on CRAN as the test above.
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  sheet <- spec$datasets
+  tables <- fx_magp_scaled(0.01, many_groups = TRUE)
+  datasets <- tables$magp_datasets
+  expect_setequal(datasets$magp_dataset_id, sheet$magp_dataset_id)
+  at <- match(datasets$magp_dataset_id, sheet$magp_dataset_id)
+  expect_equal(datasets$magp_contributor_id, sheet$magp_contributor_id[at])
+  sites <- tables$magp_sites
+  of_site <- match(sites$magp_dataset_id, sheet$magp_dataset_id)
+  expect_equal(sites$jurisdiction, sheet$jurisdiction[of_site])
+  expect_setequal(sites$magp_dataset_id, sheet$magp_dataset_id)
+  expect_equal(nrow(tables$magp_trees), 5175L)
+  expect_clean_base(tables, spec)
+})
+
+test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)", {
+  tables <- fx_magp_scaled(0.01, defects = TRUE)
+  meas <- tables$magp_tree_meas
+  trees <- tables$magp_trees
+  # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
+  # 1, 2 or 3, gives the same count).
+  rate <- function(n) ceiling(0.001 * n)
+  expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
+  expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))
+  expect_equal(sum(meas$species == "UNKN.SPP"), rate(nrow(meas)))
+  visits <- tables$magp_site_visits
+  expect_equal(sum(visits$meas_date == "2020-02-30"), rate(nrow(visits)))
+  expect_equal(sum(is.na(trees$tree_dist)), rate(nrow(trees)))
+  expect_equal(sum(trees$comments == ""), rate(nrow(trees)))
+  expect_equal(sum(trees$comments == "N/A"), rate(nrow(trees)))
+  expect_equal(sum(trees$tree_origin == "-9"), rate(nrow(trees)))
+  expect_equal(sum(trees$tree_origin == "AP "), rate(nrow(trees)))
+  expect_equal(sum(trees$src_tree_id == "NA"), rate(nrow(trees)))
+  expect_true(is.double(meas$visit_num))
+  expect_false("magp_tree_age" %in% names(tables))
+  expect_true("magp_notes" %in% names(tables))
+  expect_false("comments" %in% names(tables$magp_tree_cond))
+  expect_equal(unique(tables$magp_plots$colour), "red")
+  # m9, m34 and m64.
+  expect_true(is.integer(trees$magp_tree_id) && is.integer(meas$magp_tree_id))
+  expect_true(all(meas$magp_tree_id %in% trees$magp_tree_id))
+  expect_true(all(endsWith(meas$magp_frame_id, "  ")))
+  expect_equal(sum(meas$tree_wt == "x"), length(seq.int(1L, nrow(meas), by = 2L)))
+})
+
+test_that("the defect run raises each answer-sheet rule (D17.8)", {
+  # A full MAGPlot run (D16.50).
+  testthat::skip_on_cran()
+  results <- fx_caught(fx_magp_scaled(0.01, defects = TRUE))
+  open <- results$issues[results$issues$status == "open"]
+  expect_equal(setdiff(fx_answer_sheet()$rule_id, open$rule_id), character())
 })

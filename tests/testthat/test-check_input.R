@@ -330,7 +330,10 @@ test_that("conformance_input matches tables and columns and lists what is missin
   # No table given: every table is missing, and `given` keeps its columns.
   none <- conformance_input(list(), fx_fish_spec())
   expect_identical(
-    none$given, data.table::data.table(table_name = character(), n_rows = integer())
+    none$given,
+    data.table::data.table(
+      table_name = character(), n_rows = integer(), text_input = logical()
+    )
   )
   expect_equal(none$missing, c("stations", "hauls", "catches"))
 })
@@ -364,6 +367,25 @@ test_that("records find their group values through the shortest path, \"*\" wher
   plain <- conformance_input(fish, spec)$groups$catches
   expect_equal(plain$row_group, rep(1L, nrow(fish$catches)))
   expect_null(plain$values)
+})
+
+test_that("group_values() gives the values at the groups asked, NULL without group columns", {
+  fish <- fx_fish_clean()
+  spec <- fx_fish_spec()
+  hauls <- conformance_input(fish, spec, group_cols = c("water_body", "gear"))$groups$hauls
+  # Each haul's group values, read by position: its own gear and its station's water body.
+  per_haul <- group_values(hauls, hauls$row_group)
+  expect_false(data.table::is.data.table(per_haul))
+  expect_named(per_haul, c("water_body", "gear"))
+  expect_equal(per_haul$gear, fish$hauls$gear)
+  at <- match(fish$hauls$station_id, fish$stations$station_id)
+  expect_equal(per_haul$water_body, fish$stations$water_body[at])
+  # Some of the groups, in the order asked.
+  asked <- c(2L, 1L)
+  some <- group_values(hauls, asked)
+  expect_equal(some$gear, hauls$values$gear[asked])
+  expect_equal(some$water_body, hauls$values$water_body[asked])
+  expect_null(group_values(conformance_input(fish, spec)$groups$hauls, 1L))
 })
 
 test_that("values that read the same are one group: a blank, NA and a broken path all \"*\"", {
@@ -745,4 +767,84 @@ test_that("matching the input changes no table and copies none whole (16.2)", {
     expect_false(data.table::is.data.table(frames[[table]]), info = table)
     expect_identical(frames[[table]], frames_before[[table]], info = table)
   }
+})
+
+test_that("coerce_column() refuses what D16.42's pattern refuses, by byte tests (D17.22)", {
+  # D16.42's pattern, as M4a wrote it: a value as.numeric() reads is kept only when it matches.
+  decimal <- paste0(
+    "^[ \t\n\v\f\r]*[+-]?(([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?|",
+    "[Ii][Nn][Ff]([Ii][Nn][Ii][Tt][Yy])?|[Nn][Aa][Nn])[ \t\n\v\f\r]*$"
+  )
+  forms <- c(
+    "1", "1.", ".5", "+.5", "-.5e-3", "1e05", "1e+5", "1E5", "1e-5", "0e0", "00012", "017",
+    "1e", "1e+", ".", "+", "-", "1.5.", "1e5.5", "e5", "1 2", "--1", "1e++5", ".e1",
+    "Inf", "-inf", "iNf", "infinity", "INFINITY", "InFiNiTy", "infinit", "Infinityx",
+    "nan", "NAN", "nAn", "-NaN", "+NaN", "NaN(123)", "NA", "na", "",
+    " 1 ", "\t1\n", "\v1\f", "1\r", "  -Inf  ", "1e3\n", "1 e3",
+    "0x10", "0X1p3", "0x1.8p1", "-0x1A", " 0x10 ", "0x.8", "0x", "0xg",
+    "1d5", "1i", "1L", "1f", "TRUE", "1_0", "1,5", "1'000", "0b101",
+    "1e400", "-1e400", "1e-400", strrep("9", 400),
+    # Unicode spaces and digits, built from their code points so no copy turns them into
+    # plain spaces: no-break, thin and ideographic spaces, a fullwidth and an Arabic-Indic
+    # one, a minus sign.
+    paste0(intToUtf8(0xa0), "1"), paste0("1", intToUtf8(0xa0)), paste0("1", intToUtf8(0x2009)),
+    paste0(intToUtf8(0x2009), "1"), paste0("1", intToUtf8(0x3000)), intToUtf8(0xff11),
+    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1")
+  )
+  read <- suppressWarnings(as.numeric(forms))
+  expected <- read
+  expected[!grepl(decimal, forms, useBytes = TRUE)] <- NA_real_
+  expect_identical(coerce_column(forms, "double")$value, expected)
+  # Every ASCII byte from 1 to 127 before, after and inside a number, so each platform's own
+  # as.numeric() is held against D16.42's pattern too, not only the forms named above.
+  bytes <- vapply(1:127, function(b) rawToChar(as.raw(b)), "")
+  swept <- c(
+    paste0("1", bytes), paste0(bytes, "1"), paste0("1", bytes, "5"), paste0("Inf", bytes),
+    paste0(bytes, "NaN"), paste0("1e5", bytes), paste0(bytes, bytes, "2")
+  )
+  swept_expected <- suppressWarnings(as.numeric(swept))
+  swept_expected[!grepl(decimal, swept, useBytes = TRUE)] <- NA_real_
+  expect_identical(coerce_column(swept, "double")$value, swept_expected)
+  # Hexadecimal is refused, and so is a number with a Unicode space, which as.numeric() reads
+  # on Windows.
+  thin <- paste0("1", intToUtf8(0x2009))
+  expect_identical(coerce_column(c("0x10", thin, "1.5"), "double")$value, c(NA, NA, 1.5))
+})
+
+test_that("coerce_column()'s byte tests also run where it converts text that isn't valid UTF-8", {
+  # A vector holding such text takes as_number()'s branch that converts, and as.numeric() stops
+  # on the text in a UTF-8 locale. D16.42's pattern, as M4a wrote it, gives the other values.
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale, where R stops on it")
+  decimal <- paste0(
+    "^[ \t\n\v\f\r]*[+-]?(([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?|",
+    "[Ii][Nn][Ff]([Ii][Nn][Ii][Tt][Yy])?|[Nn][Aa][Nn])[ \t\n\v\f\r]*$"
+  )
+  forms <- c(
+    "1", "-.5e-3", "1e05", " 7 ", "1e", "1.5.", "Inf", "-inf", "infinity", "nan", "NA", "",
+    "0x10", "0X1p3", "-0x1A", "1d5", "1,5",
+    paste0("1", intToUtf8(0xa0)), paste0("1", intToUtf8(0x2009)), intToUtf8(0xff11),
+    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1")
+  )
+  expected <- suppressWarnings(as.numeric(forms))
+  expected[!grepl(decimal, forms, useBytes = TRUE)] <- NA_real_
+  # Beside them, text that isn't valid UTF-8 and a latin1-marked number with a no-break space.
+  invalid <- rawToChar(as.raw(c(0x32, 0x30, 0x97)))
+  latin1 <- iconv(paste0("1", intToUtf8(0xa0)), "UTF-8", "latin1")
+  text <- c(forms, invalid, latin1)
+  value <- c(expected, NA_real_, NA_real_)
+  out <- coerce_column(text, "double")
+  expect_identical(out$value, value)
+  expect_identical(out$lost, !is.na(text) & is.na(value) & !is.nan(value))
+  expect_identical(out$not_finite, which(is.nan(value) | is.infinite(value)))
+})
+
+test_that("coerce_column() gives the rows whose number isn't finite (D17.22)", {
+  text <- c("1", "Inf", "-inf", "NaN", "1e999", "x", NA, "0x10")
+  expect_identical(coerce_column(text, "double")$not_finite, 2:5)
+  expect_identical(coerce_column(text, "integer")$not_finite, 2:5)
+  expect_identical(coerce_column(factor(text), "integer")$not_finite, 2:5)
+  expect_identical(coerce_column(c(1, Inf, NaN, NA, -Inf), "integer")$not_finite, c(2L, 3L, 5L))
+  expect_identical(coerce_column(c(1, Inf), "double")$not_finite, 2L)
+  expect_identical(coerce_column(1:3, "double")$not_finite, integer())
+  expect_null(coerce_column(text, "character")$not_finite)
 })

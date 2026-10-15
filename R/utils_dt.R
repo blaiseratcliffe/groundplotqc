@@ -16,7 +16,7 @@ fix_invalid_utf8 <- function(data) {
   header <- names(data)
   bad_names <- which(!validUTF8(header))
   if (length(bad_names) > 0L) {
-    fixed_names <- iconv(header[bad_names], "UTF-8", "UTF-8", sub = "byte")
+    fixed_names <- mark_invalid_utf8(header[bad_names])
     setnames(data, bad_names, fixed_names)
     found[[1L]] <- data.table(row = 0L, column = bad_names, value = fixed_names)
   }
@@ -29,7 +29,7 @@ fix_invalid_utf8 <- function(data) {
     if (length(bad) == 0L) {
       next
     }
-    fixed <- iconv(x[bad], "UTF-8", "UTF-8", sub = "byte")
+    fixed <- mark_invalid_utf8(x[bad])
     set(data, i = bad, j = j, value = fixed)
     found[[length(found) + 1L]] <- data.table(row = bad, column = j, value = fixed)
   }
@@ -124,7 +124,7 @@ read_csv_text <- function(path) {
   # fread() wrote it, a bad byte as <xx> (D12.24, D12.58).
   unknown_problems <- function(texts) {
     if (length(texts) > 0L) {
-      problem("unknown", value = iconv(unique(texts), "UTF-8", "UTF-8", sub = "byte"))
+      problem("unknown", value = mark_invalid_utf8(unique(texts)))
     }
   }
   # No rows read: an empty file, or one fread() stops on, with the warnings it doesn't

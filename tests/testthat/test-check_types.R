@@ -612,3 +612,64 @@ test_that("Layer 1's checks change none of the tables (16.2)", {
     expect_identical(fish[[table]], before[[table]], info = table)
   }
 })
+
+test_that("value_not_finite finds the same rows as the column's NaN and infinite values (D17.22)", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches[, weight := as.character(weight)]
+  catches[1:3, weight := c("1e999", "-Inf", "nan")]
+  fish$catches <- catches
+  results <- gpq_check_conformance(fish, fx_fish_spec(), layers = 0:1)
+  found <- results$issues[results$issues$rule_id == "value_not_finite", ]
+  expect_identical(found$row_number, 1:3)
+  expect_identical(found$value, c("1e999", "-Inf", "nan"))
+  value <- coerce_column(catches$weight, "double")$value
+  expect_identical(which(is.nan(value) | is.infinite(value)), 1:3)
+})
+
+test_that("a column of text is parsed once a run, for coercion_loss and value_not_finite (m19)", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches[, weight := as.character(weight)]
+  catches[1:3, weight := c("1e999", "-Inf", "nan")]
+  fish$catches <- catches
+  # coerce_column() is called for each text column of a number type by coercion_loss; count the
+  # calls that read the weight column. value_not_finite takes its rows from the first call.
+  real <- coerce_column
+  parsed <- character()
+  testthat::local_mocked_bindings(coerce_column = function(x, r_class, ...) {
+    if (identical(x, catches$weight)) {
+      parsed <<- c(parsed, r_class)
+    }
+    real(x, r_class, ...)
+  })
+  results <- gpq_check_conformance(fish, fx_fish_spec(), layers = 0:1)
+  expect_identical(parsed, "double")
+  found <- results$issues[results$issues$rule_id == "value_not_finite", ]
+  expect_identical(found$row_number, 1:3)
+})
+
+test_that("cascade_masks() returns NULL where nothing of Layers 1 to 3 failed in the column", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches[, weight := as.character(weight)]
+  catches$weight[[2L]] <- "abc"
+  fish$catches <- catches
+  spec <- fx_fish_spec()
+  input <- conformance_input(fish, spec)
+  context <- conformance_context(spec, NULL, list(), 1L)
+  state <- new_run_state()
+  row_group <- input$groups$catches$row_group
+  # Nothing recorded yet.
+  expect_null(cascade_masks(state, "catches", "weight", 2L, row_group))
+  record_layer(
+    check_types(input, context), 1L, input, context, state, "20261215T140312Z_3fa9c1"
+  )
+  # The value Layer 1 lost is masked for Layer 2, under the issue that lost it; a column where
+  # nothing failed builds no table.
+  masked <- cascade_masks(state, "catches", "weight", 2L, row_group)
+  expect_identical(masked$row_number, 2L)
+  expect_identical(masked$root_issue_id, state$failed[["catches\rweight"]][[1L]]$issue_id)
+  expect_null(cascade_masks(state, "catches", "fish_count", 2L, row_group))
+  expect_null(cascade_masks(state, "hauls", "gear", 2L, input$groups$hauls$row_group))
+})

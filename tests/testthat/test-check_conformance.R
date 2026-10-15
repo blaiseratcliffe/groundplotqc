@@ -4,12 +4,14 @@
 # Layer 1 and 2 rules; their own tests run through the families.
 
 # The registry with two stand-in conformance rules, test_cast (Layer 1) and test_spell
-# (Layer 2), in place of rule_registry() until the calling test ends.
-local_stand_in_rules <- function(env = parent.frame()) {
+# (Layer 2), in place of rule_registry() until the calling test ends; the rules named in
+# `unit` are unit rules (D17.15).
+local_stand_in_rules <- function(env = parent.frame(), unit = character()) {
   registry <- rbind(rule_registry(), data.table::data.table(
     rule_id = c("test_cast", "test_spell"), stage = "conformance", layer = c(1L, 2L),
     check_type = "test", default_severity = "error", default_class = "harmonization",
-    inputs = "attributes", strategy = "none", message_id = "preflight_title", rule_version = 1L
+    inputs = "attributes", strategy = "none", message_id = "preflight_title", rule_version = 1L,
+    unit = c("test_cast", "test_spell") %in% unit
   ))
   testthat::local_mocked_bindings(rule_registry = function() registry, .env = env)
   invisible(registry)
@@ -170,8 +172,8 @@ test_that("a unit rule's not_run row is one row of \"*\" counting the table or c
   expect_no_error(new_results(rows, c("water_body", "gear"), rule_registry()))
 })
 
-test_that("a rule with unit outcomes records its not_run outcomes as units, others by group", {
-  local_stand_in_rules()
+test_that("a unit rule records its not_run outcomes as units, others by group (D17.15)", {
+  local_stand_in_rules(unit = "test_cast")
   run <- assembly(group_cols = "gear")
   record_layer(list(test_cast = list(
     unit_outcome("test_cast", "catches", "weight", failed = FALSE, n_records = 5L),
@@ -190,6 +192,16 @@ test_that("a rule with unit outcomes records its not_run outcomes as units, othe
   grouped <- done$results[done$results$rule_id == "test_spell" & done$results$status == "not_run"]
   expect_equal(grouped$n_not_evaluated, as.vector(table(run$input$groups$hauls$row_group)))
   expect_no_error(new_results(done$results, "gear", rule_registry()))
+  # A unit rule none of whose outcomes ran still writes one "*" row per column (D16.30 gone).
+  only <- assembly(group_cols = "gear")
+  record_layer(list(test_cast = list(
+    not_run_outcome("test_cast", "hauls", "gear", "text_input"),
+    not_run_outcome("test_cast", "catches", "weight", "text_input")
+  )), 1L, only$input, only$context, only$state, run_id)
+  rows <- recorded(only$state)$results
+  expect_equal(rows$gear, c("*", "*"))
+  expect_equal(rows$n_not_evaluated, c(1L, 1L))
+  expect_equal(rows$not_run_reason, c("text_input", "text_input"))
 })
 
 test_that("a family's outcomes are checked when made and when recorded", {
@@ -258,7 +270,7 @@ test_that("the self-test lists a registered rule its family didn't report (9.7, 
   registry <- rbind(rule_registry(), data.table::data.table(
     rule_id = "test_forgotten", stage = "conformance", layer = 0L, check_type = "test",
     default_severity = "error", default_class = "harmonization", inputs = "attributes",
-    strategy = "none", message_id = "preflight_title", rule_version = 1L
+    strategy = "none", message_id = "preflight_title", rule_version = 1L, unit = FALSE
   ))
   testthat::local_mocked_bindings(rule_registry = function() registry)
   results <- gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 0)
@@ -479,4 +491,14 @@ test_that("a rule with nothing in scope or off everywhere: no rows, not expected
   ))), 2L, run$input, run$context, run$state, run_id)
   expect_equal(run$state$not_expected, c("test_cast", "test_spell"))
   expect_length(run$state$results, 0L)
+})
+
+test_that("the performance smoke test: a 0.1x MAGPlot run finishes in time, clean (18.4)", {
+  # Skipped on CRAN (18.5, D7.14). The run took 3.3 to 4.4 s at M4b's planning (D17.18).
+  testthat::skip_on_cran()
+  tables <- fx_magp_scaled(0.1)
+  elapsed <- system.time(results <- fx_caught(tables))[["elapsed"]]
+  expect_lt(elapsed, 30)
+  expect_equal(sum(results$issues$status == "open"), 0L)
+  expect_equal(nrow(results$metadata$self_test), 0L)
 })

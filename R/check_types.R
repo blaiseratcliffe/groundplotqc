@@ -10,7 +10,7 @@
 # date longer than its format can write are read by nothing that stops or warns on them:
 # each is lost or unparseable as given (D16.33, D16.34, D16.36). A run refuses a table
 # holding text marked as bytes before Layer 1 (D16.38), so for such text this is a second
-# line.
+# line. A table read from CSV is all text, so the storage-class rules don't run on it (D9.23).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -60,11 +60,13 @@ missing_like <- function(text, row, context) {
 #' Layer 1's outcomes, by rule
 #'
 #' `class_mismatch` per attribute: integer and double storage stand in for each other,
-#' which `integer_stored_as_double` reports instead. `coercion_loss` per attribute: the
+#' which `integer_stored_as_double` reports instead. On a table read from CSV, every column
+#' text, neither runs: not_run with reason text_input (D9.23). `coercion_loss` per attribute: the
 #' values coerce_column() loses, Layer 2's left out. `date_unparseable` per date attribute:
 #' a value that isn't a sentinel and doesn't read back as written in the type's date format.
 #' `integer_stored_as_double` per numeric attribute. `value_not_finite` per numeric
-#' attribute: NaN, Inf or -Inf, as stored or as text. In a column whitespace_padding checks
+#' attribute: NaN, Inf or -Inf, as stored or as text, the rows `coercion_loss`'s coercion
+#' found, so a column is read once (D17.22). In a column whitespace_padding checks
 #' (a key, an ID or a coded column, stored as text or a factor), `coercion_loss` and
 #' `date_unparseable` leave it a padded value whose trimmed form they would pass; one whose
 #' trimmed form still fails is theirs (D16.42, m25).
@@ -75,15 +77,23 @@ check_types <- function(input, context) {
   dates <- columns[columns$family == "date"]
   sentinels <- context$spec$sentinels
   numbers <- c("integer", "double")
+  text_tables <- input$given$table_name[input$given$text_input]
   # Whether whitespace_padding checks the column: a key, an ID or a coded column, stored as
   # text or a factor (D16.42, m25).
   padding_checked <- function(x, row) {
     (!is.na(row$key_type) || isTRUE(row$id_marked) || isTRUE(row$coded)) &&
       (is.character(x) || is.factor(x))
   }
+  # The rows of each numeric column whose number isn't finite, as coercion_loss's coercion
+  # reads them, kept for value_not_finite so that a column of text is parsed once a run: row
+  # numbers only, the coerced column released (16.2, D17.22).
+  not_finite <- new.env(parent = emptyenv())
   list(
     class_mismatch = rule_outcomes(
       "class_mismatch", columns, input, function(table, attribute, x, row) {
+        if (table %chin% text_tables) {
+          return(not_run_outcome("class_mismatch", table, attribute, "text_input"))
+        }
         stored <- storage_class(x)
         fits <- stored == row$r_class || (row$r_class %chin% numbers && stored %chin% numbers)
         unit_outcome(
@@ -100,7 +110,10 @@ check_types <- function(input, context) {
             "coercion_loss", table, attribute, integer(), character(), row$r_class
           ))
         }
-        lost <- which(coerce_column(x, row$r_class, row$date_format)$lost)
+        coerced <- coerce_column(x, row$r_class, row$date_format)
+        assign(paste(table, attribute, sep = "\r"), coerced$not_finite, envir = not_finite)
+        lost <- which(coerced$lost)
+        rm(coerced)
         text <- value_text(x[lost])
         reported <- !missing_like(text, row, context)
         if (padding_checked(x, row) && any(reported)) {
@@ -140,12 +153,8 @@ check_types <- function(input, context) {
         # that isn't UTF-8); text that still isn't is no date and is not read: strptime()
         # stops on it in a UTF-8 locale (D16.33, D16.36). Nor is a value over the bound.
         unreadable <- function(values) {
-          utf8 <- values
-          valid <- validUTF8(values)
-          convert <- which(!valid)
-          utf8[convert] <- enc2utf8(values[convert])
-          valid[convert] <- validUTF8(utf8[convert])
-          valid <- valid & nchar(utf8, type = "bytes") <= longest
+          utf8 <- utf8_converted(values)
+          valid <- validUTF8(utf8) & nchar(utf8, type = "bytes") <= longest
           parsed <- strptime(utf8[valid], row$date_format, tz = "UTC")
           unread <- !valid
           unread[valid] <- is.na(parsed) | format(parsed, row$date_format) != utf8[valid]
@@ -178,6 +187,9 @@ check_types <- function(input, context) {
     ),
     integer_stored_as_double = rule_outcomes(
       "integer_stored_as_double", numeric, input, function(table, attribute, x, row) {
+        if (table %chin% text_tables) {
+          return(not_run_outcome("integer_stored_as_double", table, attribute, "text_input"))
+        }
         stored <- storage_class(x)
         swapped <- (row$r_class == "integer" && stored == "double") ||
           (row$r_class == "double" && stored == "integer")
@@ -189,10 +201,15 @@ check_types <- function(input, context) {
     ),
     value_not_finite = rule_outcomes(
       "value_not_finite", numeric, input, function(table, attribute, x, row) {
-        # A column not stored as plain numbers is read as coerce_column() reads it: text as
-        # it is, any other column once for each distinct value (16.2).
-        number <- if (is.numeric(x) && !is.object(x)) x else coerce_column(x, "double")$value
-        bad <- which(is.nan(number) | is.infinite(number))
+        # The rows coercion_loss's coercion found (D17.22); for a column it didn't coerce, the
+        # column is read as coerce_column() reads it: text as it is, any other column once for
+        # each distinct value (16.2).
+        key <- paste(table, attribute, sep = "\r")
+        bad <- if (exists(key, envir = not_finite, inherits = FALSE)) {
+          get(key, envir = not_finite, inherits = FALSE)
+        } else {
+          coerce_column(x, "double")$not_finite
+        }
         record_outcome("value_not_finite", table, attribute, bad, value_text(x[bad]))
       }
     )

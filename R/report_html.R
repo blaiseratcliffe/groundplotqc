@@ -13,7 +13,7 @@ html_escape <- function(x) {
   x[is.na(x)] <- ""
   bad <- which(!validUTF8(x))
   if (length(bad) > 0L) {
-    x[bad] <- iconv(x[bad], "UTF-8", "UTF-8", sub = "byte")
+    x[bad] <- mark_invalid_utf8(x[bad])
   }
   x <- gsub("&", "&amp;", x, fixed = TRUE)
   x <- gsub("<", "&lt;", x, fixed = TRUE)

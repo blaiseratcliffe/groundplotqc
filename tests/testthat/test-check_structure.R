@@ -35,7 +35,7 @@ test_that("an empty table is still checked as a unit, counting no records", {
 })
 
 test_that("with no table of the spec given, each is missing and each given one unexpected", {
-  # A full MAGPlot run, about 2 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 1 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   # MAGPlot's group columns are set, and no table of the spec reaches any report unit.
   upper <- fx_magp_clean()
@@ -76,7 +76,7 @@ test_that("a name with a Unicode space is a near name, and its column is checked
 # and their open issues read as rule, table, column and value.
 
 test_that("MAGPlot's tables or columns reordered, or a data.frame, trip nothing (R52)", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   tables <- fx_mark_fixture(rev(lapply(fx_magp_clean(), data.table::copy)))
   data.table::setcolorder(tables$magp_trees, rev(names(tables$magp_trees)))
@@ -86,7 +86,7 @@ test_that("MAGPlot's tables or columns reordered, or a data.frame, trip nothing 
 })
 
 test_that("two near columns: the first is the attribute's; keys renamed by case only mismatch", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   tables <- fx_mark_fixture(lapply(fx_magp_clean(), data.table::copy))
   # First in the table's order, though "DBH" comes first in C order.
@@ -105,7 +105,7 @@ test_that("two near columns: the first is the attribute's; keys renamed by case 
 })
 
 test_that("a parent table missing trips table_missing only (R52)", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   # magp_plots, the problem unit's table, which the tables below it reach groups through.
   base <- fx_magp_clean()
@@ -116,7 +116,7 @@ test_that("a parent table missing trips table_missing only (R52)", {
 })
 
 test_that("a key or a group column missing trips column_missing only (R52)", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   tables <- fx_mark_fixture(lapply(fx_magp_clean(), data.table::copy))
   data.table::set(tables$magp_plots, j = "magp_plot_id", value = NULL)

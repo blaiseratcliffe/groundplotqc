@@ -11,7 +11,7 @@ local_results_registry <- function(env = parent.frame()) {
     layer = c(2L, 7L), check_type = "test", default_severity = c("error", "flag"),
     default_class = c("harmonization", "depends"),
     inputs = c("attributes; sentinels; settings:lang; settings:severity", "codes"),
-    strategy = "none", message_id = "preflight_title", rule_version = 1L
+    strategy = "none", message_id = "preflight_title", rule_version = 1L, unit = FALSE
   ))
   testthat::local_mocked_bindings(rule_registry = function() registry, .env = env)
   invisible(registry)

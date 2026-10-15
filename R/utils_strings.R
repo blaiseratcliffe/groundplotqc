@@ -1,4 +1,5 @@
-# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.28, D12.36, D12.45, D14.20, D14.39).
+# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.28, D12.36, D12.45, D14.20, D14.39), and
+# the encoding helpers the checks share (D16.47, m63).
 
 #' Which cells are blank: empty after trimming
 #'
@@ -25,21 +26,12 @@ is_blank <- function(x) {
 #' @noRd
 space_padding <- function(text) {
   bytes <- Encoding(text) == "bytes"
-  utf8 <- text
-  valid <- !bytes & validUTF8(text)
-  convert <- which(!valid & !bytes)
-  utf8[convert] <- enc2utf8(text[convert])
-  valid[convert] <- validUTF8(utf8[convert])
-  wide <- valid & grepl("[^\001-\177]", utf8, useBytes = TRUE)
   # A Unicode pattern reads unmarked text in the session's encoding, byte by byte outside a
   # UTF-8 locale, where the last byte of a UTF-8 a-grave reads as a no-break space: valid
   # UTF-8 left unmarked is marked so on this copy, those values only (16.2).
-  unmarked <- which(wide & Encoding(utf8) == "unknown")
-  if (length(unmarked) > 0L) {
-    marked <- utf8[unmarked]
-    Encoding(marked) <- "UTF-8"
-    utf8[unmarked] <- marked
-  }
+  utf8 <- utf8_marked(utf8_converted(text))
+  valid <- !bytes & validUTF8(utf8)
+  wide <- valid & grepl("[^\001-\177]", utf8, useBytes = TRUE)
   blank <- is_blank(text)
   blank[wide] <- grepl("(*UCP)^\\s*$", utf8[wide], perl = TRUE)
   padded <- grepl("^[ \t\r\n]|[ \t\r\n]$", text, useBytes = TRUE)
@@ -137,6 +129,56 @@ column_numbers <- function(x) {
 #' @noRd
 mark_invalid_utf8 <- function(x) {
   iconv(x, "UTF-8", "UTF-8", sub = "byte")
+}
+
+#' Text with each value that is valid UTF-8, isn't plain ASCII and is left unmarked, as
+#' fread() leaves it, marked UTF-8; nothing converted, every other value as given (D16.36,
+#' D16.47, m63)
+#'
+#' A Unicode pattern, paste() and the results' writer read unmarked text in the session's
+#' encoding, so valid UTF-8 is marked so before they read it, in any locale. Only the values
+#' that aren't plain ASCII are read (16.2).
+#' @noRd
+utf8_marked <- function(x) {
+  wide <- which(grepl("[^\001-\177]", x, useBytes = TRUE))
+  unmarked <- wide[Encoding(x[wide]) == "unknown" & validUTF8(x[wide])]
+  if (length(unmarked) > 0L) {
+    held <- x[unmarked]
+    Encoding(held) <- "UTF-8"
+    x[unmarked] <- held
+  }
+  x
+}
+
+#' Text with each value that isn't valid UTF-8, and isn't marked as bytes, converted with
+#' enc2utf8(): text marked latin1, or native in a locale that isn't UTF-8, read as UTF-8
+#' (D16.33, D16.36, m63)
+#'
+#' Only those values are converted (16.2), and only those that aren't valid UTF-8 have their
+#' encoding read; every other value is as given, so one that still isn't valid UTF-8 is one
+#' no reader can read.
+#' @noRd
+utf8_converted <- function(x) {
+  invalid <- which(!validUTF8(x))
+  convert <- invalid[Encoding(x[invalid]) != "bytes"]
+  if (length(convert) > 0L) {
+    x[convert] <- enc2utf8(x[convert])
+  }
+  x
+}
+
+#' Text with the bytes mark dropped from each value marked so, its bytes kept, as text that
+#' isn't valid UTF-8 is held: data.table's grouping and the results' writer stop on the mark
+#' (D16.36, m63)
+#' @noRd
+bytes_unmarked <- function(x) {
+  marked <- which(Encoding(x) == "bytes")
+  if (length(marked) > 0L) {
+    held <- x[marked]
+    Encoding(held) <- "unknown"
+    x[marked] <- held
+  }
+  x
 }
 
 # A language code: two or three lower-case letters, for the lang setting and the lang
