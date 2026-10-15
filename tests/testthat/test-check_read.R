@@ -388,6 +388,32 @@ test_that("a path with a space, a header-only file, a BOM and quoted cells are r
   expect_equal(read$station_name, c("two\nlines", "say \"hi\""))
 })
 
+test_that("a table of one row reads \"1 row\" in its inputs row, in memory or from a CSV (m5)", {
+  dir <- withr::local_tempdir()
+  fish <- fx_fish_clean()
+  spec <- fx_fish_spec()
+  fish$stations <- fish$stations[1L]
+  # In memory: the one-row table beside tables of several rows.
+  results <- gpq_check_conformance(fish, spec, layers = 0, run_id = run_id)
+  expect_equal(results$metadata$inputs$detail, c("1 row", "4 rows", "8 rows"))
+  # From CSV files: with a separator, with none, and with a converted value.
+  paths <- fish_csv(dir, fish)
+  read <- read_tables(as.list(paths), spec)
+  expect_equal(
+    read$inputs$detail,
+    c("1 row; separator comma", "4 rows; separator comma", "8 rows; separator comma")
+  )
+  one_column <- raw_csv(dir, "one_column.csv", charToRaw("station_id\nS1\n"))
+  expect_equal(read_tables(list(stations = one_column), spec)$inputs$detail, "1 row")
+  converted <- raw_csv(dir, "converted.csv", c(
+    charToRaw("station_id,station_name\nS1,B"), as.raw(0xe9), charToRaw("\n")
+  ))
+  expect_equal(
+    read_tables(list(stations = converted), spec)$inputs$detail,
+    "1 row; separator comma; 1 value converted from Windows-1252"
+  )
+})
+
 # The fish survey's clean tables in an in-memory SQLite database: stations under its own name,
 # hauls as fish_hauls, catches in the attached schema survey, and a table the spec lacks.
 # The connection, closed when `env` ends.
@@ -434,6 +460,82 @@ test_that("a connection's spec tables are read under table_map's names, a schema
   expect_equal(DBI::dbListTables(connection), before)
 })
 
+test_that("a connection's table of one row reads \"1 row\" in its inputs row (m5)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- fish_database()
+  DBI::dbWriteTable(connection, "stations", fx_fish_clean()$stations[1L], overwrite = TRUE)
+  results <- gpq_check_conformance(
+    connection, fx_fish_spec(), c(hauls = "fish_hauls", catches = "survey.catches"),
+    layers = 0, run_id = run_id
+  )
+  expect_equal(results$metadata$inputs$detail, c(
+    "1 row; table stations; driver SQLiteConnection",
+    "4 rows; table fish_hauls; driver SQLiteConnection",
+    "8 rows; table survey.catches; driver SQLiteConnection"
+  ))
+})
+
+test_that("a table_map schema the database lacks leaves its table missing, no stop (m12)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- fish_database()
+  results <- gpq_check_conformance(
+    connection, fx_fish_spec(), c(hauls = "nope.fish_hauls", catches = "survey.catches"),
+    layers = 0, run_id = run_id
+  )
+  missing <- results$results[results$results$rule_id == "table_missing"]
+  expect_equal(
+    missing$status[match(c("stations", "hauls", "catches"), missing$table_name)],
+    c("pass", "fail", "pass")
+  )
+  expect_equal(results$metadata$inputs$input, paste0("tables:", c("stations", "catches")))
+})
+
+test_that("a wrong stored type is caught through a connection as it is in a data.frame (m13)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  spec <- fx_fish_spec()
+  fish <- fx_fish_clean()
+  # fish_count, a whole number, stored as REAL with a fraction, and weight, a real number, as
+  # TEXT.
+  catches <- data.table::copy(fish$catches)
+  catches$fish_count <- catches$fish_count + 0.5
+  catches$weight <- as.character(catches$weight)
+  fish$catches <- catches
+  connection <- fish_database()
+  DBI::dbWriteTable(
+    connection, DBI::Id(schema = "survey", table = "catches"), catches,
+    overwrite = TRUE
+  )
+  stored <- DBI::dbGetQuery(
+    connection, "SELECT typeof(fish_count) AS count, typeof(weight) AS weight FROM survey.catches"
+  )
+  expect_equal(unique(stored$count), "real")
+  expect_equal(unique(stored$weight), "text")
+  from_db <- gpq_check_conformance(
+    connection, spec, c(hauls = "fish_hauls", catches = "survey.catches"),
+    group_cols = "water_body", layers = 0:1, run_id = run_id
+  )
+  framed <- gpq_check_conformance(
+    fish, spec,
+    group_cols = "water_body", layers = 0:1, run_id = run_id
+  )
+  expect_equal(from_db$results, framed$results)
+  expect_equal(from_db$issues, framed$issues)
+  open <- from_db$issues[from_db$issues$status == "open"]
+  mismatch <- open[open$rule_id == "class_mismatch"]
+  expect_equal(
+    c(mismatch$table_name, mismatch$column_name, mismatch$value, mismatch$expected),
+    c("catches", "weight", "character", "double")
+  )
+  swapped <- open[open$rule_id == "integer_stored_as_double"]
+  expect_equal(
+    c(swapped$table_name, swapped$column_name, swapped$value, swapped$expected),
+    c("catches", "fish_count", "double", "integer")
+  )
+})
+
 test_that("a spec table the database lacks is missing; table_map's faults are refused (D17.6)", {
   testthat::skip_if_not_installed("DBI")
   testthat::skip_if_not_installed("RSQLite")
@@ -465,7 +567,9 @@ test_that("a spec table the database lacks is missing; table_map's faults are re
   faults <- list(
     list(hauls = "fish_hauls"), "fish_hauls", c(hauls = NA_character_), c(hauls = ""),
     c(hauls = "fish_hauls", "fish_nets"), c(hauls = "fish_hauls", hauls = "fish_nets"),
-    na_name, character()
+    na_name, character(),
+    # A value that starts or ends with a dot has an empty part (m11).
+    c(hauls = ".fish_hauls"), c(hauls = "survey."), c(hauls = ".")
   )
   for (bad in faults) {
     expect_error(

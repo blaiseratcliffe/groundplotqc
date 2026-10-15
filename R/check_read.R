@@ -190,7 +190,7 @@ read_csv_table <- function(path, table) {
   undo_doubled_quotes(labels)
   setnames(data, labels$name)
   detail <- paste0(
-    nrow(data), " rows",
+    nrow(data), if (nrow(data) == 1L) " row" else " rows",
     if (!is.na(separator)) paste0("; separator ", separator),
     if (converted > 0L) {
       paste0(
@@ -241,7 +241,8 @@ read_db_tables <- function(connection, spec, table_map) {
     is.character(table_map) && is.null(dim(table_map)) && !is.object(table_map) &&
       length(table_map) > 0L && !is.null(names(table_map)) && !anyNA(names(table_map)) &&
       !any(is_blank(names(table_map))) && !anyDuplicated(names(table_map)) &&
-      !anyNA(table_map) && !any(is_blank(table_map))
+      !anyNA(table_map) && !any(is_blank(table_map)) &&
+      !any(startsWith(table_map, ".") | endsWith(table_map, "."))
   )
   if (!mapped) {
     stop(
@@ -275,7 +276,8 @@ read_db_tables <- function(connection, spec, table_map) {
     table_name = spec_tables[present], file = rep("DBI connection, not hashed", length(rows)),
     sha256 = rep(NA_character_, length(rows)),
     detail = sprintf(
-      "%d rows; table %s; driver %s", rows, db_names[present], class(connection)[[1L]]
+      "%d %s; table %s; driver %s", rows, fifelse(rows == 1L, "row", "rows"),
+      db_names[present], class(connection)[[1L]]
     )
   )
   list(tables = tables, inputs = inputs, text_tables = character())

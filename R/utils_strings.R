@@ -154,11 +154,13 @@ utf8_marked <- function(x) {
 #' enc2utf8(): text marked latin1, or native in a locale that isn't UTF-8, read as UTF-8
 #' (D16.33, D16.36, m63)
 #'
-#' Only those values are converted (16.2); every other value is as given, so one that still
-#' isn't valid UTF-8 is one no reader can read.
+#' Only those values are converted (16.2), and only those that aren't valid UTF-8 have their
+#' encoding read; every other value is as given, so one that still isn't valid UTF-8 is one
+#' no reader can read.
 #' @noRd
 utf8_converted <- function(x) {
-  convert <- which(Encoding(x) != "bytes" & !validUTF8(x))
+  invalid <- which(!validUTF8(x))
+  convert <- invalid[Encoding(x[invalid]) != "bytes"]
   if (length(convert) > 0L) {
     x[convert] <- enc2utf8(x[convert])
   }

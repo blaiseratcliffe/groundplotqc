@@ -22,11 +22,11 @@ named list whose elements are data.frames or paths of CSV files, mixed as you li
 a named character vector of paths. Every column of a CSV file is read as text, so
 \code{class_mismatch} and \code{integer_stored_as_double} don't run on its tables. In a CSV file
 an empty cell is a missing value and everything else is read as written, so write
-files with data.table::fwrite() or write.csv(na = ""). A cell that isn't valid UTF-8 is
-read as Windows-1252, unless it holds a byte Windows-1252 doesn't define. A table
-holding text marked as bytes is refused. Or a DBI connection: the specification's
-tables are read from it under the names \code{table_map} gives, and its other tables are
-left alone.}
+files with data.table::fwrite() or write.csv(na = "", row.names = FALSE). A cell that
+isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
+define. A table holding text marked as bytes is refused. Or a DBI connection: the
+specification's tables are read from it under the names \code{table_map} gives, and its
+other tables are left alone.}
 
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}} or \code{\link[=magp_spec]{magp_spec()}}.}
 
@@ -34,7 +34,8 @@ left alone.}
 of the database's names for tables of the specification: names the specification's
 table names, values the database's, such as \code{c(trees = "survey.tree_list")} for the
 table tree_list in the schema survey. A table it doesn't name is read under its own
-name.}
+name. A table of the specification the database doesn't have is reported as missing
+(\code{table_missing}).}
 
 \item{group_cols}{\code{NULL}, or the grouping columns, report unit first: results and issues
 carry them under these names.}
@@ -82,9 +83,9 @@ summary and one issue per failing record, or one per column where a rule fails
 on every record of a column in a group.
 }
 \details{
-Pre-flight (\code{\link[=gpq_preflight]{gpq_preflight()}}) runs first, on \code{spec}, \code{rules} and \code{settings}; it stops
-the run where it would stop, and its warning reaches the caller. The checks never change
-\code{tables}.
+Pre-flight (\code{\link[=gpq_preflight]{gpq_preflight()}}) runs before any check, on \code{spec}, \code{rules} and \code{settings}; it
+stops the run where it would stop, and its warning reaches the caller. The checks never
+change \code{tables}.
 
 A CSV file is read with \code{\link[data.table:fread]{data.table::fread()}}, which finds its separator. A file it
 can't read cleanly, such as one with a ragged line or a title line shorter than its

@@ -40,7 +40,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   }
   folder <- if (length(args) >= 2L) args[[2L]] else file.path("bench", "data", format(scale))
   paths <- write_tables(scale, folder)
-  cat(length(paths), "tables written to", folder, "\n")
+  cat(length(paths), " tables written to ", folder, "\n", sep = "")
 }
 
 if (sys.nframe() == 0L) {

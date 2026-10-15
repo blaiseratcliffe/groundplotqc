@@ -369,6 +369,25 @@ test_that("records find their group values through the shortest path, \"*\" wher
   expect_null(plain$values)
 })
 
+test_that("group_values() gives the values at the groups asked, NULL without group columns", {
+  fish <- fx_fish_clean()
+  spec <- fx_fish_spec()
+  hauls <- conformance_input(fish, spec, group_cols = c("water_body", "gear"))$groups$hauls
+  # Each haul's group values, read by position: its own gear and its station's water body.
+  per_haul <- group_values(hauls, hauls$row_group)
+  expect_false(data.table::is.data.table(per_haul))
+  expect_named(per_haul, c("water_body", "gear"))
+  expect_equal(per_haul$gear, fish$hauls$gear)
+  at <- match(fish$hauls$station_id, fish$stations$station_id)
+  expect_equal(per_haul$water_body, fish$stations$water_body[at])
+  # Some of the groups, in the order asked.
+  asked <- c(2L, 1L)
+  some <- group_values(hauls, asked)
+  expect_equal(some$gear, hauls$values$gear[asked])
+  expect_equal(some$water_body, hauls$values$water_body[asked])
+  expect_null(group_values(conformance_input(fish, spec)$groups$hauls, 1L))
+})
+
 test_that("values that read the same are one group: a blank, NA and a broken path all \"*\"", {
   fish <- fx_fish_clean()
   stations <- data.table::copy(fish$stations)
@@ -780,6 +799,33 @@ test_that("coerce_column() refuses what D16.42's pattern refuses, by byte tests 
   # on Windows.
   thin <- paste0("1", intToUtf8(0x2009))
   expect_identical(coerce_column(c("0x10", thin, "1.5"), "double")$value, c(NA, NA, 1.5))
+})
+
+test_that("coerce_column()'s byte tests also run where it converts text that isn't valid UTF-8", {
+  # A vector holding such text takes as_number()'s branch that converts, and as.numeric() stops
+  # on the text in a UTF-8 locale. D16.42's pattern, as M4a wrote it, gives the other values.
+  testthat::skip_if_not(l10n_info()[["UTF-8"]], "needs a UTF-8 locale, where R stops on it")
+  decimal <- paste0(
+    "^[ \t\n\v\f\r]*[+-]?(([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][+-]?[0-9]+)?|",
+    "[Ii][Nn][Ff]([Ii][Nn][Ii][Tt][Yy])?|[Nn][Aa][Nn])[ \t\n\v\f\r]*$"
+  )
+  forms <- c(
+    "1", "-.5e-3", "1e05", " 7 ", "1e", "1.5.", "Inf", "-inf", "infinity", "nan", "NA", "",
+    "0x10", "0X1p3", "-0x1A", "1d5", "1,5",
+    paste0("1", intToUtf8(0xa0)), paste0("1", intToUtf8(0x2009)), intToUtf8(0xff11),
+    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1")
+  )
+  expected <- suppressWarnings(as.numeric(forms))
+  expected[!grepl(decimal, forms, useBytes = TRUE)] <- NA_real_
+  # Beside them, text that isn't valid UTF-8 and a latin1-marked number with a no-break space.
+  invalid <- rawToChar(as.raw(c(0x32, 0x30, 0x97)))
+  latin1 <- iconv(paste0("1", intToUtf8(0xa0)), "UTF-8", "latin1")
+  text <- c(forms, invalid, latin1)
+  value <- c(expected, NA_real_, NA_real_)
+  out <- coerce_column(text, "double")
+  expect_identical(out$value, value)
+  expect_identical(out$lost, !is.na(text) & is.na(value) & !is.nan(value))
+  expect_identical(out$not_finite, which(is.nan(value) | is.infinite(value)))
 })
 
 test_that("coerce_column() gives the rows whose number isn't finite (D17.22)", {

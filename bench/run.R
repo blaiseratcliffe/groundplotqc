@@ -12,12 +12,20 @@
 # For each variant, first the run on its CSV files, reading included, as MAGPlot runs
 # (D17.21): bench/generate.R's write_tables() writes them to bench/data/<scale>/ (the clean
 # base), bench/data/<scale>_many_groups/ and bench/data/<scale>_defects/ first when the folder
-# holds none (delete a folder to have it written again). Then, on the tables built in memory:
-# building them (timed, not counted against 16.1), the mark scan validate_tables() makes (m33),
-# the run on the tables and gpq_write_results() on its result. Each run is Layers 0 to 2 with
-# MAGPlot's spec, rule set, group columns and problem unit. A stage's peak is gc()'s "max
-# used", in Mb, from a reset at its start. One CSV per run goes to
-# bench/results/<UTC time>_<scale>x.csv, each variant's CSV run first.
+# holds none (delete a folder to have it written again). Then, on the tables built in memory,
+# one stage each:
+#   run_csv    gpq_check_conformance() on the CSV paths: the read, the mark scan and the checks;
+#   build      fx_magp_scaled(), timed but not counted against 16.1;
+#   mark_scan  validate_tables(), the scan of the tables for text marked as bytes (m33);
+#   run        gpq_check_conformance() on the tables, which makes the mark scan itself, so
+#              `run` includes the time of `mark_scan`, not the build;
+#   write      gpq_write_results() on the run's result.
+# Each run is Layers 0 to 2. Its call, check() below, repeats fx_caught()'s in
+# tests/testthat/helper-fixtures.R (MAGPlot's spec and rule set, the group columns and the
+# problem unit, the pre-flight warning muffled), which takes fixtures only, not paths. A
+# stage's peak is gc()'s "max used", in Mb, from a reset at its start. One CSV per run goes
+# to bench/results/<UTC time>_<scale>x.csv, each variant's CSV run first, its seconds rounded
+# to three decimals.
 
 source(file.path("bench", "generate.R"))
 
@@ -58,7 +66,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
     stage_row <- function(stage, timed, n_rows, results = NULL) {
       data.table::data.table(
         git_commit = commit[1L], scale = scale, variant = variant, stage = stage,
-        seconds = timed$seconds, peak_mb = timed$peak_mb, n_rows = n_rows,
+        seconds = round(timed$seconds, 3), peak_mb = timed$peak_mb, n_rows = n_rows,
         n_results = if (is.null(results)) NA_integer_ else nrow(results$results),
         n_issues = if (is.null(results)) NA_integer_ else nrow(results$issues)
       )
@@ -126,7 +134,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
   )
   data.table::fwrite(timings, file)
   print(timings)
-  cat("Written to", file, "\n")
+  cat("Written to ", file, "\n", sep = "")
 }
 
 if (sys.nframe() == 0L) {
