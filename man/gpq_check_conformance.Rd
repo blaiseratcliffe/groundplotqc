@@ -78,11 +78,12 @@ the run where it would stop, and its warning reaches the caller. The checks neve
 \code{tables}.
 
 A CSV file is read with \code{\link[data.table:fread]{data.table::fread()}}, which finds its separator. A file it
-can't read cleanly, such as one with a ragged line or a title line above its header,
-stops the run before any check, and so does a file that doesn't end with a line break,
-which may be cut off. The run's inputs
-metadata names each file with its SHA-256, its rows, its separator and how many values
-were read as Windows-1252.
+can't read cleanly, such as one with a ragged line or a title line shorter than its
+header, stops the run before any check, and so does a file that doesn't end with a line
+break, which may be cut off. A title line as long as the header, or above a file of one
+column, is read as the header, so the checks report the file's columns as missing. The
+run's inputs metadata names each file with its SHA-256, its rows, its separator and how
+many values were read as Windows-1252.
 
 Layers and the rules they can raise:
 \itemize{

@@ -74,7 +74,15 @@ test_that("tables mixes data.frames and paths; a named character vector is all p
   # A data.frame given is kept as it is, never copied (16.2).
   expect_identical(data.table::address(read$tables$stations), data.table::address(fish$stations))
   expect_equal(read$text_tables, c("hauls", "catches"))
+  stations_before <- data.table::copy(fish$stations)
   results <- gpq_check_conformance(mixed, fx_fish_spec(), layers = 0:1, run_id = run_id)
+  # The caller's list and its tables are as they were, and no index is left on the table given.
+  expect_identical(names(mixed), c("stations", "hauls", "catches"))
+  expect_identical(mixed$hauls, paths[["hauls"]])
+  expect_identical(mixed$catches, paths[["catches"]])
+  expect_identical(mixed$stations, fish$stations)
+  expect_identical(fish$stations, stations_before)
+  expect_null(attr(fish$stations, "index"))
   inputs <- results$metadata$inputs
   expect_equal(inputs$file, c("in memory", "hauls.csv", "catches.csv"))
   expect_equal(is.na(inputs$sha256), c(TRUE, FALSE, FALSE))
@@ -132,6 +140,20 @@ test_that("a Windows-1252 CSV is converted per cell, the undefined bytes kept (D
   expect_equal(back$issues, results$issues)
 })
 
+test_that("valid UTF-8 text is read back as written, with nothing converted (16.2, D17.3)", {
+  dir <- withr::local_tempdir()
+  hostile <- fx_hostile_text()
+  stations <- data.table::data.table(
+    station_id = paste0("S", seq_along(hostile)), station_name = hostile,
+    water_body = "LK", depth = "1.5", first_visit = "2020-06-01"
+  )
+  path <- file.path(dir, "stations.csv")
+  data.table::fwrite(stations, path)
+  read <- read_tables(list(stations = path), fx_fish_spec())
+  expect_equal(read$tables$stations$station_name, hostile)
+  expect_equal(read$inputs$detail, paste(length(hostile), "rows; separator comma"))
+})
+
 test_that("from_windows_1252() converts only cells that aren't valid UTF-8 (D17.3)", {
   bytes <- function(...) rawToChar(as.raw(c(...)))
   x <- c("plain", "café", NA, bytes(0x63, 0x61, 0x66, 0xe9), bytes(0x41, 0x81), bytes(0x80))
@@ -164,6 +186,17 @@ test_that("an empty cell is NA, a quoted empty cell blank and NA text (D17.2)", 
   expect_equal(open$rule_id, c("blank_string", "na_text_in_id", "raw_na"))
   expect_equal(open$row_number, c(2L, 3L, 1L))
   expect_equal(open$value, c("", "NA", NA))
+})
+
+test_that("a header name holding a quote is read as written, as the data.frame has it (D17.2)", {
+  dir <- withr::local_tempdir()
+  frame <- data.table::data.table(station_id = "S1", note = "x")
+  data.table::setnames(frame, "note", "say \"hi\"")
+  path <- file.path(dir, "quoted_name.csv")
+  data.table::fwrite(frame, path)
+  read <- read_tables(list(stations = path), fx_fish_spec())$tables$stations
+  expect_equal(names(read), names(frame))
+  expect_equal(names(read)[[2L]], "say \"hi\"")
 })
 
 test_that("a semicolon CSV is read with ';', its decimal commas lost in a number (D17.4)", {
@@ -206,7 +239,10 @@ test_that("a CSV fread() can't read cleanly stops the run before any check (D17.
     tables <- list(stations = path, hauls = fish$hauls, catches = fish$catches)
     expect_error(
       gpq_check_conformance(tables, fx_fish_spec(), run_id = run_id),
-      paste0("Table stations: the file ", name, ".csv can't be read cleanly"),
+      paste0(
+        "Table stations: the file ", name, ".csv can't be read cleanly, so nothing was ",
+        "checked. data.table::fread() said: "
+      ),
       fixed = TRUE, info = name
     )
   }
@@ -220,7 +256,11 @@ test_that("a CSV fread() can't read cleanly stops the run before any check (D17.
       list(stations = cut, hauls = fish$hauls, catches = fish$catches), fx_fish_spec(),
       run_id = run_id
     ),
-    "Table stations: the file cut.csv doesn't end with a line break, so it may be cut off",
+    paste0(
+      "Table stations: the file cut.csv doesn't end with a line break, so it may be cut off, ",
+      "or was written without one; nothing was checked. Save it again, for example with ",
+      "data.table::fwrite() or from Excel as CSV."
+    ),
     fixed = TRUE
   )
   crlf <- raw_csv(dir, "crlf.csv", charToRaw(paste0(
@@ -232,7 +272,10 @@ test_that("a CSV fread() can't read cleanly stops the run before any check (D17.
   path <- raw_csv(dir, "ragged2.csv", charToRaw(bad$ragged))
   expect_error(
     read_tables(list(stations = path), fx_fish_spec()),
-    "Table stations: the file ragged2.csv can't be read cleanly",
+    paste0(
+      "Table stations: the file ragged2.csv can't be read cleanly, so nothing was checked. ",
+      "data.table::fread() said: "
+    ),
     fixed = TRUE
   )
 })
@@ -256,7 +299,9 @@ test_that("a CSV whose header isn't its first line stops the run before any chec
       gpq_check_conformance(tables, fx_fish_spec(), run_id = run_id),
       paste0(
         "Table stations: the file ", name, ".csv can't be read cleanly, so nothing was ",
-        "checked: data.table::fread() would take its header from a later line than the first."
+        "checked: data.table::fread() would take its header from a later line than the first. ",
+        "Look for a title line above the header, or a line near the top with more or fewer ",
+        "fields than the header."
       ),
       fixed = TRUE, info = name
     )
@@ -277,6 +322,9 @@ test_that("a CSV whose header isn't its first line stops the run before any chec
   }
   expect_equal(nrow(read), 2L)
   expect_equal(read$station_id, c("S1", "S,2"))
+  # A file of one column has no separator to name in its inputs row.
+  one <- read_tables(list(stations = file.path(dir, "one_column.csv")), fx_fish_spec())
+  expect_equal(one$inputs$detail, "2 rows")
   # A file of one column has no separator, and fread() never moves its header: a title line
   # above it is read as the column's name, which Layer 0 reports (D17.24).
   titled <- raw_csv(dir, "titled.csv", charToRaw("Stations 2020\nstation_id\nS1\n"))
@@ -291,13 +339,18 @@ test_that("tables that aren't data.frames or paths, or files that aren't there, 
   spec <- fx_fish_spec()
   expect_error(
     gpq_check_conformance(list(stations = 1, hauls = c("a", "b")), spec),
-    "`tables` holds elements that are neither a data.frame nor the path of one CSV file: ",
+    paste0(
+      "`tables` holds elements that are neither a data.frame nor the path of one CSV file: ",
+      "stations, hauls."
+    ),
     fixed = TRUE
   )
   absent <- file.path(dir, "nowhere.csv")
   expect_error(
     gpq_check_conformance(list(stations = absent, hauls = dir), spec),
-    "No file at the path given for these tables: stations (",
+    sprintf(
+      "No file at the path given for these tables: stations (%s), hauls (%s).", absent, dir
+    ),
     fixed = TRUE
   )
   # An unnamed list of paths is refused by validate_tables(), before any file is read (its

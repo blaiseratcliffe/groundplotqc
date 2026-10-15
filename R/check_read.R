@@ -84,9 +84,13 @@ read_csv_table <- function(path, table) {
   size <- file.size(path)
   if (size > 0) {
     connection <- file(path, "rb")
-    seek(connection, size - 1)
-    last <- readBin(connection, "raw", 1L)
-    close(connection)
+    last <- tryCatch(
+      {
+        seek(connection, size - 1)
+        readBin(connection, "raw", 1L)
+      },
+      finally = close(connection)
+    )
     if (!last %in% as.raw(c(0x0a, 0x0d))) {
       stop(sprintf(
         paste0(
@@ -172,8 +176,12 @@ read_csv_table <- function(path, table) {
   if (length(header$rows) > 0L) {
     setnames(data, header$rows, header$value)
   }
-  # fread() keeps a quoted cell's doubled quotes: undone, so a cell reads as written.
+  # fread() keeps a quoted cell's and a quoted name's doubled quotes: undone, so each reads as
+  # written.
   undo_doubled_quotes(data)
+  labels <- data.table(name = names(data))
+  undo_doubled_quotes(labels)
+  setnames(data, labels$name)
   detail <- paste0(
     nrow(data), " rows",
     if (!is.na(separator)) paste0("; separator ", separator),
