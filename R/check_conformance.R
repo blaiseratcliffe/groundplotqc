@@ -129,9 +129,6 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
   if (!inherits(spec, "gpq_spec")) {
     stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
   }
-  read <- read_tables(tables, spec, table_map)
-  tables <- read$tables
-  validate_tables(tables)
   layers_ok <- is.numeric(layers) && is.null(dim(layers)) && length(layers) > 0L &&
     !anyNA(layers) && all(layers %in% 0:5)
   if (!layers_ok) {
@@ -162,6 +159,12 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
   }
   preflight <- gpq_preflight(spec, rules = rules, settings = settings)
   rules <- validate_rule_set(rules)
+  # The tables are read after the argument checks and pre-flight, which need none of them, so
+  # a mistake in an argument or a pre-flight stop never loads a file or queries a database
+  # first (D17.32).
+  read <- read_tables(tables, spec, table_map)
+  tables <- read$tables
+  validate_tables(tables)
   context <- conformance_context(spec, rules, settings, layers)
   input <- conformance_input(tables, spec, group_cols, key_col, read$text_tables)
   if (is.null(run_id)) {

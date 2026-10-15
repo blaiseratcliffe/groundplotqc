@@ -404,6 +404,67 @@ test_that("tables that aren't data.frames or paths, or files that aren't there, 
   )
 })
 
+test_that("the tables are read after the argument checks and pre-flight (D17.32)", {
+  dir <- withr::local_tempdir()
+  fish <- fx_fish_clean()
+  spec <- fx_fish_spec()
+  # A file that doesn't end with a line break stops the run when it is read (D17.14), so a run
+  # that stops on its arguments or on pre-flight never read it.
+  cut <- raw_csv(dir, "cut.csv", charToRaw("station_id,station_name\nS1,t1"))
+  tables <- list(stations = cut, hauls = fish$hauls, catches = fish$catches)
+  line_break <- "Table stations: the file cut.csv doesn't end with a line break"
+  expect_error(gpq_check_conformance(tables, spec, run_id = run_id), line_break, fixed = TRUE)
+  expect_error(
+    gpq_check_conformance(tables, spec, layers = 9),
+    "`layers` must be whole numbers from 0 to 5.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(tables, spec, group_cols = "region"),
+    "No table of the specification has the group columns region.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(tables, spec, problem_unit = list("stations")),
+    "list(table, key_col)",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(tables, spec, run_id = "today"), "`run_id` must be NULL",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(tables, spec, rules = list(1)),
+    "`rules` must be a named list of tables",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(tables, fx_planted_spec()),
+    class = "gpq_preflight_error"
+  )
+  # The tables are still refused when nothing else is wrong with the run.
+  expect_error(
+    gpq_check_conformance(list(cut), spec),
+    "`tables` must be a list of data.frames",
+    fixed = TRUE
+  )
+  # A connection is the same: a closed one is refused when it is read, not before.
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbDisconnect(connection)
+  expect_error(gpq_check_conformance(connection, spec, run_id = run_id))
+  expect_error(
+    gpq_check_conformance(connection, spec, layers = 9),
+    "`layers` must be whole numbers from 0 to 5.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(connection, fx_planted_spec()),
+    class = "gpq_preflight_error"
+  )
+})
+
 test_that("a path with a space, a header-only file, a BOM and quoted cells are read as written", {
   dir <- withr::local_tempdir()
   folder <- file.path(dir, "fish survey")
