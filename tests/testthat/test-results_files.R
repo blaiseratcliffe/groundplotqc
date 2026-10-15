@@ -467,7 +467,7 @@ test_that("gpq_write_results and gpq_read_results are exported (D15.4)", {
 })
 
 test_that("a conformance run on magp_example is written and read back identical (18.4, D15.34)", {
-  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  # About 2 s a run since M4b cut the run's fixed cost (D16.18).
   testthat::skip_on_cran()
   results <- withCallingHandlers(
     gpq_check_conformance(

@@ -612,3 +612,17 @@ test_that("Layer 1's checks change none of the tables (16.2)", {
     expect_identical(fish[[table]], before[[table]], info = table)
   }
 })
+
+test_that("value_not_finite reads the rows coercion_loss's coercion found (D17.22)", {
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches[, weight := as.character(weight)]
+  catches[1:3, weight := c("1e999", "-Inf", "nan")]
+  fish$catches <- catches
+  results <- gpq_check_conformance(fish, fx_fish_spec(), layers = 0:1)
+  found <- results$issues[results$issues$rule_id == "value_not_finite", ]
+  expect_identical(found$row_number, 1:3)
+  expect_identical(found$value, c("1e999", "-Inf", "nan"))
+  value <- coerce_column(catches$weight, "double")$value
+  expect_identical(which(is.nan(value) | is.infinite(value)), 1:3)
+})

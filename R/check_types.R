@@ -65,7 +65,8 @@ missing_like <- function(text, row, context) {
 #' values coerce_column() loses, Layer 2's left out. `date_unparseable` per date attribute:
 #' a value that isn't a sentinel and doesn't read back as written in the type's date format.
 #' `integer_stored_as_double` per numeric attribute. `value_not_finite` per numeric
-#' attribute: NaN, Inf or -Inf, as stored or as text. In a column whitespace_padding checks
+#' attribute: NaN, Inf or -Inf, as stored or as text, the rows `coercion_loss`'s coercion
+#' found, so a column is read once (D17.22). In a column whitespace_padding checks
 #' (a key, an ID or a coded column, stored as text or a factor), `coercion_loss` and
 #' `date_unparseable` leave it a padded value whose trimmed form they would pass; one whose
 #' trimmed form still fails is theirs (D16.42, m25).
@@ -83,6 +84,10 @@ check_types <- function(input, context) {
     (!is.na(row$key_type) || isTRUE(row$id_marked) || isTRUE(row$coded)) &&
       (is.character(x) || is.factor(x))
   }
+  # The rows of each numeric column whose number isn't finite, as coercion_loss's coercion
+  # reads them, kept for value_not_finite so that a column of text is parsed once a run: row
+  # numbers only, the coerced column released (16.2, D17.22).
+  not_finite <- new.env(parent = emptyenv())
   list(
     class_mismatch = rule_outcomes(
       "class_mismatch", columns, input, function(table, attribute, x, row) {
@@ -105,7 +110,10 @@ check_types <- function(input, context) {
             "coercion_loss", table, attribute, integer(), character(), row$r_class
           ))
         }
-        lost <- which(coerce_column(x, row$r_class, row$date_format)$lost)
+        coerced <- coerce_column(x, row$r_class, row$date_format)
+        assign(paste(table, attribute, sep = "\r"), coerced$not_finite, envir = not_finite)
+        lost <- which(coerced$lost)
+        rm(coerced)
         text <- value_text(x[lost])
         reported <- !missing_like(text, row, context)
         if (padding_checked(x, row) && any(reported)) {
@@ -193,10 +201,15 @@ check_types <- function(input, context) {
     ),
     value_not_finite = rule_outcomes(
       "value_not_finite", numeric, input, function(table, attribute, x, row) {
-        # A column not stored as plain numbers is read as coerce_column() reads it: text as
-        # it is, any other column once for each distinct value (16.2).
-        number <- if (is.numeric(x) && !is.object(x)) x else coerce_column(x, "double")$value
-        bad <- which(is.nan(number) | is.infinite(number))
+        # The rows coercion_loss's coercion found (D17.22); for a column it didn't coerce, the
+        # column is read as coerce_column() reads it: text as it is, any other column once for
+        # each distinct value (16.2).
+        key <- paste(table, attribute, sep = "\r")
+        bad <- if (exists(key, envir = not_finite, inherits = FALSE)) {
+          get(key, envir = not_finite, inherits = FALSE)
+        } else {
+          coerce_column(x, "double")$not_finite
+        }
         record_outcome("value_not_finite", table, attribute, bad, value_text(x[bad]))
       }
     )

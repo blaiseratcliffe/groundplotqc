@@ -177,6 +177,7 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
     record_layer(found, layer, input, context, state, run_id)
   }
   registry <- context$registry
+  # Each rule's rows were kept as lists of columns: bound here, once (D16.18, R11).
   results <- new_results(rbindlist(state$results, use.names = TRUE), group_cols, registry)
   issues <- rbindlist(state$issues, use.names = TRUE)
   issues <- new_issues(if (nrow(issues) == 0L) NULL else issues, group_cols, key_col, registry)
@@ -451,31 +452,32 @@ record_layer <- function(found, layer, input, context, state, run_id) {
   invisible(state)
 }
 
-#' Results rows for one rule at a table and column, one per group given
+#' Results rows for one rule at a table and column, one per group given, as a list of
+#' columns: the run binds every rule's rows into its results table once (D16.18)
 #'
-#' `groups` is a data.table of the group columns' values, one row per results row (or NULL
-#' without group columns); the counts and texts are one per row.
+#' `groups` is a list of the group columns' values, one per results row (or NULL without
+#' group columns); the counts and texts are one per row, or one for all.
 #' @noRd
 results_rows <- function(run_id, rule, severity, context, table_name, column_name, groups,
                          n_checked, n_fail, n_not_evaluated, n_distinct, examples, status,
                          reason = NA_character_) {
-  rows <- data.table(
-    run_id = run_id, run_scope = "package", rule_id = rule$rule_id,
-    rule_fingerprint = context$fingerprints[[rule$rule_id]], stage = rule$stage,
-    layer = rule$layer, severity = severity, table_name = table_name,
-    column_name = column_name, n_checked = as.integer(n_checked), n_fail = as.integer(n_fail),
-    n_not_evaluated = as.integer(n_not_evaluated), reason_code = "*",
-    n_distinct_fail_values = as.integer(n_distinct), n_easy_fix = 0L,
-    examples = as.character(examples), status = status, not_run_reason = reason,
-    message_id = rule$message_id
+  c(
+    list(
+      run_id = run_id, run_scope = "package", rule_id = rule$rule_id,
+      rule_fingerprint = context$fingerprints[[rule$rule_id]], stage = rule$stage,
+      layer = rule$layer, severity = severity, table_name = table_name,
+      column_name = column_name, n_checked = as.integer(n_checked),
+      n_fail = as.integer(n_fail), n_not_evaluated = as.integer(n_not_evaluated),
+      reason_code = "*", n_distinct_fail_values = as.integer(n_distinct), n_easy_fix = 0L,
+      examples = as.character(examples), status = status, not_run_reason = reason,
+      message_id = rule$message_id
+    ),
+    groups
   )
-  for (column in names(groups)) {
-    set(rows, j = column, value = groups[[column]])
-  }
-  rows
 }
 
-#' Issue rows for one rule at a table and column, numbered from the state's next ID
+#' Issue rows for one rule at a table and column, numbered from the state's next ID, as a
+#' list of columns the run binds into its issues table once (D16.18)
 #'
 #' `fields` holds the columns that vary (record_pk, row_number, pk_positional, level,
 #' n_records, value, expected, root_issue_id, status), each one value per issue or one for
@@ -490,34 +492,43 @@ issue_rows <- function(run_id, rule, severity, context, table_name, column_name,
   }
   ids <- state$next_id + seq_len(n) - 1L
   state$next_id <- state$next_id + n
-  rows <- data.table(
-    issue_id = ids, run_id = run_id, run_scope = "package", rule_id = rule$rule_id,
-    rule_fingerprint = context$fingerprints[[rule$rule_id]], stage = rule$stage,
-    layer = rule$layer, severity = severity, reason_code = "*", table_name = table_name,
-    column_name = column_name
+  rows <- c(
+    list(
+      issue_id = ids, run_id = run_id, run_scope = "package", rule_id = rule$rule_id,
+      rule_fingerprint = context$fingerprints[[rule$rule_id]], stage = rule$stage,
+      layer = rule$layer, severity = severity, reason_code = "*", table_name = table_name,
+      column_name = column_name
+    ),
+    fields, groups
   )
-  for (column in names(fields)) {
-    set(rows, j = column, value = fields[[column]])
-  }
-  for (column in names(groups)) {
-    set(rows, j = column, value = groups[[column]])
-  }
   if (!is.null(input$key_col) && !input$key_col %chin% names(groups)) {
-    set(rows, j = input$key_col, value = key)
+    rows[[input$key_col]] <- key
   }
   state$issues[[length(state$issues) + 1L]] <- rows
   invisible(ids)
 }
 
-#' Group values of "*" in every group column, `n` rows; NULL without group columns
+#' Group values of "*" in every group column, `n` rows, as a list of columns; NULL without
+#' group columns
 #' @noRd
 star_groups <- function(input, n = 1L) {
   if (length(input$group_cols) == 0L) {
     return(NULL)
   }
-  stars <- as.data.table(lapply(input$group_cols, function(column) rep("*", n)))
-  setnames(stars, input$group_cols)
+  stars <- rep(list(rep("*", n)), length(input$group_cols))
+  names(stars) <- input$group_cols
   stars
+}
+
+#' The group columns' values at some of a table's groups (`at`, indexes into
+#' `grouping$values`), as a list of columns read by position, never a data.table subset
+#' (D16.18); NULL without group columns
+#' @noRd
+group_values <- function(grouping, at) {
+  if (is.null(grouping$values)) {
+    return(NULL)
+  }
+  lapply(grouping$values, function(column) column[at])
 }
 
 #' A unit outcome recorded: one results row with "*" groups, and one column-level issue when
@@ -560,7 +571,7 @@ record_not_run <- function(outcome, rule, severity, input, context, state, run_i
   } else {
     in_group <- tabulate(grouping$row_group, grouping$n)
     present <- which(in_group > 0L)
-    groups <- if (is.null(grouping$values)) NULL else grouping$values[present]
+    groups <- group_values(grouping, present)
     counts <- in_group[present]
   }
   state$results[[length(state$results) + 1L]] <- results_rows(
@@ -577,18 +588,22 @@ record_not_run <- function(outcome, rule, severity, input, context, state, run_i
 #' Record-level failures of earlier layers come through failed_cells() and
 #' mark_not_evaluated(); a column-level failure of an earlier layer masks every record of
 #' its group. A record masked twice keeps the lowest issue ID, which is the lowest layer's,
-#' as IDs are given layer by layer. Returns `row_number` and `root_issue_id`.
+#' as IDs are given layer by layer. Returns `row_number` and `root_issue_id`, or NULL where
+#' nothing of Layers 1 to 3 failed in the column, so no table is built (D16.18).
 #' @noRd
 cascade_masks <- function(state, table, attribute, layer, row_group) {
   key <- paste(table, attribute, sep = "\r")
   pieces <- state$failed[[key]]
+  columns <- state$column_failed[[key]]
+  if (is.null(pieces) && is.null(columns)) {
+    return(NULL)
+  }
   masks <- list(data.table(row_number = integer(), root_issue_id = integer()))
   if (!is.null(pieces)) {
     masks[[2L]] <- mark_not_evaluated(
       failed_cells(rbindlist(pieces), layers = 1:3), table, attribute, layer
     )
   }
-  columns <- state$column_failed[[key]]
   if (!is.null(columns)) {
     whole <- rbindlist(columns)
     # Worked out before the brackets: `layer` is also a column of `whole`.
@@ -632,7 +647,8 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   }
   n_groups <- grouping$n
   masked <- cascade_masks(state, table, attribute, layer, row_group)
-  kept <- !outcome$fail %in% masked$row_number
+  masked_rows <- if (is.null(masked)) integer() else masked$row_number
+  kept <- !outcome$fail %in% masked_rows
   fail <- outcome$fail[kept]
   value <- outcome$value[kept]
   # Valid UTF-8 left unmarked, as fread() leaves it, is marked UTF-8 before the values are
@@ -651,29 +667,30 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     outcome$expected[kept]
   }
   in_group <- tabulate(row_group, n_groups)
-  masked_count <- tabulate(row_group[masked$row_number], n_groups)
+  masked_count <- tabulate(row_group[masked_rows], n_groups)
   fail_count <- tabulate(row_group[fail], n_groups)
   checked <- in_group - masked_count
-  failed_values <- unique(data.table(group = row_group[fail], value = value))
-  n_distinct <- tabulate(failed_values$group, n_groups)
-  shown <- failed_values[!is.na(failed_values$value)]
-  shown <- shown[rowid(shown$group) <= context$example_cap]
+  n_distinct <- integer(n_groups)
   examples <- rep(NA_character_, n_groups)
-  joined <- vapply(split(shown$value, shown$group), paste, "", collapse = "; ")
-  examples[as.integer(names(joined))] <- joined
+  # Only a check that failed somewhere has values to count and show, so a passing check
+  # builds no table (D16.18).
+  if (length(fail) > 0L) {
+    failed_values <- unique(data.table(group = row_group[fail], value = value))
+    n_distinct <- tabulate(failed_values$group, n_groups)
+    shown <- failed_values[!is.na(failed_values$value)]
+    shown <- shown[rowid(shown$group) <= context$example_cap]
+    joined <- vapply(split(shown$value, shown$group), paste, "", collapse = "; ")
+    examples[as.integer(names(joined))] <- joined
+  }
   present <- which(in_group > 0L)
   state$results[[length(state$results) + 1L]] <- results_rows(
-    run_id, rule, severity, context, table, attribute,
-    if (is.null(grouping$values)) NULL else grouping$values[present],
+    run_id, rule, severity, context, table, attribute, group_values(grouping, present),
     n_checked = checked[present], n_fail = fail_count[present],
     n_not_evaluated = masked_count[present], n_distinct = n_distinct[present],
     examples = examples[present], status = fifelse(fail_count[present] > 0L, "fail", "pass")
   )
   cascades <- layer %in% 1:3
   key <- paste(table, attribute, sep = "\r")
-  group_values <- function(groups) {
-    if (is.null(grouping$values)) NULL else grouping$values[groups]
-  }
   # Failures: column-level per group where 6.3 says so, record-level otherwise.
   whole <- which(collapse_column_level(fail_count, checked, context$column_level_min_n))
   if (length(whole) > 0L) {
@@ -685,7 +702,7 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
         expected = if (length(outcome$expected) == 1L) outcome$expected else NA_character_,
         root_issue_id = NA_integer_, status = "open"
       ),
-      group_values(whole), rep("*", length(whole)), input, state
+      group_values(grouping, whole), rep("*", length(whole)), input, state
     )
     if (cascades) {
       state$column_failed[[key]] <- c(state$column_failed[[key]], list(data.table(
@@ -704,7 +721,7 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
         level = "record", n_records = NA_integer_, value = value[single],
         expected = expected[single], root_issue_id = NA_integer_, status = "open"
       ),
-      group_values(row_group[rows]), key_text(input, table, rows), input, state
+      group_values(grouping, row_group[rows]), key_text(input, table, rows), input, state
     )
     if (cascades) {
       state$failed[[key]] <- c(state$failed[[key]], list(data.table(
@@ -713,7 +730,7 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
       )))
     }
   }
-  if (nrow(masked) > 0L) {
+  if (length(masked_rows) > 0L) {
     record_masked(masked, outcome, rule, severity, input, context, state, run_id, row_group)
   }
   invisible(state)
@@ -728,11 +745,6 @@ record_masked <- function(masked, outcome, rule, severity, input, context, state
   table <- outcome$table_name
   attribute <- outcome$column_name
   grouping <- input$groups[[table]]
-  # The groups' values at some groups, the index a single symbol: the group columns carry
-  # the caller's names, which may be any of this function's.
-  group_values <- function(groups) {
-    if (is.null(grouping$values)) NULL else grouping$values[groups]
-  }
   shared <- data.table(group = row_group[masked$row_number], root = masked$root_issue_id)
   sizes <- shared[, list(n = .N), by = c("group", "root")]
   whole <- sizes[collapse_column_level(sizes$n, sizes$n, context$column_level_min_n)]
@@ -744,7 +756,7 @@ record_masked <- function(masked, outcome, rule, severity, input, context, state
         n_records = whole$n, value = NA_character_, expected = NA_character_,
         root_issue_id = whole$root, status = "not_evaluated"
       ),
-      group_values(whole$group), rep("*", nrow(whole)), input, state
+      group_values(grouping, whole$group), rep("*", nrow(whole)), input, state
     )
   }
   single <- is.na(whole[shared, on = c("group", "root"), which = TRUE, mult = "first"])
@@ -762,7 +774,7 @@ record_masked <- function(masked, outcome, rule, severity, input, context, state
         value = value_text(input$data[[table]][[column]][rows]), expected = NA_character_,
         root_issue_id = masked$root_issue_id[single], status = "not_evaluated"
       ),
-      group_values(row_group[rows]), key_text(input, table, rows), input, state
+      group_values(grouping, row_group[rows]), key_text(input, table, rows), input, state
     )
   }
   invisible(state)

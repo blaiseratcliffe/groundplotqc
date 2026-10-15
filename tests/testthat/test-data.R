@@ -262,7 +262,7 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
 })
 
 test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
-  # A full MAGPlot run, about 4 s until M4b cuts the run's fixed cost (D16.18, D16.50).
+  # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())
   expect_equal(sum(results$issues$status == "open"), 0L)
@@ -281,7 +281,7 @@ test_that("every defect block stops on tables that aren't fixtures (18.3)", {
 })
 
 test_that("planted vs caught: each block caught by its rule with its witness, its cascade too", {
-  # About 4 s a run until M4b cuts the run's fixed cost (D16.18).
+  # About 2 s a run since M4b cut the run's fixed cost (D16.18).
   testthat::skip_on_cran()
   base <- fx_magp_clean()
   sheet <- fx_answer_sheet()
