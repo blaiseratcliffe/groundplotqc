@@ -139,3 +139,53 @@ test_that("lang_pattern takes two or three lower-case letters and nothing else (
     c(TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE)
   )
 })
+
+# One value of each kind the encoding helpers meet: plain ASCII, valid UTF-8 unmarked and
+# marked, latin1-marked text, text that isn't valid UTF-8, text marked as bytes, and NA.
+encoding_kinds <- function() {
+  unmarked <- "café"
+  Encoding(unmarked) <- "unknown"
+  bytes <- "café"
+  Encoding(bytes) <- "bytes"
+  c(
+    plain = "cafe", unmarked = unmarked, utf8 = "café",
+    latin1 = iconv("café", "UTF-8", "latin1"),
+    invalid = rawToChar(as.raw(c(0x63, 0x61, 0x66, 0xe9))), bytes = bytes, missing = NA
+  )
+}
+
+# Each value's bytes, NA as NULL.
+bytes_of <- function(x) lapply(x, function(value) if (is.na(value)) NULL else charToRaw(value))
+
+test_that("utf8_marked() marks unmarked valid UTF-8 only, converting nothing (m63, D16.47)", {
+  x <- encoding_kinds()
+  out <- utf8_marked(x)
+  expect_equal(
+    unname(Encoding(out)),
+    c("unknown", "UTF-8", "UTF-8", "latin1", "unknown", "bytes", "unknown")
+  )
+  expect_identical(bytes_of(out), bytes_of(x))
+  expect_identical(utf8_marked(character()), character())
+})
+
+test_that("utf8_converted() converts what isn't valid UTF-8, never text marked as bytes (m63)", {
+  skip_if_not(l10n_info()$`UTF-8`, "the session's locale isn't UTF-8")
+  x <- encoding_kinds()
+  out <- utf8_converted(x)
+  expect_equal(out[["latin1"]], "café")
+  expect_equal(Encoding(out[["latin1"]]), "UTF-8")
+  # In a UTF-8 locale native text that isn't valid UTF-8 keeps its bytes, unreadable, though
+  # enc2utf8() marks it UTF-8; every other value keeps its mark too.
+  expect_identical(bytes_of(out[-4L]), bytes_of(x[-4L]))
+  expect_identical(Encoding(out[-(4:5)]), Encoding(x[-(4:5)]))
+  expect_identical(utf8_converted(character()), character())
+})
+
+test_that("bytes_unmarked() drops the bytes mark only, keeping the bytes (m63, D16.36)", {
+  x <- encoding_kinds()
+  out <- bytes_unmarked(x)
+  expect_equal(Encoding(out[["bytes"]]), "unknown")
+  expect_identical(bytes_of(out), bytes_of(x))
+  expect_identical(Encoding(out[-6L]), Encoding(x[-6L]))
+  expect_identical(bytes_unmarked(character()), character())
+})

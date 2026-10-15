@@ -163,17 +163,7 @@ gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit 
   # marked latin1, which the writer converts, and text that isn't valid UTF-8 are left as
   # given (D16.46; D16.47, I1); group_index() holds the group values as UTF-8, and
   # validate_tables() has refused text marked as bytes. Only the run's own text that isn't
-  # plain ASCII is read, never a caller's column (16.2).
-  utf8_marked <- function(text) {
-    wide <- which(grepl("[^\001-\177]", text, useBytes = TRUE))
-    unmarked <- wide[Encoding(text[wide]) == "unknown" & validUTF8(text[wide])]
-    if (length(unmarked) > 0L) {
-      held <- text[unmarked]
-      Encoding(held) <- "UTF-8"
-      text[unmarked] <- held
-    }
-    text
-  }
+  # plain ASCII is read, never a caller's column (16.2; utf8_marked()).
   for (column in c("table_name", "column_name", "examples")) {
     set(results, j = column, value = utf8_marked(results[[column]]))
   }
@@ -621,23 +611,12 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   # grouped and joined into examples, as gpq_check_conformance() marks the rest of the
   # caller's text, so neither reads it in the session's encoding; any other value is left as
   # given (D16.46; D16.47, I1). Only values that aren't plain ASCII are read.
-  wide <- which(grepl("[^\001-\177]", value, useBytes = TRUE))
-  unmarked <- wide[Encoding(value[wide]) == "unknown" & validUTF8(value[wide])]
-  if (length(unmarked) > 0L) {
-    held <- value[unmarked]
-    Encoding(held) <- "UTF-8"
-    value[unmarked] <- held
-  }
+  value <- utf8_marked(value)
   # A value marked as bytes keeps its bytes but loses the mark, which data.table's grouping
   # and the results' writer stop on; it is then held as unmarked text, as text that isn't
   # valid UTF-8 is (D16.36). validate_tables() refuses such text first (D16.38): this is a
   # second line.
-  marked <- which(Encoding(value) == "bytes")
-  if (length(marked) > 0L) {
-    unmarked <- value[marked]
-    Encoding(unmarked) <- "unknown"
-    value[marked] <- unmarked
-  }
+  value <- bytes_unmarked(value)
   expected <- if (length(outcome$expected) == 1L) {
     rep(outcome$expected, length(fail))
   } else {

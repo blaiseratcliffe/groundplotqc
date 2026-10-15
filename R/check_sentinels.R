@@ -221,13 +221,7 @@ check_sentinels <- function(input, context) {
         maybe <- which(grepl("^[ \t\r\n]|[ \t\r\n]$|[^\001-\177]", text, useBytes = TRUE))
         read <- space_padding(text[maybe])
         fail <- maybe[read$padded]
-        trimmed <- read$trimmed[read$padded]
-        marked <- which(Encoding(trimmed) == "bytes")
-        if (length(marked) > 0L) {
-          unmarked <- trimmed[marked]
-          Encoding(unmarked) <- "unknown"
-          trimmed[marked] <- unmarked
-        }
+        trimmed <- bytes_unmarked(read$trimmed[read$padded])
         record_outcome("whitespace_padding", table, attribute, fail, text[fail], trimmed)
       }
     ),

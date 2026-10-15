@@ -142,13 +142,11 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     if (all(valid)) {
       number <- suppressWarnings(as.numeric(text))
     } else {
-      number <- rep(NA_real_, length(text))
-      number[valid] <- suppressWarnings(as.numeric(text[valid]))
       # Only the values that aren't valid UTF-8 are converted (16.2).
-      convert <- which(!valid & !bytes)
-      utf8 <- enc2utf8(text[convert])
-      readable <- validUTF8(utf8)
-      number[convert[readable]] <- suppressWarnings(as.numeric(utf8[readable]))
+      utf8 <- utf8_converted(text)
+      readable <- !bytes & validUTF8(utf8)
+      number <- rep(NA_real_, length(text))
+      number[readable] <- suppressWarnings(as.numeric(utf8[readable]))
     }
     # as.numeric() also reads hexadecimal ("0x10" as 16): a value it reads is kept only when
     # written as a decimal number, Inf or NaN. A number is plain ASCII, so its bytes are read.
@@ -245,12 +243,7 @@ match_columns <- function(given, attributes) {
     # A name that isn't plain ASCII is read as UTF-8, marked so on a copy where it is
     # unmarked, as fread() leaves it, since a Unicode pattern reads unmarked text byte by byte
     # outside a UTF-8 locale (D16.36).
-    unicode <- x[wide]
-    unmarked <- which(Encoding(unicode) == "unknown")
-    marked <- unicode[unmarked]
-    Encoding(marked) <- "UTF-8"
-    unicode[unmarked] <- marked
-    out[wide] <- tolower(gsub("(*UCP)\\s", "", unicode, perl = TRUE))
+    out[wide] <- tolower(gsub("(*UCP)\\s", "", utf8_marked(x[wide]), perl = TRUE))
     out
   }
   for (i in which(is.na(column))) {
@@ -513,10 +506,7 @@ group_index <- function(input, table) {
     mark <- Encoding(text)
     bytes <- mark == "bytes"
     valid <- !bytes & validUTF8(text)
-    unmarked <- which(valid & mark == "unknown" & grepl("[^\001-\177]", text, useBytes = TRUE))
-    held <- text[unmarked]
-    Encoding(held) <- "UTF-8"
-    text[unmarked] <- held
+    text <- utf8_marked(text)
     convert <- which(!bytes & (mark == "latin1" | !valid))
     text[convert] <- enc2utf8(text[convert])
     if (any(bytes) || !all(validUTF8(text))) {
@@ -525,10 +515,8 @@ group_index <- function(input, table) {
       )
       whole <- value_text(input$data[[reached$home]][[input$columns$column[[at]]]])
       marked <- Encoding(whole) == "bytes"
-      odd <- marked | !validUTF8(whole)
       # Only the values that aren't valid UTF-8 as given are converted (16.2).
-      convert <- which(odd & !marked)
-      odd[convert] <- !validUTF8(enc2utf8(whole[convert]))
+      odd <- marked | !validUTF8(utf8_converted(whole))
       stop(sprintf(
         paste0(
           "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
@@ -614,14 +602,7 @@ record_pk_text <- function(input, table, rows) {
   # joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the PK
   # is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
   if (length(parts) > 1L) {
-    parts <- lapply(parts, function(part) {
-      wide <- which(grepl("[^\001-\177]", part, useBytes = TRUE))
-      unmarked <- wide[Encoding(part[wide]) == "unknown" & validUTF8(part[wide])]
-      held <- part[unmarked]
-      Encoding(held) <- "UTF-8"
-      part[unmarked] <- held
-      part
-    })
+    parts <- lapply(parts, utf8_marked)
   }
   record_pk <- do.call(paste, c(parts, sep = "|"))
   record_pk[missing] <- NA_character_

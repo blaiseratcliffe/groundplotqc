@@ -140,12 +140,8 @@ check_types <- function(input, context) {
         # that isn't UTF-8); text that still isn't is no date and is not read: strptime()
         # stops on it in a UTF-8 locale (D16.33, D16.36). Nor is a value over the bound.
         unreadable <- function(values) {
-          utf8 <- values
-          valid <- validUTF8(values)
-          convert <- which(!valid)
-          utf8[convert] <- enc2utf8(values[convert])
-          valid[convert] <- validUTF8(utf8[convert])
-          valid <- valid & nchar(utf8, type = "bytes") <= longest
+          utf8 <- utf8_converted(values)
+          valid <- validUTF8(utf8) & nchar(utf8, type = "bytes") <= longest
           parsed <- strptime(utf8[valid], row$date_format, tz = "UTC")
           unread <- !valid
           unread[valid] <- is.na(parsed) | format(parsed, row$date_format) != utf8[valid]
