@@ -492,3 +492,13 @@ test_that("a rule with nothing in scope or off everywhere: no rows, not expected
   expect_equal(run$state$not_expected, c("test_cast", "test_spell"))
   expect_length(run$state$results, 0L)
 })
+
+test_that("the performance smoke test: a 0.1x MAGPlot run finishes in time, clean (18.4)", {
+  # Skipped on CRAN (18.5, D7.14). The run took 3.3 to 4.4 s at M4b's planning (D17.18).
+  testthat::skip_on_cran()
+  tables <- fx_magp_scaled(0.1)
+  elapsed <- system.time(results <- fx_caught(tables))[["elapsed"]]
+  expect_lt(elapsed, 30)
+  expect_equal(sum(results$issues$status == "open"), 0L)
+  expect_equal(nrow(results$metadata$self_test), 0L)
+})

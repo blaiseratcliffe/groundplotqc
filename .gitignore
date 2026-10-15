@@ -55,6 +55,7 @@
 # QC run outputs anywhere in the tree; benchmark results
 runs/
 /bench/results/
+/bench/data/
 
 # R and tooling
 .Rproj.user/
