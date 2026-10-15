@@ -26,7 +26,8 @@ on every record of a column in a group."></head><body>
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/specification.html">Specification files and configuration</a></li>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/generic-engine.html">Using the engine on your own dataset</a></li>
+    <li><a class="dropdown-item" href="../articles/specification.html">Specification files and configuration</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -58,6 +59,7 @@ on every record of a column in a group.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">gpq_check_conformance</span><span class="op">(</span></span>
 <span>  <span class="va">tables</span>,</span>
 <span>  <span class="va">spec</span>,</span>
+<span>  table_map <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  group_cols <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  problem_unit <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  rules <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -72,12 +74,29 @@ on every record of a column in a group.</p>
 
 
 <dl><dt id="arg-tables">tables<a class="anchor" aria-label="anchor" href="#arg-tables"></a></dt>
-<dd><p>A named list of data.frames, one per table, named as the specification
-names its tables. A table holding text marked as bytes is refused.</p></dd>
+<dd><p>The tables, one per table of the specification, named as it names them: a
+named list whose elements are data.frames or paths of CSV files, mixed as you like, or
+a named character vector of paths. Every column of a CSV file is read as text, so
+<code>class_mismatch</code> and <code>integer_stored_as_double</code> don't run on its tables. In a CSV file
+an empty cell is a missing value and everything else is read as written, so write
+files with data.table::fwrite() or write.csv(na = "", row.names = FALSE). A cell that
+isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
+define. A table holding text marked as bytes is refused. Or a DBI connection: the
+specification's tables are read from it under the names <code>table_map</code> gives, and its
+other tables are left alone.</p></dd>
 
 
 <dt id="arg-spec">spec<a class="anchor" aria-label="anchor" href="#arg-spec"></a></dt>
 <dd><p>A specification from <code><a href="gpq_read_spec.html">gpq_read_spec()</a></code> or <code><a href="magp_spec.html">magp_spec()</a></code>.</p></dd>
+
+
+<dt id="arg-table-map">table_map<a class="anchor" aria-label="anchor" href="#arg-table-map"></a></dt>
+<dd><p><code>NULL</code>, or, when <code>tables</code> is a DBI connection, a named character vector
+of the database's names for tables of the specification: names the specification's
+table names, values the database's, such as <code>c(trees = "survey.tree_list")</code> for the
+table tree_list in the schema survey. A table it doesn't name is read under its own
+name. A table of the specification the database doesn't have is reported as missing
+(<code>table_missing</code>).</p></dd>
 
 
 <dt id="arg-group-cols">group_cols<a class="anchor" aria-label="anchor" href="#arg-group-cols"></a></dt>
@@ -129,9 +148,17 @@ columns a conformance run doesn't fill are NA.</p></li>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>Pre-flight (<code><a href="gpq_preflight.html">gpq_preflight()</a></code>) runs first, on <code>spec</code>, <code>rules</code> and <code>settings</code>; it stops
-the run where it would stop, and its warning reaches the caller. The checks never change
-<code>tables</code>.</p>
+    <p>Pre-flight (<code><a href="gpq_preflight.html">gpq_preflight()</a></code>) runs before any check, on <code>spec</code>, <code>rules</code> and <code>settings</code>; it
+stops the run where it would stop, and its warning reaches the caller. The checks never
+change <code>tables</code>.</p>
+<p>A CSV file is read with <code><a href="https://rdrr.io/pkg/data.table/man/fread.html" class="external-link">data.table::fread()</a></code>, which finds its separator. A file it
+can't read cleanly, such as one with a ragged line or a title line shorter than its
+header, stops the run before any check, and so does a file that doesn't end with a line
+break, which may be cut off. A title line as long as the header, or above a file of one
+column, is read as the header, so the checks report the file's columns as missing. The
+run's inputs metadata names each file with its SHA-256, its rows, its separator and how
+many values were read as Windows-1252. A table read from a DBI connection is recorded as
+"DBI connection, not hashed", with the database's name for it and the driver's class.</p>
 <p>Layers and the rules they can raise:</p><ul><li><p>Layer 0, structure: <code>table_missing</code>, <code>table_unexpected</code>, <code>column_missing</code>,
 <code>column_unexpected</code>, <code>column_name_mismatch</code>.</p></li>
 <li><p>Layer 1, data types: <code>class_mismatch</code>, <code>coercion_loss</code>, <code>date_unparseable</code>,
@@ -142,7 +169,7 @@ the run where it would stop, and its warning reaches the caller. The checks neve
 attribute's only in letter case or spaces is reported by <code>column_name_mismatch</code> and
 checked as that attribute. Layer 0's rules and <code>class_mismatch</code> and
 <code>integer_stored_as_double</code> count tables or columns, not records, and their rows have <code>"*"</code>
-in every group column, except where none of a rule's tables or columns could be checked.
+in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status <code>not_evaluated</code> and names the earlier issue as its root. When a
 rule fails on every checked record of a column in a group, and at least

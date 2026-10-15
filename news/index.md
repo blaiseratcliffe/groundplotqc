@@ -113,3 +113,21 @@
   reads them back identical. A run’s files are written once: a run
   folder holding any file but that run’s own pre-flight files is
   refused.
+- [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  also reads its tables from CSV files: give a path in place of a
+  data.frame, or a named character vector of paths. Every column of a
+  CSV file is read as text, as written, an empty cell as a missing
+  value; a cell that isn’t UTF-8 is read as Windows-1252 where
+  Windows-1252 defines its bytes, and the separator is found from the
+  file. A file that can’t be read cleanly stops the run before any
+  check. The run’s inputs metadata records each file’s name and SHA-256.
+- [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  also reads its tables from a DBI connection, such as a database’s: its
+  new third argument `table_map` gives the database’s name for a table
+  it names otherwise, `"schema.table"` for a table in a schema. Only the
+  specification’s tables are read. DBI and RSQLite join Suggests.
+- A conformance run’s fixed cost is cut: a run on `magp_example` takes
+  about a third of the time it did, with the same results and issues.
+- A second article, “Using the engine on your own dataset”, checks the
+  fish survey example as data frames, as CSV files and from a database,
+  and writes its results to a run folder.

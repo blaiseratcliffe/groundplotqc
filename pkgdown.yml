@@ -2,8 +2,9 @@ pandoc: 3.8.3
 pkgdown: 2.2.1
 pkgdown_sha: ~
 articles:
+  generic-engine: generic-engine.html
   specification: specification.html
-last_built: 2026-10-14T20:42Z
+last_built: 2026-10-15T18:48Z
 urls:
   reference: https://blaiseratcliffe.github.io/groundplotqc/reference
   article: https://blaiseratcliffe.github.io/groundplotqc/articles
