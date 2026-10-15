@@ -438,6 +438,12 @@ test_that("the tables are read after the argument checks and pre-flight (D17.32)
     "`rules` must be a named list of tables",
     fixed = TRUE
   )
+  # A setting's value is refused by resolve_setting(), which pre-flight leaves to the run.
+  expect_error(
+    gpq_check_conformance(tables, spec, settings = list(raw_na_policy = "bogus")),
+    "Setting raw_na_policy (argument) must be one of",
+    fixed = TRUE
+  )
   expect_error(
     gpq_check_conformance(tables, fx_planted_spec()),
     class = "gpq_preflight_error"
@@ -453,10 +459,19 @@ test_that("the tables are read after the argument checks and pre-flight (D17.32)
   testthat::skip_if_not_installed("RSQLite")
   connection <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbDisconnect(connection)
-  expect_error(gpq_check_conformance(connection, spec, run_id = run_id))
+  expect_error(
+    gpq_check_conformance(connection, spec, run_id = run_id),
+    "Invalid or closed connection",
+    fixed = TRUE
+  )
   expect_error(
     gpq_check_conformance(connection, spec, layers = 9),
     "`layers` must be whole numbers from 0 to 5.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(connection, spec, settings = list(raw_na_policy = "bogus")),
+    "Setting raw_na_policy (argument) must be one of",
     fixed = TRUE
   )
   expect_error(
