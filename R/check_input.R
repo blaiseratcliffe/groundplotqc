@@ -18,7 +18,13 @@ validate_tables <- function(tables) {
       !anyDuplicated(names(tables))
   ))
   if (!named) {
-    stop("`tables` must be a list of data.frames, each named once by its table.", call. = FALSE)
+    stop(
+      paste0(
+        "`tables` must be a list of data.frames or CSV paths, each named once by its table, ",
+        "a named character vector of paths, or a DBI connection."
+      ),
+      call. = FALSE
+    )
   }
   frames <- vapply(tables, is.data.frame, logical(1))
   if (!all(frames)) {

@@ -70,17 +70,17 @@ test_that("tables mixes data.frames and paths; a named character vector is all p
   fish <- fx_fish_clean()
   paths <- fish_csv(dir, fish)
   mixed <- list(stations = fish$stations, hauls = paths[["hauls"]], catches = paths[["catches"]])
+  stations_before <- data.table::copy(fish$stations)
   read <- read_tables(mixed, fx_fish_spec())
   # A data.frame given is kept as it is, never copied (16.2).
   expect_identical(data.table::address(read$tables$stations), data.table::address(fish$stations))
   expect_equal(read$text_tables, c("hauls", "catches"))
-  stations_before <- data.table::copy(fish$stations)
   results <- gpq_check_conformance(mixed, fx_fish_spec(), layers = 0:1, run_id = run_id)
   # The caller's list and its tables are as they were, and no index is left on the table given.
   expect_identical(names(mixed), c("stations", "hauls", "catches"))
   expect_identical(mixed$hauls, paths[["hauls"]])
   expect_identical(mixed$catches, paths[["catches"]])
-  expect_identical(mixed$stations, fish$stations)
+  expect_identical(mixed$stations, stations_before)
   expect_identical(fish$stations, stations_before)
   expect_null(attr(fish$stations, "index"))
   inputs <- results$metadata$inputs
@@ -386,4 +386,100 @@ test_that("a path with a space, a header-only file, a BOM and quoted cells are r
   )))
   read <- read_tables(list(stations = quoted), fx_fish_spec())$tables$stations
   expect_equal(read$station_name, c("two\nlines", "say \"hi\""))
+})
+
+# The fish survey's clean tables in an in-memory SQLite database: stations under its own name,
+# hauls as fish_hauls, catches in the attached schema survey, and a table the spec lacks.
+# The connection, closed when `env` ends.
+fish_database <- function(env = parent.frame()) {
+  fish <- fx_fish_clean()
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  withr::defer(DBI::dbDisconnect(connection), envir = env)
+  DBI::dbExecute(connection, "ATTACH DATABASE ':memory:' AS survey")
+  DBI::dbWriteTable(connection, "stations", fish$stations)
+  DBI::dbWriteTable(connection, "fish_hauls", fish$hauls)
+  DBI::dbWriteTable(connection, DBI::Id(schema = "survey", table = "catches"), fish$catches)
+  DBI::dbWriteTable(connection, "notes", data.frame(note = "t1"))
+  connection
+}
+
+test_that("a connection's spec tables are read under table_map's names, a schema too (D17.6)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- fish_database()
+  before <- DBI::dbListTables(connection)
+  results <- gpq_check_conformance(
+    connection, fx_fish_spec(), c(hauls = "fish_hauls", catches = "survey.catches"),
+    group_cols = "water_body", layers = 0:2, run_id = run_id
+  )
+  rows <- results$results
+  # The database's other table raises nothing, and the stored types are checked.
+  expect_equal(sum(rows$status == "fail"), 0L)
+  expect_equal(nrow(results$issues), 0L)
+  expect_false(any(rows$not_run_reason %in% "text_input"))
+  expect_false("notes" %in% rows$table_name)
+  inputs <- results$metadata$inputs
+  expect_equal(inputs$input, paste0("tables:", c("stations", "hauls", "catches")))
+  expect_true(all(inputs$file == "DBI connection, not hashed"))
+  expect_true(all(is.na(inputs$sha256)))
+  expect_equal(inputs$detail, c(
+    "2 rows; table stations; driver SQLiteConnection",
+    "4 rows; table fish_hauls; driver SQLiteConnection",
+    "8 rows; table survey.catches; driver SQLiteConnection"
+  ))
+  # The connection is left open and unchanged.
+  expect_true(DBI::dbIsValid(connection))
+  expect_equal(DBI::dbListTables(connection), before)
+})
+
+test_that("a spec table the database lacks is missing; table_map's faults are refused (D17.6)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- fish_database()
+  spec <- fx_fish_spec()
+  # catches isn't mapped, so it is looked for as "catches", which the database lacks.
+  results <- gpq_check_conformance(
+    connection, spec, c(hauls = "fish_hauls"),
+    layers = 0, run_id = run_id
+  )
+  missing <- results$results[results$results$rule_id == "table_missing"]
+  expect_equal(missing$status[missing$table_name == "catches"], "fail")
+  expect_equal(missing$status[missing$table_name != "catches"], c("pass", "pass"))
+  expect_error(
+    gpq_check_conformance(connection, spec, c(nets = "fish_nets")),
+    "`table_map` names tables the specification doesn't have: nets.",
+    fixed = TRUE
+  )
+  for (bad in list(list(hauls = "fish_hauls"), "fish_hauls", c(hauls = NA_character_))) {
+    expect_error(
+      gpq_check_conformance(connection, spec, bad),
+      "`table_map` must be NULL or a named character vector",
+      fixed = TRUE
+    )
+  }
+  expect_error(
+    gpq_check_conformance(fx_fish_clean(), spec, table_map = c(stations = "st")),
+    "`table_map` is only read when `tables` is a DBI connection.",
+    fixed = TRUE
+  )
+})
+
+test_that("tables that's no named list, paths or connection is refused in full (D17.27)", {
+  expect_error(
+    gpq_check_conformance(fx_fish_clean()$stations, fx_fish_spec()),
+    paste0(
+      "`tables` must be a list of data.frames or CSV paths, each named once by its table, ",
+      "a named character vector of paths, or a DBI connection."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("db_table_id() splits \"schema.table\" at its first dot (D17.6)", {
+  testthat::skip_if_not_installed("DBI")
+  expect_identical(db_table_id("catches"), "catches")
+  expect_equal(db_table_id("survey.catches"), DBI::Id(schema = "survey", table = "catches"))
+  expect_equal(
+    db_table_id("survey.catches.2024"), DBI::Id(schema = "survey", table = "catches.2024")
+  )
 })

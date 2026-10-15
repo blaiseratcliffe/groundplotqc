@@ -30,12 +30,14 @@ Imports:
     tools,
     utils
 Suggests:
+    DBI,
     jsonlite,
     knitr,
     lintr,
     pkgdown,
     readxl,
     rmarkdown,
+    RSQLite,
     styler,
     terra,
     testthat (>= 3.2.0),

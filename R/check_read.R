@@ -14,10 +14,16 @@
 #' is returned as given, so validate_tables() refuses it before any file is read. Caller
 #' errors, in English (D12.37).
 #' @noRd
-read_tables <- function(tables, spec) {
+read_tables <- function(tables, spec, table_map = NULL) {
   none <- data.table(
     table_name = character(), file = character(), sha256 = character(), detail = character()
   )
+  if (inherits(tables, "DBIConnection")) {
+    return(read_db_tables(tables, spec, table_map))
+  }
+  if (!is.null(table_map)) {
+    stop("`table_map` is only read when `tables` is a DBI connection.", call. = FALSE)
+  }
   if (is.character(tables) && is.null(dim(tables)) && !is.object(tables)) {
     tables <- as.list(tables)
   }
@@ -66,17 +72,18 @@ read_tables <- function(tables, spec) {
 #' One CSV file read as a table: every column text, as written (D9.23, D17.2 to D17.5)
 #'
 #' An empty cell is NA and everything else is read as written: a quoted empty cell an empty
-#' string, the text "NA" the text, spaces kept, a quoted cell's doubled quotes undone (D17.2,
-#' undo_doubled_quotes(), R5). fread() detects the separator (D17.4); the one it used is the
-#' first of fread()'s candidates that reads the same header from the file's first line.
-#' A cell that isn't valid UTF-8 is converted from Windows-1252, the header's names too, the
-#' five bytes Windows-1252 leaves undefined kept as given (D17.3, from_windows_1252()). A file
-#' that doesn't end with a line break, which may be cut off (D17.14), any error or warning of
-#' fread() (D17.5), and a header fread() took from a later line than the first, in a file of
-#' more than one column (D17.16, D17.24), stop the run, naming the table and the file,
-#' whatever the session's `warn`. A file cut exactly at a line end can't be told from a
-#' shorter one. Returns `data`, `file` (the file's name without its folder, R2), `sha256` and
-#' `detail` (the rows, the separator as a word and the values converted, D17.27).
+#' string, the text "NA" the text, spaces kept, a quoted cell's doubled quotes undone, and a
+#' header name's too (D17.2, undo_doubled_quotes(), R5, R30). fread() detects the separator
+#' (D17.4); the one it used is the first of fread()'s candidates that reads the same header
+#' from the file's first line. A cell that isn't valid UTF-8 is converted from Windows-1252,
+#' the header's names too, the five bytes Windows-1252 leaves undefined kept as given (D17.3,
+#' from_windows_1252()). A file that doesn't end with a line break, which may be cut off
+#' (D17.14), any error or warning of fread() (D17.5), and a header fread() took from a later
+#' line than the first, in a file of more than one column (D17.16, D17.24), stop the run,
+#' naming the table and the file, whatever the session's `warn`. A file cut exactly at a line
+#' end can't be told from a shorter one. Returns `data`, `file` (the file's name without its
+#' folder, R2), `sha256` and `detail` (the rows, the separator as a word and the values
+#' converted, D17.27).
 #' @noRd
 read_csv_table <- function(path, table) {
   # A data file that doesn't end with a line break may be cut off (D17.14): its last byte is
@@ -211,4 +218,72 @@ from_windows_1252 <- function(x) {
   undefined <- rawToChar(as.raw(c(0x5b, 0x81, 0x8d, 0x8f, 0x90, 0x9d, 0x5d)))
   rows <- rows[!grepl(undefined, x[rows], useBytes = TRUE)]
   list(rows = rows, value = iconv(x[rows], from = "CP1252", to = "UTF-8"))
+}
+
+#' A DBI connection's tables read under `table_map`'s names (D8.24, D9.23, D17.6)
+#'
+#' Each spec table is read with DBI::dbReadTable() where the database has it, under the name
+#' `table_map` gives it ("schema.table" split at its first dot, db_table_id()) or its own
+#' name; a spec table the database lacks isn't read, so Layer 0 reports it missing, and the
+#' database's other tables are never read. The connection is left open and unchanged. Each
+#' table read is recorded as "DBI connection, not hashed" with its rows, the database's name
+#' for it and the driver's class, never a host, user or database name (9.5, D9.23).
+#' @noRd
+read_db_tables <- function(connection, spec, table_map) {
+  if (!requireNamespace("DBI", quietly = TRUE)) {
+    stop(
+      "A DBI connection as `tables` needs the package DBI: install.packages(\"DBI\").",
+      call. = FALSE
+    )
+  }
+  mapped <- is.null(table_map) || (
+    is.character(table_map) && is.null(dim(table_map)) && !is.object(table_map) &&
+      length(table_map) > 0L && !is.null(names(table_map)) && !anyNA(names(table_map)) &&
+      !anyDuplicated(names(table_map)) && !anyNA(table_map) && !any(is_blank(table_map))
+  )
+  if (!mapped) {
+    stop(
+      paste0(
+        "`table_map` must be NULL or a named character vector: each name a table of the ",
+        "specification, each value that table's name in the database, \"schema.table\" allowed."
+      ),
+      call. = FALSE
+    )
+  }
+  spec_tables <- unique(spec$attributes$table_name)
+  stray <- setdiff(names(table_map), spec_tables)
+  if (length(stray) > 0L) {
+    stop(sprintf(
+      "`table_map` names tables the specification doesn't have: %s.",
+      paste(mark_invalid_utf8(stray), collapse = ", ")
+    ), call. = FALSE)
+  }
+  db_names <- spec_tables
+  db_names[match(names(table_map), spec_tables)] <- unname(table_map)
+  ids <- lapply(db_names, db_table_id)
+  present <- vapply(ids, function(id) isTRUE(DBI::dbExistsTable(connection, id)), logical(1))
+  tables <- lapply(ids[present], function(id) setDT(DBI::dbReadTable(connection, id)))
+  names(tables) <- spec_tables[present]
+  rows <- vapply(tables, nrow, integer(1), USE.NAMES = FALSE)
+  inputs <- data.table(
+    table_name = spec_tables[present], file = rep("DBI connection, not hashed", length(rows)),
+    sha256 = rep(NA_character_, length(rows)),
+    detail = sprintf(
+      "%d rows; table %s; driver %s", rows, db_names[present], class(connection)[[1L]]
+    )
+  )
+  list(tables = tables, inputs = inputs, text_tables = character())
+}
+
+#' A database's name for a table as DBI reads it: "schema.table" split at its first dot into
+#' DBI::Id(), any other name as given (D17.6)
+#' @noRd
+db_table_id <- function(name) {
+  dot <- regexpr(".", name, fixed = TRUE)
+  if (dot < 1L) {
+    return(name)
+  }
+  DBI::Id(
+    schema = substr(name, 1L, dot - 1L), table = substr(name, dot + 1L, nchar(name))
+  )
 }

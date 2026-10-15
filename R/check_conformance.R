@@ -27,7 +27,8 @@
 #' break, which may be cut off. A title line as long as the header, or above a file of one
 #' column, is read as the header, so the checks report the file's columns as missing. The
 #' run's inputs metadata names each file with its SHA-256, its rows, its separator and how
-#' many values were read as Windows-1252.
+#' many values were read as Windows-1252. A table read from a DBI connection is recorded as
+#' "DBI connection, not hashed", with the database's name for it and the driver's class.
 #'
 #' Layers and the rules they can raise:
 #' - Layer 0, structure: `table_missing`, `table_unexpected`, `column_missing`,
@@ -68,7 +69,14 @@
 #'   an empty cell is a missing value and everything else is read as written, so write
 #'   files with data.table::fwrite() or write.csv(na = ""). A cell that isn't valid UTF-8 is
 #'   read as Windows-1252, unless it holds a byte Windows-1252 doesn't define. A table
-#'   holding text marked as bytes is refused.
+#'   holding text marked as bytes is refused. Or a DBI connection: the specification's
+#'   tables are read from it under the names `table_map` gives, and its other tables are
+#'   left alone.
+#' @param table_map `NULL`, or, when `tables` is a DBI connection, a named character vector
+#'   of the database's names for tables of the specification: names the specification's
+#'   table names, values the database's, such as `c(trees = "survey.tree_list")` for the
+#'   table tree_list in the schema survey. A table it doesn't name is read under its own
+#'   name.
 #' @param spec A specification from [gpq_read_spec()] or [magp_spec()].
 #' @param group_cols `NULL`, or the grouping columns, report unit first: results and issues
 #'   carry them under these names.
@@ -113,14 +121,14 @@
 #' table(results$results$status)
 #' results$issues[results$issues$status == "open", c("rule_id", "table_name", "column_name")]
 #' @export
-gpq_check_conformance <- function(tables, spec, group_cols = NULL, problem_unit = NULL,
-                                  rules = NULL, layers = 0:5, settings = list(),
-                                  run_id = NULL) {
+gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = NULL,
+                                  problem_unit = NULL, rules = NULL, layers = 0:5,
+                                  settings = list(), run_id = NULL) {
   run_start <- Sys.time()
   if (!inherits(spec, "gpq_spec")) {
     stop("`spec` must be a specification from gpq_read_spec().", call. = FALSE)
   }
-  read <- read_tables(tables, spec)
+  read <- read_tables(tables, spec, table_map)
   tables <- read$tables
   validate_tables(tables)
   layers_ok <- is.numeric(layers) && is.null(dim(layers)) && length(layers) > 0L &&

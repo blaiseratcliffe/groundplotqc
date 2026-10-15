@@ -7,6 +7,7 @@
 gpq_check_conformance(
   tables,
   spec,
+  table_map = NULL,
   group_cols = NULL,
   problem_unit = NULL,
   rules = NULL,
@@ -23,9 +24,17 @@ a named character vector of paths. Every column of a CSV file is read as text, s
 an empty cell is a missing value and everything else is read as written, so write
 files with data.table::fwrite() or write.csv(na = ""). A cell that isn't valid UTF-8 is
 read as Windows-1252, unless it holds a byte Windows-1252 doesn't define. A table
-holding text marked as bytes is refused.}
+holding text marked as bytes is refused. Or a DBI connection: the specification's
+tables are read from it under the names \code{table_map} gives, and its other tables are
+left alone.}
 
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}} or \code{\link[=magp_spec]{magp_spec()}}.}
+
+\item{table_map}{\code{NULL}, or, when \code{tables} is a DBI connection, a named character vector
+of the database's names for tables of the specification: names the specification's
+table names, values the database's, such as \code{c(trees = "survey.tree_list")} for the
+table tree_list in the schema survey. A table it doesn't name is read under its own
+name.}
 
 \item{group_cols}{\code{NULL}, or the grouping columns, report unit first: results and issues
 carry them under these names.}
@@ -83,7 +92,8 @@ header, stops the run before any check, and so does a file that doesn't end with
 break, which may be cut off. A title line as long as the header, or above a file of one
 column, is read as the header, so the checks report the file's columns as missing. The
 run's inputs metadata names each file with its SHA-256, its rows, its separator and how
-many values were read as Windows-1252.
+many values were read as Windows-1252. A table read from a DBI connection is recorded as
+"DBI connection, not hashed", with the database's name for it and the driver's class.
 
 Layers and the rules they can raise:
 \itemize{
