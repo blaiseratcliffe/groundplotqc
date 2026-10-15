@@ -223,11 +223,12 @@ from_windows_1252 <- function(x) {
 #' A DBI connection's tables read under `table_map`'s names (D8.24, D9.23, D17.6)
 #'
 #' Each spec table is read with DBI::dbReadTable() where the database has it, under the name
-#' `table_map` gives it ("schema.table" split at its first dot, db_table_id()) or its own
-#' name; a spec table the database lacks isn't read, so Layer 0 reports it missing, and the
-#' database's other tables are never read. The connection is left open and unchanged. Each
-#' table read is recorded as "DBI connection, not hashed" with its rows, the database's name
-#' for it and the driver's class, never a host, user or database name (9.5, D9.23).
+#' `table_map` gives it ("schema.table" split at its first dot, db_table_id()) or, with no
+#' entry, its own name as given, a dot in it kept; a spec table the database lacks isn't
+#' read, so Layer 0 reports it missing, and the database's other tables are never read. The
+#' connection is left open and unchanged. Each table read is recorded as "DBI connection, not
+#' hashed" with its rows, the database's name for it and the driver's class, never a host,
+#' user or database name (9.5, D9.23).
 #' @noRd
 read_db_tables <- function(connection, spec, table_map) {
   if (!requireNamespace("DBI", quietly = TRUE)) {
@@ -239,7 +240,8 @@ read_db_tables <- function(connection, spec, table_map) {
   mapped <- is.null(table_map) || (
     is.character(table_map) && is.null(dim(table_map)) && !is.object(table_map) &&
       length(table_map) > 0L && !is.null(names(table_map)) && !anyNA(names(table_map)) &&
-      !anyDuplicated(names(table_map)) && !anyNA(table_map) && !any(is_blank(table_map))
+      !any(is_blank(names(table_map))) && !anyDuplicated(names(table_map)) &&
+      !anyNA(table_map) && !any(is_blank(table_map))
   )
   if (!mapped) {
     stop(
@@ -258,9 +260,13 @@ read_db_tables <- function(connection, spec, table_map) {
       paste(mark_invalid_utf8(stray), collapse = ", ")
     ), call. = FALSE)
   }
+  # Only a `table_map` value is split at its first dot; a spec table with no entry is looked
+  # for under its own name as given, a dot in it included (D17.6).
+  at <- match(names(table_map), spec_tables)
   db_names <- spec_tables
-  db_names[match(names(table_map), spec_tables)] <- unname(table_map)
-  ids <- lapply(db_names, db_table_id)
+  db_names[at] <- unname(table_map)
+  ids <- as.list(spec_tables)
+  ids[at] <- lapply(unname(table_map), db_table_id)
   present <- vapply(ids, function(id) isTRUE(DBI::dbExistsTable(connection, id)), logical(1))
   tables <- lapply(ids[present], function(id) setDT(DBI::dbReadTable(connection, id)))
   names(tables) <- spec_tables[present]

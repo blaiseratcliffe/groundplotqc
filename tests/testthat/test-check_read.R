@@ -413,10 +413,12 @@ test_that("a connection's spec tables are read under table_map's names, a schema
     group_cols = "water_body", layers = 0:2, run_id = run_id
   )
   rows <- results$results
-  # The database's other table raises nothing, and the stored types are checked.
+  # The database's other table raises nothing, and the stored types are checked: one passing
+  # class_mismatch row per column, not a not_run row as for a table read from CSV.
   expect_equal(sum(rows$status == "fail"), 0L)
   expect_equal(nrow(results$issues), 0L)
   expect_false(any(rows$not_run_reason %in% "text_input"))
+  expect_equal(rows$status[rows$rule_id == "class_mismatch"], rep("pass", 15L))
   expect_false("notes" %in% rows$table_name)
   inputs <- results$metadata$inputs
   expect_equal(inputs$input, paste0("tables:", c("stations", "hauls", "catches")))
@@ -445,12 +447,27 @@ test_that("a spec table the database lacks is missing; table_map's faults are re
   missing <- results$results[results$results$rule_id == "table_missing"]
   expect_equal(missing$status[missing$table_name == "catches"], "fail")
   expect_equal(missing$status[missing$table_name != "catches"], c("pass", "pass"))
+  # With table_map = NULL every table is looked for under its own name: only stations is there.
+  unmapped <- gpq_check_conformance(connection, spec, NULL, layers = 0, run_id = run_id)
+  missing <- unmapped$results[unmapped$results$rule_id == "table_missing"]
+  expect_equal(
+    missing$status[match(c("stations", "hauls", "catches"), missing$table_name)],
+    c("pass", "fail", "fail")
+  )
+  expect_equal(unmapped$metadata$inputs$input, "tables:stations")
   expect_error(
     gpq_check_conformance(connection, spec, c(nets = "fish_nets")),
     "`table_map` names tables the specification doesn't have: nets.",
     fixed = TRUE
   )
-  for (bad in list(list(hauls = "fish_hauls"), "fish_hauls", c(hauls = NA_character_))) {
+  na_name <- c("fish_hauls", "fish_nets")
+  names(na_name) <- c("hauls", NA)
+  faults <- list(
+    list(hauls = "fish_hauls"), "fish_hauls", c(hauls = NA_character_), c(hauls = ""),
+    c(hauls = "fish_hauls", "fish_nets"), c(hauls = "fish_hauls", hauls = "fish_nets"),
+    na_name, character()
+  )
+  for (bad in faults) {
     expect_error(
       gpq_check_conformance(connection, spec, bad),
       "`table_map` must be NULL or a named character vector",
@@ -464,7 +481,46 @@ test_that("a spec table the database lacks is missing; table_map's faults are re
   )
 })
 
-test_that("tables that's no named list, paths or connection is refused in full (D17.27)", {
+test_that("a spec table whose own name holds a dot is read under that name, as given (D17.6)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  # The fish spec with its table stations named "fish.stations".
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    na.strings = "", stringsAsFactors = FALSE
+  )
+  dictionary[!is.na(dictionary) & dictionary == "stations"] <- "fish.stations"
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- fx_fish_clean()
+  connection <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  withr::defer(DBI::dbDisconnect(connection))
+  DBI::dbExecute(connection, "ATTACH DATABASE ':memory:' AS fish")
+  # The table of that name in the main schema, and, as a trap, a table stations in a schema
+  # fish, which a name split at its dot would reach.
+  DBI::dbWriteTable(connection, "fish.stations", fish$stations)
+  DBI::dbWriteTable(connection, DBI::Id(schema = "fish", table = "stations"), fish$stations[1L])
+  DBI::dbWriteTable(connection, "hauls", fish$hauls)
+  DBI::dbWriteTable(connection, "catches", fish$catches)
+  results <- gpq_check_conformance(connection, spec, layers = 0:2, run_id = run_id)
+  expect_equal(sum(results$results$status == "fail"), 0L)
+  inputs <- results$metadata$inputs
+  expect_equal(inputs$input, paste0("tables:", c("fish.stations", "hauls", "catches")))
+  expect_equal(inputs$detail, c(
+    "2 rows; table fish.stations; driver SQLiteConnection",
+    "4 rows; table hauls; driver SQLiteConnection",
+    "8 rows; table catches; driver SQLiteConnection"
+  ))
+})
+
+test_that("tables that isn't a named list, paths or a connection is refused in full (D17.27)", {
   expect_error(
     gpq_check_conformance(fx_fish_clean()$stations, fx_fish_spec()),
     paste0(
