@@ -613,7 +613,7 @@ test_that("Layer 1's checks change none of the tables (16.2)", {
   }
 })
 
-test_that("value_not_finite reads the rows coercion_loss's coercion found (D17.22)", {
+test_that("value_not_finite finds the same rows as the column's NaN and infinite values (D17.22)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
   catches[, weight := as.character(weight)]

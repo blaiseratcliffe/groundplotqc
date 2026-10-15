@@ -140,6 +140,34 @@ test_that("a Windows-1252 CSV is converted per cell, the undefined bytes kept (D
   expect_equal(back$issues, results$issues)
 })
 
+test_that("a header name holding a Windows-1252 byte is converted, and not counted (D17.3, R13)", {
+  dir <- withr::local_tempdir()
+  byte <- function(...) as.raw(c(...))
+  # The header's fourth name holds 0xe9 ("dépth" in Windows-1252); the data hold no such byte.
+  header_only <- raw_csv(dir, "header_only.csv", c(
+    charToRaw("station_id,station_name,water_body,d"), byte(0xe9),
+    charToRaw("pth,first_visit\nS1,t1,LK,1.5,2020-06-01\nS2,t2,RV,2.5,2020-06-02\n")
+  ))
+  read <- read_tables(list(stations = header_only), fx_fish_spec())
+  name <- names(read$tables$stations)[[4L]]
+  expect_equal(name, paste0("d", intToUtf8(0xe9), "pth"))
+  expect_equal(Encoding(name), "UTF-8")
+  expect_equal(names(read$tables$stations)[-4L], c(
+    "station_id", "station_name", "water_body", "first_visit"
+  ))
+  # The header's conversion is no value converted: the count is of data values only.
+  expect_equal(read$inputs$detail, "2 rows; separator comma")
+  # With a data value converted beside it, the count is that value alone.
+  both <- raw_csv(dir, "both.csv", c(
+    charToRaw("station_id,station_name,water_body,d"), byte(0xe9),
+    charToRaw("pth,first_visit\nB"), byte(0xe9), charToRaw("cancour,t1,LK,1.5,2020-06-01\n")
+  ))
+  read <- read_tables(list(stations = both), fx_fish_spec())
+  expect_equal(names(read$tables$stations)[[4L]], paste0("d", intToUtf8(0xe9), "pth"))
+  expect_equal(read$tables$stations$station_id, paste0("B", intToUtf8(0xe9), "cancour"))
+  expect_equal(read$inputs$detail, "1 row; separator comma; 1 value converted from Windows-1252")
+})
+
 test_that("valid UTF-8 text is read back as written, with nothing converted (16.2, D17.3)", {
   dir <- withr::local_tempdir()
   hostile <- fx_hostile_text()
@@ -197,6 +225,20 @@ test_that("a header name holding a quote is read as written, as the data.frame h
   read <- read_tables(list(stations = path), fx_fish_spec())$tables$stations
   expect_equal(names(read), names(frame))
   expect_equal(names(read)[[2L]], "say \"hi\"")
+})
+
+test_that("a value holding two quotes in a row is read back as written (D17.2)", {
+  dir <- withr::local_tempdir()
+  values <- c("say \"\"hi\"\"", "a\"\"b", "\"\"x", "x\"\"", "say \"hi\"", "\"")
+  frame <- data.table::data.table(
+    station_id = paste0("S", seq_along(values)), station_name = values,
+    water_body = "LK", depth = "1.5", first_visit = "2020-06-01"
+  )
+  path <- file.path(dir, "stations.csv")
+  data.table::fwrite(frame, path)
+  read <- read_tables(list(stations = path), fx_fish_spec())$tables$stations
+  expect_identical(read$station_name, values)
+  expect_identical(read$station_id, frame$station_id)
 })
 
 test_that("a semicolon CSV is read with ';', its decimal commas lost in a number (D17.4)", {

@@ -795,6 +795,16 @@ test_that("coerce_column() refuses what D16.42's pattern refuses, by byte tests 
   expected <- read
   expected[!grepl(decimal, forms, useBytes = TRUE)] <- NA_real_
   expect_identical(coerce_column(forms, "double")$value, expected)
+  # Every ASCII byte from 1 to 127 before, after and inside a number, so each platform's own
+  # as.numeric() is held against D16.42's pattern too, not only the forms named above.
+  bytes <- vapply(1:127, function(b) rawToChar(as.raw(b)), "")
+  swept <- c(
+    paste0("1", bytes), paste0(bytes, "1"), paste0("1", bytes, "5"), paste0("Inf", bytes),
+    paste0(bytes, "NaN"), paste0("1e5", bytes), paste0(bytes, bytes, "2")
+  )
+  swept_expected <- suppressWarnings(as.numeric(swept))
+  swept_expected[!grepl(decimal, swept, useBytes = TRUE)] <- NA_real_
+  expect_identical(coerce_column(swept, "double")$value, swept_expected)
   # Hexadecimal is refused, and so is a number with a Unicode space, which as.numeric() reads
   # on Windows.
   thin <- paste0("1", intToUtf8(0x2009))
