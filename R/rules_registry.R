@@ -159,6 +159,40 @@ rule_registry <- function() {
         "attributes; type_map; sentinels; codes; code_list_map; settings:column_level_min_n;",
         "settings:unknown_codes"
       )
+    ),
+    # The range rules leave the coordinate attributes to coordinate_out_of_bounds (D18.9).
+    conformance(
+      "value_below_min", 3L, "error", "depends",
+      paste(
+        "attributes; type_map; sentinels; settings:column_level_min_n;",
+        "settings:coordinate_attributes; settings:unknown_codes"
+      )
+    ),
+    conformance(
+      "value_above_max", 3L, "error", "depends",
+      paste(
+        "attributes; type_map; sentinels; settings:column_level_min_n;",
+        "settings:coordinate_attributes; settings:unknown_codes"
+      )
+    ),
+    conformance(
+      "string_too_long", 3L, "error", "depends",
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
+    ),
+    conformance(
+      "pattern_mismatch", 3L, "error", "depends",
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
+    ),
+    conformance(
+      "decimals_exceeded", 3L, "warning", "depends",
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
+    ),
+    conformance(
+      "coordinate_out_of_bounds", 3L, "error", "depends",
+      paste(
+        "attributes; type_map; sentinels; settings:column_level_min_n;",
+        "settings:coordinate_attributes; settings:unknown_codes"
+      )
     )
   ))
 }

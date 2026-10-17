@@ -393,6 +393,21 @@ fx_answer_sheet <- function() {
       "code_not_in_list", "magp_trees", "tree_origin", "magp_trees_1",
       "magp_trees$tree_origin row 1 \"QQ\"", "code_not_in_list",
       witness = "QQ"
+    ),
+    fx_defect(
+      "value_below_min", "magp_tree_meas", "dbh", "magp_tree_meas_1",
+      "magp_tree_meas$dbh row 1 0", "value_below_min",
+      witness = "0"
+    ),
+    fx_defect(
+      "value_above_max", "magp_tree_meas", "height", "magp_tree_meas_1",
+      "magp_tree_meas$height row 1 200", "value_above_max",
+      witness = "200"
+    ),
+    fx_defect(
+      "pattern_mismatch", "magp_sites", "ec_zone", "350002",
+      "magp_sites$ec_zone row 1 \"1A\"", "pattern_mismatch",
+      witness = "1A"
     )
   ))
 }
@@ -470,7 +485,10 @@ fx_defect_blocks <- function() {
     whitespace_padding = fx_set_cell("magp_trees", "tree_origin", 1L, "AP "),
     na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA"),
     # ---- Layer 3 (M5) ----
-    code_not_in_list = fx_set_cell("magp_trees", "tree_origin", 1L, "QQ")
+    code_not_in_list = fx_set_cell("magp_trees", "tree_origin", 1L, "QQ"),
+    value_below_min = fx_set_cell("magp_tree_meas", "dbh", 1L, 0),
+    value_above_max = fx_set_cell("magp_tree_meas", "height", 1L, 200),
+    pattern_mismatch = fx_set_cell("magp_sites", "ec_zone", 1L, "1A")
   )
 }
 

@@ -9,7 +9,7 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_identical(rules, validate_rule_set(rules))
   # Each component keeps the file it was read from and each row's line (D14.19).
   expect_equal(attr(rules$rules, "source_file"), "rules_rules.csv")
-  expect_equal(attr(rules$settings, "source_lines"), 2:7)
+  expect_equal(attr(rules$settings, "source_lines"), 2:8)
 })
 
 test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (D14.15)", {
@@ -25,10 +25,15 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
     data.frame(
       setting = c(
         "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
-        "unknown_codes"
+        "unknown_codes", "coordinate_attributes"
       ),
-      value = c("en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP"),
-      type = c("character", "integer", "integer", "character", "character", "character")
+      value = c(
+        "en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP",
+        "latitude; longitude; utm_e; utm_n"
+      ),
+      type = c(
+        "character", "integer", "integer", "character", "character", "character", "character"
+      )
     ),
     ignore_attr = c("source_file", "source_lines", "source_sha256")
   )

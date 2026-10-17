@@ -10,10 +10,10 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two and M4a's five (D14.9, D16.11, D16.12)", {
+test_that("the declared settings are M3a's two, M4a's five and M5's (D14.9, D16.11, D18.25)", {
   expect_named(setting_definitions(), c(
     "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
-    "unknown_codes"
+    "unknown_codes", "coordinate_attributes"
   ))
 })
 
@@ -108,7 +108,7 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
     check_settings(rules = severity_row),
     paste(
       "can't give there: severity. A settings row can give only lang, example_cap,",
-      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes."
+      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes, coordinate_attributes."
     ),
     fixed = TRUE
   )
@@ -408,5 +408,45 @@ test_that("a rule fingerprint tells no codes from the one code \"NA\"", {
   ))
   expect_identical(
     rule_fingerprint("uses_rogue", spec, rules = rows, registry = registry), text_na
+  )
+})
+
+test_that("coordinate_attributes resolves through the tiers; a bad name is refused (D18.9)", {
+  withr::local_options(groundplotqc.coordinate_attributes = NULL)
+  expect_identical(resolve_setting("coordinate_attributes")$value, character())
+  rows <- function(value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = "coordinate_attributes", value = value, type = "character")
+    ))
+  }
+  expect_equal(
+    resolve_setting("coordinate_attributes", rules = rows("latitude; longitude")),
+    list(value = c("latitude", "longitude"), tier = "rule set")
+  )
+  # A blank row gives none.
+  expect_identical(
+    resolve_setting("coordinate_attributes", rules = rows(NA_character_))$value, character()
+  )
+  wants <- paste(
+    "must be a character vector of attribute names, none of them NA, empty, padded with",
+    "spaces or holding \";\"."
+  )
+  for (bad in list(c("latitude", NA), "", " latitude", "a;b", c(x = "latitude"), 1)) {
+    expect_error(
+      resolve_setting("coordinate_attributes", list(coordinate_attributes = bad)),
+      paste("Setting coordinate_attributes (argument)", wants),
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_error(
+    resolve_setting("coordinate_attributes", rules = rows("latitude;longitude")),
+    paste("Setting coordinate_attributes (rule set)", wants),
+    fixed = TRUE
+  )
+  withr::local_options(groundplotqc.coordinate_attributes = "depth")
+  expect_equal(
+    resolve_setting("coordinate_attributes"),
+    list(value = "depth", tier = "option")
   )
 })

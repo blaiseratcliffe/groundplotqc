@@ -291,7 +291,7 @@ test_that("the page puts the result line first and labels the rows' count (D14.1
 
 test_that("the footer names the rule set checked, with no entry without one (D14.39)", {
   entry <- paste0(
-    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 2, for the 20261005 specification files</dd>"
+    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 3, for the 20261005 specification files</dd>"
   )
   spec <- fx_fish_spec()
   results <- preflight_checks(spec)
@@ -336,7 +336,7 @@ test_that("gpq_preflight gives the page the rule set it checked (D14.39)", {
   gpq_preflight(spec, rules = magp_rules(), output_dir = dir)
   expect_match(
     read_page(dir),
-    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 2, for the 20261005 specification files</dd>",
+    "<dt>Rule set</dt><dd>MAGPlot 2.0, version 3, for the 20261005 specification files</dd>",
     fixed = TRUE
   )
   dir <- withr::local_tempdir()

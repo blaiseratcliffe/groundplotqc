@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9003 (development version)
+# groundplotqc 0.0.0.9004 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -29,3 +29,4 @@
 - `magp_example` follows MAGPlot's data dictionary more closely: its numbers are within the dictionary's ranges, each site's ID is in its contributor's band of site IDs, and the `ec_*` columns match their patterns.
 - A results row for a group in which the rule checked no record, each masked by an earlier issue or not checked by the rule, now has status `not_run` with reason `none_checked`, where it read `pass`. On a table with no rows, a rule that checks records writes one `not_run` row per column, reason `no_records`, where it wrote `pass`. Both apply to the rules of Layers 1 and 2 too.
 - Layer 3, value domains, starts: `code_not_in_list` finds a coded value that isn't in its code list, whether the list is a sheet of code lists or a translation table. bit64 joins Suggests, for the tests of integer64 columns.
+- Layer 3 checks values against the data dictionary's ranges, lengths, patterns and decimal places (`value_below_min`, `value_above_max`, `string_too_long`, `pattern_mismatch`, `decimals_exceeded`), and the coordinates the new setting `coordinate_attributes` names against their ranges (`coordinate_out_of_bounds`), set as an option too. A rule whose dictionary column is blank for every attribute it checks writes one `not_run` row, reason `no_dd_values`, and `coordinate_out_of_bounds` without the setting one with reason `no_input`. MAGPlot 2.0's rule set names `latitude`, `longitude`, `utm_e` and `utm_n`.

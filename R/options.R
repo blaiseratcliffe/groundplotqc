@@ -47,12 +47,17 @@
 #' - `groundplotqc.unknown_codes`: codes for "unknown" by attribute, such as
 #'   `c(species = "UNKN.SPP")` (`species_unknown_code`); an attribute may be
 #'   named more than once. Built-in: none.
+#' - `groundplotqc.coordinate_attributes`: attribute names, in any table, that
+#'   `coordinate_out_of_bounds` checks against the dictionary's minimum and
+#'   maximum, and that `value_below_min` and `value_above_max` then leave
+#'   alone. Built-in: none.
 #'
 #' In a rule set's settings rows, a whole number has type `integer`, a setting
 #' with several values gives them joined by "; ", and a named one gives
 #' "name=value" parts. In every tier, a code can't be empty, begin or end with
 #' a space, tab or line break, or hold ";". In `groundplotqc.unknown_codes` the
-#' same holds for each name, and neither a code nor a name can hold "=".
+#' same holds for each name, and neither a code nor a name can hold "=". The
+#' same holds for each attribute name in `groundplotqc.coordinate_attributes`.
 #'
 #' More options are added by the versions that bring the settings they control.
 #'

@@ -5,3 +5,4 @@ column_level_min_n,10,integer
 raw_na_policy,always,character
 rogue_codes,-999; UNK; NA; N/A,character
 unknown_codes,species=UNKN.SPP,character
+coordinate_attributes,latitude; longitude; utm_e; utm_n,character

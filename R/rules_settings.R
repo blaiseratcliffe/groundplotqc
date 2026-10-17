@@ -2,9 +2,9 @@
 # argument > rule set > option (groundplotqc.<setting>) > built-in, and the tier it came from
 # is kept for the run metadata (9.5). Only the settings something reads are declared: lang
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
-# unknown_codes from M4a, read by the conformance checks. A rule-set row gives a setting as
-# text: a whole number for type "integer", several values "; "-joined, a named value as
-# "name=value" (D16.12).
+# unknown_codes from M4a, read by the conformance checks; coordinate_attributes from M5, read
+# by Layer 3 (D18.9). A rule-set row gives a setting as text: a whole number for type
+# "integer", several values "; "-joined, a named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value, what the test wants, and how a rule-set row's text becomes a value
@@ -111,6 +111,16 @@ setting_definitions <- function() {
           names = fifelse(named, sub("=.*$", "", pieces), NA_character_)
         )
       }
+    ),
+    # The attributes coordinate_out_of_bounds checks and the range rules leave (D18.9).
+    coordinate_attributes = list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+      wants = paste(
+        "a character vector of attribute names, none of them NA, empty, padded with spaces",
+        "or holding \";\""
+      ),
+      from_text = parts
     )
   )
 }

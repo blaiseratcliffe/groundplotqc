@@ -37,7 +37,8 @@
 #'   `integer_stored_as_double`, `value_not_finite`.
 #' - Layer 2, missing-value codes: `raw_na`, `blank_string`, `sentinel_wrong_type`,
 #'   `sentinel_rogue_code`, `species_unknown_code`, `whitespace_padding`, `na_text_in_id`.
-#' - Layer 3, value domains: `code_not_in_list`.
+#' - Layer 3, value domains: `code_not_in_list`, `value_below_min`, `value_above_max`,
+#'   `string_too_long`, `pattern_mismatch`, `decimals_exceeded`, `coordinate_out_of_bounds`.
 #'
 #' Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and
@@ -60,10 +61,11 @@
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
-#' `column_level_min_n`, `example_cap`, `lang` and `severity`. A rule set's `rules` rows
-#' give a rule's severity and turn it off (`enabled`) for a table and attribute: the most
-#' specific row that gives a value wins (table and attribute, then table and `"*"`, then
-#' `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no rows there.
+#' `coordinate_attributes`, `column_level_min_n`, `example_cap`, `lang` and `severity`. A
+#' rule set's `rules` rows give a rule's severity and turn it off (`enabled`) for a table and
+#' attribute: the most specific row that gives a value wins (table and attribute, then table
+#' and `"*"`, then `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no
+#' rows there.
 #'
 #' @param tables The tables, one per table of the specification, named as it names them: a
 #'   named list whose elements are data.frames or paths of CSV files, mixed as you like, or
@@ -300,6 +302,7 @@ conformance_context <- function(spec, rules, settings, layers) {
     severity = severity_entries(settings),
     raw_na_policy = setting("raw_na_policy"), rogue_codes = setting("rogue_codes"),
     unknown_codes = setting("unknown_codes"),
+    coordinate_attributes = setting("coordinate_attributes"),
     column_level_min_n = as.integer(setting("column_level_min_n")),
     example_cap = as.integer(setting("example_cap")),
     codes = split(codes$code, paste(codes$table_name, codes$attribute_name, sep = "\r")),

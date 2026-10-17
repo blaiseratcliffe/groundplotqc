@@ -104,7 +104,8 @@ Layers and the rules they can raise:
 \code{integer_stored_as_double}, \code{value_not_finite}.
 \item Layer 2, missing-value codes: \code{raw_na}, \code{blank_string}, \code{sentinel_wrong_type},
 \code{sentinel_rogue_code}, \code{species_unknown_code}, \code{whitespace_padding}, \code{na_text_in_id}.
-\item Layer 3, value domains: \code{code_not_in_list}.
+\item Layer 3, value domains: \code{code_not_in_list}, \code{value_below_min}, \code{value_above_max},
+\code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{coordinate_out_of_bounds}.
 }
 
 Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
@@ -128,10 +129,11 @@ run, naming the column, the table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
-\code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule set's \code{rules} rows
-give a rule's severity and turn it off (\code{enabled}) for a table and attribute: the most
-specific row that gives a value wins (table and attribute, then table and \code{"*"}, then
-\code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no rows there.
+\code{coordinate_attributes}, \code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A
+rule set's \code{rules} rows give a rule's severity and turn it off (\code{enabled}) for a table and
+attribute: the most specific row that gives a value wins (table and attribute, then table
+and \code{"*"}, then \code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no
+rows there.
 }
 \examples{
 # magp_example with one planted defect: a missing value in a column that must hold one.

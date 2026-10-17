@@ -197,6 +197,9 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_meas", "dbh", 2L, Inf)
   plant("magp_tree_meas", "species", 3L, "UNKN.SPP")
   # Layer 3 (M5): each from a first row of its own.
+  plant("magp_tree_meas", "dbh", 4L, 0)
+  plant("magp_tree_meas", "height", 2L, "200")
+  plant("magp_sites", "ec_zone", 1L, "1A")
   plant("magp_trees", "tree_origin", 3L, "QQ")
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")

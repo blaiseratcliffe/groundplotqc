@@ -42,9 +42,21 @@ test_that("check_domains returns an outcome list for each Layer 3 rule", {
   spec <- fx_fish_spec()
   context <- conformance_context(spec, NULL, list(), 3L)
   found <- check_domains(conformance_input(fish, spec), context)
-  expect_named(found, "code_not_in_list")
+  expect_named(found, c(
+    "code_not_in_list", "value_below_min", "value_above_max", "string_too_long",
+    "pattern_mismatch", "decimals_exceeded", "coordinate_out_of_bounds"
+  ))
   # The three coded attributes.
   expect_length(found$code_not_in_list, 3L)
+  # depth, minutes, fish_count and weight have both bounds; station_name a length and a
+  # pattern; depth and weight decimal places.
+  expect_length(found$value_below_min, 4L)
+  expect_length(found$value_above_max, 4L)
+  expect_length(found$string_too_long, 1L)
+  expect_length(found$pattern_mismatch, 1L)
+  expect_length(found$decimals_exceeded, 2L)
+  # The run has no coordinate attributes: one not_run row.
+  expect_equal(found$coordinate_out_of_bounds[[1L]]$reason, "no_input")
 })
 
 # ---- task 4 ----
@@ -181,4 +193,144 @@ test_that("only the values that may be blank reach space_padding() (16.2)", {
   # The no-break space is a blank, which the rule leaves to Layer 2; "ZZ" fails.
   gear <- Filter(function(outcome) outcome$column_name == "gear", found$code_not_in_list)
   expect_identical(gear[[1L]]$fail, 2L)
+})
+
+# ---- task 5 ----
+
+test_that("value_below_min and value_above_max read the bounds and their flags (D18.9)", {
+  fish <- edited("stations", "depth", 1:2, c(-1, 500))
+  fish <- edited("hauls", "minutes", 1L, 0L, fish)
+  fish <- edited("catches", "weight", 1:2, c(0, 1000), fish)
+  fish <- edited("catches", "fish_count", 1L, 10001L, fish)
+  results <- fish_run(fish)
+  below <- opened(results, "value_below_min")
+  # weight's minimum isn't allowed itself (FALSE), depth's maximum and weight's are.
+  expect_equal(
+    placed_at(below), c("stations depth 1", "hauls minutes 1", "catches weight 1")
+  )
+  expect_equal(below$value, c("-1", "0", "0"))
+  expect_equal(below$expected, c("0", "1", "0"))
+  above <- opened(results, "value_above_max")
+  expect_equal(placed_at(above), "catches fish_count 1")
+  expect_equal(c(above$value, above$expected), c("10001", "10000"))
+  expect_equal(nrow(opened(results)), 4L)
+})
+
+test_that("the range rules leave sentinels and unknown codes alone, as numbers (D18.9, R29)", {
+  fish <- edited("stations", "depth", 1:2, c(-99, -5))
+  results <- fish_run(fish, settings = list(unknown_codes = c(depth = "-5")), layers = 3)
+  expect_equal(nrow(opened(results)), 0L)
+  rows <- results$results
+  rows <- rows[rows$rule_id == "value_below_min" & rows$column_name == "depth"]
+  expect_equal(c(rows$n_checked, rows$n_fail), c(2L, 0L))
+  # Read from text (the whole column replaced), "-99.0" is the sentinel -99.
+  text <- edited("stations", "depth", NULL, c("-99.0", "2.5"))
+  expect_equal(nrow(opened(fish_run(text, layers = 3))), 0L)
+})
+
+test_that("string_too_long counts characters; pattern_mismatch reads the DD's pattern (R3)", {
+  long <- edited("stations", "station_name", 1:2, c(strrep("a", 41L), "t-2"))
+  results <- fish_run(long)
+  too_long <- opened(results, "string_too_long")
+  expect_equal(placed_at(too_long), "stations station_name 1")
+  expect_equal(too_long$expected, "40")
+  mismatch <- opened(results, "pattern_mismatch")
+  expect_equal(placed_at(mismatch), "stations station_name 2")
+  expect_equal(c(mismatch$value, mismatch$expected), c("t-2", "^[A-Za-z0-9 ]+$"))
+  expect_equal(nrow(opened(results)), 2L)
+  # Forty two-byte letters are forty characters: not too long, but not the pattern's.
+  accented <- strrep(intToUtf8(233L), 40L)
+  wide <- fish_run(edited("stations", "station_name", 1L, accented))
+  expect_equal(opened(wide)$rule_id, "pattern_mismatch")
+  # Sentinels and blanks are Layer 2's (D18.9, R12).
+  left <- edited("stations", "station_name", 1:2, c("?", ""))
+  expect_equal(nrow(opened(fish_run(left, layers = 3))), 0L)
+})
+
+test_that("a date stored as a date is read in its type's format (R28)", {
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  dictionary$width[dictionary$field == "first_visit"] <- "8"
+  dictionary$format[dictionary$field == "first_visit"] <- "^2020-"
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- fx_fish_clean()
+  fish$stations <- data.table::copy(fish$stations)
+  data.table::set(fish$stations, j = "first_visit", value = as.Date(fish$stations$first_visit))
+  data.table::set(fish$stations, i = 2L, j = "first_visit", value = as.Date("2021-01-31"))
+  results <- fish_run(fish, layers = 3, spec = spec)
+  # "2020-06-01" has ten characters, as the type's format writes it; 2021 isn't the pattern's.
+  expect_equal(placed_at(opened(results, "string_too_long")), paste("stations first_visit", 1:2))
+  expect_equal(placed_at(opened(results, "pattern_mismatch")), "stations first_visit 2")
+  expect_equal(opened(results, "pattern_mismatch")$value, "2021-01-31")
+})
+
+test_that("decimals_exceeded counts places as written to 15 digits (R22)", {
+  fish <- edited("stations", "depth", 1L, 1.25)
+  fish <- edited("catches", "weight", 1:2, c(1.0005, 1.5), fish)
+  found <- opened(fish_run(fish), "decimals_exceeded")
+  expect_equal(placed_at(found), c("stations depth 1", "catches weight 1"))
+  expect_equal(found$value, c("1.25", "1.0005"))
+  expect_equal(found$expected, c("1", "3"))
+  # "1.50" read from text is 1.5, one place.
+  text <- edited("stations", "depth", NULL, c("1.50", "2.5"))
+  expect_equal(nrow(opened(fish_run(text, layers = 3), "decimals_exceeded")), 0L)
+})
+
+test_that("coordinate_out_of_bounds takes the setting's attributes from the range rules", {
+  fish <- edited("stations", "depth", 1:2, c(600, -1))
+  results <- fish_run(fish, settings = list(coordinate_attributes = "depth"))
+  found <- opened(results)
+  expect_equal(unique(found$rule_id), "coordinate_out_of_bounds")
+  expect_equal(placed_at(found), c("stations depth 1", "stations depth 2"))
+  expect_equal(found$expected, c("500", "0"))
+  # The range rules leave a coordinate attribute to it (D18.9).
+  rows <- results$results
+  ranged <- rows$rule_id %chin% c("value_below_min", "value_above_max")
+  expect_false("depth" %in% rows$column_name[ranged])
+  # Without the setting it doesn't run: one row, no_input (R19).
+  plain <- fish_run(fish)$results
+  row <- plain[plain$rule_id == "coordinate_out_of_bounds"]
+  expect_equal(
+    c(row$table_name, row$column_name, row$status, row$not_run_reason),
+    c("*", "*", "not_run", "no_input")
+  )
+  expect_equal(placed_at(opened(fish_run(fish), "value_above_max")), "stations depth 1")
+})
+
+test_that("a dictionary column no attribute gives a value is one not_run row (D18.19, R19)", {
+  # MAGPlot's DD has max_length and decimals blank, and no bound on a coordinate.
+  testthat::skip_on_cran()
+  results <- withCallingHandlers(
+    gpq_check_conformance(fx_magp_clean(), magp_spec(), rules = magp_rules(), layers = 3),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_equal(nrow(opened(results)), 0L)
+  expect_equal(nrow(results$metadata$self_test), 0L)
+  rows <- results$results
+  for (rule in c("string_too_long", "decimals_exceeded", "coordinate_out_of_bounds")) {
+    row <- rows[rows$rule_id == rule]
+    expect_equal(
+      c(row$table_name, row$column_name, row$status, row$not_run_reason),
+      c("*", "*", "not_run", "no_dd_values"),
+      info = rule
+    )
+  }
+  # The eight ranges and four patterns are checked.
+  checked <- rows[rows$rule_id %chin% c("value_below_min", "value_above_max", "pattern_mismatch")]
+  expect_equal(
+    as.vector(table(checked$rule_id)[c("value_below_min", "value_above_max", "pattern_mismatch")]),
+    c(8L, 8L, 4L)
+  )
+  expect_true(all(checked$status == "pass"))
 })
