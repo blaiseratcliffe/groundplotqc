@@ -358,7 +358,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   meas <- tables$magp_tree_meas
   trees <- tables$magp_trees
   # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
-  # 1, 2 or 3, gives the same count).
+  # 1 to 4, gives the same count).
   rate <- function(n) ceiling(0.001 * n)
   expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
   expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))

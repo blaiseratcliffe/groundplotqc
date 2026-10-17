@@ -334,3 +334,130 @@ test_that("a dictionary column no attribute gives a value is one not_run row (D1
   )
   expect_true(all(checked$status == "pass"))
 })
+
+# task 5's fix round (the datatable review's I1, b30f767)
+test_that("a value on two equal excluded coordinate bounds fails once (D18.9)", {
+  # depth's minimum and maximum both 5 and both excluded, which pre-flight accepts.
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  depth <- dictionary$field == "depth"
+  dictionary[depth, c("low", "high", "low_in", "high_in")] <- list("5", "5", "FALSE", "FALSE")
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- edited("stations", "depth", 1:2, c(5, 6))
+  results <- fish_run(
+    fish,
+    settings = list(coordinate_attributes = "depth"), layers = 3, spec = spec
+  )
+  found <- opened(results, "coordinate_out_of_bounds")
+  # 5 is beyond both bounds, and is one failure.
+  expect_equal(placed_at(found), c("stations depth 1", "stations depth 2"))
+  expect_equal(found$value, c("5", "6"))
+  expect_equal(found$expected, c("5", "5"))
+})
+
+# task 5's fix round (the spec review's finding 2, b30f767)
+test_that("coordinate_out_of_bounds reads a one-sided bound (D18.9)", {
+  # depth with a maximum of 500 and no minimum.
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  dictionary$low[dictionary$field == "depth"] <- NA_character_
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- edited("stations", "depth", 1:2, c(-1, 600))
+  results <- fish_run(
+    fish,
+    settings = list(coordinate_attributes = "depth"), layers = 3, spec = spec
+  )
+  found <- opened(results)
+  expect_equal(paste(found$rule_id, placed_at(found)), "coordinate_out_of_bounds stations depth 2")
+  expect_equal(c(found$value, found$expected), c("600", "500"))
+})
+
+# task 5's fix round (the spec review's finding 2 and the datatable review's M3, b30f767)
+test_that("coordinate_out_of_bounds passes, excludes a bound, leaves Layer 2's values (R19)", {
+  # A coordinate within its bounds passes: one row, checked.
+  rows <- fish_run(fx_fish_clean(), settings = list(coordinate_attributes = "depth"))$results
+  row <- rows[rows$rule_id == "coordinate_out_of_bounds"]
+  expect_equal(c(row$table_name, row$column_name, row$status), c("stations", "depth", "pass"))
+  expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
+  # weight's minimum 0 is excluded, its maximum 1000 allowed.
+  fish <- edited("catches", "weight", 1:2, c(0, 1000))
+  found <- opened(fish_run(fish, settings = list(coordinate_attributes = "weight")))
+  expect_equal(paste(found$rule_id, placed_at(found)), "coordinate_out_of_bounds catches weight 1")
+  expect_equal(c(found$value, found$expected), c("0", "0"))
+  # A sentinel and an unknown code are Layer 2's, checked and passing (R12, R20).
+  fish <- edited("stations", "depth", 1:2, c(-99, -5))
+  results <- fish_run(
+    fish,
+    settings = list(coordinate_attributes = "depth", unknown_codes = c(depth = "-5")),
+    layers = 3
+  )
+  expect_equal(nrow(opened(results)), 0L)
+  row <- results$results[results$results$rule_id == "coordinate_out_of_bounds"]
+  expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
+  # With every bounded attribute a coordinate, the range rules have none: one not_run row
+  # each (R19).
+  bounded <- c("depth", "minutes", "fish_count", "weight")
+  rows <- fish_run(fx_fish_clean(), settings = list(coordinate_attributes = bounded))$results
+  for (rule in c("value_below_min", "value_above_max")) {
+    row <- rows[rows$rule_id == rule]
+    expect_equal(
+      c(row$table_name, row$column_name, row$status, row$not_run_reason),
+      c("*", "*", "not_run", "no_dd_values"),
+      info = rule
+    )
+  }
+  expect_setequal(rows$column_name[rows$rule_id == "coordinate_out_of_bounds"], bounded)
+})
+
+# task 5's fix round (the datatable review's M3, b30f767)
+test_that("decimals_exceeded writes each distinct number once; a rule coerces a column once", {
+  # depth as text, as a CSV gives it; weight's eight values two distinct numbers.
+  fish <- edited("stations", "depth", NULL, c("2.5", "2.5"))
+  fish <- edited("catches", "weight", NULL, rep(c(1.5, 2), 4L), fish)
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(), 3L)
+  input <- conformance_input(fish, spec)
+  real_places <- decimal_places
+  real_coerce <- coerce_column
+  places <- list()
+  coerced <- character()
+  testthat::local_mocked_bindings(
+    decimal_places = function(number) {
+      places[[length(places) + 1L]] <<- number
+      real_places(number)
+    },
+    coerce_column = function(x, r_class, ...) {
+      if (identical(x, fish$stations$depth)) {
+        coerced <<- c(coerced, r_class)
+      }
+      real_coerce(x, r_class, ...)
+    }
+  )
+  found <- check_domains(input, context)
+  expect_identical(places, list(2.5, c(1.5, 2)))
+  # value_below_min, value_above_max and decimals_exceeded each read depth once.
+  expect_identical(coerced, rep("double", 3L))
+  expect_length(found$decimals_exceeded, 2L)
+})

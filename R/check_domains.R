@@ -212,7 +212,8 @@ check_domains <- function(input, context) {
           } else {
             bound_rows(number, max_value[[k]], dd("max_inclusive")[[k]], "max")
           }
-          fail <- sort(c(low, high))
+          # A value on a minimum and maximum that are equal and both excluded fails once.
+          fail <- sort(unique(c(low, high)))
           kept <- !domain_skipped(x[fail], row, context, number[fail])
           expected <- as_text(fifelse(fail %in% low, min_value[[k]], max_value[[k]]))
           record_outcome(
