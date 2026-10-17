@@ -2,7 +2,7 @@
 % Please edit documentation in R/check_conformance.R
 \name{gpq_check_conformance}
 \alias{gpq_check_conformance}
-\title{Check tables against a specification: structure, types and missing-value codes}
+\title{Check tables against a specification: structure, types, missing-value codes and value domains}
 \usage{
 gpq_check_conformance(
   tables,
@@ -104,15 +104,18 @@ Layers and the rules they can raise:
 \code{integer_stored_as_double}, \code{value_not_finite}.
 \item Layer 2, missing-value codes: \code{raw_na}, \code{blank_string}, \code{sentinel_wrong_type},
 \code{sentinel_rogue_code}, \code{species_unknown_code}, \code{whitespace_padding}, \code{na_text_in_id}.
+\item Layer 3, value domains: \code{code_not_in_list}.
 }
 
-Layers 3 to 5 have no rules yet. A column whose name differs from its dictionary
+Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 attribute's only in letter case or spaces is reported by \code{column_name_mismatch} and
 checked as that attribute. Layer 0's rules and \code{class_mismatch} and
 \code{integer_stored_as_double} count tables or columns, not records, and their rows have \code{"*"}
 in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its
-issue there has status \code{not_evaluated} and names the earlier issue as its root. When a
+issue there has status \code{not_evaluated} and names the earlier issue as its root. A value
+that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
+value, a blank, a missing-value code and an unknown code to Layer 2. When a
 rule fails on every checked record of a column in a group, and at least
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.

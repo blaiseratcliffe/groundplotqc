@@ -242,8 +242,10 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
   registry <- rule_registry()
   data_rules <- registry$rule_id[registry$check_type != "preflight"]
   expect_true(all(sheet$rule_id %in% data_rules))
-  # Every data rule has a defect block; pre-flight checks have their planted spec.
-  expect_equal(setdiff(data_rules, sheet$rule_id), character())
+  # Every data rule has a defect block, but the three MAGPlot's DD gives no values for, which
+  # are tested on the fish toy (21 M5, R15); pre-flight checks have their planted spec.
+  fish_only <- c("string_too_long", "decimals_exceeded", "coordinate_out_of_bounds")
+  expect_equal(setdiff(data_rules, c(sheet$rule_id, fish_only)), character())
   # No row lists its own rule as a cascade, which would let the rule's other issues pass.
   own_cascade <- mapply(function(rule, cascade) rule %in% split_joined(cascade),
     sheet$rule_id, sheet$cascade_rule_ids,
@@ -261,7 +263,7 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
   }, logical(1))))
 })
 
-test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
+test_that("the clean base raises nothing in Layers 0 to 3 (18.3)", {
   # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())
@@ -369,6 +371,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(trees$tree_origin == "-9"), rate(nrow(trees)))
   expect_equal(sum(trees$tree_origin == "AP "), rate(nrow(trees)))
   expect_equal(sum(trees$src_tree_id == "NA"), rate(nrow(trees)))
+  expect_equal(sum(trees$tree_origin == "QQ"), rate(nrow(trees)))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

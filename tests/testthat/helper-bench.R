@@ -170,7 +170,7 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
 }
 
 # D17.8's defect run, made in place on fx_magp_scaled()'s own tables: each of the answer
-# sheet's 17 defects (fx_answer_sheet()), the record defects in 0.1% of their table's rows
+# sheet's defects (fx_answer_sheet()), the record defects in 0.1% of their table's rows
 # (every 1000th row, from a different first row where two share a column), the table and
 # column defects once, column_missing on magp_tree_cond's comments rather than magp_trees',
 # which blank_string and sentinel_rogue_code read (R9); and three carried from M4a: m9's key
@@ -196,6 +196,8 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_meas", "height", 1L, "tall")
   plant("magp_tree_meas", "dbh", 2L, Inf)
   plant("magp_tree_meas", "species", 3L, "UNKN.SPP")
+  # Layer 3 (M5): each from a first row of its own.
+  plant("magp_trees", "tree_origin", 3L, "QQ")
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

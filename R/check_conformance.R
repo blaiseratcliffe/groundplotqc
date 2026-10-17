@@ -1,13 +1,13 @@
 # A conformance run (plan 3.2, 6.1 to 6.3, 9.1 to 9.7; D2.10, D4.1, D7.3, D7.5, D9.24,
 # D16.3 to D16.17). gpq_check_conformance() runs pre-flight, matches the tables to the spec
 # (R/check_input.R) and runs each asked layer's rule family (R/check_structure.R,
-# R/check_types.R, R/check_sentinels.R). A family returns outcomes, by rule; this file turns
-# them into the results summary and the issues: each rule's severity and whether it is on,
-# from the rule set (D16.6, D16.7); a value that failed an earlier layer masked as
-# not_evaluated (6.2); failures and masked records collapsed into column-level issues (6.3,
-# D16.10); and the run's metadata with its self-test (9.5, 9.7).
+# R/check_types.R, R/check_sentinels.R, R/check_domains.R). A family returns outcomes, by
+# rule; this file turns them into the results summary and the issues: each rule's severity
+# and whether it is on, from the rule set (D16.6, D16.7); a value that failed an earlier layer
+# masked as not_evaluated (6.2); failures and masked records collapsed into column-level
+# issues (6.3, D16.10); and the run's metadata with its self-test (9.5, 9.7).
 
-#' Check tables against a specification: structure, types and missing-value codes
+#' Check tables against a specification: structure, types, missing-value codes and value domains
 #'
 #' @description
 #' Runs the conformance stage on a set of related tables: pre-flight of the
@@ -37,14 +37,17 @@
 #'   `integer_stored_as_double`, `value_not_finite`.
 #' - Layer 2, missing-value codes: `raw_na`, `blank_string`, `sentinel_wrong_type`,
 #'   `sentinel_rogue_code`, `species_unknown_code`, `whitespace_padding`, `na_text_in_id`.
+#' - Layer 3, value domains: `code_not_in_list`.
 #'
-#' Layers 3 to 5 have no rules yet. A column whose name differs from its dictionary
+#' Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and
 #' checked as that attribute. Layer 0's rules and `class_mismatch` and
 #' `integer_stored_as_double` count tables or columns, not records, and their rows have `"*"`
 #' in every group column.
 #' A value that failed Layer 1 is not evaluated by Layer 2: its
-#' issue there has status `not_evaluated` and names the earlier issue as its root. When a
+#' issue there has status `not_evaluated` and names the earlier issue as its root. A value
+#' that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
+#' value, a blank, a missing-value code and an unknown code to Layer 2. When a
 #' rule fails on every checked record of a column in a group, and at least
 #' `column_level_min_n` records were checked, the run records one column-level issue; masked
 #' records sharing one root collapse the same way.
@@ -171,12 +174,14 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
     run_id <- new_run_id(run_start)
   }
   state <- new_run_state()
-  # A layer with no registered rule runs nothing (Layers 3 to 5 until M5, M10a and M10b).
+  # A layer with no registered rule runs nothing (Layers 4 and 5 until M5's second part, M10a
+  # and M10b).
   for (layer in intersect(layers, context$run_rules$layer)) {
     found <- switch(as.character(layer),
       "0" = check_structure(input, context),
       "1" = check_types(input, context),
-      "2" = check_sentinels(input, context)
+      "2" = check_sentinels(input, context),
+      "3" = check_domains(input, context)
     )
     record_layer(found, layer, input, context, state, run_id)
   }

@@ -164,3 +164,4 @@
 "species_unknown_code","en","A value is a code for unknown where the missing-value code is expected."
 "whitespace_padding","en","A code or ID has spaces before or after it."
 "na_text_in_id","en","An ID is the text NA."
+"code_not_in_list","en","A coded value isn't in its code list."

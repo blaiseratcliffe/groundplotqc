@@ -149,6 +149,16 @@ rule_registry <- function() {
     ),
     conformance(
       "na_text_in_id", 2L, "error", "harmonization", "attributes; keys; settings:column_level_min_n"
+    ),
+    # ---- M5: Layer 3, value domains (6.1; D8.24, D18.9, D18.10) ----
+    # Every Layer 3 record rule reads the sentinels and the unknown codes, which it leaves to
+    # Layer 2 (D18.9).
+    conformance(
+      "code_not_in_list", 3L, "error", "depends",
+      paste(
+        "attributes; type_map; sentinels; codes; code_list_map; settings:column_level_min_n;",
+        "settings:unknown_codes"
+      )
     )
   ))
 }

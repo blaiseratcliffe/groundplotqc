@@ -387,6 +387,12 @@ fx_answer_sheet <- function() {
       "na_text_in_id", "magp_trees", "src_tree_id", "magp_trees_1",
       "magp_trees$src_tree_id row 1 \"NA\"", "na_text_in_id",
       witness = "NA"
+    ),
+    # ---- Layer 3 (M5) ----
+    fx_defect(
+      "code_not_in_list", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"QQ\"", "code_not_in_list",
+      witness = "QQ"
     )
   ))
 }
@@ -462,11 +468,13 @@ fx_defect_blocks <- function() {
     sentinel_rogue_code = fx_set_cell("magp_trees", "comments", 1L, "N/A"),
     species_unknown_code = fx_set_cell("magp_tree_meas", "species", 1L, "UNKN.SPP"),
     whitespace_padding = fx_set_cell("magp_trees", "tree_origin", 1L, "AP "),
-    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA")
+    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA"),
+    # ---- Layer 3 (M5) ----
+    code_not_in_list = fx_set_cell("magp_trees", "tree_origin", 1L, "QQ")
   )
 }
 
-# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 2, with MAGPlot's
+# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 3, with MAGPlot's
 # spec, rule set and group columns; pre-flight's warning about the spec is muffled. What a
 # planted defect must raise are the open issues: `results$issues[status == "open"]`.
 fx_caught <- function(tables) {
@@ -475,7 +483,7 @@ fx_caught <- function(tables) {
     gpq_check_conformance(
       tables, magp_spec(),
       group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
-      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:3
     ),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )

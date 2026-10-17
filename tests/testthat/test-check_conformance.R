@@ -304,7 +304,7 @@ test_that("group columns named like the engine's own variables are read as colum
 })
 
 test_that("a layer with no registered rule runs nothing", {
-  results <- gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 3:5)
+  results <- gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 4:5)
   expect_equal(nrow(results$results), 0L)
   expect_equal(nrow(results$metadata$self_test), 0L)
 })
