@@ -440,6 +440,14 @@ test_that("CLR is in both the disturbance and the treatment lists (D12.73 (5a), 
   }
 })
 
+test_that("NO is in the treatment list and ND in the disturbance list (D18.11, plan 24.1 #3)", {
+  # A re-copy of the treatment table from its master leaves both blank, which no filter list
+  # holds, so each drops from its list, until the master says T and D.
+  codes <- tree_spec()$codes
+  expect_true("NO" %in% codes$code[codes$attribute_name == "treatment_type"])
+  expect_true("ND" %in% codes$code[codes$attribute_name == "disturbance_type"])
+})
+
 test_that("the species copy keeps its fold notes on their rows only (D12.72 (13), (21))", {
   notes <- c(
     BETU.GLA = "Folded code: BETU.GLA covers Betula glandulifera and Betula glandulosa.",
@@ -453,7 +461,7 @@ test_that("the species copy keeps its fold notes on their rows only (D12.72 (13)
   expect_identical(species_table$comments, unname(notes[species_table$NFI]))
 })
 
-test_that("every treat_vs_dist value is in a filter list, blank only on NO and ND (#39)", {
+test_that("every treat_vs_dist value is in a filter list, none blank (#39, D18.11)", {
   columns <- hand_kept("crosswalk_columns.csv")
   filters <- columns$filter_values[columns$crosswalk == "treatment_disturbance"]
   listed <- unique(unlist(strsplit(filters, "; ", fixed = TRUE)))
@@ -463,7 +471,7 @@ test_that("every treat_vs_dist value is in a filter list, blank only on NO and N
   expect_gt(nrow(walk), 0L)
   # A value in neither list would drop its code from both silently.
   expect_equal(setdiff(walk$treat_vs_dist[!is.na(walk$treat_vs_dist)], listed), character())
-  expect_equal(setdiff(walk$magp_codes[is.na(walk$treat_vs_dist)], c("NO", "ND")), character())
+  expect_equal(walk$magp_codes[is.na(walk$treat_vs_dist)], character())
 })
 
 test_that("the datasets copy and the lookup agree on every src_dataset_id (D12.74)", {

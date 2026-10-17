@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9001 (development version)
+# groundplotqc 0.0.0.9002 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -8,7 +8,7 @@
 - `gpq_preflight()` checks a specification before any data is read: 22 checks that stop or warn, with a pre-flight CSV and a self-contained HTML report. It also takes a rule set, settings and report text (`rules`, `settings`, `text`): three more checks find rule-set rows that name an unknown table, attribute or rule, or give a rule a severity or class it can't take, each placed by its file and line where the rule set was read from files; no rule set or setting can change what a pre-flight check stops or warns on. The `text` rows and the `lang` setting are what pre-flight's report-text checks read; its own page and table stay in the package's English text. The options `groundplotqc.lang` and `groundplotqc.severity` are documented on `?groundplotqc_options`.
 - Pre-flight checks that every registered rule has English report text and, in a run language other than English, lists each text that falls back to English; it stops on a text in the caller's table that uses a slot the package's row of that text doesn't have. The pre-flight page opens with a one-line result and an introduction that covers the run's configuration as well as the specification, its footer names the rule set that was checked when the rule set has a meta row, and its rows table's count column reads "Findings in this check".
 - A first article, "Specification files and configuration", reads and pre-flights the fish survey example.
-- `magp_spec()` returns MAGPlot 2.0's specification, compiled from 20261005_magpv2_DD.xlsx, 20261005_magpv2_Lookup_Tables.xlsx, 20261005_magpv2_A2.xlsx, 20261005_magpv2_datasets.csv, 20261005_magpv2_species.csv, 20261005_magpv2_condition.csv, 20261005_magpv2_treatment_disturbance.csv and 20261005_magpv2_severity.csv.
+- `magp_spec()` returns MAGPlot 2.0's specification, compiled from 20261005_magpv2_DD.xlsx, 20261005_magpv2_Lookup_Tables.xlsx, 20261005_magpv2_A2.xlsx, 20261005_magpv2_datasets.csv, 20261005_magpv2_species.csv, 20261005_magpv2_condition.csv, 20261015_magpv2_treatment_disturbance.csv and 20261005_magpv2_severity.csv.
 - `magp_rules()` returns MAGPlot 2.0's rule set: its meta row, its rules rows and its settings, compiled from the hand-kept files in `data-raw/magp/` for the 20261005 specification files.
 - `magp_example` is a small synthetic example of MAGPlot 2.0's 17 tables, built from `magp_spec()`: every table and column of the data dictionary, with made-up values. Help pages use it.
 - The pre-flight CSV, `metadata/preflight.csv`, ends its lines with LF on every platform, so its bytes are the same on Windows, macOS and Linux.
@@ -21,3 +21,4 @@
 - `gpq_check_conformance()` also reads its tables from a DBI connection, such as a database's: its new third argument `table_map` gives the database's name for a table it names otherwise, `"schema.table"` for a table in a schema. Only the specification's tables are read. DBI and RSQLite join Suggests.
 - A conformance run's fixed cost is cut: a run on `magp_example` takes about a third of the time it did, with the same results and issues.
 - A second article, "Using the engine on your own dataset", checks the fish survey example as data frames, as CSV files and from a database, and writes its results to a run folder.
+- `magp_spec()` accepts NO as a `treatment_type` code and ND as a `disturbance_type` code: it is compiled from 20261015_magpv2_treatment_disturbance.csv, which gives NO's `treat_vs_dist` as T and ND's as D, in place of the 20261005 copy.
