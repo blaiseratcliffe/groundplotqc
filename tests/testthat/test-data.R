@@ -388,3 +388,121 @@ test_that("the defect run raises each answer-sheet rule (D17.8)", {
   open <- results$issues[results$issues$status == "open"]
   expect_equal(setdiff(fx_answer_sheet()$rule_id, open$rule_id), character())
 })
+
+test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R14, R16)", {
+  # Every number of a bounded column inside its bounds, the inclusive flags read.
+  inside <- function(tables, spec, label) {
+    a <- spec$attributes
+    bounded <- which(!is.na(a$min_value) | !is.na(a$max_value))
+    expect_true(length(bounded) > 0L, label = label)
+    for (k in bounded) {
+      table <- tables[[a$table_name[[k]]]]
+      if (is.null(table)) {
+        next
+      }
+      number <- as.numeric(table[[a$attribute_name[[k]]]])
+      where <- paste0(label, ": ", a$table_name[[k]], ".", a$attribute_name[[k]])
+      low <- a$min_value[[k]]
+      high <- a$max_value[[k]]
+      if (!is.na(low)) {
+        above <- if (isFALSE(a$min_inclusive[[k]])) number > low else number >= low
+        expect_true(all(above), label = where)
+      }
+      if (!is.na(high)) {
+        below <- if (isFALSE(a$max_inclusive[[k]])) number < high else number <= high
+        expect_true(all(below), label = where)
+      }
+    }
+  }
+  spec <- magp_spec()
+  inside(fx_magp_clean(), spec, "MAGPlot")
+  inside(fx_fish_clean(), fx_fish_spec(), "fish")
+  inside(fx_clean_tables(fx_forest_spec()), fx_forest_spec(), "forest")
+  # Only magp_tree_meas.height's rows past its maximum moved (R16): rows 110 to 128 now hold
+  # 0.5 to 18.5, every other value as before.
+  height <- fx_magp_clean()$magp_tree_meas$height
+  expect_equal(height[1:109], seq_len(109L) + 0.5)
+  expect_equal(height[110:128], 0:18 + 0.5)
+  # The fish base is as it was.
+  fish <- fx_fish_clean()
+  expect_equal(fish$stations$depth, c(1.5, 2.5))
+  expect_equal(fish$hauls$minutes, 1:4)
+  expect_equal(fish$catches$weight, seq_len(8L) + 0.5)
+})
+
+test_that("a number column is made inside bounds with each flag, or the base stops (R16)", {
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  set_bounds <- function(attribute, low, high, low_in, high_in) {
+    k <- which(attributes$attribute_name == attribute)
+    data.table::set(attributes, i = k, j = "min_value", value = low)
+    data.table::set(attributes, i = k, j = "max_value", value = high)
+    data.table::set(attributes, i = k, j = "min_inclusive", value = low_in)
+    data.table::set(attributes, i = k, j = "max_inclusive", value = high_in)
+  }
+  # minutes (integer, 4 rows) between 2 and 3, both allowed; fish_count (integer, 8 rows)
+  # above 5 and below 8, neither allowed; weight (double, 8 rows) above 1 and up to 3.5.
+  set_bounds("minutes", 2, 3, TRUE, TRUE)
+  set_bounds("fish_count", 5, 8, FALSE, FALSE)
+  set_bounds("weight", 1, 3.5, FALSE, TRUE)
+  bounded <- spec
+  bounded$attributes <- attributes
+  tables <- fx_clean_tables(bounded)
+  # Wherever `index` fits it stays; otherwise the values cycle over the whole numbers that fit.
+  expect_equal(tables$hauls$minutes, c(3L, 2L, 3L, 2L))
+  expect_equal(tables$catches$fish_count, c(7L, 6L, 7L, 6L, 7L, 6L, 7L, 6L))
+  expect_equal(tables$catches$weight, c(1.5, 2.5, 3.5, 1.5, 2.5, 3.5, 1.5, 2.5))
+  expect_clean_base(tables, bounded)
+  # A bound no whole number (plus 0.5 for a double) fits stops the base.
+  set_bounds("weight", 1.6, 2.4, TRUE, TRUE)
+  bounded$attributes <- attributes
+  expect_error(fx_clean_tables(bounded), "can't make catches.weight inside its bounds")
+})
+
+test_that("each site's ID is in its contributor's band; ec_* follow their patterns (D18.26)", {
+  spec <- magp_spec()
+  # Each site's band, by its contributor's label on the contributor sheet.
+  in_band <- function(tables, label) {
+    sites <- tables$magp_sites
+    contributor <- tables$magp_datasets$magp_contributor_id[
+      match(sites$magp_dataset_id, tables$magp_datasets$magp_dataset_id)
+    ]
+    lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+    ids <- lists[lists$sheet_column == "magp_contributor_id"]
+    names_at <- lists[lists$sheet_column == "abbreviated_name"]
+    band_label <- names_at$value[match(
+      ids$source_row[match(as.character(contributor), ids$value)], names_at$source_row
+    )]
+    band <- match(band_label, spec$id_bands$label)
+    expect_false(anyNA(band), label = label)
+    id <- as.numeric(sites$magp_site_id)
+    expect_true(
+      all(id >= spec$id_bands$band_start[band] & id <= spec$id_bands$band_end[band]),
+      label = label
+    )
+    # Every table holding the ID holds only the sites' IDs.
+    holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
+    for (table in holders) {
+      expect_true(all(tables[[table]]$magp_site_id %in% sites$magp_site_id), label = table)
+    }
+  }
+  base <- fx_magp_clean()
+  in_band(base, "clean base")
+  # Sites 1 to 4 are AB's (band from 350001), 5 to 8 BC's (from 450001): the start plus the
+  # old ID.
+  expect_equal(base$magp_sites$magp_site_id, c(350002:350005, 450006:450009))
+  patterned <- c("ec_zone", "ec_province", "ec_region", "ec_district")
+  a <- spec$attributes
+  for (column in patterned) {
+    pattern <- a$pattern[a$table_name == "magp_sites" & a$attribute_name == column]
+    expect_true(all(grepl(pattern, base$magp_sites[[column]])), label = column)
+  }
+  expect_equal(
+    unlist(base$magp_sites[1L, patterned, with = FALSE], use.names = FALSE),
+    c("1", "1.1", "01.1.001", "01.1.001.0001")
+  )
+  # The scaled base numbers each site within its contributor's band (R26).
+  testthat::skip_on_cran()
+  in_band(fx_magp_scaled(0.01), "0.01x")
+  in_band(fx_magp_scaled(0.01, many_groups = TRUE), "0.01x, many groups")
+})

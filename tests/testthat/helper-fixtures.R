@@ -98,6 +98,40 @@ fx_clean_tables <- function(spec, n = 2L) {
     }
     picked
   }
+  # Whole numbers for a number column, inside the dictionary's bounds where it gives them, the
+  # inclusive flags read (R14, R16): `index` where it fits, otherwise cycling over the whole
+  # numbers that fit, so today's values stay wherever they already did. A double is the whole
+  # number plus 0.5, so its bounds are read half a unit in. A bound the column can't fit
+  # stops the base.
+  within_bounds <- function(index, attribute, r_class) {
+    half <- if (r_class == "double") 0.5 else 0
+    low <- attribute$min_value
+    high <- attribute$max_value
+    lower <- if (is.null(low) || is.na(low)) {
+      1
+    } else if (isFALSE(attribute$min_inclusive)) {
+      floor(low - half) + 1
+    } else {
+      ceiling(low - half)
+    }
+    upper <- if (is.null(high) || is.na(high)) {
+      Inf
+    } else if (isFALSE(attribute$max_inclusive)) {
+      ceiling(high - half) - 1
+    } else {
+      floor(high - half)
+    }
+    if (upper < lower) {
+      stop(
+        "fx_clean_tables() can't make ", attribute$table_name, ".", attribute$attribute_name,
+        " inside its bounds."
+      )
+    }
+    if (is.infinite(upper)) {
+      return(index + max(0, lower - 1))
+    }
+    lower + ((index - lower) %% (upper - lower + 1))
+  }
   lineage <- list()
   built <- list()
   for (table in build_order) {
@@ -155,10 +189,8 @@ fx_clean_tables <- function(spec, n = 2L) {
         codes[((index - 1L) %% length(codes)) + 1L]
       } else if (!is.na(date_formats[[i]])) {
         format(as.Date("2020-06-01") + index - 1L, date_formats[[i]])
-      } else if (r_class == "integer") {
-        index
-      } else if (r_class == "double") {
-        index + 0.5
+      } else if (r_class %in% c("integer", "double")) {
+        within_bounds(index, attributes[i], r_class) + if (r_class == "double") 0.5 else 0L
       } else if (isTRUE(attributes$id_marked[[i]])) {
         paste0("s", index)
       } else {
@@ -175,7 +207,9 @@ fx_clean_tables <- function(spec, n = 2L) {
 # MAGPlot 2.0's clean base: every DD table and column, built from magp_spec() (21 M3b),
 # each dataset in one jurisdiction and one contributor, as its row in the spec's datasets
 # sheet has them (D15.32): MAGPlot's grouping columns are the contributor, the jurisdiction
-# and the dataset. Nothing else of the generic build changes.
+# and the dataset. Each site's ID is moved into its contributor's band of site IDs (the
+# band's start plus the old ID, in every table holding the ID), and the ec_* columns follow
+# their DD patterns (D18.26). Nothing else of the generic build changes.
 fx_magp_clean <- function() {
   spec <- magp_spec()
   tables <- fx_clean_tables(spec)
@@ -188,6 +222,36 @@ fx_magp_clean <- function() {
   data.table::set(
     datasets,
     j = "magp_contributor_id", value = sheet$magp_contributor_id[of_dataset]
+  )
+  # The band of each site's contributor: the contributor sheet gives its label.
+  lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+  ids <- lists[lists$sheet_column == "magp_contributor_id"]
+  names_at <- lists[lists$sheet_column == "abbreviated_name"]
+  contributor <- datasets$magp_contributor_id[
+    match(sites$magp_dataset_id, datasets$magp_dataset_id)
+  ]
+  row_of <- ids$source_row[match(contributor, ids$value)]
+  label <- names_at$value[match(row_of, names_at$source_row)]
+  start <- spec$id_bands$band_start[match(label, spec$id_bands$label)]
+  old <- sites$magp_site_id
+  moved <- as.integer(start + old)
+  holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
+  for (table in holders) {
+    data.table::set(
+      tables[[table]],
+      j = "magp_site_id", value = moved[match(tables[[table]]$magp_site_id, old)]
+    )
+  }
+  # The ec_* columns by their DD patterns, a value per site (D18.26).
+  i <- seq_len(nrow(sites))
+  zone <- (i - 1L) %% 99L + 1L
+  data.table::set(sites, j = "ec_zone", value = sprintf("%d", zone))
+  data.table::set(sites, j = "ec_province", value = sprintf("%d.1", zone))
+  region <- (i - 1L) %% 999L + 1L
+  data.table::set(sites, j = "ec_region", value = sprintf("%02d.1.%03d", zone, region))
+  data.table::set(
+    sites,
+    j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
   )
   tables
 }

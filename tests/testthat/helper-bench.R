@@ -120,6 +120,17 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   if (!identical(sort(names(plan)), sort(names(base))) || !all(same_keys)) {
     stop("fx_magp_scaled() builds the tables and keys magp_spec() had at M4b.")
   }
+  # Each site's ID in its contributor's band of site IDs, numbered within it (D18.26); at 1x
+  # one contributor's 4,000 sites fit a band of 50,000.
+  lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+  ids <- lists[lists$sheet_column == "magp_contributor_id"]
+  names_at <- lists[lists$sheet_column == "abbreviated_name"]
+  site_contributor <- sheet$magp_contributor_id[of_dataset][site_dataset]
+  row_of <- ids$source_row[match(site_contributor, ids$value)]
+  label <- names_at$value[match(row_of, names_at$source_row)]
+  site_ids <- as.integer(
+    spec$id_bands$band_start[match(label, spec$id_bands$label)] + data.table::rowid(label)
+  )
   pk_values <- list()
   tables <- list()
   for (table in names(base)) {
@@ -130,7 +141,7 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
     pk_values[[table]] <- switch(table,
       magp_contributors = contributors,
       magp_datasets = datasets,
-      magp_sites = seq_len(rows),
+      magp_sites = site_ids,
       paste0(table, "_", seq_len(rows))
     )
     columns <- lapply(names(template), function(column) {

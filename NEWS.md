@@ -26,3 +26,4 @@
 - A CSV file that changes while `gpq_check_conformance()` reads it stops the run before any check.
 - `gpq_column_map()` names eight more dictionary columns, `min_value`, `max_value`, `min_inclusive`, `max_inclusive`, `pattern`, `max_length`, `decimals` and `units`, read into the specification's `attributes`. Pre-flight's new check `dd_format_invalid` stops on a cell in them that doesn't read or doesn't fit its attribute's type, and on a minimum above its maximum.
 - The fish survey and forest examples' dictionaries give ranges, patterns, lengths, decimal places and units, under their own column names.
+- `magp_example` follows MAGPlot's data dictionary more closely: its numbers are within the dictionary's ranges, each site's ID is in its contributor's band of site IDs, and the `ec_*` columns match their patterns.
