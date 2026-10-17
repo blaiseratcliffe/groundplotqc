@@ -318,15 +318,16 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
 }
 
 #' A rule's outcome on a column's records: the rows that fail (row numbers, a vector without
-#' dimensions), each failing value as text (one per failing row), and what was expected (one
-#' text, or one per failing row)
+#' dimensions), each failing value as text (one per failing row), what was expected (one text,
+#' or one per failing row), and the rows the rule didn't check, never one that fails (D18.21)
 #' @noRd
 record_outcome <- function(rule_id, table_name, column_name, fail, value,
-                           expected = NA_character_) {
-  rows <- is.numeric(fail) && is.null(dim(fail)) && !anyNA(fail) && all(is.finite(fail)) &&
-    all(fail >= 1L & fail <= .Machine$integer.max & fail == trunc(fail)) &&
-    anyDuplicated(fail) == 0L
-  if (!rows) {
+                           expected = NA_character_, unchecked = integer()) {
+  is_rows <- function(x) {
+    is.numeric(x) && is.null(dim(x)) && !anyNA(x) && all(is.finite(x)) &&
+      all(x >= 1L & x <= .Machine$integer.max & x == trunc(x)) && anyDuplicated(x) == 0L
+  }
+  if (!is_rows(fail)) {
     stop(
       "Rule ", rule_id, ": `fail` must be row numbers, each once: whole numbers from 1 ",
       "within the integer range.",
@@ -336,9 +337,20 @@ record_outcome <- function(rule_id, table_name, column_name, fail, value,
   if (length(value) != length(fail)) {
     stop("Rule ", rule_id, ": `value` must hold one text for each failing row.", call. = FALSE)
   }
+  if (!is_rows(unchecked)) {
+    stop(
+      "Rule ", rule_id, ": `unchecked` must be row numbers, each once: whole numbers from 1 ",
+      "within the integer range.",
+      call. = FALSE
+    )
+  }
+  if (any(unchecked %in% fail)) {
+    stop("Rule ", rule_id, ": a row can't both fail and be unchecked.", call. = FALSE)
+  }
   list(
     kind = "record", rule_id = rule_id, table_name = table_name, column_name = column_name,
-    fail = as.integer(fail), value = as.character(value), expected = as.character(expected)
+    fail = as.integer(fail), value = as.character(value), expected = as.character(expected),
+    unchecked = as.integer(unchecked)
   )
 }
 
@@ -638,7 +650,10 @@ cascade_masks <- function(state, table, attribute, layer, row_group) {
 #' `column_level_min_n` were checked, the failures become one column-level issue (6.3);
 #' masked records sharing one root, as many as that, become one not_evaluated column-level
 #' issue (D16.10). Failures of Layers 1 to 3 are kept for the cascade of later layers. A
-#' table with no rows gives one row with "*" groups and nothing checked (D16.17).
+#' table with no rows gives one not_run row with "*" groups, reason no_records
+#' (D16.17, D18.29). Rows the rule didn't check count in neither n_checked nor n_fail, a masked
+#' one as masked; a group that checked nothing is not_run, reason none_checked, its records not
+#' evaluated (D18.21, D18.22).
 #' @noRd
 record_records <- function(outcome, rule, severity, layer, input, context, state, run_id) {
   table <- outcome$table_name
@@ -649,7 +664,7 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     state$results[[length(state$results) + 1L]] <- results_rows(
       run_id, rule, severity, context, table, attribute, star_groups(input),
       n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_distinct = 0L,
-      examples = NA_character_, status = "pass"
+      examples = NA_character_, status = "not_run", reason = "no_records"
     )
     return(invisible(state))
   }
@@ -677,7 +692,11 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   in_group <- tabulate(row_group, n_groups)
   masked_count <- tabulate(row_group[masked_rows], n_groups)
   fail_count <- tabulate(row_group[fail], n_groups)
-  checked <- in_group - masked_count
+  # A row the rule didn't check counts in neither n_checked nor n_fail; one also masked counts
+  # once, as masked (D18.21).
+  unchecked <- outcome$unchecked[!outcome$unchecked %in% masked_rows]
+  unchecked_count <- tabulate(row_group[unchecked], n_groups)
+  checked <- in_group - masked_count - unchecked_count
   n_distinct <- integer(n_groups)
   examples <- rep(NA_character_, n_groups)
   # Only a check that failed somewhere has values to count and show, so a passing check
@@ -691,11 +710,16 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     examples[as.integer(names(joined))] <- joined
   }
   present <- which(in_group > 0L)
+  # A group that checked nothing never reads "pass": not_run, reason none_checked, its
+  # records not evaluated, masked or unchecked (D18.22).
+  none <- checked[present] == 0L
   state$results[[length(state$results) + 1L]] <- results_rows(
     run_id, rule, severity, context, table, attribute, group_values(grouping, present),
     n_checked = checked[present], n_fail = fail_count[present],
-    n_not_evaluated = masked_count[present], n_distinct = n_distinct[present],
-    examples = examples[present], status = fifelse(fail_count[present] > 0L, "fail", "pass")
+    n_not_evaluated = fifelse(none, in_group[present], masked_count[present]),
+    n_distinct = n_distinct[present], examples = examples[present],
+    status = fifelse(fail_count[present] > 0L, "fail", fifelse(none, "not_run", "pass")),
+    reason = fifelse(none, "none_checked", NA_character_)
   )
   cascades <- layer %in% 1:3
   key <- paste(table, attribute, sep = "\r")

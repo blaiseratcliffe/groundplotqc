@@ -415,6 +415,7 @@ test_that("masked records sharing one root collapse into one column-level issue 
   expect_equal(masked$root_issue_id, done$issues$issue_id[done$issues$rule_id == "test_cast"])
   spell <- done$results[done$results$rule_id == "test_spell"]
   expect_equal(c(spell$n_checked, spell$n_fail, spell$n_not_evaluated), c(0L, 0L, n))
+  expect_equal(c(spell$status, spell$not_run_reason), c("not_run", "none_checked"))
   # Fewer masked records than column_level_min_n stay one issue each.
   run <- assembly(settings = list(column_level_min_n = 3L))
   record_layer(list(test_cast = list(record_outcome(
@@ -456,7 +457,7 @@ test_that("column-level failures and results are per group (6.3, D7.5)", {
   expect_no_error(new_issues(done$issues, group_cols = "gear", registry = rule_registry()))
 })
 
-test_that("an empty table checks nothing in one row; not_run counts by group (D16.17, D9.24)", {
+test_that("an empty table is one not_run row, no_records; not_run counts by group (D18.29)", {
   local_stand_in_rules()
   fish <- fx_fish_clean()
   fish$catches <- fish$catches[0L]
@@ -467,7 +468,7 @@ test_that("an empty table checks nothing in one row; not_run counts by group (D1
   )), 1L, run$input, run$context, run$state, run_id)
   done <- recorded(run$state)
   empty <- done$results[done$results$table_name == "catches"]
-  expect_equal(c(empty$gear, empty$status), c("*", "pass"))
+  expect_equal(c(empty$gear, empty$status, empty$not_run_reason), c("*", "not_run", "no_records"))
   expect_equal(empty$n_checked, 0L)
   not_run <- done$results[done$results$table_name == "hauls"]
   hauls <- run$input$groups$hauls
@@ -501,4 +502,92 @@ test_that("the performance smoke test: a 0.1x MAGPlot run finishes in time, clea
   expect_lt(elapsed, 30)
   expect_equal(sum(results$issues$status == "open"), 0L)
   expect_equal(nrow(results$metadata$self_test), 0L)
+})
+
+test_that("record_outcome() refuses unchecked rows that aren't rows, or that also fail (D18.21)", {
+  expect_error(
+    record_outcome("r", "t", "c", 1:2, c("a", "b"), unchecked = 2:3),
+    "Rule r: a row can't both fail and be unchecked.",
+    fixed = TRUE
+  )
+  for (unchecked in list(c(2L, 2L), 0L, NA_integer_, 1.5, matrix(2L), "2")) {
+    expect_error(
+      record_outcome("r", "t", "c", 1L, "a", unchecked = unchecked),
+      paste(
+        "Rule r: `unchecked` must be row numbers, each once: whole numbers from 1 within the",
+        "integer range."
+      ),
+      fixed = TRUE, info = deparse(unchecked)
+    )
+  }
+  # None given is none: the outcome carries an empty vector of rows.
+  expect_identical(record_outcome("r", "t", "c", 1L, "a")$unchecked, integer())
+  expect_identical(record_outcome("r", "t", "c", 1L, "a", unchecked = c(3, 2))$unchecked, c(3L, 2L))
+})
+
+test_that("rows a rule didn't check count in neither n_checked nor n_fail (D18.21)", {
+  local_stand_in_rules()
+  n <- nrow(fx_fish_clean()$catches)
+  run <- assembly(settings = list(column_level_min_n = 100L))
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", 1:2, c("x", "y")
+  ))), 1L, run$input, run$context, run$state, run_id)
+  record_layer(list(test_spell = list(record_outcome(
+    "test_spell", "catches", "weight", 3L, "z",
+    unchecked = c(2L, 4L, 5L)
+  ))), 2L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  spell <- done$results[done$results$rule_id == "test_spell"]
+  # Rows 1 and 2 are masked by Layer 1, row 2 counted once, as masked; rows 4 and 5 weren't
+  # checked; row 3 fails.
+  expect_equal(c(spell$n_checked, spell$n_fail, spell$n_not_evaluated), c(n - 4L, 1L, 2L))
+  expect_equal(spell$status, "fail")
+  expect_true(is.na(spell$not_run_reason))
+  issues <- done$issues[done$issues$rule_id == "test_spell"]
+  # A row the rule didn't check has no issue; a masked one keeps its not_evaluated issue. The
+  # failures are numbered before the masked records, so the rows are read in their order.
+  issues <- issues[order(issues$row_number)]
+  expect_equal(issues$row_number, 1:3)
+  expect_equal(issues$status, c("not_evaluated", "not_evaluated", "open"))
+  expect_no_error(new_results(done$results, registry = rule_registry()))
+  expect_no_error(new_issues(done$issues, registry = rule_registry()))
+})
+
+test_that("a group in which the rule checked nothing is not_run, none_checked (D18.22)", {
+  local_stand_in_rules()
+  run <- assembly(group_cols = "gear")
+  grouping <- run$input$groups$catches
+  first_group <- which(grouping$row_group == 1L)
+  others <- nrow(grouping$values) - 1L
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", integer(), character(),
+    unchecked = first_group
+  ))), 1L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  rows <- done$results
+  expect_equal(rows$gear, grouping$values$gear)
+  expect_equal(rows$status, c("not_run", rep("pass", others)))
+  expect_equal(rows$not_run_reason, c("none_checked", rep(NA_character_, others)))
+  # Its records are counted as not evaluated, and none is checked or fails.
+  expect_equal(rows$n_checked[[1L]], 0L)
+  expect_equal(rows$n_fail[[1L]], 0L)
+  expect_equal(rows$n_not_evaluated[[1L]], length(first_group))
+  expect_equal(rows$n_not_evaluated[-1L], rep(0L, others))
+  expect_equal(nrow(done$issues), 0L)
+  expect_no_error(new_results(rows, group_cols = "gear", registry = rule_registry()))
+  # A group masked in part and unchecked in the rest checked nothing too: not_run, its
+  # records counted once each.
+  run <- assembly(group_cols = "gear")
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", first_group[[1L]], "x"
+  ))), 1L, run$input, run$context, run$state, run_id)
+  record_layer(list(test_spell = list(record_outcome(
+    "test_spell", "catches", "weight", integer(), character(),
+    unchecked = first_group
+  ))), 2L, run$input, run$context, run$state, run_id)
+  spell <- recorded(run$state)$results
+  spell <- spell[spell$rule_id == "test_spell"]
+  expect_equal(spell$status[[1L]], "not_run")
+  expect_equal(spell$not_run_reason[[1L]], "none_checked")
+  expect_equal(spell$n_not_evaluated[[1L]], length(first_group))
 })
