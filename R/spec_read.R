@@ -16,7 +16,9 @@ spec_schema <- function() {
     attributes = c(
       table_name = chr, attribute_name = chr, data_type = chr, r_class = chr,
       key_type = chr, reference_table = chr, lookup = chr, description = chr,
-      lineage_flag = lgl, id_marked = lgl, source_row = int
+      lineage_flag = lgl, id_marked = lgl, source_row = int, min_value = dbl, max_value = dbl,
+      min_inclusive = lgl, max_inclusive = lgl, pattern = chr, max_length = int, decimals = int,
+      units = chr
     ),
     keys = c(
       table_name = chr, attribute_name = chr, key_type = chr, key_part = int,
@@ -604,7 +606,125 @@ read_dictionary <- function(table, column_map, type_map, id_pattern = NULL) {
       file_rows(table$where, seq_len(n) + 1L)
     }
   )
-  list(attributes = attributes, findings = findings)
+  # The range and format columns, typed, and a finding per cell that doesn't read (D18.9).
+  formats <- read_dd_formats(data, column_map, attributes, table$where)
+  attributes <- cbind(attributes, formats$columns)
+  list(attributes = attributes, findings = rbindlist(list(findings, formats$findings)))
+}
+
+#' The dictionary's range and format columns typed, and their dd_format_invalid findings
+#' (D18.9, D18.19, D18.28, R4, R13)
+#'
+#' A column the dictionary lacks is NA throughout. A bound is a decimal number, finite; a
+#' flag TRUE or FALSE in any case, a blank one TRUE where its bound is given; a pattern one
+#' that grepl() compiles; `max_length` a whole number of 1 or more and `decimals` of 0 or
+#' more. A cell that doesn't read is one finding and NA. A bound or `decimals` on a type that
+#' isn't a number type (integer or numeric), or `max_length` or `pattern` on one that is, is
+#' one finding and NA; an attribute of a type the type map lacks is left to
+#' `dd_type_unknown`. A minimum above its maximum is one finding, and both are NA (R13).
+#' Each finding names its cell, through the dictionary's origin (D12.33). Returns `columns`,
+#' a data.table of the eight columns in the attributes' order, and `findings`.
+#' @noRd
+read_dd_formats <- function(data, column_map, attributes, where) {
+  n <- nrow(data)
+  present <- names(data)
+  roles <- c(
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
+  )
+  text <- lapply(roles, function(role) {
+    name <- column_map[[role]]
+    if (!is.null(name) && name %in% present) data[[name]] else rep(NA_character_, n)
+  })
+  names(text) <- roles
+  # The findings so far, held in an environment that finding() adds to.
+  found <- new.env(parent = emptyenv())
+  found$tables <- list(empty_table(spec_schema()$read_findings))
+  # One finding per cell, at its cell; `values` fills the detail's other slots.
+  finding <- function(role, rows, detail_id, values = list()) {
+    if (length(rows) == 0L) {
+      return(invisible(NULL))
+    }
+    column <- match(column_map[[role]], present)
+    detail <- do.call(report_text, c(
+      list(
+        paste0("preflight_detail_dd_format_invalid_", detail_id),
+        table_name = attributes$table_name[rows],
+        attribute_name = attributes$attribute_name[rows], column = column_map[[role]],
+        value = text[[role]][rows]
+      ),
+      values
+    ))
+    found$tables[[length(found$tables) + 1L]] <- data.table(
+      rule_id = "dd_format_invalid", input = "dictionary", file = where$file, detail = detail,
+      source_cell = cell_references(where, rows + 1L, rep(column, length(rows)))
+    )
+  }
+  number_type <- attributes$r_class %chin% c("integer", "double")
+  known_type <- !is.na(attributes$r_class)
+  # A cell of a type it doesn't fit is one finding, its value NA.
+  fits <- function(role, value, wants_number) {
+    wrong <- which(!is.na(value) & known_type & number_type != wants_number)
+    finding(
+      role, wrong, if (wants_number) "type_number" else "type_text",
+      list(data_type = attributes$data_type[wrong])
+    )
+    value[wrong] <- NA
+    value
+  }
+  as_bound <- function(role) {
+    x <- text[[role]]
+    decimal <- grepl("^ *[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)? *$", x)
+    number <- suppressWarnings(as.numeric(x))
+    readable <- decimal & is.finite(number)
+    finding(role, which(!is.na(x) & !readable), "number")
+    fits(role, fifelse(readable, number, NA_real_), TRUE)
+  }
+  as_whole <- function(role, lowest) {
+    x <- text[[role]]
+    number <- suppressWarnings(as.numeric(x))
+    whole <- grepl("^ *[0-9]+ *$", x) & !is.na(number) & number >= lowest &
+      number <= .Machine$integer.max
+    finding(role, which(!is.na(x) & !whole), "whole", list(n = lowest))
+    out <- rep(NA_integer_, n)
+    out[whole] <- as.integer(number[whole])
+    out
+  }
+  min_value <- as_bound("min_value")
+  max_value <- as_bound("max_value")
+  inverted <- which(!is.na(min_value) & !is.na(max_value) & min_value > max_value)
+  finding(
+    "min_value", inverted, "order",
+    list(value_a = text$min_value[inverted], value_b = text$max_value[inverted])
+  )
+  min_value[inverted] <- NA_real_
+  max_value[inverted] <- NA_real_
+  as_flag <- function(role, bound) {
+    x <- toupper(trimws(text[[role]]))
+    flag <- fifelse(x == "TRUE", TRUE, fifelse(x == "FALSE", FALSE, NA))
+    finding(role, which(!is.na(x) & is.na(flag)), "flag")
+    # A blank flag is TRUE where its bound is given (D18.9).
+    flag[is.na(x) & !is.na(bound)] <- TRUE
+    flag
+  }
+  pattern <- text$pattern
+  distinct <- unique(pattern[!is.na(pattern)])
+  compiles <- vapply(distinct, function(p) {
+    tryCatch(is.logical(grepl(p, "")), error = function(e) FALSE, warning = function(w) FALSE)
+  }, logical(1))
+  broken <- which(pattern %chin% distinct[!compiles])
+  finding("pattern", broken, "pattern")
+  pattern[broken] <- NA_character_
+  columns <- data.table(
+    min_value = min_value, max_value = max_value,
+    min_inclusive = as_flag("min_inclusive", min_value),
+    max_inclusive = as_flag("max_inclusive", max_value),
+    pattern = fits("pattern", pattern, FALSE),
+    max_length = fits("max_length", as_whole("max_length", 1L), FALSE),
+    decimals = fits("decimals", as_whole("decimals", 0L), TRUE),
+    units = text$units
+  )
+  list(columns = columns, findings = rbindlist(found$tables))
 }
 
 #' The keys component from the attributes: PK parts numbered, FK targets read
@@ -1377,7 +1497,9 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   ),
 #'   column_map = gpq_column_map(
 #'     table = "table", attribute = "field", type = "kind", key_type = "key",
-#'     reference = "parent", lookup = "codes", description = "notes"
+#'     reference = "parent", lookup = "codes", description = "notes",
+#'     min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+#'     pattern = "format", max_length = "width", decimals = "places", units = "unit"
 #'   ),
 #'   type_map = gpq_type_map(example("fish_types.csv")),
 #'   sentinels = gpq_sentinels(

@@ -93,7 +93,7 @@ values for an attribute that uses it; or an origin that doesn't fit its input.
 
 Each component is a data.table with these columns:
 \itemize{
-\item \code{attributes}: \code{table_name}, \code{attribute_name}, \code{data_type}, \code{r_class}, \code{key_type}, \code{reference_table}, \code{lookup}, \code{description}, \code{lineage_flag}, \code{id_marked}, \code{source_row}
+\item \code{attributes}: \code{table_name}, \code{attribute_name}, \code{data_type}, \code{r_class}, \code{key_type}, \code{reference_table}, \code{lookup}, \code{description}, \code{lineage_flag}, \code{id_marked}, \code{source_row}, \code{min_value}, \code{max_value}, \code{min_inclusive}, \code{max_inclusive}, \code{pattern}, \code{max_length}, \code{decimals}, \code{units}
 \item \code{keys}: \code{table_name}, \code{attribute_name}, \code{key_type}, \code{key_part}, \code{reference_table}, \code{reference_attribute}
 \item \code{code_lists}: \code{sheet}, \code{source_row}, \code{sheet_column}, \code{value}, \code{source_cell}
 \item \code{code_list_sheets}: \code{sheet}
@@ -128,7 +128,9 @@ fish <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv")),
   sentinels = gpq_sentinels(

@@ -592,7 +592,8 @@ test_that("a dictionary without its table and attribute columns names both at on
     paste(
       "The dictionary (fish_dictionary.csv) has no column table_name (the column map's",
       "table) and no column attribute_name (the column map's attribute); its columns are",
-      "table, field, kind, key, parent, codes, notes."
+      "table, field, kind, key, parent, codes, notes, low, high, low_in, high_in, format, width,",
+      "places, unit."
     ),
     fixed = TRUE
   )
@@ -1444,4 +1445,216 @@ test_that("a caller's tables come back unchanged, sharing no column with the spe
   )
   in_spec <- unlist(lapply(spec, function(x) vapply(x, data.table::address, "")))
   expect_length(intersect(caller, in_spec), 0L)
+})
+
+test_that("the range and format columns are read typed, a blank flag TRUE by its bound (D18.9)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("n1", "n2", "s1", "s2"),
+    data_type = c("numeric", "integer", "character", "character"),
+    min_value = c("0", " -1.5e1 ", NA, NA), max_value = c("500", NA, NA, NA),
+    min_inclusive = NA_character_, max_inclusive = c("false", NA, NA, NA),
+    pattern = c(NA, NA, "^[A-Z]{2}$", NA), max_length = c(NA, NA, "8", NA),
+    decimals = c("2", "0", NA, NA), units = c("m", NA, NA, "kg")
+  )
+  table <- read_input_table(dictionary, "dictionary")
+  dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+  a <- dd$attributes
+  expect_equal(nrow(dd$findings), 0L)
+  roles <- c(
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
+  )
+  # The eight columns follow source_row, in this order.
+  expect_equal(utils::tail(names(a), 8L), roles)
+  expect_equal(a$min_value, c(0, -15, NA, NA))
+  expect_equal(a$max_value, c(500, NA, NA, NA))
+  # A blank flag is TRUE where its bound is given, NA where it isn't; any case reads.
+  expect_equal(a$min_inclusive, c(TRUE, TRUE, NA, NA))
+  expect_equal(a$max_inclusive, c(FALSE, NA, NA, NA))
+  expect_equal(a$pattern, c(NA, NA, "^[A-Z]{2}$", NA))
+  expect_identical(a$max_length, c(NA, NA, 8L, NA))
+  expect_identical(a$decimals, c(2L, 0L, NA, NA))
+  expect_equal(a$units, c("m", NA, NA, "kg"))
+  # A dictionary without the columns reads them as NA, typed, with no finding (R4).
+  plain <- read_dictionary(
+    read_input_table(dictionary[1:3], "dictionary"), gpq_column_map(), gpq_type_map()
+  )
+  expect_equal(nrow(plain$findings), 0L)
+  expect_equal(utils::tail(names(plain$attributes), 8L), roles)
+  expect_identical(plain$attributes$min_value, rep(NA_real_, 4L))
+  expect_identical(plain$attributes$min_inclusive, rep(NA, 4L))
+  expect_identical(plain$attributes$max_length, rep(NA_integer_, 4L))
+  expect_identical(plain$attributes$units, rep(NA_character_, 4L))
+})
+
+test_that("each range or format cell that doesn't read is one finding at its cell (D18.9)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    paste0(
+      "table_name,attribute_name,data_type,min_value,max_value,min_inclusive,max_inclusive,",
+      "pattern,max_length,decimals,units"
+    ),
+    "t,n1,numeric,abc,,,,,,,",
+    "t,n2,numeric,,Inf,,,,,,",
+    "t,n3,numeric,10,5,,,,,,",
+    "t,n4,numeric,1,,yes,,,,,",
+    "t,s1,character,,,,,([,,,",
+    "t,s2,character,,,,,,0,,",
+    "t,n5,numeric,,,,,,,-1,",
+    "t,s3,character,1,,,,,,,",
+    "t,n6,numeric,,,,,^1$,,,",
+    "t,n7,integer,,,,,,4,,",
+    "t,s4,character,abc,,,,,,,",
+    "t,u1,mystery,1,,,,,,,",
+    "t,d1,date,,,,,,,1,"
+  ), path)
+  dd <- read_dictionary(read_input_table(path, "dictionary"), gpq_column_map(), gpq_type_map())
+  file <- basename(path)
+  detail <- function(case, attribute, column, value, ...) {
+    report_text(
+      paste0("preflight_detail_dd_format_invalid_", case),
+      table_name = "t", attribute_name = attribute, column = column, value = value, ...
+    )
+  }
+  expected <- data.frame(
+    detail = c(
+      detail("number", "n1", "min_value", "abc"),
+      detail("number", "n2", "max_value", "Inf"),
+      detail("order", "n3", "min_value", "10", value_a = "10", value_b = "5"),
+      detail("flag", "n4", "min_inclusive", "yes"),
+      detail("pattern", "s1", "pattern", "(["),
+      detail("whole", "s2", "max_length", "0", n = 1L),
+      detail("whole", "n5", "decimals", "-1", n = 0L),
+      detail("type_number", "s3", "min_value", "1", data_type = "character"),
+      detail("type_text", "n6", "pattern", "^1$", data_type = "numeric"),
+      detail("type_text", "n7", "max_length", "4", data_type = "integer"),
+      # A cell that doesn't read has that finding only, none for its type (R23).
+      detail("number", "s4", "min_value", "abc"),
+      detail("type_number", "d1", "decimals", "1", data_type = "date")
+    ),
+    line = c(2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 14L)
+  )
+  found <- dd$findings
+  expect_true(all(found$rule_id == "dd_format_invalid"))
+  expect_true(all(found$input == "dictionary"))
+  expect_true(all(found$file == file))
+  expect_setequal(found$detail, expected$detail)
+  expect_equal(nrow(found), nrow(expected))
+  expect_equal(
+    found$source_cell[match(expected$detail, found$detail)], paste0(file, ":", expected$line)
+  )
+  # Each cell found is NA; a minimum above its maximum makes both NA (R13); a type the type
+  # map lacks is left to dd_type_unknown, its bound kept.
+  a <- dd$attributes
+  at <- function(attribute, column) a[[column]][a$attribute_name == attribute]
+  expect_true(is.na(at("n1", "min_value")))
+  expect_true(is.na(at("n2", "max_value")))
+  expect_true(is.na(at("n3", "min_value")) && is.na(at("n3", "max_value")))
+  expect_equal(at("n4", "min_value"), 1)
+  expect_true(is.na(at("n4", "min_inclusive")))
+  expect_true(is.na(at("s1", "pattern")))
+  expect_true(is.na(at("s2", "max_length")))
+  expect_true(is.na(at("n5", "decimals")))
+  expect_true(is.na(at("s3", "min_value")))
+  expect_true(is.na(at("n6", "pattern")))
+  expect_true(is.na(at("n7", "max_length")))
+  expect_equal(at("u1", "min_value"), 1)
+  expect_true(is.na(at("d1", "decimals")))
+  # gpq_read_spec() carries them to pre-flight, which stops on them.
+  spec <- gpq_read_spec(dictionary = path)
+  expect_equal(sum(spec$read_findings$rule_id == "dd_format_invalid"), nrow(expected))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})
+
+test_that("a range or format finding names its cell in a workbook, none in memory (R23)", {
+  frame <- data.frame(
+    table_name = "t", attribute_name = c("n1", "n2"), data_type = "numeric",
+    min_value = c("1", "abc"), max_length = c(NA, "3")
+  )
+  memory <- read_dictionary(read_input_table(frame, "dictionary"), gpq_column_map(), gpq_type_map())
+  expect_equal(nrow(memory$findings), 2L)
+  expect_true(all(is.na(memory$findings$source_cell)))
+  workbook <- stand_in(".xlsx")
+  located <- read_input_table(frame, "dictionary", list(path = workbook, sheet = "DD", rows = 2L))
+  dd <- read_dictionary(located, gpq_column_map(), gpq_type_map())
+  # Row 2 of the data is the sheet's row 3; min_value is column D and max_length column E.
+  expect_setequal(dd$findings$source_cell, c("DD!D3", "DD!E3"))
+})
+
+test_that("MAGPlot's dictionary gives eight ranges and four patterns, no lengths or places", {
+  a <- magp_spec()$attributes
+  ranged <- c(
+    "magp_sites elevation", "magp_sites slope", "magp_sites aspect", "magp_plots plot_elevation",
+    "magp_plots plot_slope", "magp_plots plot_aspect", "magp_tree_meas dbh",
+    "magp_tree_meas height"
+  )
+  name <- paste(a$table_name, a$attribute_name)
+  expect_setequal(name[!is.na(a$min_value) | !is.na(a$max_value)], ranged)
+  at <- match(ranged, name)
+  expect_equal(a$min_value[at], c(0, 0, 0, 0, 0, 0, 0.01, 0.01))
+  expect_equal(a$max_value[at], c(5000, 1143, 360, 5000, 1143, 360, 500, 110))
+  expect_true(all(a$min_inclusive[at]) && all(a$max_inclusive[at]))
+  expect_equal(
+    a$units[at], c("m", "percent", "degrees", "m", "percent", "degrees", "cm", "m")
+  )
+  patterned <- paste("magp_sites", c("ec_zone", "ec_province", "ec_region", "ec_district"))
+  expect_setequal(name[!is.na(a$pattern)], patterned)
+  # Each pattern is the DD's own, with single backslashes, and matches its example value.
+  examples <- c("1", "1.1", "01.1.001", "01.1.001.0001")
+  for (k in seq_along(patterned)) {
+    pattern <- a$pattern[match(patterned[[k]], name)]
+    expect_true(grepl(pattern, examples[[k]]), info = patterned[[k]])
+    expect_false(grepl("\\\\", pattern, fixed = TRUE), info = patterned[[k]])
+  }
+  expect_true(all(is.na(a$max_length)))
+  expect_true(all(is.na(a$decimals)))
+  expect_false("dd_format_invalid" %in% magp_spec()$read_findings$rule_id)
+})
+
+test_that("the toys' dictionaries give ranges and formats under their own names (R24)", {
+  fish <- fx_fish_spec()$attributes
+  fish_at <- function(attribute, column) fish[[column]][fish$attribute_name == attribute]
+  expect_equal(fish_at("station_name", "pattern"), "^[A-Za-z0-9 ]+$")
+  expect_identical(fish_at("station_name", "max_length"), 40L)
+  expect_equal(c(fish_at("depth", "min_value"), fish_at("depth", "max_value")), c(0, 500))
+  expect_identical(fish_at("depth", "decimals"), 1L)
+  expect_equal(c(fish_at("minutes", "min_value"), fish_at("minutes", "max_value")), c(1, 600))
+  expect_equal(fish_at("fish_count", "max_value"), 10000)
+  expect_equal(
+    c(fish_at("weight", "min_inclusive"), fish_at("weight", "max_inclusive")), c(FALSE, TRUE)
+  )
+  expect_identical(fish_at("weight", "decimals"), 3L)
+  expect_equal(fish_at("weight", "units"), "kg")
+  forest <- fx_forest_spec()$attributes
+  forest_at <- function(attribute, column) {
+    forest[[column]][forest$attribute_name == attribute][[1L]]
+  }
+  # One pattern for the three IDs: capitals, digits, "_" and "-", a capital first (R30).
+  id_pattern <- "^[A-Z][A-Z0-9_-]*$"
+  for (id in c("PLOT_ID", "TREE_ID", "MEAS_ID")) {
+    expect_equal(forest_at(id, "pattern"), id_pattern, info = id)
+  }
+  expect_equal(c(forest_at("PLOT_AREA", "min_value"), forest_at("PLOT_AREA", "max_value")), c(0, 1))
+  expect_false(forest_at("PLOT_AREA", "min_inclusive"))
+  expect_equal(c(forest_at("TREE_NO", "min_value"), forest_at("TREE_NO", "max_value")), c(1, 999))
+  expect_identical(forest_at("SPECIES", "max_length"), 4L)
+  expect_identical(forest_at("DBH", "decimals"), 1L)
+  expect_equal(forest_at("DBH", "units"), "cm")
+  # The forest example's data files and its clean base keep every value inside them, so
+  # Layer 3 finds nothing there (R24, R30): checked here on the values as written.
+  plots <- read_csv_text(example_file("forest_plots.csv"))$data
+  trees <- read_csv_text(example_file("forest_trees.csv"))$data
+  meas <- read_csv_text(example_file("forest_tree_meas.csv"))$data
+  clean <- fx_clean_tables(fx_forest_spec())
+  expect_true(all(grepl(id_pattern, c(plots$PLOT_ID, clean$PLOTS$PLOT_ID))))
+  expect_true(all(grepl(id_pattern, c(trees$TREE_ID, clean$TREES$TREE_ID))))
+  expect_true(all(grepl(id_pattern, c(meas$MEAS_ID, clean$TREE_MEAS$MEAS_ID))))
+  area <- as.numeric(plots$PLOT_AREA)
+  expect_true(all(area > 0 & area <= 1))
+  number <- as.integer(trees$TREE_NO)
+  expect_true(all(number >= 1L & number <= 999L))
+  expect_true(all(nchar(meas$SPECIES) <= 4L))
+  dbh <- as.numeric(meas$DBH)
+  expect_true(all(dbh > 0 & dbh <= 300))
+  expect_true(all(nchar(sub("^[0-9]*[.]?", "", meas$DBH)) <= 1L))
 })

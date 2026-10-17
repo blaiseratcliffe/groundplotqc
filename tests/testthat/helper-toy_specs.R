@@ -4,7 +4,9 @@
 fx_fish_column_map <- function(...) {
   gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes", ...
+    reference = "parent", lookup = "codes", description = "notes", min_value = "low",
+    max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in", pattern = "format",
+    max_length = "width", decimals = "places", units = "unit", ...
   )
 }
 
@@ -47,7 +49,10 @@ fx_forest_spec <- function() {
     id_pattern = "_ID$",
     column_map = gpq_column_map(
       table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-      reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+      reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION",
+      min_value = "MIN_VALUE", max_value = "MAX_VALUE", min_inclusive = "MIN_INCLUSIVE",
+      max_inclusive = "MAX_INCLUSIVE", pattern = "PATTERN", max_length = "MAX_LENGTH",
+      decimals = "DECIMALS", units = "UNITS"
     ),
     type_map = gpq_type_map(example_file("forest_types.csv")),
     sentinels = gpq_sentinels(
@@ -70,7 +75,8 @@ fx_forest_spec <- function() {
 #   datasets: spec_clash_resolved 1 (name), spec_clash_unresolved 1 (kind),
 #   datasets_row_missing 1 (id 3); the bad byte in shape's description:
 #   spec_encoding_invalid 1; the non-code sheet notes, a CSV whose line 3 has a field too
-#   many: spec_csv_malformed 1; cond's bad byte: crosswalk_unreadable 1.
+#   many: spec_csv_malformed 1; cond's bad byte: crosswalk_unreadable 1; shape's min_value
+#   "abc": dd_format_invalid 1.
 # Intended overlaps, each counted: site_id_range_invalid 2 (ZZ unknown, and AA and ZZ
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD
@@ -98,7 +104,8 @@ fx_planted_spec <- function() {
     ),
     appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA),
     data_type = c(rep("character", 5L), "text", rep("character", 3L)),
-    datatype = "character"
+    datatype = "character",
+    min_value = c(NA, NA, "abc", NA, NA, NA, NA, NA, NA)
   )
   code_lists <- list(
     shape = data.frame(

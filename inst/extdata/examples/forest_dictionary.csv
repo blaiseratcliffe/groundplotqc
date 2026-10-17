@@ -1,13 +1,13 @@
-TABLE,COLUMN,FORMAT,KEY,REFERS_TO,CODE_LIST,DEFINITION
-PLOTS,PLOT_ID,VARCHAR,PK,,,Plot identifier.
-PLOTS,ESTABLISHED,YYYYMMDD,,,,Date the plot was established.
-PLOTS,PLOT_AREA,DECIMAL,,,,Plot area in hectares.
-TREES,TREE_ID,VARCHAR,PK,,,Tree identifier: plot and tree number.
-TREES,PLOT_ID,VARCHAR,FK,PLOTS,,Plot the tree stands on.
-TREES,TREE_NO,INTEGER,,,,Tree number on the plot.
-TREE_MEAS,MEAS_ID,VARCHAR,PK,,,Measurement identifier.
-TREE_MEAS,TREE_ID,VARCHAR,FK,TREES,,Tree measured.
-TREE_MEAS,MEAS_DATE,YYYYMMDD,,,,Date of the measurement.
-TREE_MEAS,SPECIES,VARCHAR,,,SPECIES,Species code.
-TREE_MEAS,DBH,DECIMAL,,,,Diameter at breast height in centimetres.
-TREE_MEAS,STATUS,VARCHAR,,,STATUS,L live or D dead.
+TABLE,COLUMN,FORMAT,KEY,REFERS_TO,CODE_LIST,DEFINITION,MIN_VALUE,MAX_VALUE,MIN_INCLUSIVE,MAX_INCLUSIVE,PATTERN,MAX_LENGTH,DECIMALS,UNITS
+PLOTS,PLOT_ID,VARCHAR,PK,,,Plot identifier.,,,,,^[A-Z][A-Z0-9_-]*$,,,
+PLOTS,ESTABLISHED,YYYYMMDD,,,,Date the plot was established.,,,,,,,,
+PLOTS,PLOT_AREA,DECIMAL,,,,Plot area in hectares.,0,1,FALSE,TRUE,,,3,ha
+TREES,TREE_ID,VARCHAR,PK,,,Tree identifier: plot and tree number.,,,,,^[A-Z][A-Z0-9_-]*$,,,
+TREES,PLOT_ID,VARCHAR,FK,PLOTS,,Plot the tree stands on.,,,,,,,,
+TREES,TREE_NO,INTEGER,,,,Tree number on the plot.,1,999,,,,,,
+TREE_MEAS,MEAS_ID,VARCHAR,PK,,,Measurement identifier.,,,,,^[A-Z][A-Z0-9_-]*$,,,
+TREE_MEAS,TREE_ID,VARCHAR,FK,TREES,,Tree measured.,,,,,,,,
+TREE_MEAS,MEAS_DATE,YYYYMMDD,,,,Date of the measurement.,,,,,,,,
+TREE_MEAS,SPECIES,VARCHAR,,,SPECIES,Species code.,,,,,,4,,
+TREE_MEAS,DBH,DECIMAL,,,,Diameter at breast height in centimetres.,0,300,FALSE,TRUE,,,1,cm
+TREE_MEAS,STATUS,VARCHAR,,,STATUS,L live or D dead.,,,,,,,,

@@ -12,7 +12,15 @@ gpq_column_map(
   reference = "reference_table",
   lookup = "lookup_table",
   description = "description",
-  lineage_flag = NULL
+  lineage_flag = NULL,
+  min_value = "min_value",
+  max_value = "max_value",
+  min_inclusive = "min_inclusive",
+  max_inclusive = "max_inclusive",
+  pattern = "pattern",
+  max_length = "max_length",
+  decimals = "decimals",
+  units = "units"
 )
 }
 \arguments{
@@ -26,10 +34,20 @@ the dictionary; otherwise pre-flight stops with \code{dd_type_column_ambiguous}.
 
 \item{lineage_flag}{\code{NULL}, or \code{c(column = , value = )}: the dictionary column, and the
 value in it, that mark the attributes needing a row in the lineage spec.}
+
+\item{min_value, max_value, min_inclusive, max_inclusive, pattern, max_length, decimals, units}{One column name each: the lowest and highest value an attribute allows, whether each
+bound is itself allowed (TRUE or FALSE, in any case; a blank where its bound is given
+counts as TRUE), the regular expression its values must match, the most characters they
+may have, the most decimal places they may have, and their units. A bound, pattern,
+length or number of decimal places that the dictionary gives no attribute, its column
+missing or blank in every row, leaves the rules that read it unrun: each writes one
+\code{not_run} row. A missing flag column counts as TRUE.}
 }
 \value{
 A list of class \code{gpq_column_map}, with elements \code{table}, \code{attribute}, \code{type},
-\code{key_type}, \code{reference}, \code{lookup}, \code{description} and \code{lineage_flag}.
+\code{key_type}, \code{reference}, \code{lookup}, \code{description}, \code{lineage_flag}, \code{min_value},
+\code{max_value}, \code{min_inclusive}, \code{max_inclusive}, \code{pattern}, \code{max_length}, \code{decimals} and
+\code{units}.
 }
 \description{
 Tells \code{\link[=gpq_read_spec]{gpq_read_spec()}} which column of the data dictionary holds each piece of
@@ -39,7 +57,10 @@ information. Each default is the column name shown in the usage above.
 # The fish survey example names its dictionary columns its own way.
 fish_map <- gpq_column_map(
   table = "table", attribute = "field", type = "kind", key_type = "key",
-  reference = "parent", lookup = "codes", description = "notes"
+  reference = "parent", lookup = "codes", description = "notes",
+  min_value = "low", max_value = "high", min_inclusive = "low_in",
+  max_inclusive = "high_in", pattern = "format", max_length = "width",
+  decimals = "places", units = "unit"
 )
 fish_map$attribute
 }

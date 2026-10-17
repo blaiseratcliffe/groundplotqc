@@ -143,7 +143,8 @@ attribute_rows <- function(spec, tables, attributes) {
 
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22 here, then the rule set's and the text's from R/preflight_config.R.
+#' M2's 22 and M5's `dd_format_invalid` here, then the rule set's and the text's from
+#' R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.
@@ -538,6 +539,11 @@ preflight_check_functions <- function() {
         return("no_input")
       }
       read_findings_of(spec, "crosswalk_unreadable")
+    },
+    dd_format_invalid = function(spec, context) {
+      # The reader makes every finding of this check, at its cell; a dictionary without the
+      # columns has none (R4).
+      read_findings_of(spec, "dd_format_invalid")
     }
   ), preflight_rule_set_checks(), preflight_text_checks())
 }
@@ -590,12 +596,13 @@ preflight_check_functions <- function() {
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
-#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`; with a rule
-#' set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a severity
-#' setting, `rule_id_unknown` and `rule_set_override_invalid`; and `text_id_missing`,
-#' `text_id_fallback` and `text_slot_unknown`, on the report text of the registered rules in
-#' English and in the run language and on a caller's text table. No rule set or setting
-#' changes what a check stops or warns on.
+#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
+#' `dd_format_invalid`; with a rule set, `rule_set_unknown_column` and
+#' `rule_set_duplicate_row`; with a rule set or a severity setting, `rule_id_unknown` and
+#' `rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback` and
+#' `text_slot_unknown`, on the report text of the registered rules in English and in the run
+#' language and on a caller's text table. No rule set or setting changes what a check stops
+#' or warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(
@@ -605,7 +612,10 @@ preflight_check_functions <- function() {
 #'   ),
 #'   column_map = gpq_column_map(
 #'     table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-#'     reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+#'     reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION",
+#'     min_value = "MIN_VALUE", max_value = "MAX_VALUE", min_inclusive = "MIN_INCLUSIVE",
+#'     max_inclusive = "MAX_INCLUSIVE", pattern = "PATTERN", max_length = "MAX_LENGTH",
+#'     decimals = "DECIMALS", units = "UNITS"
 #'   ),
 #'   type_map = gpq_type_map(example("forest_types.csv"))
 #' )

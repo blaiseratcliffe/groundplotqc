@@ -37,7 +37,9 @@ fish <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv")),
   sentinels = gpq_sentinels(

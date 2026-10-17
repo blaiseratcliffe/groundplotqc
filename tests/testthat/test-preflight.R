@@ -20,7 +20,7 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
     spec_clash_unresolved = "stop", datasets_row_missing = "warn", spec_encoding_invalid = "stop",
     spec_csv_malformed = "stop", site_id_range_invalid = "stop", lineage_spec_unparseable = "stop",
     lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
-    lineage_id_unflagged = "warn", crosswalk_unreadable = "stop",
+    lineage_id_unflagged = "warn", crosswalk_unreadable = "stop", dd_format_invalid = "stop",
     rule_set_unknown_column = "stop", rule_id_unknown = "stop",
     rule_set_override_invalid = "stop", rule_set_duplicate_row = "stop",
     text_id_missing = "stop", text_id_fallback = "warn", text_slot_unknown = "stop"
@@ -51,6 +51,7 @@ test_that("each planted defect gives its check's findings", {
     site_id_range_invalid = "stop 2", lineage_spec_unparseable = "stop 2",
     lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
+    dd_format_invalid = "stop 1",
     rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
     rule_set_override_invalid = "stop 1", rule_set_duplicate_row = "stop 1",
     text_id_missing = "pass 0",
@@ -71,7 +72,8 @@ test_that("each planted defect gives its check's findings", {
     spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
     site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
     lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
-    lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond"
+    lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond",
+    dd_format_invalid = "\"abc\""
   )
   for (rule in names(witness)) {
     details <- results$detail[results$rule_id == rule]
@@ -127,7 +129,7 @@ test_that("a clean spec with every input runs every check, each without a findin
     reference_table = c(NA, NA, NA, NA, "plots", NA),
     lookup_table = c(NA, "Y", NA, NA, NA, "cond"),
     appendix = c(NA, NA, "A2", NA, NA, NA),
-    data_type = "character"
+    data_type = "character", max_length = c(NA, "8", NA, NA, NA, NA)
   )
   spec <- gpq_read_spec(
     dictionary,
