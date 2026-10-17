@@ -67,7 +67,7 @@
 #'   a named character vector of paths. Every column of a CSV file is read as text, so
 #'   `class_mismatch` and `integer_stored_as_double` don't run on its tables. In a CSV file
 #'   an empty cell is a missing value and everything else is read as written, so write
-#'   files with data.table::fwrite() or write.csv(na = "", row.names = FALSE). A cell that
+#'   files with data.table::fwrite(). A cell that
 #'   isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
 #'   define. A table holding text marked as bytes is refused. Or a DBI connection: the
 #'   specification's tables are read from it under the names `table_map` gives, and its

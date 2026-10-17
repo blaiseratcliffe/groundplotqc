@@ -33,7 +33,11 @@ source(file.path("bench", "generate.R"))
 time_stage <- function(expr) {
   gc(reset = TRUE)
   seconds <- system.time(value <- expr)[["elapsed"]]
-  list(value = value, seconds = seconds, peak_mb = sum(gc()[, 6L]))
+  # gc()'s Mb columns all read "(Mb)", and a memory limit adds a column: the peak is the Mb
+  # column right after "max used" (m27).
+  used <- gc()
+  peak <- used[, match("max used", colnames(used)) + 1L]
+  list(value = value, seconds = seconds, peak_mb = sum(peak))
 }
 
 main <- function(args = commandArgs(trailingOnly = TRUE)) {

@@ -459,11 +459,11 @@ test_that("the tables are read after the argument checks and pre-flight (D17.32)
   testthat::skip_if_not_installed("RSQLite")
   connection <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbDisconnect(connection)
-  expect_error(
-    gpq_check_conformance(connection, spec, run_id = run_id),
-    "Invalid or closed connection",
-    fixed = TRUE
-  )
+  # The driver's own error, whatever its words: none of the run's argument errors (m29).
+  closed <- tryCatch(gpq_check_conformance(connection, spec, run_id = run_id), error = identity)
+  expect_s3_class(closed, "error")
+  expect_false(inherits(closed, "gpq_preflight_error"))
+  expect_false(grepl("^`|^Setting |^Table ", conditionMessage(closed)))
   expect_error(
     gpq_check_conformance(connection, spec, layers = 9),
     "`layers` must be whole numbers from 0 to 5.",
@@ -760,4 +760,102 @@ test_that("db_table_id() splits \"schema.table\" at its first dot (D17.6)", {
   expect_equal(
     db_table_id("survey.catches.2024"), DBI::Id(schema = "survey", table = "catches.2024")
   )
+})
+
+test_that("a path marked latin1 is named as its text when the file isn't there (m24)", {
+  dir <- withr::local_tempdir()
+  # Built as bytes and then marked: file.path() would convert a latin1 name to UTF-8 in this
+  # session, and the path would reach the message already converted.
+  absent <- paste0(dir, "/caf\xe9.csv")
+  Encoding(absent) <- "latin1"
+  failed <- tryCatch(
+    gpq_check_conformance(list(stations = absent), fx_fish_spec(), run_id = run_id),
+    error = identity
+  )
+  message <- conditionMessage(failed)
+  # The path is converted from latin1 before it is written, so the e-acute reads as itself,
+  # not as the byte <e9>.
+  expect_true(grepl(paste0("stations (", enc2utf8(absent), ")"), message, fixed = TRUE))
+  expect_false(grepl("<e9>", message, fixed = TRUE))
+})
+
+test_that("a CSV path in a classed character vector is read as its text (m25, D18.12)", {
+  dir <- withr::local_tempdir()
+  fish <- fx_fish_clean()
+  paths <- fish_csv(dir, fish)
+  spec <- fx_fish_spec()
+  # The vector form, as fs::path() gives it: every element a path, the names kept.
+  classed <- structure(paths, class = c("fs_path", "character"))
+  read <- read_tables(classed, spec)
+  expect_equal(read$text_tables, names(fish))
+  expect_equal(read$inputs$file, unname(basename(paths)))
+  # A list element of that class is a path too.
+  mixed <- list(
+    stations = fish$stations, hauls = structure(paths[["hauls"]], class = "fs_path"),
+    catches = paths[["catches"]]
+  )
+  expect_equal(read_tables(mixed, spec)$text_tables, c("hauls", "catches"))
+  results <- gpq_check_conformance(mixed, spec, layers = 0:2, run_id = run_id)
+  expect_equal(results$metadata$inputs$file, c("in memory", "hauls.csv", "catches.csv"))
+  expect_equal(nrow(results$issues), 0L)
+  # is.character() stays the gate, so a factor is still refused (D18.12).
+  expect_error(
+    gpq_check_conformance(list(stations = factor(paths[["stations"]])), spec),
+    paste0(
+      "`tables` holds elements that are neither a data.frame nor the path of one CSV file: ",
+      "stations."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("a table_map in a classed character vector is read as its text (m25, D18.12)", {
+  testthat::skip_if_not_installed("DBI")
+  testthat::skip_if_not_installed("RSQLite")
+  connection <- fish_database()
+  table_map <- structure(
+    c(hauls = "fish_hauls", catches = "survey.catches"),
+    class = c("fs_path", "character")
+  )
+  results <- gpq_check_conformance(
+    connection, fx_fish_spec(), table_map,
+    layers = 0, run_id = run_id
+  )
+  expect_equal(results$metadata$inputs$detail, c(
+    "2 rows; table stations; driver SQLiteConnection",
+    "4 rows; table fish_hauls; driver SQLiteConnection",
+    "8 rows; table survey.catches; driver SQLiteConnection"
+  ))
+})
+
+test_that("a CSV that changes while it is read stops the run before any check (m28, D17.32)", {
+  dir <- withr::local_tempdir()
+  paths <- fish_csv(dir)
+  # The spec is read before the mock, so the first fread() the mock sees is stations.csv's,
+  # not one of the spec's own files.
+  spec <- fx_fish_spec()
+  real_fread <- data.table::fread
+  grown <- FALSE
+  # The first read of stations.csv adds a line to it, as a program still writing it would.
+  testthat::local_mocked_bindings(fread = function(...) {
+    if (!grown) {
+      grown <<- TRUE
+      cat("S9,t9,lake,1.5,2020-06-09\n", file = paths[["stations"]], append = TRUE)
+    }
+    real_fread(...)
+  })
+  expect_error(
+    gpq_check_conformance(paths, spec, run_id = run_id),
+    paste(
+      "Table stations: the file stations.csv changed while it was read, so nothing was",
+      "checked. Run again once the file is complete."
+    ),
+    fixed = TRUE
+  )
+  expect_true(grown)
+  # Files left alone read as before.
+  again <- file.path(dir, "again")
+  dir.create(again)
+  results <- gpq_check_conformance(fish_csv(again), fx_fish_spec(), run_id = run_id)
+  expect_equal(results$metadata$inputs$file, paste0(c("stations", "hauls", "catches"), ".csv"))
 })

@@ -22,3 +22,5 @@
 - A conformance run's fixed cost is cut: a run on `magp_example` takes about a third of the time it did, with the same results and issues.
 - A second article, "Using the engine on your own dataset", checks the fish survey example as data frames, as CSV files and from a database, and writes its results to a run folder.
 - `magp_spec()` accepts NO as a `treatment_type` code and ND as a `disturbance_type` code: it is compiled from 20261015_magpv2_treatment_disturbance.csv, which gives NO's `treat_vs_dist` as T and ND's as D, in place of the 20261005 copy.
+- `gpq_check_conformance()` accepts CSV paths given as a classed character vector, such as `fs::path()` returns, whether as `tables` itself or as an element of it, and `table_map` given that way; each is read as its text.
+- A CSV file that changes while `gpq_check_conformance()` reads it stops the run before any check.
