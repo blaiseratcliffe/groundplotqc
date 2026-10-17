@@ -160,3 +160,25 @@ test_that("code_not_in_list reads translation tables; UNKN.SPP is Layer 2's (D7.
     map$source_name[map$table_name == "magp_tree_meas" & map$attribute_name == "species"]
   )
 })
+
+test_that("only the values that may be blank reach space_padding() (16.2)", {
+  # domain_skipped() reads the values outside the list, and of those only one that is blank or
+  # holds text that isn't plain ASCII goes to space_padding(): here the no-break space, not
+  # "ZZ" and never the whole column.
+  nbsp <- intToUtf8(160L)
+  fish <- edited("hauls", "gear", 1:2, c(nbsp, "ZZ"))
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(), 3L)
+  input <- conformance_input(fish, spec)
+  real <- space_padding
+  received <- character()
+  testthat::local_mocked_bindings(space_padding = function(text) {
+    received <<- c(received, text)
+    real(text)
+  })
+  found <- check_domains(input, context)
+  expect_identical(received, nbsp)
+  # The no-break space is a blank, which the rule leaves to Layer 2; "ZZ" fails.
+  gear <- Filter(function(outcome) outcome$column_name == "gear", found$code_not_in_list)
+  expect_identical(gear[[1L]]$fail, 2L)
+})

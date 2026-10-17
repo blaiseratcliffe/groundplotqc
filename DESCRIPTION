@@ -30,6 +30,7 @@ Imports:
     tools,
     utils
 Suggests:
+    bit64,
     DBI,
     jsonlite,
     knitr,

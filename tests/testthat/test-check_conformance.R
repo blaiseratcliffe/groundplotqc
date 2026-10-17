@@ -591,3 +591,22 @@ test_that("a group in which the rule checked nothing is not_run, none_checked (D
   expect_equal(spell$not_run_reason[[1L]], "none_checked")
   expect_equal(spell$n_not_evaluated[[1L]], length(first_group))
 })
+
+test_that("every checked row failing collapses into one issue, unchecked rows aside (D18.21)", {
+  local_stand_in_rules()
+  n <- nrow(fx_fish_clean()$catches)
+  run <- assembly(settings = list(column_level_min_n = 2L))
+  # Rows 1 and 2 aren't checked and every other row fails: as many failures as rows checked.
+  failing <- 3:n
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", failing, rep("x", length(failing)),
+    unchecked = 1:2
+  ))), 1L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  expect_equal(c(done$results$n_checked, done$results$n_fail), c(n - 2L, n - 2L))
+  expect_equal(done$results$n_not_evaluated, 0L)
+  expect_equal(done$results$status, "fail")
+  expect_equal(done$issues$level, "column")
+  expect_equal(done$issues$n_records, n - 2L)
+  expect_no_error(new_issues(done$issues, registry = rule_registry()))
+})

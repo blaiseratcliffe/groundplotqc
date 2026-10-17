@@ -28,4 +28,4 @@
 - The fish survey and forest examples' dictionaries give ranges, patterns, lengths, decimal places and units, under their own column names.
 - `magp_example` follows MAGPlot's data dictionary more closely: its numbers are within the dictionary's ranges, each site's ID is in its contributor's band of site IDs, and the `ec_*` columns match their patterns.
 - A results row for a group in which the rule checked no record, each masked by an earlier issue or not checked by the rule, now has status `not_run` with reason `none_checked`, where it read `pass`. On a table with no rows, a rule that checks records writes one `not_run` row per column, reason `no_records`, where it wrote `pass`. Both apply to the rules of Layers 1 and 2 too.
-- Layer 3, value domains, starts: `code_not_in_list` finds a coded value that isn't in its code list, whether the list is a sheet of code lists or a translation table.
+- Layer 3, value domains, starts: `code_not_in_list` finds a coded value that isn't in its code list, whether the list is a sheet of code lists or a translation table. bit64 joins Suggests, for the tests of integer64 columns.
