@@ -263,7 +263,7 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
   }, logical(1))))
 })
 
-test_that("the clean base raises nothing in Layers 0 to 3 (18.3)", {
+test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
   # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())

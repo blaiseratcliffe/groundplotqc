@@ -518,7 +518,7 @@ fx_defect_blocks <- function() {
   )
 }
 
-# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 3, with MAGPlot's
+# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 4, with MAGPlot's
 # spec, rule set and group columns; pre-flight's warning about the spec is muffled. What a
 # planted defect must raise are the open issues: `results$issues[status == "open"]`.
 fx_caught <- function(tables) {
@@ -527,7 +527,7 @@ fx_caught <- function(tables) {
     gpq_check_conformance(
       tables, magp_spec(),
       group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
-      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:3
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:4
     ),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )

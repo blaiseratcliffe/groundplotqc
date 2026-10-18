@@ -304,7 +304,7 @@ test_that("group columns named like the engine's own variables are read as colum
 })
 
 test_that("a layer with no registered rule runs nothing", {
-  results <- gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 4:5)
+  results <- gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 5)
   expect_equal(nrow(results$results), 0L)
   expect_equal(nrow(results$metadata$self_test), 0L)
 })
@@ -609,4 +609,168 @@ test_that("every checked row failing collapses into one issue, unchecked rows as
   expect_equal(done$issues$level, "column")
   expect_equal(done$issues$n_records, n - 2L)
   expect_no_error(new_issues(done$issues, registry = rule_registry()))
+})
+
+test_that("record_outcome() takes rows not evaluated and the rules masking it (D18.32)", {
+  overlap <- "Rule r: a row can't be not evaluated and also fail or be unchecked."
+  expect_error(record_outcome("r", "t", "c", 1L, "a", not_evaluated = 1L), overlap, fixed = TRUE)
+  expect_error(
+    record_outcome("r", "t", "c", 1L, "a", unchecked = 2L, not_evaluated = 2L), overlap,
+    fixed = TRUE
+  )
+  for (rows in list(c(2L, 2L), 0L, NA_integer_, 1.5, matrix(2L), "2")) {
+    expect_error(
+      record_outcome("r", "t", "c", 1L, "a", not_evaluated = rows),
+      paste(
+        "Rule r: `not_evaluated` must be row numbers, each once: whole numbers from 1 within",
+        "the integer range."
+      ),
+      fixed = TRUE, info = deparse(rows)
+    )
+  }
+  for (bad in list(1L, NA_character_, list("q"))) {
+    expect_error(
+      record_outcome("r", "t", "c", 1L, "a", masked_by = bad),
+      "Rule r: `masked_by` must be rule IDs.",
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  outcome <- record_outcome("r", "t", "c", 1L, "a", not_evaluated = c(3, 2), masked_by = "q")
+  expect_identical(outcome$not_evaluated, c(3L, 2L))
+  expect_identical(outcome$masked_by, "q")
+  # None given is none.
+  plain <- record_outcome("r", "t", "c", 1L, "a")
+  expect_identical(plain$not_evaluated, integer())
+  expect_identical(plain$masked_by, character())
+})
+
+test_that("rows not evaluated count in n_not_evaluated, with no issue and no root (D18.32)", {
+  local_stand_in_rules()
+  n <- nrow(fx_fish_clean()$catches)
+  run <- assembly(settings = list(column_level_min_n = 100L))
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", 1L, "x"
+  ))), 1L, run$input, run$context, run$state, run_id)
+  record_layer(list(test_spell = list(record_outcome(
+    "test_spell", "catches", "weight", 2L, "y",
+    not_evaluated = c(1L, 3L, 4L)
+  ))), 2L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  spell <- done$results[done$results$rule_id == "test_spell"]
+  # Row 1 is masked by Layer 1 and counted once, as masked; rows 3 and 4 aren't evaluated;
+  # row 2 fails.
+  expect_equal(c(spell$n_checked, spell$n_fail, spell$n_not_evaluated), c(n - 3L, 1L, 3L))
+  issues <- done$issues[done$issues$rule_id == "test_spell"]
+  # The masked row keeps its not_evaluated issue and root; rows 3 and 4 have none. The
+  # failures are numbered before the masked records, so the rows are read in their order.
+  issues <- issues[order(issues$row_number)]
+  expect_equal(issues$row_number, 1:2)
+  expect_equal(issues$status, c("not_evaluated", "open"))
+  expect_no_error(new_results(done$results, registry = rule_registry()))
+  # A group whose every row isn't evaluated checked nothing: not_run, none_checked (D18.22).
+  run <- assembly(group_cols = "gear")
+  grouping <- run$input$groups$catches
+  first_group <- which(grouping$row_group == 1L)
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", integer(), character(),
+    not_evaluated = first_group
+  ))), 1L, run$input, run$context, run$state, run_id)
+  rows <- recorded(run$state)$results
+  expect_equal(c(rows$status[[1L]], rows$not_run_reason[[1L]]), c("not_run", "none_checked"))
+  expect_equal(rows$n_not_evaluated[[1L]], length(first_group))
+  expect_equal(length(run$state$issues), 0L)
+})
+
+test_that("a rule masks the records an earlier rule of its layer failed, rooted there (D18.32)", {
+  registry <- rbind(rule_registry(), data.table::data.table(
+    rule_id = c("test_root", "test_masked"), stage = "conformance", layer = 4L,
+    check_type = "test", default_severity = "error", default_class = "harmonization",
+    inputs = "attributes", strategy = "none", message_id = "preflight_title", rule_version = 1L,
+    unit = FALSE
+  ))
+  testthat::local_mocked_bindings(rule_registry = function() registry)
+  spec <- fx_fish_spec()
+  settings <- list(column_level_min_n = 100L)
+  run <- assembly(settings = settings)
+  run$context <- conformance_context(spec, NULL, settings, 4L)
+  record_layer(list(
+    test_root = list(record_outcome("test_root", "catches", "catch_id", 2L, "catches_2")),
+    test_masked = list(record_outcome(
+      "test_masked", "catches", "catch_id", 2:3, c("catches_2", "catches_3"),
+      masked_by = "test_root"
+    ))
+  ), 4L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  root <- done$issues[done$issues$rule_id == "test_root"]
+  masked <- done$issues[done$issues$rule_id == "test_masked"]
+  masked <- masked[order(masked$row_number)]
+  expect_equal(masked$row_number, 2:3)
+  expect_equal(masked$status, c("not_evaluated", "open"))
+  expect_equal(masked$root_issue_id, c(root$issue_id, NA_integer_))
+  counts <- done$results[done$results$rule_id == "test_masked"]
+  expect_equal(c(counts$n_fail, counts$n_not_evaluated), c(1L, 1L))
+  # Only the named rule masks: the same failure doesn't mask a rule that names none.
+  run <- assembly(settings = settings)
+  run$context <- conformance_context(spec, NULL, settings, 4L)
+  record_layer(list(
+    test_root = list(record_outcome("test_root", "catches", "catch_id", 2L, "catches_2")),
+    test_masked = list(record_outcome("test_masked", "catches", "catch_id", 2L, "catches_2"))
+  ), 4L, run$input, run$context, run$state, run_id)
+  issues <- recorded(run$state)$issues
+  expect_equal(issues$status, c("open", "open"))
+  # A rule naming a later rule of its layer, or a rule of another layer, is a developer's
+  # error (D18.32 (a)).
+  for (named in list(
+    list(rule = "test_root", by = "test_masked"), list(rule = "test_masked", by = "raw_na")
+  )) {
+    run <- assembly(settings = settings)
+    run$context <- conformance_context(spec, NULL, settings, 4L)
+    found <- list()
+    found[[named$rule]] <- list(record_outcome(
+      named$rule, "catches", "catch_id", 1L, "catches_1",
+      masked_by = named$by
+    ))
+    expect_error(
+      record_layer(found, 4L, run$input, run$context, run$state, run_id),
+      sprintf(
+        "Rule %s names %s in `masked_by`; a rule may be masked only by an earlier rule of Layer 4.",
+        named$rule, named$by
+      ),
+      fixed = TRUE
+    )
+  }
+})
+
+test_that("a count writes results rows in the counted table's groups, no issue (D18.32)", {
+  local_stand_in_rules()
+  run <- assembly(group_cols = "gear")
+  hauls <- run$input$groups$hauls
+  record_layer(list(test_cast = list(count_outcome(
+    "test_cast", "catches", "haul_id", "hauls", 1L
+  ))), 1L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  rows <- done$results
+  # One row per group of the hauls, under the catches' haul_id.
+  expect_equal(rows$table_name, rep("catches", nrow(hauls$values)))
+  expect_equal(rows$column_name, rep("haul_id", nrow(hauls$values)))
+  expect_equal(rows$gear, hauls$values$gear)
+  expect_equal(rows$n_checked, tabulate(hauls$row_group, hauls$n))
+  expect_equal(rows$n_fail, as.integer(seq_len(hauls$n) == hauls$row_group[[1L]]))
+  expect_equal(rows$status, fifelse(rows$n_fail > 0L, "fail", "pass"))
+  expect_equal(nrow(done$issues), 0L)
+  expect_no_error(new_results(rows, group_cols = "gear", registry = rule_registry()))
+  # A counted table with no rows: one not_run row, no_records (D18.29, D18.34).
+  fish <- fx_fish_clean()
+  fish$hauls <- fish$hauls[0L]
+  run <- assembly(group_cols = "gear", tables = fish)
+  record_layer(list(test_cast = list(count_outcome(
+    "test_cast", "catches", "haul_id", "hauls", integer()
+  ))), 1L, run$input, run$context, run$state, run_id)
+  empty <- recorded(run$state)$results
+  expect_equal(c(empty$status, empty$not_run_reason, empty$gear), c("not_run", "no_records", "*"))
+  expect_error(
+    count_outcome("r", "t", "c", "p", c(1L, 1L)),
+    "Rule r: `fail` must be row numbers, each once: whole numbers from 1 within the integer range.",
+    fixed = TRUE
+  )
 })
