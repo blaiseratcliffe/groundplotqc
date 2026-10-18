@@ -14,7 +14,8 @@
 # agrees, the build stops. Keys are unique and point to a parent's row; a coded column holds
 # codes of its list, never a sentinel; a date column dates in its format; other columns
 # made-up numbers and text with no blanks and no spaces. Single-column primary keys only,
-# foreign keys to their parent's PK, and no table that points at itself.
+# foreign keys to their parent's PK, and no table that points at itself. Last, each
+# key_pairs copy is taken from the record's parent (fx_copy_key_pairs()).
 fx_clean_tables <- function(spec, n = 2L) {
   attributes <- spec$attributes
   keys <- spec$keys
@@ -201,7 +202,65 @@ fx_clean_tables <- function(spec, n = 2L) {
     names(values) <- attributes$attribute_name[columns]
     built[[table]] <- data.table::as.data.table(values)
   }
-  fx_mark_fixture(built[table_names])
+  fx_copy_key_pairs(fx_mark_fixture(built[table_names]), spec)
+}
+
+# Each key_pairs row whose left side is one attribute set from its right side, the value its
+# chain reaches, so the copy agrees with the record's parent (D18.26, D18.30): the tables of
+# the deepest parents first, as a right side may read a column another row sets. A chained
+# left side isn't set here (D18.41). Sets the fixture's own tables by reference; returns them.
+fx_copy_key_pairs <- function(tables, spec) {
+  fx_require_fixture(tables)
+  pairs <- spec$key_pairs
+  pairs <- pairs[!grepl(" > ", pairs$left, fixed = TRUE) & pairs$table_name %chin% names(tables)]
+  # A spec built without the component, as a test's hand-made one, has no pairs.
+  if (is.null(pairs) || nrow(pairs) == 0L) {
+    return(tables)
+  }
+  # Each table's depth below the tables nothing points from.
+  keys <- spec$keys
+  links <- keys[keys$key_type == "FK" & !is.na(keys$reference_table)]
+  table_names <- unique(spec$attributes$table_name)
+  depth <- stats::setNames(integer(length(table_names)), table_names)
+  for (pass in seq_along(table_names)) {
+    depth[links$table_name] <- pmax(depth[links$table_name], depth[links$reference_table] + 1L)
+  }
+  pairs <- pairs[order(depth[pairs$table_name])]
+  input <- conformance_input(tables, spec)
+  for (k in seq_len(nrow(pairs))) {
+    table <- pairs$table_name[[k]]
+    chain <- parse_chain(pairs$right[[k]], table, keys, spec$attributes)
+    data.table::set(
+      tables[[table]],
+      j = pairs$left[[k]], value = chain_values(input, table, chain)
+    )
+  }
+  tables
+}
+
+# MAGPlot's frames and subplots labelled alike (D18.41): each design's k-th frame and each
+# plot's k-th subplot take frame_type the k-th code both lists hold, frame_num k and subplot
+# the two joined, as the DD builds a label. The builds measure a plot's k-th subplot with its
+# design's k-th frame, so a subplot measurement's subplot and frame agree (key_pairs).
+# Sets the fixture's own tables by reference; returns them.
+fx_label_frames <- function(tables, spec) {
+  fx_require_fixture(tables)
+  codes <- function(table) {
+    lists <- spec$codes
+    held <- lists$code[lists$table_name == table & lists$attribute_name == "frame_type"]
+    setdiff(held, spec$sentinels$value)
+  }
+  types <- intersect(codes("magp_design_frames"), codes("magp_subplots"))
+  label <- function(table, parent) {
+    k <- data.table::rowid(tables[[table]][[parent]])
+    type <- types[(k - 1L) %% length(types) + 1L]
+    data.table::set(tables[[table]], j = "frame_type", value = type)
+    data.table::set(tables[[table]], j = "frame_num", value = k)
+    data.table::set(tables[[table]], j = "subplot", value = paste0(type, k))
+  }
+  label("magp_design_frames", "magp_design_id")
+  label("magp_subplots", "magp_plot_id")
+  tables
 }
 
 # MAGPlot 2.0's clean base: every DD table and column, built from magp_spec() (21 M3b),
@@ -209,7 +268,8 @@ fx_clean_tables <- function(spec, n = 2L) {
 # sheet has them (D15.32): MAGPlot's grouping columns are the contributor, the jurisdiction
 # and the dataset. Each site's ID is moved into its contributor's band of site IDs (the
 # band's start plus the old ID, in every table holding the ID), and the ec_* columns follow
-# their DD patterns (D18.26). Nothing else of the generic build changes.
+# their DD patterns (D18.26). Then the frames and subplots are labelled alike and the
+# key_pairs copies taken from their parents (D18.41).
 fx_magp_clean <- function() {
   spec <- magp_spec()
   tables <- fx_clean_tables(spec)
@@ -253,7 +313,9 @@ fx_magp_clean <- function() {
     sites,
     j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
   )
-  tables
+  # The frames and subplots labelled alike, then the copies taken again from their parents
+  # (D18.41).
+  fx_copy_key_pairs(fx_label_frames(tables, spec), spec)
 }
 
 # The generic clean fixture: the fish survey toy spec's three tables (18.3).
@@ -446,6 +508,11 @@ fx_answer_sheet <- function() {
       "fk_sentinel_unverified", "magp_site_dist", "magp_site_id", "magp_site_dist_1",
       "magp_site_dist$magp_site_id row 1 -9", "fk_sentinel_unverified",
       witness = "-9"
+    ),
+    fx_defect(
+      "key_incoherent", "magp_tree_meas", "visit_num", "magp_tree_meas_1",
+      "magp_tree_meas$visit_num row 1 99", "key_incoherent",
+      witness = "visit_num=99"
     )
   ))
 }
@@ -548,7 +615,8 @@ fx_defect_blocks <- function() {
     pk_missing = fx_set_cell("magp_tree_cond", "magp_cond_id", 1L, NA_character_),
     fk_orphan = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, "magp_tree_meas_0"),
     fk_unassigned = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, NA_character_),
-    fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L)
+    fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L),
+    key_incoherent = fx_set_cell("magp_tree_meas", "visit_num", 1L, 99L)
   )
 }
 

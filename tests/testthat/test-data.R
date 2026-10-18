@@ -332,12 +332,12 @@ test_that("fx_magp_scaled() builds the AB file's shape, its keys agreeing, marke
   # R6's other 14 tables at 0.01x: 4,000 sites, 12,485 visits (three or four a site, rounded),
   # one plot of four subplots per site, one plot measurement per visit with four subplot
   # measurements, a site disturbance and a site treatment per site, 10,000 tree ages, 8,000
-  # tally trees, and two designs per contributor with two frames per design. A change to the
-  # ratios fails here.
+  # tally trees, and two designs per contributor with four frames per design (D18.41). A change
+  # to the ratios fails here.
   other <- c(
     magp_contributors = 1L, magp_datasets = 2L, magp_sites = 40L, magp_site_dist = 40L,
     magp_site_treat = 40L, magp_site_visits = 125L, magp_plots = 40L, magp_subplots = 160L,
-    magp_designs = 2L, magp_design_frames = 4L, magp_plot_meas = 125L,
+    magp_designs = 2L, magp_design_frames = 8L, magp_plot_meas = 125L,
     magp_subplot_meas = 500L, magp_tree_age = 100L, magp_tally_trees = 80L
   )
   expect_equal(vapply(tables[names(other)], nrow, integer(1)), other)
@@ -404,6 +404,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(is.na(cond$magp_treemeas_id)), rate(nrow(cond)))
   sites <- tables$magp_site_dist$magp_site_id
   expect_equal(sum(sites == -9L), rate(length(sites)))
+  expect_equal(sum(meas$visit_num == 99), rate(nrow(meas)))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

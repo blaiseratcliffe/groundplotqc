@@ -85,6 +85,7 @@ build_rule_registry <- function() {
     preflight("crosswalk_unreadable", "error", "read_findings"),
     # ---- M5: the DD's range and format columns (4.2; D18.9) ----
     preflight("dd_format_invalid", "error", "read_findings"),
+    preflight("key_pair_invalid", "error", "read_findings"),
     # ---- task 5 ----
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
     preflight("rule_id_unknown", "error", "rules; settings:severity"),
@@ -252,7 +253,11 @@ build_rule_registry <- function() {
       "fk_sentinel_unverified", 4L, "warning", "harmonization",
       "attributes; keys; type_map; sentinels; settings:column_level_min_n"
     ),
-    conformance("fk_not_applicable_mismatch", 4L, "error", "harmonization", "attributes; keys")
+    conformance("fk_not_applicable_mismatch", 4L, "error", "harmonization", "attributes; keys"),
+    conformance(
+      "key_incoherent", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; key_pairs; settings:column_level_min_n"
+    )
   ))
 }
 

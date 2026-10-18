@@ -56,6 +56,7 @@ spec_schema <- function() {
       table_name = chr, attribute_name = chr, key_attribute = chr, labels_sheet = chr,
       labels_column = chr
     ),
+    key_pairs = c(table_name = chr, left = chr, right = chr, note = chr),
     type_map = c(data_type = chr, r_class = chr, date_format = chr),
     sentinels = c(
       data_type = chr, role = chr, value = chr, allowed_in_pk = lgl, allowed_in_fk = lgl
@@ -72,7 +73,7 @@ spec_schema <- function() {
   )
 }
 
-#' The columns of the precedence, lineage-spec and site-ID-band inputs
+#' The columns of the precedence, lineage-spec, site-ID-band and key-pair inputs
 #' @noRd
 spec_input_schema <- function() {
   list(
@@ -84,7 +85,8 @@ spec_input_schema <- function() {
     id_bands = c(
       "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern", "table",
       "attribute", "key"
-    )
+    ),
+    key_pairs = c("table_name", "left", "right", "note")
   )
 }
 
@@ -1518,6 +1520,54 @@ read_lineage_input <- function(x, origin = NULL) {
   table
 }
 
+#' The key_pairs input, read and checked (D18.1, D18.36)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). A row whose table is blank or
+#' isn't the dictionary's is a key_pair_invalid finding, and so is each side of a row with a
+#' known table that is blank, or isn't an attribute of that table or a chain of its foreign
+#' keys ending in one (parse_chain()). Each finding cites its cell, as the input's form
+#' allows.
+#' @noRd
+read_key_pairs <- function(x, attributes, keys, origin = NULL) {
+  table <- read_input_table(x, "key_pairs", origin)
+  columns <- spec_input_schema()$key_pairs
+  check_input_columns(table$data, columns, "key_pairs")
+  data <- table$data[, columns, with = FALSE]
+  # One finding per row in `rows`, at its cell in `column`; none for no row.
+  finding <- function(rows, column, text_id, ...) {
+    if (length(rows) == 0L) {
+      return(NULL)
+    }
+    data.table(
+      rule_id = "key_pair_invalid", input = "key_pairs", file = table$where$file,
+      detail = report_text(text_id, ...),
+      source_cell = cell_references(
+        table$where, rows + 1L, rep(match(column, names(table$data)), length(rows))
+      )
+    )
+  }
+  known <- data$table_name %chin% attributes$table_name
+  unknown <- which(!known)
+  findings <- list(table$findings, finding(
+    unknown, "table_name", "preflight_detail_key_pair_invalid_table",
+    table_name = data$table_name[unknown]
+  ))
+  for (side in c("left", "right")) {
+    chains <- data[[side]]
+    parsed <- vapply(seq_len(nrow(data)), function(i) {
+      !known[[i]] || !is.null(parse_chain(chains[[i]], data$table_name[[i]], keys, attributes))
+    }, logical(1))
+    bad <- which(!parsed)
+    findings[[length(findings) + 1L]] <- finding(
+      bad, side, "preflight_detail_key_pair_invalid_side",
+      value = chains[bad], table_name = data$table_name[bad]
+    )
+  }
+  list(
+    data = data, manifest = table$manifest, findings = bind_component("read_findings", findings)
+  )
+}
+
 #' Read a specification
 #'
 #' @description
@@ -1529,10 +1579,10 @@ read_lineage_input <- function(x, origin = NULL) {
 #' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 #' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 #' unless it is a translation table, which is then a finding; a
-#' dictionary without its table or attribute column; a `precedence` or `lineage_spec`
-#' table without exactly its columns; a `precedence` table with an unknown `winner` or
-#' `blank_rule`, or with two rows for one sheet, key and attribute; a name given in R
-#' that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
+#' dictionary without its table or attribute column; a `precedence`, `lineage_spec` or
+#' `key_pairs` table without exactly its columns; a `precedence` table with an unknown
+#' `winner` or `blank_rule`, or with two rows for one sheet, key and attribute; a name given
+#' in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
 #' values for an attribute that uses it; or an origin that doesn't fit its input.
 #'
 #' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
@@ -1562,14 +1612,21 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
 #'   (`yields` or `wins`), saying which input wins where the datasets table and a sheet
 #'   overlap.
+#' @param key_pairs `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `table_name`, `left`, `right` and `note`: each row two ways to reach one value from a
+#'   record of `table_name`, each side an attribute of the table or a chain of foreign keys
+#'   joined by " > " ending in an attribute, such as `"haul_id > station_id"`.
+#'   `key_incoherent` compares the two sides and reports a record where they differ on the
+#'   left side's first attribute.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
 #'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
-#'   `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = , rows = ,
-#'   columns = )`: the file, named in findings and hashed in the manifest; a workbook's
-#'   sheet, or `NULL` for a CSV file; the file row of the first data row, later rows
-#'   following on, or the file row of every data row, or `NULL` to count rows as R counts
-#'   them; and the file column, by number or letter, of every column of the data.frame,
-#'   or `NULL` for the file's order. Findings in such an input then name the file's cells.
+#'   `key_pairs`, `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = ,
+#'   rows = , columns = )`: the file, named in findings and hashed in the manifest; a
+#'   workbook's sheet, or `NULL` for a CSV file; the file row of the first data row, later
+#'   rows following on, or the file row of every data row, or `NULL` to count rows as R
+#'   counts them; and the file column, by number or letter, of every column of the
+#'   data.frame, or `NULL` for the file's order. Findings in such an input then name the
+#'   file's cells.
 #' @param column_map The dictionary's column names, from [gpq_column_map()].
 #' @param type_map The type map, from [gpq_type_map()]. What was found reading its file
 #'   joins `read_findings`.
@@ -1577,9 +1634,10 @@ read_lineage_input <- function(x, origin = NULL) {
 #' @return An object of class `gpq_spec`: a named list of data.tables, the components
 #'   `attributes`, `keys`, `code_lists`, `code_list_sheets`, `code_list_map`, `codes`,
 #'   `non_code_sheets`,
-#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `id_band_columns`, `type_map`,
-#'   `sentinels`, `clashes`, `read_findings` and `manifest`. An input not given leaves its
-#'   component empty, with its columns. A blank cell is `NA`; text is kept exactly as written.
+#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `id_band_columns`, `key_pairs`,
+#'   `type_map`, `sentinels`, `clashes`, `read_findings` and `manifest`. An input not given
+#'   leaves its component empty, with its columns. A blank cell is `NA`; text is kept exactly
+#'   as written.
 #' @section Components:
 #' Each component is a data.table with these columns:
 #'
@@ -1617,7 +1675,7 @@ read_lineage_input <- function(x, origin = NULL) {
 gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
                           datasets = NULL, lineage_spec = NULL, crosswalks = NULL,
                           id_pattern = NULL, id_bands = NULL, precedence = NULL,
-                          origins = NULL, column_map = gpq_column_map(),
+                          key_pairs = NULL, origins = NULL, column_map = gpq_column_map(),
                           type_map = gpq_type_map(), sentinels = gpq_sentinels()) {
   # data.table's automatic indexing would add index attributes as the reader subsets;
   # off here and restored on exit, so the spec reloads identical() (D12.27).
@@ -1673,7 +1731,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
       },
       if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
       if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
-      if (!is.null(precedence)) "precedence"
+      if (!is.null(precedence)) "precedence", if (!is.null(key_pairs)) "key_pairs"
     ),
     no_origin = c(
       if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
@@ -1707,6 +1765,9 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   }
   keys <- build_keys(attributes)
   bands <- build_id_bands(id_bands, lists$long, bands_file, attributes, keys)
+  pairs_in <- if (!is.null(key_pairs)) {
+    read_key_pairs(key_pairs, attributes, keys, origins[["key_pairs"]])
+  }
   datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
   # Each precedence sheet's own file, its CSV or the workbook, named by sheet (D12.28).
   list_files <- vapply(
@@ -1745,19 +1806,20 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     crosswalks = walks$long,
     id_bands = bands$bands,
     id_band_columns = bands$columns,
+    key_pairs = if (is.null(pairs_in)) empty_table(spec_schema()$key_pairs) else pairs_in$data,
     type_map = type_map,
     sentinels = sentinels,
     clashes = bind_component("clashes", list(clashes$clashes, lineage$clashes)),
     read_findings = bind_component("read_findings", list(
       dictionary_in$findings, dictionary_read$findings, type_findings, lists$findings,
       walks$findings, datasets_in$findings, lineage_in$findings, precedence_in$findings,
-      bands$findings, clashes$findings, lineage$findings
+      bands$findings, clashes$findings, lineage$findings, pairs_in$findings
     )),
     manifest = bind_component("manifest", list(
       dictionary_in$manifest, lists$manifest, memory_row(non_code_sheets, "non_code_sheets"),
       datasets_in$manifest, lineage_in$manifest, walks$manifest,
       memory_row(id_pattern, "id_pattern"), memory_row(id_bands, "id_bands"),
-      precedence_in$manifest
+      precedence_in$manifest, pairs_in$manifest
     ))
   ))
 }

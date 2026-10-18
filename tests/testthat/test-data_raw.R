@@ -171,18 +171,24 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   config <- withr::local_tempdir()
   writeLines("exception_id", file.path(config, "spec_exceptions.csv"))
   writeLines("sheet", file.path(config, "precedence.csv"))
+  writeLines("table_name", file.path(config, "key_pairs.csv"))
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
     precedence = data.frame(
       sheet = "s", key_col = "k", attribute_name = "c", winner = "datasets", blank_rule = "wins"
     ),
-    origins = list(precedence = list(path = file.path(config, "precedence.csv"), rows = 2L))
+    key_pairs = data.frame(table_name = "t", left = "a", right = "a", note = NA),
+    origins = list(
+      precedence = list(path = file.path(config, "precedence.csv"), rows = 2L),
+      key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L)
+    )
   )
   given <- data.table::copy(spec$manifest)
   manifest <- build$record_hand_kept(spec, config)$manifest
   # The caller's spec keeps its manifest as it was.
   expect_identical(spec$manifest, given)
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
+  expect_equal(manifest$file[manifest$input == "key_pairs"], "data-raw/magp/key_pairs.csv")
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
   expect_equal(

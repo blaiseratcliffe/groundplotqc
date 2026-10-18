@@ -125,6 +125,11 @@ pk_holders <- function(input, table) {
 #' `fk_sentinel_unverified` per foreign key of a number type: each record holding a sentinel
 #' `allowed_in_fk` allows, never looked up (D12.31, D16.2, D18.33). `fk_not_applicable_mismatch`
 #' per foreign key: not_run, no_matrix, until a matrix says where "Z" belongs (D7.3).
+#' `key_incoherent` per table and first attribute of a `key_pairs` left side: a record whose
+#' two sides of a pair differ, compared as text; its value and expected the failing pairs'
+#' sides labelled by the left side's last attribute; a side whose chain breaks, or whose value
+#' is NA, blank or a sentinel, isn't compared, and a record none of whose pairs was compared
+#' isn't checked (D18.1, D18.40).
 #' @noRd
 check_keys <- function(input, context) {
   spec <- context$spec
@@ -250,6 +255,78 @@ check_keys <- function(input, context) {
       function(table, attribute, x, row) {
         not_run_outcome("fk_not_applicable_mismatch", table, attribute, "no_matrix")
       }
-    )
+    ),
+    key_incoherent = if (!given(spec, "key_pairs")) {
+      list(not_run_outcome("key_incoherent", "*", "*", "no_input"))
+    } else {
+      pairs <- spec$key_pairs
+      first <- sub(" > .*$", "", pairs$left)
+      heads <- unique(data.table(table_name = pairs$table_name, attribute_name = first))
+      scope <- rows_of(heads$table_name, heads$attribute_name)
+      rule_outcomes(
+        "key_incoherent", scope[!is.na(scope$table_name)], input,
+        function(table, attribute, x, row) {
+          mine <- which(pairs$table_name == table & first == attribute)
+          n <- length(x)
+          differs <- list()
+          labels <- character()
+          left_values <- list()
+          right_values <- list()
+          any_compared <- logical(n)
+          for (k in mine) {
+            left <- parse_chain(pairs$left[[k]], table, keys, spec$attributes)
+            right <- parse_chain(pairs$right[[k]], table, keys, spec$attributes)
+            # A row that doesn't parse is key_pair_invalid's, which stops pre-flight.
+            if (is.null(left) || is.null(right)) {
+              next
+            }
+            lv <- chain_values(input, table, left)
+            rv <- chain_values(input, table, right)
+            # A side whose chain breaks gives NA; NA, blanks and sentinels of the side's own
+            # attribute's type aren't compared (D18.1).
+            skipped <- logical(n)
+            for (side in list(list(lv, left), list(rv, right))) {
+              found <- key_rows(
+                side[[1L]], rows_of(side[[2L]]$table, side[[2L]]$attribute), sentinels,
+                "allowed_in_fk"
+              )
+              skipped[c(found$missing, found$open)] <- TRUE
+            }
+            # Compared as text: as stored where both sides are plain numbers or both text.
+            same <- if (is.numeric(lv) && !is.object(lv) && is.numeric(rv) && !is.object(rv)) {
+              lv == rv
+            } else if (is.character(lv) && is.character(rv)) {
+              lv == rv
+            } else {
+              value_text(lv) == value_text(rv)
+            }
+            any_compared <- any_compared | !skipped
+            differs[[length(differs) + 1L]] <- !skipped & !same %in% TRUE
+            labels <- c(labels, left$attribute)
+            left_values[[length(left_values) + 1L]] <- lv
+            right_values[[length(right_values) + 1L]] <- rv
+          }
+          fail <- if (length(differs) == 0L) integer() else which(Reduce(`|`, differs))
+          # Each failing pair's sides, labelled by its left side's last attribute, in
+          # key_pairs' order (D18.40).
+          value <- character(length(fail))
+          expected <- character(length(fail))
+          for (k in seq_along(differs)) {
+            hit <- differs[[k]][fail]
+            joiner <- fifelse(nzchar(value[hit]), "; ", "")
+            value[hit] <- paste0(
+              value[hit], joiner, labels[[k]], "=", value_text(left_values[[k]][fail][hit])
+            )
+            expected[hit] <- paste0(
+              expected[hit], joiner, labels[[k]], "=", value_text(right_values[[k]][fail][hit])
+            )
+          }
+          record_outcome(
+            "key_incoherent", table, attribute, fail, value, expected,
+            unchecked = which(!any_compared)
+          )
+        }
+      )
+    }
   )
 }

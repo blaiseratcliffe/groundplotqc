@@ -108,7 +108,8 @@ Layers and the rules they can raise:
 \code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{site_id_out_of_range},
 \code{coordinate_out_of_bounds}, \code{undeclared_code_set}.
 \item Layer 4, keys and relationships: \code{pk_duplicate}, \code{pk_missing}, \code{fk_orphan},
-\code{fk_unassigned}, \code{fk_sentinel_unverified}, \code{fk_not_applicable_mismatch}.
+\code{fk_unassigned}, \code{fk_sentinel_unverified}, \code{fk_not_applicable_mismatch},
+\code{key_incoherent}.
 }
 
 Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's

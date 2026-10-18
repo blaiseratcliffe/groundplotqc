@@ -42,7 +42,7 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   found <- check_keys(conformance_input(fish, spec), context)
   expect_named(found, c(
     "pk_duplicate", "pk_missing", "fk_orphan", "fk_unassigned", "fk_sentinel_unverified",
-    "fk_not_applicable_mismatch"
+    "fk_not_applicable_mismatch", "key_incoherent"
   ))
   # Three tables of one key column each; two foreign keys, neither of a number type.
   expect_length(found$pk_duplicate, 3L)
@@ -53,6 +53,8 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   expect_equal(
     vapply(found$fk_not_applicable_mismatch, `[[`, "", "reason"), c("no_matrix", "no_matrix")
   )
+  # No key_pairs: one not_run row, no_input.
+  expect_equal(found$key_incoherent[[1L]]$reason, "no_input")
 })
 
 # ---- task 10 ----
@@ -286,4 +288,89 @@ test_that("key_rows() writes stored numbers as text only near a code, its rows u
   expect_equal(found$missing, sort(c(which(is.na(x)), which(text %in% "00000000"))))
   expect_equal(found$open, which(text %in% c("99999999", "X")))
   expect_equal(written, list(0, c(99999999, 99999999.00001, 99999999)))
+})
+
+# ---- task 11 ----
+
+test_that("key_incoherent compares each pair's sides, the failing pairs labelled (D18.1, D18.40)", {
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  # The catches carry three copies: their station, their haul's gear and its date.
+  extra <- data.frame(
+    table = "catches", field = c("station_id", "gear", "haul_date"),
+    kind = c("text", "text", "day"), key = c("fk", NA, NA), parent = c("stations", NA, NA),
+    codes = c(NA, "y", NA), notes = c("Station.", "Gear.", "Date.")
+  )
+  # The dictionary's range and format columns, blank for the three (task 3).
+  extra[setdiff(names(dictionary), names(extra))] <- NA_character_
+  spec <- gpq_read_spec(
+    dictionary = rbind(dictionary, extra), code_lists = fx_fish_code_lists(),
+    key_pairs = data.frame(
+      table_name = "catches", left = c("station_id", "haul_id > gear", "haul_id > haul_date"),
+      right = c("haul_id > station_id", "gear", "haul_date"), note = NA
+    ),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  # fx_clean_tables() copies the one-attribute left side (station_id); the other two copies
+  # are set here from each catch's haul.
+  fish <- fx_clean_tables(spec)
+  catches <- data.table::copy(fish$catches)
+  haul <- match(catches$haul_id, fish$hauls$haul_id)
+  data.table::set(catches, j = "gear", value = fish$hauls$gear[haul])
+  data.table::set(catches, j = "haul_date", value = fish$hauls$haul_date[haul])
+  fish$catches <- catches
+  expect_equal(nrow(opened(fish_run(fish, spec = spec))), 0L)
+  # A catch at the wrong station; one whose gear and date both differ from its haul's; one
+  # whose gear alone does.
+  # A gear neither catch 2's haul nor catch 3's has.
+  other_gear <- setdiff(c("GN", "TN", "EF"), catches$gear[2:3])[[1L]]
+  broken <- edited("catches", "station_id", 1L, "stations_2", fish)
+  broken <- edited("catches", "gear", 2:3, c(other_gear, other_gear), broken)
+  broken <- edited("catches", "haul_date", 2L, "2001-01-01", broken)
+  found <- opened(fish_run(broken, spec = spec), "key_incoherent")
+  expect_equal(placed_at(found), c(
+    "catches station_id 1", "catches haul_id 2", "catches haul_id 3"
+  ))
+  expect_equal(found$value[[1L]], "station_id=stations_2")
+  expect_equal(found$expected[[1L]], "station_id=stations_1")
+  # Pairs sharing a first attribute are one outcome: only the failing pairs, in key_pairs'
+  # order, each labelled by its left side's last attribute (D18.40).
+  expect_equal(found$value[[2L]], paste0(
+    "gear=", catches$gear[[2L]], "; haul_date=", catches$haul_date[[2L]]
+  ))
+  expect_equal(found$expected[[2L]], paste0("gear=", other_gear, "; haul_date=2001-01-01"))
+  expect_equal(found$value[[3L]], paste0("gear=", catches$gear[[3L]]))
+  # A broken chain or a sentinel side isn't compared; a record none of whose pairs was
+  # compared isn't checked (D18.1, D18.21).
+  unlinked <- edited("catches", "haul_id", 4L, NA_character_, fish)
+  unlinked <- edited("catches", "station_id", 4L, "~", unlinked)
+  results <- fish_run(unlinked, spec = spec)
+  expect_equal(nrow(opened(results, "key_incoherent")), 0L)
+  rows <- results$results[results$results$rule_id == "key_incoherent"]
+  expect_equal(rows$n_checked, c(7L, 7L))
+})
+
+test_that("key_incoherent without key_pairs is one not_run row, no_input", {
+  results <- fish_run(fx_fish_clean())
+  row <- results$results[results$results$rule_id == "key_incoherent"]
+  expect_equal(c(row$table_name, row$status, row$not_run_reason), c("*", "not_run", "no_input"))
+})
+
+test_that("the clean bases' key_pairs copies agree with their parents (D18.30, D18.41)", {
+  testthat::skip_on_cran()
+  results <- fx_caught(fx_magp_clean())
+  rows <- results$results[results$results$rule_id == "key_incoherent"]
+  # One row per table and first attribute of MAGPlot's 21 pairs, all passing.
+  pairs <- magp_spec()$key_pairs
+  heads <- unique(paste(pairs$table_name, sub(" > .*$", "", pairs$left)))
+  expect_setequal(unique(paste(rows$table_name, rows$column_name)), heads)
+  expect_true(all(rows$status == "pass"))
 })

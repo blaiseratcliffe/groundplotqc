@@ -76,7 +76,7 @@ fx_forest_spec <- function() {
 #   datasets_row_missing 1 (id 3); the bad byte in shape's description:
 #   spec_encoding_invalid 1; the non-code sheet notes, a CSV whose line 3 has a field too
 #   many: spec_csv_malformed 1; cond's bad byte: crosswalk_unreadable 1; shape's min_value
-#   "abc": dd_format_invalid 1.
+#   "abc": dd_format_invalid 1. plots' key pair "nothing > soil": key_pair_invalid 1.
 # Intended overlaps, each counted: site_id_range_invalid 2 (ZZ unknown, and AA and ZZ
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD
@@ -142,6 +142,9 @@ fx_planted_spec <- function() {
     precedence = data.frame(
       sheet = "ds", key_col = "id", attribute_name = "name", winner = "datasets",
       blank_rule = "wins"
+    ),
+    key_pairs = data.frame(
+      table_name = "plots", left = "soil", right = "nothing > soil", note = NA
     ),
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )

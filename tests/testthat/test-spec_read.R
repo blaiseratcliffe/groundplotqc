@@ -15,8 +15,8 @@ test_that("the schema lists 3.6's components in order", {
   expect_named(spec_schema(), c(
     "attributes", "keys", "code_lists", "code_list_sheets", "code_list_map", "codes",
     "non_code_sheets",
-    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "type_map",
-    "sentinels",
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
+    "type_map", "sentinels",
     "clashes", "read_findings", "manifest"
   ))
   expect_equal(spec_schema()$manifest, c(
@@ -1239,7 +1239,8 @@ test_that("both toy specs read cleanly", {
 test_that("absent inputs give empty components with their columns", {
   fish <- fx_fish_spec()
   for (name in c(
-    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "clashes"
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
+    "clashes"
   )) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
@@ -1824,4 +1825,49 @@ test_that("each value of the bands' key has one band; a later one names the firs
     contributors
   )
   expect_equal(found(reserved), character())
+})
+
+# ---- task 11 ----
+
+test_that("key_pairs is read, each bad table or side one finding at its cell (D18.1, D18.36)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "stand", "tree_id", "plot_id", "stand"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Rows 2 to 4 each break once: a table the dictionary lacks, a left side that isn't an
+  # attribute, a right side whose first hop isn't a foreign key.
+  data.table::fwrite(data.frame(
+    table_name = c("trees", "stands", "trees", "trees"),
+    left = c("stand", "stand", "height", "stand"),
+    right = c("plot_id > stand", "plot_id > stand", "plot_id > stand", "tree_id > stand"),
+    note = NA
+  ), path)
+  spec <- gpq_read_spec(dictionary, key_pairs = path)
+  expect_equal(spec$key_pairs$table_name, c("trees", "stands", "trees", "trees"))
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_key_pair_invalid_table", table_name = "stands"),
+    report_text("preflight_detail_key_pair_invalid_side", value = "height", table_name = "trees"),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = "tree_id > stand", table_name = "trees"
+    )
+  ))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 3:5))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # Given in memory, a finding has no cell; a table without exactly the columns is the caller's.
+  memory <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "trees", left = "height", right = "stand", note = NA
+  ))
+  expect_true(is.na(memory$read_findings$source_cell[
+    memory$read_findings$rule_id == "key_pair_invalid"
+  ]))
+  expect_error(
+    gpq_read_spec(dictionary, key_pairs = data.frame(table_name = "trees", left = "stand")),
+    "`key_pairs` must have exactly the columns table_name, left, right, note",
+    fixed = TRUE
+  )
 })

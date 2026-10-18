@@ -13,7 +13,8 @@
 # its tree along both paths. The contributors, datasets, designs and frames don't scale:
 # one contributor with its two datasets, or with `many_groups` every dataset of the
 # specification's datasets sheet in its contributor and jurisdiction (R8); two designs per
-# contributor and two frames per design. `defects` plants D17.8's defects (see below).
+# contributor and four frames per design, a subplot measurement's frame its subplot's
+# (D18.41). `defects` plants D17.8's defects (see below).
 fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   spec <- magp_spec()
   base <- fx_magp_clean()
@@ -39,7 +40,7 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   # The parent row of each row, by foreign key column.
   dataset_contributor <- match(sheet$magp_contributor_id[of_dataset], contributors)
   design_contributor <- rep(seq_along(contributors), each = 2L)
-  frame_design <- rep(seq_along(design_contributor), each = 2L)
+  frame_design <- rep(seq_along(design_contributor), each = 4L)
   site_dataset <- spread(length(datasets), n_sites)
   visit_site <- spread(n_sites, n_visits)
   # One plot per site, so a site's plot is the plot of its row; four subplots per plot.
@@ -47,12 +48,12 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   # One plot measurement per visit, by a design of the site's contributor.
   plot_meas_design <- 2L * (dataset_contributor[site_dataset[visit_site]] - 1L) + 1L +
     (seq_len(n_visits) - 1L) %% 2L
-  # Four subplot measurements per plot measurement, one per subplot, by a frame of its design.
+  # Four subplot measurements per plot measurement, one per subplot, each by the frame of its
+  # design that matches the subplot (D18.41).
   subplot_meas_of <- rep(seq_len(n_visits), each = 4L)
   quarter <- rep(1:4, times = n_visits)
   subplot_meas_subplot <- 4L * (visit_site[subplot_meas_of] - 1L) + quarter
-  subplot_meas_frame <- 2L * (plot_meas_design[subplot_meas_of] - 1L) + 1L +
-    (quarter - 1L) %% 2L
+  subplot_meas_frame <- 4L * (plot_meas_design[subplot_meas_of] - 1L) + quarter
   tree_subplot <- spread(4L * n_sites, n_trees)
   # Each tree measurement takes a tree of its subplot, in turn.
   tree_meas_of <- spread(4L * n_visits, n_tree_meas)
@@ -180,6 +181,8 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
     tables$magp_sites,
     j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
   )
+  # The frames and subplots labelled alike, and the copies taken from their parents (D18.41).
+  tables <- fx_copy_key_pairs(fx_label_frames(fx_mark_fixture(tables), spec), spec)
   if (defects) {
     tables <- fx_scaled_defects(tables)
   }
@@ -237,6 +240,7 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_cond", "magp_treemeas_id", 4L, "magp_tree_meas_0")
   plant("magp_tree_cond", "magp_treemeas_id", 5L, NA_character_)
   plant("magp_site_dist", "magp_site_id", 1L, -9L)
+  plant("magp_tree_meas", "visit_num", 6L, 99)
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

@@ -544,6 +544,13 @@ preflight_check_functions <- function() {
       # The reader makes every finding of this check, at its cell; a dictionary without the
       # columns has none (R4).
       read_findings_of(spec, "dd_format_invalid")
+    },
+    key_pair_invalid = function(spec, context) {
+      if (!given(spec, "key_pairs")) {
+        return("no_input")
+      }
+      # The reader makes every finding of this check, at its cell (D18.36).
+      read_findings_of(spec, "key_pair_invalid")
     }
   ), preflight_rule_set_checks(), preflight_text_checks())
 }
@@ -597,9 +604,9 @@ preflight_check_functions <- function() {
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
-#' `dd_format_invalid`; with a rule set, `rule_set_unknown_column` and
-#' `rule_set_duplicate_row`; with a rule set or a severity setting, `rule_id_unknown` and
-#' `rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback` and
+#' `dd_format_invalid`, `key_pair_invalid`; with a rule set, `rule_set_unknown_column`
+#' and `rule_set_duplicate_row`; with a rule set or a severity setting, `rule_id_unknown`
+#' and `rule_set_override_invalid`; and `text_id_missing`, `text_id_fallback` and
 #' `text_slot_unknown`, on the report text of the registered rules in English and in the run
 #' language and on a caller's text table. No rule set or setting changes what a check stops
 #' or warns on.
