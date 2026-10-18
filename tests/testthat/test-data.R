@@ -367,7 +367,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   meas <- tables$magp_tree_meas
   trees <- tables$magp_trees
   # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
-  # 1 to 4, gives the same count).
+  # 1 to 5, gives the same count).
   rate <- function(n) ceiling(0.001 * n)
   expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
   expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))
@@ -391,7 +391,10 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   holders <- dd$table_name[dd$attribute_name == "magp_site_id"]
   for (table in setdiff(holders, "magp_sites")) {
     ids <- tables[[table]]$magp_site_id
-    expect_true(all(ids[ids != -9L] %in% tables$magp_sites$magp_site_id), label = table)
+    if (table == "magp_site_dist") {
+      ids <- ids[ids != -9L]
+    }
+    expect_true(all(ids %in% tables$magp_sites$magp_site_id), label = table)
   }
   expect_true(all(tables$magp_tally_trees$ht_class == "B"))
   cond <- tables$magp_tree_cond

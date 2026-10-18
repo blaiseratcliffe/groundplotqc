@@ -155,3 +155,135 @@ test_that("fk_not_applicable_mismatch is not_run, no_matrix, per foreign key and
   catches <- rows[rows$table_name == "catches"]
   expect_equal(sum(catches$n_not_evaluated), nrow(fish$catches))
 })
+
+# task 10's fix round (the spec review's I2)
+test_that("a sentinel a primary key may hold repeats nothing: pk_duplicate leaves it alone", {
+  # With allowed_in_pk TRUE, "~" is neither pk_missing's nor a key to compare (D18.10 (2)).
+  spec <- fx_fish_spec()
+  sentinels <- data.table::copy(spec$sentinels)
+  allowed <- which(sentinels$data_type == "character" & sentinels$value == "~")
+  data.table::set(sentinels, i = allowed, j = "allowed_in_pk", value = TRUE)
+  spec$sentinels <- sentinels
+  results <- fish_run(edited("catches", "catch_id", 1:2, c("~", "~")), spec = spec)
+  expect_equal(nrow(opened(results)), 0L)
+  rows <- results$results[results$results$rule_id == "pk_duplicate"]
+  row <- rows[rows$table_name == "catches"]
+  expect_equal(c(row$n_checked, row$n_fail), c(8L, 0L))
+})
+
+# task 10's fix round (the spec review's m1)
+test_that("a composite key missing a part's column is not_run, no_column, on its first part", {
+  # pk_duplicate compares nothing without every part (D9.24, D18.42).
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary)
+  tables <- list(t = data.table::data.table(a = c("1", "1", "2"), v = c("p", "q", "r")))
+  results <- gpq_check_conformance(tables, spec, layers = 4)
+  row <- results$results[results$results$rule_id == "pk_duplicate"]
+  expect_equal(c(row$column_name, row$status, row$not_run_reason), c("a", "not_run", "no_column"))
+  expect_equal(nrow(opened(results)), 0L)
+})
+
+# task 10's fix round (the fixture review's Minor 4)
+test_that("a repeated primary key fails each holder in its own group (D18.10 (2))", {
+  fish <- fx_fish_clean()
+  gear <- fish$hauls$gear[match(fish$catches$haul_id, fish$hauls$haul_id)]
+  other <- which(gear != gear[[1L]])[[1L]]
+  fish <- edited("catches", "catch_id", other, "catches_1", fish)
+  results <- gpq_check_conformance(fish, fx_fish_spec(), group_cols = "gear", layers = 4)
+  expect_equal(opened(results, "pk_duplicate")$row_number, c(1L, other))
+  rows <- results$results[results$results$rule_id == "pk_duplicate"]
+  rows <- rows[rows$table_name == "catches"]
+  expect_setequal(rows$gear[rows$n_fail == 1L], c(gear[[1L]], gear[[other]]))
+  expect_equal(sum(rows$n_fail), 2L)
+})
+
+# task 10's fix round (the spec review's m3 and the fixture review's Minor 4)
+test_that("a number foreign key warns once per record holding its allowed code, as text too", {
+  # haul_id a whole number, read from a CSV file as text: -88 (not applicable, allowed in a
+  # foreign key) written "-88.0" and "-88", and -99 (missing, refused) written "-99.0", each
+  # read as its code (D18.33, R29).
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  is_haul <- which(attributes$attribute_name == "haul_id")
+  data.table::set(attributes, i = is_haul, j = "data_type", value = "whole")
+  data.table::set(attributes, i = is_haul, j = "r_class", value = "integer")
+  spec$attributes <- attributes
+  fish <- fx_clean_tables(spec)
+  as_text <- function(fish, ids) {
+    catches <- data.table::copy(fish$catches)
+    data.table::set(catches, j = "haul_id", value = ids)
+    fish$catches <- catches
+    fish
+  }
+  ids <- as.character(fish$catches$haul_id)
+  ids[1:3] <- c("-88.0", "-88", "-99.0")
+  results <- fish_run(as_text(fish, ids), layers = 4, spec = spec)
+  found <- opened(results, "fk_sentinel_unverified")
+  expect_equal(placed_at(found), paste("catches haul_id", 1:2))
+  expect_equal(found$value, c("-88.0", "-88"))
+  expect_equal(unique(found$severity), "warning")
+  expect_equal(placed_at(opened(results, "fk_unassigned")), "catches haul_id 3")
+  expect_setequal(unique(opened(results)$rule_id), c("fk_sentinel_unverified", "fk_unassigned"))
+  rows <- results$results
+  row <- rows[rows$rule_id == "fk_orphan" & rows$table_name == "catches"]
+  expect_equal(c(row$n_fail, row$n_not_evaluated), c(0L, 2L))
+  # A column full of them collapses by column_level_min_n, as usual (D18.33).
+  every <- rep("-88", nrow(fish$catches))
+  full <- fish_run(
+    as_text(fish, every),
+    settings = list(column_level_min_n = 5L), layers = 4, spec = spec
+  )
+  collapsed <- opened(full, "fk_sentinel_unverified")
+  expect_equal(collapsed$level, "column")
+  expect_equal(collapsed$n_records, nrow(fish$catches))
+})
+
+# task 10's fix round (the spec review's m3)
+test_that("a foreign key to a composite primary key isn't followed; fk_unassigned checks it", {
+  # keys gives it no reference attribute, so fk_orphan has nothing to check (D18.42).
+  dictionary <- data.frame(
+    table_name = c("parent", "parent", "child", "child"),
+    attribute_name = c("a", "b", "child_id", "a"), key_type = c("PK", "PK", "PK", "FK"),
+    reference_table = c(NA, NA, NA, "parent"), data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary)
+  expect_true(is.na(spec$keys$reference_attribute[spec$keys$key_type == "FK"]))
+  tables <- list(
+    parent = data.table::data.table(a = c("1", "1"), b = c("x", "y")),
+    child = data.table::data.table(child_id = c("c1", "c2", "c3"), a = c("1", "9", NA))
+  )
+  results <- gpq_check_conformance(tables, spec, layers = 4)
+  # "9" names no parent's a, but isn't looked up.
+  expect_false(any(results$results$rule_id == "fk_orphan"))
+  found <- opened(results)
+  expect_equal(paste(found$rule_id, placed_at(found)), "fk_unassigned child a 3")
+})
+
+# task 10's fix round (the datatable review's F1 and the fixture review's Minor 4)
+test_that("key_rows() writes stored numbers as text only near a code, its rows unchanged (16.2)", {
+  # A date-typed key stored as plain numbers: a code holds where the number's text is the
+  # code, so a real 0 isn't "00000000" (m39) and 99999999.00001, near 99999999, isn't
+  # "99999999"; only the values near a code that reads as a number are written as text.
+  row <- data.table::data.table(family = "date")
+  sentinels <- data.table::data.table(
+    data_type = "date", value = c("00000000", "99999999", "X"),
+    allowed_in_pk = FALSE, allowed_in_fk = c(FALSE, TRUE, TRUE)
+  )
+  x <- c(0, 99999999, 99999999.00001, 20200101, NA, 99999999)
+  real_text <- value_text
+  written <- list()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    written[[length(written) + 1L]] <<- x
+    real_text(x)
+  })
+  found <- key_rows(x, row, sentinels, "allowed_in_fk")
+  expect_equal(found, list(missing = 5L, open = c(2L, 6L)))
+  # The rows the whole column written as text gives.
+  text <- real_text(x)
+  expect_equal(found$missing, sort(c(which(is.na(x)), which(text %in% "00000000"))))
+  expect_equal(found$open, which(text %in% c("99999999", "X")))
+  expect_equal(written, list(0, c(99999999, 99999999.00001, 99999999)))
+})

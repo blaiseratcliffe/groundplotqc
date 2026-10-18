@@ -26,7 +26,8 @@
 #' `allowed` refuses; `open` the rows holding one it allows. A sentinel is matched as
 #' rows_holding() matches it, and in a number-typed key stored as text also as a number, so
 #' "-9.0" is -9 (R29); in a key stored as numbers whose type isn't a number type, where the
-#' value's text is the code, so a real 0 isn't the date code "00000000" (m39).
+#' value's text is the code, so a real 0 isn't the date code "00000000" (m39), only the values
+#' near a code that reads as a number written as text (16.2).
 #' @noRd
 key_rows <- function(x, row, sentinels, allowed) {
   own <- sentinels[sentinels$data_type == row$family]
@@ -40,7 +41,18 @@ key_rows <- function(x, row, sentinels, allowed) {
       return(integer())
     }
     hit <- if (stored_numbers && row$family != "numeric") {
-      which(value_text(x) %chin% codes)
+      # Plain numbers aren't all written as text (16.2): only NaN and the values whose
+      # 15-digit text may be a code are, as domain_skipped() does (R84). A value written as a
+      # number's code lies within 1e-14 of it, relative, so the wider margin only narrows what
+      # is written; the text decides.
+      numbers <- suppressWarnings(as.numeric(codes))
+      near <- is.nan(x)
+      for (code in numbers[!is.na(numbers)]) {
+        margin <- if (is.finite(code)) abs(code) * 1e-12 else 0
+        near <- near | x == code | abs(x - code) <= margin
+      }
+      maybe <- which(near)
+      maybe[value_text(x[maybe]) %chin% codes]
     } else {
       rows_holding(x, codes)
     }
@@ -101,13 +113,15 @@ pk_holders <- function(input, table) {
 #'
 #' `pk_duplicate` per table: every record holding a primary key value another record holds,
 #' a composite key compared whole and reported on its first part, its value the parts joined
-#' with "|" (D18.10 (2), D18.42); a key NA, blank or a sentinel is pk_missing's, left alone.
-#' `pk_missing` per key part: NA, blank or a sentinel `allowed_in_pk` refuses (D7.9, D18.15).
-#' `fk_orphan` per foreign key to a parent's PK: a value naming no parent row, expected the
-#' parent table; a sentinel `allowed_in_fk` allows counts as not evaluated, with no issue
-#' (D7.3, D7.7, D18.33); NA, blanks and refused sentinels are fk_unassigned's (D7.9);
-#' not_run (no_table, no_column) without the parent's key. `fk_unassigned` per foreign key:
-#' NA, blank or a sentinel `allowed_in_fk` refuses (D2.28, D18.10 (1), D18.15).
+#' with "|" (D18.10 (2), D18.42); a key NA, blank or a sentinel, allowed or not, is left
+#' alone, pk_missing's where `allowed_in_pk` refuses it; not_run (no_column) where a part's
+#' column wasn't given (D9.24). `pk_missing` per key part: NA, blank or a sentinel
+#' `allowed_in_pk` refuses (D7.9, D18.15). `fk_orphan` per foreign key to a parent's PK: a
+#' value naming no parent row, expected the parent table; a sentinel `allowed_in_fk` allows
+#' counts as not evaluated, with no issue (D7.3, D7.7, D18.33); NA, blanks and refused
+#' sentinels are fk_unassigned's (D7.9); not_run (no_table, no_column) without the parent's
+#' key. `fk_unassigned` per foreign key: NA, blank or a sentinel `allowed_in_fk` refuses
+#' (D2.28, D18.10 (1), D18.15).
 #' `fk_sentinel_unverified` per foreign key of a number type: each record holding a sentinel
 #' `allowed_in_fk` allows, never looked up (D12.31, D16.2, D18.33). `fk_not_applicable_mismatch`
 #' per foreign key: not_run, no_matrix, until a matrix says where "Z" belongs (D7.3).
@@ -162,14 +176,16 @@ check_keys <- function(input, context) {
       function(table, attribute, x, row) {
         parts <- primary[primary$table_name == table]
         values <- lapply(parts$attribute_name, function(part) data_of(table, part))
+        # A key a part of whose column wasn't given compares nothing (D9.24).
+        if (any(vapply(values, is.null, logical(1)))) {
+          return(not_run_outcome("pk_duplicate", table, attribute, "no_column"))
+        }
         missing <- logical(length(x))
         for (k in seq_along(values)) {
-          if (is.null(values[[k]])) {
-            missing[] <- TRUE
-          } else {
-            part_row <- rows_of(table, parts$attribute_name[[k]])
-            missing[key_rows(values[[k]], part_row, sentinels, "allowed_in_pk")$missing] <- TRUE
-          }
+          # NA, blanks and every sentinel of the part's type, allowed or not, hold no key.
+          part_row <- rows_of(table, parts$attribute_name[[k]])
+          found <- key_rows(values[[k]], part_row, sentinels, "allowed_in_pk")
+          missing[c(found$missing, found$open)] <- TRUE
         }
         compared <- which(!missing)
         # The caller's columns are read where they are; a subset is taken only where some

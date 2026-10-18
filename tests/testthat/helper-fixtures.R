@@ -290,9 +290,10 @@ fx_require_fixture <- function(x) {
   invisible(x)
 }
 
-# One answer-sheet row: the defect, where it is (record "*" for a table or column), the edit,
-# the rule that must catch it, the other rules allowed open issues with it ("; "-joined) and
-# the witness value the rule must report (NA where its issue has none).
+# One answer-sheet row: the defect, where it is (record "*" for a table or column, NA where
+# the record has no key, as pk_missing's), the edit, the rule that must catch it, the other
+# rules allowed open issues with it ("; "-joined) and the witness value the rule must report
+# (NA where its issue has none).
 fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_id,
                       cascade_rule_ids = NA_character_, witness = NA_character_) {
   data.table::data.table(
