@@ -1,7 +1,23 @@
-# The rule registry (plan 9.7; D7.25, D8.11, D9.21, D14.5, D14.10): what each rule is, one
+# The rule registry (plan 9.7; D7.25, D8.11, D9.21, D14.5, D14.10, D18.49): what each rule is, one
 # row per rule ID, in package code. The rule set's rules component says where and how a rule
 # applies (R/rules_set.R); the two share only rule_id. Each milestone registers its rules
 # here through the add-rule skill.
+
+# The registry, built once per session (D18.49), as report_texts() keeps the engine's text
+# table (D12.29).
+registry_cache <- new.env(parent = emptyenv())
+
+#' The rule registry, built once per session (D18.49)
+#'
+#' The table (build_rule_registry()) is shared by every call, so a caller never changes it by
+#' reference.
+#' @noRd
+rule_registry <- function() {
+  if (is.null(registry_cache$registry)) {
+    registry_cache$registry <- build_rule_registry()
+  }
+  registry_cache$registry
+}
 
 #' The rule registry: one row per registered rule
 #'
@@ -20,7 +36,7 @@
 #' Conformance data rules have check type `conformance` (8.2) and the strategy 6.1's Fix
 #' column gives (`sentinel_fix`, `trim_whitespace`, else `none`), proposed from M11.
 #' @noRd
-rule_registry <- function() {
+build_rule_registry <- function() {
   preflight <- function(rule_id, severity, inputs) {
     data.table(
       rule_id = rule_id, stage = "conformance", layer = NA_integer_, check_type = "preflight",

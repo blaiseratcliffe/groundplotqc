@@ -1,5 +1,5 @@
 # Tests for the rule registry (plan 9.7; D7.25, D9.21, D14.5, D14.10, D15.6, D15.11, D15.13,
-# D15.20, D15.21).
+# D15.20, D15.21, D18.49).
 
 test_that("the registry has its columns and one row per rule", {
   registry <- rule_registry()
@@ -11,6 +11,13 @@ test_that("the registry has its columns and one row per rule", {
   ))
   expect_equal(anyDuplicated(registry$rule_id), 0L)
   expect_false(anyNA(registry[, !"layer"], recursive = TRUE))
+})
+
+test_that("the registry is built once per session and shared (D18.49)", {
+  first <- rule_registry()
+  expect_identical(build_rule_registry(), first)
+  testthat::local_mocked_bindings(build_rule_registry = function() stop("built again"))
+  expect_identical(rule_registry(), first)
 })
 
 test_that("the unit rules: Layer 0's, the storage-class two and undeclared_code_set (D18.20)", {
