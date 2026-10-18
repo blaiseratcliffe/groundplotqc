@@ -200,6 +200,16 @@ rule_registry <- function() {
         "attributes; type_map; sentinels; settings:column_level_min_n;",
         "settings:coordinate_attributes; settings:unknown_codes"
       )
+    ),
+    # ---- M5: Appendix E's candidate (D8.24, D9.26; class proposed in the PR, Y6) ----
+    conformance(
+      "undeclared_code_set", 3L, "warning", "harmonization",
+      paste(
+        "attributes; keys; type_map; sentinels; code_list_map; settings:code_set_max_values;",
+        "settings:code_set_skip_attributes; settings:code_set_skip_pattern;",
+        "settings:unknown_codes"
+      ),
+      unit = TRUE
     )
   ))
 }

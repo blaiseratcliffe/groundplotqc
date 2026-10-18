@@ -111,7 +111,10 @@ decimal_places <- function(number) {
 #' column `id_band_columns` names: the ID, as a number, within the band whose key its chain
 #' reaches, bounds inclusive (D18.2); a row whose chain breaks or ends in a key no band has,
 #' or whose ID is NA, blank or a sentinel, isn't checked (D18.21); without the column one
-#' not_run row (no_input).
+#' not_run row (no_input). `undeclared_code_set` per text attribute that isn't coded, a key
+#' or marked as an ID, and that the `code_set_skip_*` settings don't name: one column-level
+#' warning where the column holds more than `code_set_max_values` values (not NA, blank or a
+#' sentinel of its type) and no more than that many distinct ones (D8.24, D9.26, D18.20, R11).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -276,6 +279,34 @@ check_domains <- function(input, context) {
           )
         }
       )
+    },
+    undeclared_code_set = {
+      skip_pattern <- context$code_set_skip_pattern
+      skipped_name <- columns$attribute_name %chin% context$code_set_skip_attributes
+      if (length(skip_pattern) == 1L) {
+        skipped_name <- skipped_name | grepl(skip_pattern, columns$attribute_name)
+      }
+      judged <- columns$family == "character" & !columns$coded & is.na(columns$key_type) &
+        !columns$id_marked & !skipped_name
+      most <- context$code_set_max_values
+      outcomes <- rule_outcomes(
+        "undeclared_code_set", columns[judged], input, function(table, attribute, x, row) {
+          text <- as_written(x, row)
+          values <- text[!domain_skipped(text, row, context)]
+          # A column of `most` values or fewer isn't judged: any small column would look like
+          # a code set (D18.20).
+          if (length(values) <= most) {
+            return(NULL)
+          }
+          distinct <- sort(unique(values), method = "radix")
+          failed <- length(distinct) <= most
+          unit_outcome(
+            "undeclared_code_set", table, attribute, failed, length(x),
+            value = if (failed) paste(distinct, collapse = "; ") else NA_character_
+          )
+        }
+      )
+      Filter(Negate(is.null), outcomes)
     }
   )
 }

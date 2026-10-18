@@ -2,8 +2,9 @@
 # argument > rule set > option (groundplotqc.<setting>) > built-in, and the tier it came from
 # is kept for the run metadata (9.5). Only the settings something reads are declared: lang
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
-# unknown_codes from M4a, read by the conformance checks; coordinate_attributes from M5, read
-# by Layer 3 (D18.9). A rule-set row gives a setting as text: a whole number for type
+# unknown_codes from M4a, read by the conformance checks; coordinate_attributes,
+# code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
+# Layer 3 (D18.9, D18.20). A rule-set row gives a setting as text: a whole number for type
 # "integer", several values "; "-joined, a named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
@@ -121,6 +122,32 @@ setting_definitions <- function() {
         "or holding \";\""
       ),
       from_text = parts
+    ),
+    # undeclared_code_set's (D18.20, D18.25): the most distinct values a judged column may
+    # hold, and the attributes it never judges, by name and by one pattern.
+    code_set_max_values = list(
+      type = "integer", built_in = 25L, valid = function(x) whole(x, 1),
+      wants = "one whole number, 1 or more", from_text = as_whole
+    ),
+    code_set_skip_attributes = list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+      wants = paste(
+        "a character vector of attribute names, none of them NA, empty, padded with spaces",
+        "or holding \";\""
+      ),
+      from_text = parts
+    ),
+    code_set_skip_pattern = list(
+      type = "character", built_in = character(),
+      valid = function(x) {
+        text_ok(x) && is.null(names(x)) && length(x) <= 1L && (length(x) == 0L || tryCatch(
+          is.logical(grepl(x, "")),
+          error = function(e) FALSE, warning = function(w) FALSE
+        ))
+      },
+      wants = "one regular expression R can read, or none",
+      from_text = function(text) if (is.na(text)) character() else text
     )
   )
 }

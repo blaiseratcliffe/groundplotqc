@@ -177,3 +177,4 @@
 "decimals_exceeded","en","A value has more decimal places than the data dictionary allows its column."
 "site_id_out_of_range","en","A site's ID is outside its contributor's band of site IDs."
 "coordinate_out_of_bounds","en","A coordinate is outside the data dictionary's range for its column."
+"undeclared_code_set","en","A text column without a code list holds only a few distinct values, as a list of codes would."

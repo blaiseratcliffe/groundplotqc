@@ -44,7 +44,8 @@ test_that("check_domains returns an outcome list for each Layer 3 rule", {
   found <- check_domains(conformance_input(fish, spec), context)
   expect_named(found, c(
     "code_not_in_list", "value_below_min", "value_above_max", "string_too_long",
-    "pattern_mismatch", "decimals_exceeded", "site_id_out_of_range", "coordinate_out_of_bounds"
+    "pattern_mismatch", "decimals_exceeded", "site_id_out_of_range", "coordinate_out_of_bounds",
+    "undeclared_code_set"
   ))
   # The three coded attributes.
   expect_length(found$code_not_in_list, 3L)
@@ -58,6 +59,8 @@ test_that("check_domains returns an outcome list for each Layer 3 rule", {
   # The fish spec has no bands and the run no coordinate attributes: one not_run row each.
   expect_equal(found$site_id_out_of_range[[1L]]$reason, "no_input")
   expect_equal(found$coordinate_out_of_bounds[[1L]]$reason, "no_input")
+  # No text column holds more values than code_set_max_values, so none is judged (R21).
+  expect_length(found$undeclared_code_set, 0L)
 })
 
 # ---- task 4 ----
@@ -596,4 +599,55 @@ test_that("domain_skipped() reads plain numbers as numbers, as it reads their te
     domain_skipped(c(NaN, 1L), row, context, c(NaN, 1)),
     domain_skipped(c("NaN", "1"), row, context, c(NaN, 1))
   )
+})
+
+# ---- task 7 ----
+
+test_that("undeclared_code_set warns on a text column of a few distinct values (D18.20)", {
+  # code_set_max_values 1: station_name's two values are judged.
+  one <- list(code_set_max_values = 1L)
+  same <- edited("stations", "station_name", 1:2, c("North", "North"))
+  results <- fish_run(same, settings = one)
+  found <- opened(results)
+  expect_equal(found$rule_id, "undeclared_code_set")
+  expect_equal(found$severity, "warning")
+  expect_equal(
+    c(found$table_name, found$column_name, found$record_pk, found$level),
+    c("stations", "station_name", "*", "column")
+  )
+  expect_equal(found$n_records, 2L)
+  expect_equal(found$value, "North")
+  expect_true(is.na(found$expected))
+  rows <- results$results[results$results$rule_id == "undeclared_code_set"]
+  expect_equal(rows$status, "fail")
+  expect_equal(c(rows$n_checked, rows$n_fail), c(1L, 1L))
+  # As many distinct values as values: no code set.
+  expect_equal(nrow(opened(fish_run(fx_fish_clean(), settings = one))), 0L)
+  # A sentinel or a blank isn't counted, so one value is left, too few to judge: no row (R21).
+  few <- fish_run(edited("stations", "station_name", 1:2, c("North", "?")), settings = one)
+  expect_false("undeclared_code_set" %in% few$results$rule_id)
+  expect_false("undeclared_code_set" %in% few$metadata$self_test$rule_id)
+  # The two skip settings leave a column alone.
+  skipped <- fish_run(
+    same,
+    settings = c(one, list(code_set_skip_attributes = "station_name"))
+  )
+  expect_false("undeclared_code_set" %in% skipped$results$rule_id)
+  by_pattern <- fish_run(same, settings = c(one, list(code_set_skip_pattern = "_name$")))
+  expect_false("undeclared_code_set" %in% by_pattern$results$rule_id)
+})
+
+test_that("undeclared_code_set judges more values than the built-in 25, sorted (D9.26)", {
+  # 26 stations: station_name's 26 values are judged.
+  fish <- fx_clean_tables(fx_fish_spec(), n = 26L)
+  stations <- data.table::copy(fish$stations)
+  data.table::set(stations, j = "station_name", value = rep(c("South", "North"), 13L))
+  fish$stations <- stations
+  found <- opened(fish_run(fish, layers = 3), "undeclared_code_set")
+  expect_equal(found$value, "North; South")
+  expect_equal(found$n_records, 26L)
+  # A key, a coded column and a date aren't judged.
+  rows <- fish_run(fx_clean_tables(fx_fish_spec(), n = 26L), layers = 3)$results
+  judged <- rows$column_name[rows$rule_id == "undeclared_code_set"]
+  expect_equal(judged, "station_name")
 })

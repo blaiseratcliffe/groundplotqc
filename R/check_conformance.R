@@ -39,13 +39,13 @@
 #'   `sentinel_rogue_code`, `species_unknown_code`, `whitespace_padding`, `na_text_in_id`.
 #' - Layer 3, value domains: `code_not_in_list`, `value_below_min`, `value_above_max`,
 #'   `string_too_long`, `pattern_mismatch`, `decimals_exceeded`, `site_id_out_of_range`,
-#'   `coordinate_out_of_bounds`.
+#'   `coordinate_out_of_bounds`, `undeclared_code_set`.
 #'
 #' Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and
-#' checked as that attribute. Layer 0's rules and `class_mismatch` and
-#' `integer_stored_as_double` count tables or columns, not records, and their rows have `"*"`
-#' in every group column.
+#' checked as that attribute. `class_mismatch`, `integer_stored_as_double`,
+#' `undeclared_code_set` and Layer 0's rules count tables or columns, not records, and their
+#' rows have `"*"` in every group column.
 #' A value that failed Layer 1 is not evaluated by Layer 2: its
 #' issue there has status `not_evaluated` and names the earlier issue as its root. A value
 #' that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
@@ -62,8 +62,9 @@
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
-#' `coordinate_attributes`, `column_level_min_n`, `example_cap`, `lang` and `severity`. A
-#' rule set's `rules` rows give a rule's severity and turn it off (`enabled`) for a table and
+#' `coordinate_attributes`, `code_set_max_values`, `code_set_skip_attributes`,
+#' `code_set_skip_pattern`, `column_level_min_n`, `example_cap`, `lang` and `severity`. A rule
+#' set's `rules` rows give a rule's severity and turn it off (`enabled`) for a table and
 #' attribute: the most specific row that gives a value wins (table and attribute, then table
 #' and `"*"`, then `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no
 #' rows there.
@@ -304,6 +305,9 @@ conformance_context <- function(spec, rules, settings, layers) {
     raw_na_policy = setting("raw_na_policy"), rogue_codes = setting("rogue_codes"),
     unknown_codes = setting("unknown_codes"),
     coordinate_attributes = setting("coordinate_attributes"),
+    code_set_max_values = as.integer(setting("code_set_max_values")),
+    code_set_skip_attributes = setting("code_set_skip_attributes"),
+    code_set_skip_pattern = setting("code_set_skip_pattern"),
     column_level_min_n = as.integer(setting("column_level_min_n")),
     example_cap = as.integer(setting("example_cap")),
     codes = split(codes$code, paste(codes$table_name, codes$attribute_name, sep = "\r")),

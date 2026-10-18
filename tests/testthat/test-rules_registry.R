@@ -13,11 +13,11 @@ test_that("the registry has its columns and one row per rule", {
   expect_false(anyNA(registry[, !"layer"], recursive = TRUE))
 })
 
-test_that("the unit rules are Layer 0's and the two storage-class rules (D16.8, D17.15)", {
+test_that("the unit rules: Layer 0's, the storage-class two and undeclared_code_set (D18.20)", {
   registry <- rule_registry()
   expect_setequal(registry$rule_id[registry$unit], c(
     "table_missing", "table_unexpected", "column_missing", "column_unexpected",
-    "column_name_mismatch", "class_mismatch", "integer_stored_as_double"
+    "column_name_mismatch", "class_mismatch", "integer_stored_as_double", "undeclared_code_set"
   ))
   expect_false(anyNA(registry$unit))
 })

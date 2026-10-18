@@ -163,6 +163,20 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
     tables$magp_sites,
     j = "jurisdiction", value = sheet$jurisdiction[of_dataset][site_dataset]
   )
+  # Each site its own datum and ec_* values, by fx_magp_clean()'s formula, so no text column
+  # of the scaled sites reads as a code set (undeclared_code_set, D18.20). The other judged
+  # columns' tables have more distinct base values than code_set_max_values.
+  i <- seq_len(n_sites)
+  zone <- (i - 1L) %% 99L + 1L
+  region <- (i - 1L) %% 999L + 1L
+  data.table::set(tables$magp_sites, j = "datum", value = paste0("t", i))
+  data.table::set(tables$magp_sites, j = "ec_zone", value = sprintf("%d", zone))
+  data.table::set(tables$magp_sites, j = "ec_province", value = sprintf("%d.1", zone))
+  data.table::set(tables$magp_sites, j = "ec_region", value = sprintf("%02d.1.%03d", zone, region))
+  data.table::set(
+    tables$magp_sites,
+    j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
+  )
   if (defects) {
     tables <- fx_scaled_defects(tables)
   }
@@ -212,6 +226,8 @@ fx_scaled_defects <- function(tables) {
       data.table::set(tables[[table]], i = hit, j = "magp_site_id", value = at[hit])
     }
   }
+  # undeclared_code_set: magp_tree_age is dropped here, so a tally column holds one value.
+  data.table::set(tables$magp_tally_trees, j = "ht_class", value = "B")
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

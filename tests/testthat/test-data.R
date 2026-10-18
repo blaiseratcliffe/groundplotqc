@@ -385,6 +385,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
       label = table
     )
   }
+  expect_true(all(tables$magp_tally_trees$ht_class == "B"))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

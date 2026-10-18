@@ -6,3 +6,6 @@ raw_na_policy,always,character
 rogue_codes,-999; UNK; NA; N/A,character
 unknown_codes,species=UNKN.SPP,character
 coordinate_attributes,latitude; longitude; utm_e; utm_n,character
+code_set_max_values,25,integer
+code_set_skip_attributes,meas_plots; meas_frames; temporal_extent; meas_cycle; subplot,character
+code_set_skip_pattern,_id$|^comments$|name|_date$|^src_|^meas_subplots$,character

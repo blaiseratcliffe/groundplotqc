@@ -53,7 +53,9 @@ test_that("the generic fixtures pass every layer, so the engine assumes no MAGPl
     results <- fish_run(fx_clean_tables(spec), layers = 0:5, spec = spec)
     expect_equal(nrow(opened(results)), 0L, info = name)
     expect_equal(nrow(results$metadata$self_test), 0L, info = name)
-    expect_setequal(unique(results$results$rule_id), data_rules)
+    # Neither toy has a text column holding more values than code_set_max_values, so
+    # undeclared_code_set judges none and writes no row (R21).
+    expect_setequal(unique(results$results$rule_id), setdiff(data_rules, "undeclared_code_set"))
     # Neither spec gives unknown codes, so that rule's one row says why it didn't run.
     expect_equal(
       results$results$not_run_reason[results$results$rule_id == "species_unknown_code"],

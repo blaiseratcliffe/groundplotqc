@@ -51,13 +51,24 @@
 #'   `coordinate_out_of_bounds` checks against the dictionary's minimum and
 #'   maximum, and that `value_below_min` and `value_above_max` then leave
 #'   alone. Built-in: none.
+#' - `groundplotqc.code_set_max_values`: the most distinct values a text column
+#'   without a code list can hold and still be reported by
+#'   `undeclared_code_set`, which judges only a column holding more values than
+#'   this, not counting NA, blanks, missing-value codes and unknown codes.
+#'   Built-in: `25`.
+#' - `groundplotqc.code_set_skip_attributes`: attributes `undeclared_code_set`
+#'   never judges. Built-in: none.
+#' - `groundplotqc.code_set_skip_pattern`: one regular expression;
+#'   `undeclared_code_set` doesn't judge an attribute whose name matches it.
+#'   Built-in: none.
 #'
 #' In a rule set's settings rows, a whole number has type `integer`, a setting
 #' with several values gives them joined by "; ", and a named one gives
 #' "name=value" parts. In every tier, a code can't be empty, begin or end with
 #' a space, tab or line break, or hold ";". In `groundplotqc.unknown_codes` the
 #' same holds for each name, and neither a code nor a name can hold "=". The
-#' same holds for each attribute name in `groundplotqc.coordinate_attributes`.
+#' same holds for each attribute name in `groundplotqc.coordinate_attributes`
+#' and `groundplotqc.code_set_skip_attributes`.
 #'
 #' More options are added by the versions that bring the settings they control.
 #'

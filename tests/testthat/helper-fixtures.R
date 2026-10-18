@@ -413,6 +413,11 @@ fx_answer_sheet <- function() {
       "site_id_out_of_range", "magp_sites", "magp_site_id", "1",
       "magp_sites$magp_site_id row 1 1, in every table holding it", "site_id_out_of_range",
       witness = "1"
+    ),
+    fx_defect(
+      "undeclared_code_set", "magp_tree_age", "bore_ht", "*",
+      "magp_tree_age$bore_ht all \"B\"", "undeclared_code_set",
+      witness = "B"
     )
   ))
 }
@@ -506,7 +511,10 @@ fx_defect_blocks <- function() {
         }
       }
       tables
-    }
+    },
+    undeclared_code_set = fx_set_column("magp_tree_age", "bore_ht", function(x) {
+      rep("B", length(x))
+    })
   )
 }
 

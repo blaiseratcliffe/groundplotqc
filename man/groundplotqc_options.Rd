@@ -61,6 +61,16 @@ named more than once. Built-in: none.
 \code{coordinate_out_of_bounds} checks against the dictionary's minimum and
 maximum, and that \code{value_below_min} and \code{value_above_max} then leave
 alone. Built-in: none.
+\item \code{groundplotqc.code_set_max_values}: the most distinct values a text column
+without a code list can hold and still be reported by
+\code{undeclared_code_set}, which judges only a column holding more values than
+this, not counting NA, blanks, missing-value codes and unknown codes.
+Built-in: \code{25}.
+\item \code{groundplotqc.code_set_skip_attributes}: attributes \code{undeclared_code_set}
+never judges. Built-in: none.
+\item \code{groundplotqc.code_set_skip_pattern}: one regular expression;
+\code{undeclared_code_set} doesn't judge an attribute whose name matches it.
+Built-in: none.
 }
 
 In a rule set's settings rows, a whole number has type \code{integer}, a setting
@@ -68,7 +78,8 @@ with several values gives them joined by "; ", and a named one gives
 "name=value" parts. In every tier, a code can't be empty, begin or end with
 a space, tab or line break, or hold ";". In \code{groundplotqc.unknown_codes} the
 same holds for each name, and neither a code nor a name can hold "=". The
-same holds for each attribute name in \code{groundplotqc.coordinate_attributes}.
+same holds for each attribute name in \code{groundplotqc.coordinate_attributes}
+and \code{groundplotqc.code_set_skip_attributes}.
 
 More options are added by the versions that bring the settings they control.
 }

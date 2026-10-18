@@ -106,14 +106,14 @@ Layers and the rules they can raise:
 \code{sentinel_rogue_code}, \code{species_unknown_code}, \code{whitespace_padding}, \code{na_text_in_id}.
 \item Layer 3, value domains: \code{code_not_in_list}, \code{value_below_min}, \code{value_above_max},
 \code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{site_id_out_of_range},
-\code{coordinate_out_of_bounds}.
+\code{coordinate_out_of_bounds}, \code{undeclared_code_set}.
 }
 
 Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 attribute's only in letter case or spaces is reported by \code{column_name_mismatch} and
-checked as that attribute. Layer 0's rules and \code{class_mismatch} and
-\code{integer_stored_as_double} count tables or columns, not records, and their rows have \code{"*"}
-in every group column.
+checked as that attribute. \code{class_mismatch}, \code{integer_stored_as_double},
+\code{undeclared_code_set} and Layer 0's rules count tables or columns, not records, and their
+rows have \code{"*"} in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status \code{not_evaluated} and names the earlier issue as its root. A value
 that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
@@ -130,8 +130,9 @@ run, naming the column, the table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
-\code{coordinate_attributes}, \code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A
-rule set's \code{rules} rows give a rule's severity and turn it off (\code{enabled}) for a table and
+\code{coordinate_attributes}, \code{code_set_max_values}, \code{code_set_skip_attributes},
+\code{code_set_skip_pattern}, \code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule
+set's \code{rules} rows give a rule's severity and turn it off (\code{enabled}) for a table and
 attribute: the most specific row that gives a value wins (table and attribute, then table
 and \code{"*"}, then \code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no
 rows there.
