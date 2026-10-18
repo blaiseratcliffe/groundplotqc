@@ -44,7 +44,7 @@ test_that("check_domains returns an outcome list for each Layer 3 rule", {
   found <- check_domains(conformance_input(fish, spec), context)
   expect_named(found, c(
     "code_not_in_list", "value_below_min", "value_above_max", "string_too_long",
-    "pattern_mismatch", "decimals_exceeded", "coordinate_out_of_bounds"
+    "pattern_mismatch", "decimals_exceeded", "site_id_out_of_range", "coordinate_out_of_bounds"
   ))
   # The three coded attributes.
   expect_length(found$code_not_in_list, 3L)
@@ -55,7 +55,8 @@ test_that("check_domains returns an outcome list for each Layer 3 rule", {
   expect_length(found$string_too_long, 1L)
   expect_length(found$pattern_mismatch, 1L)
   expect_length(found$decimals_exceeded, 2L)
-  # The run has no coordinate attributes: one not_run row.
+  # The fish spec has no bands and the run no coordinate attributes: one not_run row each.
+  expect_equal(found$site_id_out_of_range[[1L]]$reason, "no_input")
   expect_equal(found$coordinate_out_of_bounds[[1L]]$reason, "no_input")
 })
 
@@ -460,4 +461,86 @@ test_that("decimals_exceeded writes each distinct number once; a rule coerces a 
   # value_below_min, value_above_max and decimals_exceeded each read depth once.
   expect_identical(coerced, rep("double", 3L))
   expect_length(found$decimals_exceeded, 2L)
+})
+
+# ---- task 6 ----
+
+test_that("a site's ID is checked against its contributor's band, bounds inclusive (D18.2)", {
+  testthat::skip_on_cran()
+  # A site's ID moved in every table holding it.
+  moved <- function(tables, from, to) {
+    tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+    for (table in names(tables)) {
+      if ("magp_site_id" %in% names(tables[[table]])) {
+        at <- which(tables[[table]]$magp_site_id == from)
+        data.table::set(tables[[table]], i = at, j = "magp_site_id", value = to)
+      }
+    }
+    tables
+  }
+  tables <- fx_magp_clean()
+  # Sites 1 and 2 are AB's (350001 to 400000), 5 and 6 BC's (450001 to 500000).
+  tables <- moved(tables, 350002L, 1L)
+  tables <- moved(tables, 350003L, 400000L)
+  tables <- moved(tables, 450006L, 450001L)
+  tables <- moved(tables, 450007L, 500001L)
+  results <- withCallingHandlers(
+    gpq_check_conformance(tables, magp_spec(), rules = magp_rules(), layers = 3),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  found <- opened(results)
+  expect_equal(unique(found$rule_id), "site_id_out_of_range")
+  expect_equal(placed_at(found), c("magp_sites magp_site_id 1", "magp_sites magp_site_id 6"))
+  expect_equal(found$value, c("1", "500001"))
+  expect_equal(found$expected, c("350001 to 400000", "450001 to 500000"))
+  # Only the column id_band_columns names is checked.
+  rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
+  expect_equal(c(rows$table_name, rows$column_name), c("magp_sites", "magp_site_id"))
+  expect_equal(c(rows$n_checked, rows$n_fail), c(8L, 2L))
+})
+
+test_that("a site whose chain breaks or ends without a band isn't checked (D18.2, D18.21)", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  sites <- tables$magp_sites
+  # Site 1's dataset NA, site 2's an orphan, sites 3 and 4's dataset's contributor without a
+  # row of the contributor sheet; site 5's own ID NA and site 6's the sentinel -9 (R20).
+  data.table::set(sites, i = 1:2, j = "magp_dataset_id", value = c(NA, "999.99"))
+  data.table::set(tables$magp_datasets, i = 2L, j = "magp_contributor_id", value = "999")
+  data.table::set(sites, i = 1:6, j = "magp_site_id", value = c(1L, 2L, 3L, 4L, NA, -9L))
+  run <- function(tables) {
+    withCallingHandlers(
+      gpq_check_conformance(
+        fx_mark_fixture(tables), magp_spec(),
+        rules = magp_rules(), layers = 3
+      ),
+      gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+    )
+  }
+  results <- run(tables)
+  expect_equal(nrow(opened(results, "site_id_out_of_range")), 0L)
+  rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
+  # Sites 7 and 8 are checked; the six others count in neither n_checked nor n_fail.
+  expect_equal(c(rows$n_checked, rows$n_fail, rows$n_not_evaluated), c(2L, 0L, 0L))
+  expect_equal(rows$status, "pass")
+  # A blank key breaks the chain too (D18.31): with sites 7 and 8 reaching their dataset only
+  # through a blank key, nothing is checked, so the row is not_run (D18.22).
+  data.table::set(tables$magp_datasets, i = 4L, j = "magp_dataset_id", value = "")
+  data.table::set(sites, i = 7:8, j = c("magp_dataset_id", "magp_site_id"), value = list(
+    c("", ""), c(7L, 8L)
+  ))
+  blank <- run(tables)
+  expect_equal(nrow(opened(blank, "site_id_out_of_range")), 0L)
+  rows <- blank$results[blank$results$rule_id == "site_id_out_of_range"]
+  expect_equal(c(rows$status, rows$not_run_reason), c("not_run", "none_checked"))
+  expect_equal(c(rows$n_checked, rows$n_fail, rows$n_not_evaluated), c(0L, 0L, 8L))
+})
+
+test_that("without a banded column site_id_out_of_range is one not_run row, no_input (R19)", {
+  rows <- fish_run(fx_fish_clean())$results
+  band <- rows[rows$rule_id == "site_id_out_of_range"]
+  expect_equal(
+    c(band$table_name, band$column_name, band$status, band$not_run_reason),
+    c("*", "*", "not_run", "no_input")
+  )
 })

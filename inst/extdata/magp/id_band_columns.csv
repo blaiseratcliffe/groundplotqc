@@ -1,0 +1,2 @@
+"table_name","attribute_name","key_attribute","labels_sheet","labels_column"
+"magp_sites","magp_site_id","magp_dataset_id > magp_contributor_id","contributor","abbreviated_name"

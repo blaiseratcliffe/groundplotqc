@@ -201,6 +201,17 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_meas", "height", 2L, "200")
   plant("magp_sites", "ec_zone", 1L, "1A")
   plant("magp_trees", "tree_origin", 3L, "QQ")
+  # site_id_out_of_range: every 1000th site renumbered 1, 2, ..., outside every band, in
+  # every table holding its ID.
+  moved <- every("magp_sites", 1L)
+  old <- tables$magp_sites$magp_site_id[moved]
+  for (table in names(tables)) {
+    if ("magp_site_id" %in% names(tables[[table]])) {
+      at <- match(tables[[table]]$magp_site_id, old)
+      hit <- which(!is.na(at))
+      data.table::set(tables[[table]], i = hit, j = "magp_site_id", value = at[hit])
+    }
+  }
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

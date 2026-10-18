@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9004 (development version)
+# groundplotqc 0.0.0.9005 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -31,3 +31,4 @@
 - Layer 3, value domains, starts: `code_not_in_list` finds a coded value that isn't in its code list, whether the list is a sheet of code lists or a translation table. bit64 joins Suggests, for the tests of integer64 columns.
 - Layer 3 checks values against the data dictionary's ranges, lengths, patterns and decimal places (`value_below_min`, `value_above_max`, `string_too_long`, `pattern_mismatch`, `decimals_exceeded`), and the coordinates the new setting `coordinate_attributes` names against their ranges (`coordinate_out_of_bounds`), set as an option too. A rule whose dictionary column is blank for every attribute it checks writes one `not_run` row, reason `no_dd_values`, and `coordinate_out_of_bounds` without the setting one with reason `no_input`. MAGPlot 2.0's rule set names `latitude`, `longitude`, `utm_e` and `utm_n`.
 - A foreign key that is empty or only spaces, Unicode spaces included, no longer leads a record to a parent whose primary key is blank too, so the record's group values through it are "*".
+- `site_id_out_of_range` checks each site's ID against its contributor's band of site IDs. `gpq_read_spec()`'s `id_bands` takes the banded column (`table`, `attribute`) and the chain of foreign keys to the band's key (`key`); the specification gains the component `id_band_columns`, and `id_bands` the column `key_value`. A site that reaches no band isn't checked, and pre-flight's `site_id_range_invalid` also stops on a banded column the dictionary lacks or a key it can't follow.

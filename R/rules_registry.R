@@ -188,6 +188,13 @@ rule_registry <- function() {
       "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
     ),
     conformance(
+      "site_id_out_of_range", 3L, "error", "harmonization",
+      paste(
+        "attributes; keys; type_map; sentinels; id_bands; id_band_columns;",
+        "settings:column_level_min_n; settings:unknown_codes"
+      )
+    ),
+    conformance(
       "coordinate_out_of_bounds", 3L, "error", "depends",
       paste(
         "attributes; type_map; sentinels; settings:column_level_min_n;",

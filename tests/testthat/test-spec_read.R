@@ -15,7 +15,8 @@ test_that("the schema lists 3.6's components in order", {
   expect_named(spec_schema(), c(
     "attributes", "keys", "code_lists", "code_list_sheets", "code_list_map", "codes",
     "non_code_sheets",
-    "datasets", "lineage_spec", "crosswalks", "id_bands", "type_map", "sentinels",
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "type_map",
+    "sentinels",
     "clashes", "read_findings", "manifest"
   ))
   expect_equal(spec_schema()$manifest, c(
@@ -1237,7 +1238,9 @@ test_that("both toy specs read cleanly", {
 
 test_that("absent inputs give empty components with their columns", {
   fish <- fx_fish_spec()
-  for (name in c("datasets", "lineage_spec", "crosswalks", "id_bands", "clashes")) {
+  for (name in c(
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "clashes"
+  )) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
   expect_named(fish$id_bands, names(spec_schema()$id_bands))
@@ -1657,4 +1660,97 @@ test_that("the toys' dictionaries give ranges and formats under their own names 
   dbh <- as.numeric(meas$DBH)
   expect_true(all(dbh > 0 & dbh <= 300))
   expect_true(all(nchar(sub("^[0-9]*[.]?", "", meas$DBH)) <= 1L))
+})
+
+test_that("the bands' column and key give id_band_columns and each band's key (D18.2, D18.18)", {
+  # Sites reach their contributor through their dataset; the labels sheet gives each label's
+  # contributor ID.
+  read_with <- function(changes = list()) {
+    bands <- list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "site_id",
+      key = "dataset_id > contributor_id"
+    )
+    # Assigned by `[<-`, which keeps an element set to NULL, as modifyList() wouldn't.
+    bands[names(changes)] <- changes
+    gpq_read_spec(
+      data.frame(
+        table_name = c("sites", "sites", "datasets", "datasets"),
+        attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id"),
+        key_type = c("PK", "FK", "PK", NA), reference_table = c(NA, "datasets", NA, NA),
+        data_type = c("integer", "character", "character", "character")
+      ),
+      code_lists = list(
+        ranges = data.frame(
+          contributor = c("AB", "PE", "reserved_1", "BC"),
+          v2_start = c("1", "100", "200", "300"), v2_end = c("99", "199", "299", "399")
+        ),
+        contributor = data.frame(
+          abbreviated_name = c("AB", "PE", "BC"), contributor_id = c("100", "120", "110")
+        )
+      ),
+      non_code_sheets = c("ranges", "contributor"),
+      id_bands = bands
+    )
+  }
+  spec <- read_with()
+  expect_false("site_id_range_invalid" %in% spec$read_findings$rule_id)
+  # A reserved band has no key.
+  expect_equal(spec$id_bands$key_value, c("100", "120", NA, "110"))
+  # The labels sheet and column go with it, for the A2 label one_to_many needs (D18.38).
+  expect_equal(as.list(spec$id_band_columns), list(
+    table_name = "sites", attribute_name = "site_id",
+    key_attribute = "dataset_id > contributor_id", labels_sheet = "contributor",
+    labels_column = "abbreviated_name"
+  ))
+  # Each problem is a finding of its own, and the column then has no row.
+  found <- function(spec) {
+    findings <- spec$read_findings
+    findings$detail[findings$rule_id == "site_id_range_invalid"]
+  }
+  column <- read_with(list(attribute = "plot_id"))
+  expect_equal(found(column), report_text(
+    "preflight_detail_site_id_range_invalid_column",
+    table_name = "sites", attribute_name = "plot_id"
+  ))
+  expect_equal(nrow(column$id_band_columns), 0L)
+  key <- read_with(list(key = "contributor_id"))
+  expect_equal(found(key), report_text(
+    "preflight_detail_site_id_range_invalid_key",
+    value = "contributor_id", table_name = "sites"
+  ))
+  expect_true(all(is.na(key$id_bands$key_value)))
+  sheet <- read_with(list(key = "dataset_id > dataset_id"))
+  expect_equal(found(sheet), report_text(
+    "preflight_detail_site_id_range_invalid_key_sheet",
+    attribute_name = "dataset_id", sheet = "contributor"
+  ))
+  no_labels <- read_with(list(labels_from = NULL))
+  expect_equal(found(no_labels), report_text(
+    "preflight_detail_site_id_range_invalid_key_labels",
+    value = "dataset_id > contributor_id"
+  ))
+  expect_equal(nrow(no_labels$id_band_columns), 0L)
+  expect_error(gpq_preflight(column), class = "gpq_preflight_error")
+})
+
+test_that("id_bands' column and key are optional, and come together or not at all (R8, R33)", {
+  # M2's six elements still read, with no column and no keys.
+  built <- build_id_bands(band_spec, band_lists(), "lookup.xlsx")
+  expect_equal(nrow(built$columns), 0L)
+  expect_true(all(is.na(built$bands$key_value)))
+  expect_named(built$bands, names(spec_schema()$id_bands))
+  # Two of the three is a caller's error, and so is a part that isn't one name.
+  for (changes in list(
+    list(table = "sites", attribute = "site_id"),
+    list(table = "sites", attribute = "site_id", key = c("a", "b")),
+    list(table = "sites", attribute = NA_character_, key = "a")
+  )) {
+    expect_error(
+      build_id_bands(c(band_spec, changes), band_lists(), "lookup.xlsx"),
+      "optionally table, attribute and key, all three",
+      fixed = TRUE
+    )
+  }
 })

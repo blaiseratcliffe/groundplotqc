@@ -38,7 +38,8 @@
 #' - Layer 2, missing-value codes: `raw_na`, `blank_string`, `sentinel_wrong_type`,
 #'   `sentinel_rogue_code`, `species_unknown_code`, `whitespace_padding`, `na_text_in_id`.
 #' - Layer 3, value domains: `code_not_in_list`, `value_below_min`, `value_above_max`,
-#'   `string_too_long`, `pattern_mismatch`, `decimals_exceeded`, `coordinate_out_of_bounds`.
+#'   `string_too_long`, `pattern_mismatch`, `decimals_exceeded`, `site_id_out_of_range`,
+#'   `coordinate_out_of_bounds`.
 #'
 #' Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
 #' attribute's only in letter case or spaces is reported by `column_name_mismatch` and

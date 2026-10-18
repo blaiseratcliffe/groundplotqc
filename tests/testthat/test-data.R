@@ -375,6 +375,7 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(meas$DBH == 0), rate(nrow(meas)))
   expect_equal(sum(meas$height == "200"), rate(nrow(meas)))
   expect_equal(sum(tables$magp_sites$ec_zone == "1A"), rate(nrow(tables$magp_sites)))
+  expect_equal(sum(tables$magp_sites$magp_site_id < 50001L), rate(nrow(tables$magp_sites)))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

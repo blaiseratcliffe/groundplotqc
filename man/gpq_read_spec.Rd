@@ -43,7 +43,11 @@ CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}
 
 \item{id_pattern}{\code{NULL}, or one regular expression marking ID attributes by name.}
 
-\item{id_bands}{\code{NULL}, or \code{list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)} naming the code-list sheet of ID bands.}
+\item{id_bands}{\code{NULL}, or \code{list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)} naming the code-list sheet of ID bands, and
+optionally, all three or none, \code{table} and \code{attribute}, the column the bands apply to, and
+\code{key}, the foreign keys followed from that table and the attribute they reach, joined by
+" > ", such as \code{"dataset_id > contributor_id"}. \code{key} needs \code{labels_from}, and its last
+attribute must be a column of the \code{labels_from} sheet, which gives each band's value of it.}
 
 \item{precedence}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
 \code{sheet},
@@ -70,9 +74,9 @@ joins \code{read_findings}.}
 An object of class \code{gpq_spec}: a named list of data.tables, the components
 \code{attributes}, \code{keys}, \code{code_lists}, \code{code_list_sheets}, \code{code_list_map}, \code{codes},
 \code{non_code_sheets},
-\code{datasets}, \code{lineage_spec}, \code{crosswalks}, \code{id_bands}, \code{type_map}, \code{sentinels},
-\code{clashes}, \code{read_findings} and \code{manifest}. An input not given leaves its component
-empty, with its columns. A blank cell is \code{NA}; text is kept exactly as written.
+\code{datasets}, \code{lineage_spec}, \code{crosswalks}, \code{id_bands}, \code{id_band_columns}, \code{type_map},
+\code{sentinels}, \code{clashes}, \code{read_findings} and \code{manifest}. An input not given leaves its
+component empty, with its columns. A blank cell is \code{NA}; text is kept exactly as written.
 }
 \description{
 Reads a data dictionary and its companion inputs into one specification object, which
@@ -103,7 +107,8 @@ Each component is a data.table with these columns:
 \item \code{datasets}: the input's own columns, all text
 \item \code{lineage_spec}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type}, \code{alternative}, \code{part_order}, \code{part_source}, \code{part_kind}, \code{id_status}, \code{source_text}, \code{note}, \code{source_cell}
 \item \code{crosswalks}: \code{crosswalk}, \code{source_row}, \code{crosswalk_column}, \code{value}, \code{source_cell}
-\item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}
+\item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}, \code{key_value}
+\item \code{id_band_columns}: \code{table_name}, \code{attribute_name}, \code{key_attribute}, \code{labels_sheet}, \code{labels_column}
 \item \code{type_map}: \code{data_type}, \code{r_class}, \code{date_format}
 \item \code{sentinels}: \code{data_type}, \code{role}, \code{value}, \code{allowed_in_pk}, \code{allowed_in_fk}
 \item \code{clashes}: \code{rule_id}, \code{kind}, \code{key_col}, \code{key_value}, \code{column_name}, \code{source_a}, \code{value_a}, \code{source_b}, \code{value_b}, \code{winner}, \code{basis}, \code{source_cell_a}, \code{source_cell_b}

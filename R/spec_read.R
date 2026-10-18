@@ -50,7 +50,11 @@ spec_schema <- function() {
     ),
     id_bands = c(
       label = chr, band_start = dbl, band_end = dbl, reserved = lgl, source_row = int,
-      source_cell = chr
+      source_cell = chr, key_value = chr
+    ),
+    id_band_columns = c(
+      table_name = chr, attribute_name = chr, key_attribute = chr, labels_sheet = chr,
+      labels_column = chr
     ),
     type_map = c(data_type = chr, r_class = chr, date_format = chr),
     sentinels = c(
@@ -78,7 +82,8 @@ spec_input_schema <- function() {
       "note", "source_cell"
     ),
     id_bands = c(
-      "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern"
+      "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern", "table",
+      "attribute", "key"
     )
   )
 }
@@ -1142,15 +1147,25 @@ build_codes <- function(code_list_map, code_lists, crosswalks) {
   bind_component("codes", codes)
 }
 
-#' The id_bands component and its site_id_range_invalid findings
+#' The id_bands and id_band_columns components and their site_id_range_invalid findings
 #'
 #' The reader makes every finding of the check, where the bands sheet's file is known
 #' (D12.28): a missing sheet or column, a bad bound, a blank or unknown label, a band
-#' starting after it ends, and two valid bands overlapping, citing both.
+#' starting after it ends, and two valid bands overlapping, citing both. `table`,
+#' `attribute` and `key` come together or not at all (R8, R33); with them, also a banded
+#' column the dictionary lacks, a key without `labels_from`, a key that isn't a chain of
+#' foreign keys from `table` (parse_chain()), and a key whose last attribute isn't a column of
+#' the `labels_from` sheet (D18.2, D18.18). Each band's `key_value` is that column's value on
+#' the `labels_from` row of the band's label, NA for a reserved or unknown label or without a
+#' key; `columns` has the one row of id_band_columns, `labels_from`'s sheet and column with it
+#' (D18.38), when the three are given and none of their findings is made.
 #' @noRd
-build_id_bands <- function(id_bands, code_lists, file) {
+build_id_bands <- function(id_bands, code_lists, file,
+                           attributes = empty_table(spec_schema()$attributes),
+                           keys = empty_table(spec_schema()$keys)) {
   out <- list(
     bands = empty_table(spec_schema()$id_bands),
+    columns = empty_table(spec_schema()$id_band_columns),
     findings = empty_table(spec_schema()$read_findings)
   )
   if (is.null(id_bands)) {
@@ -1171,14 +1186,22 @@ build_id_bands <- function(id_bands, code_lists, file) {
       error = function(e) FALSE, warning = function(w) FALSE
     )
   }
-  shaped <- is.list(id_bands) && setequal(names(id_bands), spec_input_schema()$id_bands) &&
-    all(vapply(id_bands[c("sheet", "label_col", "start_col", "end_col")], one_name, TRUE)) &&
-    from_ok && pattern_ok
+  # The six of M2, and the banded column's three together or not at all (R8, R33).
+  banded <- c("table", "attribute", "key")
+  required <- setdiff(spec_input_schema()$id_bands, banded)
+  given <- if (is.list(id_bands)) names(id_bands) else character()
+  with_column <- all(banded %in% given)
+  named <- c("sheet", "label_col", "start_col", "end_col", if (with_column) banded)
+  shaped <- is.list(id_bands) && all(required %in% given) &&
+    all(given %in% spec_input_schema()$id_bands) && !anyDuplicated(given) &&
+    (with_column || !any(banded %in% given)) &&
+    all(vapply(id_bands[named], one_name, TRUE)) && from_ok && pattern_ok
   if (!shaped) {
     stop(paste(
       "`id_bands` is list(sheet, label_col, start_col, end_col, labels_from,",
-      "reserved_pattern): one name each for the first four, labels_from NULL or",
-      "c(sheet = , column = ), reserved_pattern NULL or one regular expression."
+      "reserved_pattern) and optionally table, attribute and key, all three or none: one name",
+      "each for sheet, label_col, start_col, end_col, table, attribute and key; labels_from",
+      "NULL or c(sheet = , column = ); reserved_pattern NULL or one regular expression."
     ), call. = FALSE)
   }
   finding <- function(detail, cell = NA_character_) {
@@ -1329,9 +1352,64 @@ build_id_bands <- function(id_bands, code_lists, file) {
       )
     }
   }
+  # The banded column and its key (D18.2, D18.18): each problem a finding of its own, the
+  # column's row only when there is none.
+  key_value <- rep(NA_character_, nrow(bands))
+  column_findings <- NULL
+  if (with_column) {
+    problems <- character()
+    known_column <- any(
+      attributes$table_name == id_bands$table & attributes$attribute_name == id_bands$attribute
+    )
+    if (!known_column) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_column",
+        table_name = id_bands$table, attribute_name = id_bands$attribute
+      ))
+    }
+    chain <- parse_chain(id_bands$key, id_bands$table, keys, attributes)
+    labels_sheet <- if (!is.null(from)) code_lists[sheet == from[["sheet"]]]
+    if (is.null(from)) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key_labels",
+        value = id_bands$key
+      ))
+    } else if (is.null(chain)) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key",
+        value = id_bands$key, table_name = id_bands$table
+      ))
+    } else if (!chain$attribute %chin% labels_sheet[source_row == 1L, value]) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key_sheet",
+        attribute_name = chain$attribute, sheet = from[["sheet"]]
+      ))
+    } else {
+      # Each band's key: the chain's last attribute's column of the labels sheet, on the row
+      # whose labels column holds the band's label; a reserved band has none.
+      body <- labels_sheet[source_row > 1L]
+      labels <- body[sheet_column == from[["column"]]]
+      values <- body[sheet_column == chain$attribute]
+      row_of <- labels$source_row[match(bands$label, labels$value)]
+      key_value <- values$value[match(row_of, values$source_row)]
+      key_value[bands$reserved] <- NA_character_
+    }
+    if (length(problems) == 0L) {
+      out$columns <- data.table(
+        table_name = id_bands$table, attribute_name = id_bands$attribute,
+        key_attribute = id_bands$key, labels_sheet = from[["sheet"]],
+        labels_column = from[["column"]]
+      )
+    } else {
+      column_findings <- finding(problems)
+    }
+  }
+  set(bands, j = "key_value", value = key_value)
   out$bands <- bands
   out$findings <- bind_component("read_findings", c(
-    bound_findings, list(blank_label_findings, label_findings, order_findings, overlap_findings)
+    bound_findings, list(
+      blank_label_findings, label_findings, order_findings, overlap_findings, column_findings
+    )
   ))
   out
 }
@@ -1453,7 +1531,11 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   `filter_values` may be a list named by attribute.
 #' @param id_pattern `NULL`, or one regular expression marking ID attributes by name.
 #' @param id_bands `NULL`, or `list(sheet, label_col, start_col, end_col, labels_from =
-#'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands.
+#'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands, and
+#'   optionally, all three or none, `table` and `attribute`, the column the bands apply to, and
+#'   `key`, the foreign keys followed from that table and the attribute they reach, joined by
+#'   " > ", such as `"dataset_id > contributor_id"`. `key` needs `labels_from`, and its last
+#'   attribute must be a column of the `labels_from` sheet, which gives each band's value of it.
 #' @param precedence `NULL`, or a table (data.frame or CSV path) with exactly the columns
 #'   `sheet`,
 #'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
@@ -1474,9 +1556,9 @@ read_lineage_input <- function(x, origin = NULL) {
 #' @return An object of class `gpq_spec`: a named list of data.tables, the components
 #'   `attributes`, `keys`, `code_lists`, `code_list_sheets`, `code_list_map`, `codes`,
 #'   `non_code_sheets`,
-#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `type_map`, `sentinels`,
-#'   `clashes`, `read_findings` and `manifest`. An input not given leaves its component
-#'   empty, with its columns. A blank cell is `NA`; text is kept exactly as written.
+#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `id_band_columns`, `type_map`,
+#'   `sentinels`, `clashes`, `read_findings` and `manifest`. An input not given leaves its
+#'   component empty, with its columns. A blank cell is `NA`; text is kept exactly as written.
 #' @section Components:
 #' Each component is a data.table with these columns:
 #'
@@ -1602,7 +1684,8 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   } else {
     NA_character_
   }
-  bands <- build_id_bands(id_bands, lists$long, bands_file)
+  keys <- build_keys(attributes)
+  bands <- build_id_bands(id_bands, lists$long, bands_file, attributes, keys)
   datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
   # Each precedence sheet's own file, its CSV or the workbook, named by sheet (D12.28).
   list_files <- vapply(
@@ -1628,7 +1711,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   )
   new_gpq_spec(list(
     attributes = attributes,
-    keys = build_keys(attributes),
+    keys = keys,
     code_lists = lists$long,
     code_list_sheets = data.table(sheet = lists$sheets),
     code_list_map = code_list_map,
@@ -1640,6 +1723,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     lineage_spec = lineage$component,
     crosswalks = walks$long,
     id_bands = bands$bands,
+    id_band_columns = bands$columns,
     type_map = type_map,
     sentinels = sentinels,
     clashes = bind_component("clashes", list(clashes$clashes, lineage$clashes)),

@@ -105,7 +105,8 @@ Layers and the rules they can raise:
 \item Layer 2, missing-value codes: \code{raw_na}, \code{blank_string}, \code{sentinel_wrong_type},
 \code{sentinel_rogue_code}, \code{species_unknown_code}, \code{whitespace_padding}, \code{na_text_in_id}.
 \item Layer 3, value domains: \code{code_not_in_list}, \code{value_below_min}, \code{value_above_max},
-\code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{coordinate_out_of_bounds}.
+\code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{site_id_out_of_range},
+\code{coordinate_out_of_bounds}.
 }
 
 Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary

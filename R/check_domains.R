@@ -90,7 +90,11 @@ decimal_places <- function(number) {
 #' `decimals`, each distinct number read once. `coordinate_out_of_bounds` per attribute the
 #' setting names that has a bound; without the setting one not_run row (no_input). A rule
 #' whose dictionary column is absent or blank in every row, or gives no attribute in its scope
-#' a value, writes one not_run row (no_dd_values, D18.19).
+#' a value, writes one not_run row (no_dd_values, D18.19). `site_id_out_of_range` on the
+#' column `id_band_columns` names: the ID, as a number, within the band whose key its chain
+#' reaches, bounds inclusive (D18.2); a row whose chain breaks or ends in a key no band has,
+#' or whose ID is NA, blank or a sentinel, isn't checked (D18.21); without the column one
+#' not_run row (no_input).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -135,6 +139,7 @@ check_domains <- function(input, context) {
   decimals <- dd("decimals")
   min_value <- dd("min_value")
   max_value <- dd("max_value")
+  bands <- context$spec$id_band_columns
   list(
     code_not_in_list = rule_outcomes(
       "code_not_in_list", columns[columns$coded], input, function(table, attribute, x, row) {
@@ -194,6 +199,34 @@ check_domains <- function(input, context) {
         )
       }
     ),
+    site_id_out_of_range = if (nrow(bands) == 0L) {
+      list(not_run_outcome("site_id_out_of_range", "*", "*", "no_input"))
+    } else {
+      banded <- columns$table_name == bands$table_name[[1L]] &
+        columns$attribute_name == bands$attribute_name[[1L]]
+      rule_outcomes(
+        "site_id_out_of_range", columns[banded], input, function(table, attribute, x, row) {
+          spec <- context$spec
+          chain <- parse_chain(bands$key_attribute[[1L]], table, spec$keys, spec$attributes)
+          key <- value_text(chain_values(input, table, chain))
+          band_list <- spec$id_bands
+          band <- match(key, band_list$key_value, incomparables = NA)
+          number <- coerce_column(x, "double")$value
+          # A row whose chain breaks, ends in NA, a blank or a sentinel (which no band's key
+          # is) or a key no band has, or whose ID is NA, blank or a sentinel, isn't compared
+          # (D18.2, D18.21).
+          unchecked <- is.na(band) | is.na(number) | domain_skipped(x, row, context, number)
+          start <- band_list$band_start[band]
+          end <- band_list$band_end[band]
+          fail <- which(!unchecked & (number < start | number > end))
+          record_outcome(
+            "site_id_out_of_range", table, attribute, fail, value_text(x[fail]),
+            paste(as_text(start[fail]), "to", as_text(end[fail]), recycle0 = TRUE),
+            unchecked = which(unchecked)
+          )
+        }
+      )
+    },
     coordinate_out_of_bounds = if (length(context$coordinate_attributes) == 0L) {
       list(not_run_outcome("coordinate_out_of_bounds", "*", "*", "no_input"))
     } else {

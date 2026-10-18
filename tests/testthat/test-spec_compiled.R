@@ -108,7 +108,8 @@ test_that("a double with NA reloads identical, and the caller's spec is left as 
   spec <- fx_planted_spec()
   spec$id_bands <- data.table::data.table(
     label = c("A", "B"), band_start = c(NA, 0.1), band_end = c(5, NA),
-    reserved = c(NA, FALSE), source_row = 2:3, source_cell = NA_character_
+    reserved = c(NA, FALSE), source_row = 2:3, source_cell = NA_character_,
+    key_value = c("1", NA)
   )
   before <- lapply(spec, data.table::copy)
   dir <- withr::local_tempdir()

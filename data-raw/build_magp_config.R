@@ -11,11 +11,13 @@
 # (D12.35).
 # The ID marker: the 13 src_*_id attributes (D9.18, D12.13).
 id_pattern <- "^src_.*_id$"
-# The site-ID bands, v2 only (D12.9, D12.10, D12.13).
+# The site-ID bands, v2 only (D12.9, D12.10, D12.13), and the column they band: a site
+# reaches its contributor's ID through its dataset (D18.2).
 id_bands <- list(
   sheet = "magp_site_id_range", label_col = "contributor", start_col = "v2_start",
   end_col = "v2_end", labels_from = c(sheet = "contributor", column = "abbreviated_name"),
-  reserved_pattern = "^reserved_[0-9]+$"
+  reserved_pattern = "^reserved_[0-9]+$", table = "magp_sites", attribute = "magp_site_id",
+  key = "magp_dataset_id > magp_contributor_id"
 )
 # The DD column and value flagging A2 attributes (D12.13).
 lineage_flag <- c(column = "appendix", value = "A2")

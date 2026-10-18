@@ -408,6 +408,11 @@ fx_answer_sheet <- function() {
       "pattern_mismatch", "magp_sites", "ec_zone", "350002",
       "magp_sites$ec_zone row 1 \"1A\"", "pattern_mismatch",
       witness = "1A"
+    ),
+    fx_defect(
+      "site_id_out_of_range", "magp_sites", "magp_site_id", "1",
+      "magp_sites$magp_site_id row 1 1, in every table holding it", "site_id_out_of_range",
+      witness = "1"
     )
   ))
 }
@@ -488,7 +493,20 @@ fx_defect_blocks <- function() {
     code_not_in_list = fx_set_cell("magp_trees", "tree_origin", 1L, "QQ"),
     value_below_min = fx_set_cell("magp_tree_meas", "dbh", 1L, 0),
     value_above_max = fx_set_cell("magp_tree_meas", "height", 1L, 200),
-    pattern_mismatch = fx_set_cell("magp_sites", "ec_zone", 1L, "1A")
+    pattern_mismatch = fx_set_cell("magp_sites", "ec_zone", 1L, "1A"),
+    site_id_out_of_range = function(tables) {
+      fx_require_fixture(tables)
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      # Site 1's ID outside every band, in every table holding it, so its keys still agree.
+      old <- tables$magp_sites$magp_site_id[[1L]]
+      for (table in names(tables)) {
+        if ("magp_site_id" %in% names(tables[[table]])) {
+          at <- which(tables[[table]]$magp_site_id == old)
+          data.table::set(tables[[table]], i = at, j = "magp_site_id", value = 1L)
+        }
+      }
+      tables
+    }
   )
 }
 
