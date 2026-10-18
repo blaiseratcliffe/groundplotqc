@@ -2,7 +2,8 @@
 # MAGPlot's clean base scaled to the shape of the AB file, every key path to one ancestor
 # agreeing, with the fixture marker. bench/generate.R and bench/run.R source this file with
 # helper-fixtures.R; the 0.1x smoke test calls fx_magp_scaled() directly. Every value that
-# isn't a key is one of fx_magp_clean()'s, so the scaled base is as clean as the clean base.
+# isn't a key is one of fx_magp_clean()'s, or for the sites' datum and ec_* made by its
+# formulas site by site (D18.20), so the scaled base is as clean as the clean base.
 
 # MAGPlot's tables at `scale` of the AB file's shape (D17.7): at 1x D1.9a's counts for
 # magp_tree_cond (2,012,280), magp_tree_meas (1,615,305) and magp_trees (517,508), the other
@@ -165,7 +166,9 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   )
   # Each site its own datum and ec_* values, by fx_magp_clean()'s formula, so no text column
   # of the scaled sites reads as a code set (undeclared_code_set, D18.20). The other judged
-  # columns' tables have more distinct base values than code_set_max_values.
+  # columns hold more distinct base values than code_set_max_values, but for magp_datasets'
+  # meas_interval, which holds 4: that table doesn't scale, and its rows, the datasets
+  # sheet's 24 at most, are too few to judge.
   i <- seq_len(n_sites)
   zone <- (i - 1L) %% 99L + 1L
   region <- (i - 1L) %% 999L + 1L

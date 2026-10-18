@@ -651,3 +651,27 @@ test_that("undeclared_code_set judges more values than the built-in 25, sorted (
   judged <- rows$column_name[rows$rule_id == "undeclared_code_set"]
   expect_equal(judged, "station_name")
 })
+
+# task 7's fix round (the datatable review's F3)
+test_that("undeclared_code_set doesn't count a blank, NA or an unknown code (R21)", {
+  # Each leaves one value, too few to judge with code_set_max_values 1: no row.
+  settings <- list(code_set_max_values = 1L, unknown_codes = c(station_name = "Unknown"))
+  for (values in list(c("North", "  "), c("North", NA), c("North", "Unknown"))) {
+    results <- fish_run(edited("stations", "station_name", 1:2, values), settings = settings)
+    expect_false("undeclared_code_set" %in% results$results$rule_id, info = deparse(values))
+    expect_false(
+      "undeclared_code_set" %in% results$metadata$self_test$rule_id,
+      info = deparse(values)
+    )
+  }
+})
+
+# task 7's fix round (the spec review's m2)
+test_that("undeclared_code_set doesn't judge an attribute marked as an ID (R11)", {
+  same <- edited("stations", "station_name", 1:2, c("North", "North"))
+  one <- list(code_set_max_values = 1L)
+  marked <- fish_run(same, settings = one, spec = fx_fish_spec(id_pattern = "^station_name$"))
+  expect_false("undeclared_code_set" %in% marked$results$rule_id)
+  # Unmarked, the same column fails.
+  expect_equal(opened(fish_run(same, settings = one))$rule_id, "undeclared_code_set")
+})

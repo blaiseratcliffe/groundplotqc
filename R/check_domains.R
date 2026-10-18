@@ -113,8 +113,9 @@ decimal_places <- function(number) {
 #' or whose ID is NA, blank or a sentinel, isn't checked (D18.21); without the column one
 #' not_run row (no_input). `undeclared_code_set` per text attribute that isn't coded, a key
 #' or marked as an ID, and that the `code_set_skip_*` settings don't name: one column-level
-#' warning where the column holds more than `code_set_max_values` values (not NA, blank or a
-#' sentinel of its type) and no more than that many distinct ones (D8.24, D9.26, D18.20, R11).
+#' warning where the column holds more than `code_set_max_values` values (not NA, blank, a
+#' sentinel of its type or an unknown code of the attribute) and no more than that many
+#' distinct ones, each distinct value read once (D8.24, D9.26, D18.20, R11).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -292,17 +293,21 @@ check_domains <- function(input, context) {
       outcomes <- rule_outcomes(
         "undeclared_code_set", columns[judged], input, function(table, attribute, x, row) {
           text <- as_written(x, row)
-          values <- text[!domain_skipped(text, row, context)]
+          # Each distinct value is read once (16.2): domain_skipped() judges value by value.
+          distinct <- unique(text)
+          kept <- distinct[!domain_skipped(distinct, row, context)]
+          # More distinct values than `most` means more values too: the column passes.
+          if (length(kept) > most) {
+            return(unit_outcome("undeclared_code_set", table, attribute, FALSE, length(x)))
+          }
           # A column of `most` values or fewer isn't judged: any small column would look like
           # a code set (D18.20).
-          if (length(values) <= most) {
+          if (sum(text %in% kept) <= most) {
             return(NULL)
           }
-          distinct <- sort(unique(values), method = "radix")
-          failed <- length(distinct) <= most
           unit_outcome(
-            "undeclared_code_set", table, attribute, failed, length(x),
-            value = if (failed) paste(distinct, collapse = "; ") else NA_character_
+            "undeclared_code_set", table, attribute, TRUE, length(x),
+            value = paste(sort(kept, method = "radix"), collapse = "; ")
           )
         }
       )
