@@ -47,7 +47,8 @@ CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}
 optionally, all three or none, \code{table} and \code{attribute}, the column the bands apply to, and
 \code{key}, the foreign keys followed from that table and the attribute they reach, joined by
 " > ", such as \code{"dataset_id > contributor_id"}. \code{key} needs \code{labels_from}, and its last
-attribute must be a column of the \code{labels_from} sheet, which gives each band's value of it.}
+attribute must be a column of the \code{labels_from} sheet, which gives each band's value of it;
+each value can have only one band.}
 
 \item{precedence}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
 \code{sheet},

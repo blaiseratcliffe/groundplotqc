@@ -1555,7 +1555,8 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   optionally, all three or none, `table` and `attribute`, the column the bands apply to, and
 #'   `key`, the foreign keys followed from that table and the attribute they reach, joined by
 #'   " > ", such as `"dataset_id > contributor_id"`. `key` needs `labels_from`, and its last
-#'   attribute must be a column of the `labels_from` sheet, which gives each band's value of it.
+#'   attribute must be a column of the `labels_from` sheet, which gives each band's value of it;
+#'   each value can have only one band.
 #' @param precedence `NULL`, or a table (data.frame or CSV path) with exactly the columns
 #'   `sheet`,
 #'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
