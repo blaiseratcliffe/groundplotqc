@@ -63,7 +63,7 @@ chain_rows <- function(input, table, steps) {
   # parent's side can only meet the same blank on the child's, so the child's suffice.
   blanks <- function(x) {
     if (!is.character(x)) {
-      return(character())
+      return(NULL)
     }
     maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", x, useBytes = TRUE))
     unique(x[maybe][space_padding(x[maybe])$blank])

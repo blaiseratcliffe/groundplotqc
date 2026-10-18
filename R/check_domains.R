@@ -19,7 +19,8 @@
 #' `x` holds the values as given, `row` is the attribute's row of the input's columns table,
 #' and `number`, when given, the values read as numbers: a sentinel or unknown code is then
 #' matched as a number too, so "-1.0" read from text is the numeric family's -1 (D18.9).
-#' Returns one logical per value.
+#' With `number` given, `x` stored as plain numbers isn't written as text (16.2). Returns one
+#' logical per value.
 #' @noRd
 domain_skipped <- function(x, row, context, number = NULL) {
   sentinels <- context$spec$sentinels
@@ -28,12 +29,28 @@ domain_skipped <- function(x, row, context, number = NULL) {
     sentinels$value[sentinels$data_type == row$family],
     unname(unknown[names(unknown) == row$attribute_name])
   )
-  text <- value_text(x)
-  skipped <- is.na(text) | text %chin% codes
-  if (is.character(text)) {
-    # Only the values that may be blank are read by space_padding() (16.2).
-    maybe <- which(!skipped & grepl("^[ \t\r\n]*$|[^\001-\177]", text, useBytes = TRUE))
-    skipped[maybe] <- space_padding(text[maybe])$blank
+  if (!is.null(number) && is.numeric(x) && !is.object(x)) {
+    # Plain numbers aren't all written as text (16.2): NA is NA, and only NaN and the values
+    # whose 15-digit text may be a code are written. A value written as a number's code lies
+    # within 1e-14 of it, relative, so the wider margin here only narrows what is written;
+    # the text decides, as for every other value.
+    numbers <- suppressWarnings(as.numeric(codes))
+    near <- is.nan(x)
+    for (code in numbers[!is.na(numbers)]) {
+      margin <- if (is.finite(code)) abs(code) * 1e-12 else 0
+      near <- near | x == code | abs(x - code) <= margin
+    }
+    skipped <- is.na(x) & !is.nan(x)
+    maybe <- which(near)
+    skipped[maybe] <- value_text(x[maybe]) %chin% codes
+  } else {
+    text <- value_text(x)
+    skipped <- is.na(text) | text %chin% codes
+    if (is.character(text)) {
+      # Only the values that may be blank are read by space_padding() (16.2).
+      maybe <- which(!skipped & grepl("^[ \t\r\n]*$|[^\001-\177]", text, useBytes = TRUE))
+      skipped[maybe] <- space_padding(text[maybe])$blank
+    }
   }
   if (!is.null(number)) {
     numbers <- suppressWarnings(as.numeric(codes))
@@ -208,9 +225,13 @@ check_domains <- function(input, context) {
         "site_id_out_of_range", columns[banded], input, function(table, attribute, x, row) {
           spec <- context$spec
           chain <- parse_chain(bands$key_attribute[[1L]], table, spec$keys, spec$attributes)
-          key <- value_text(chain_values(input, table, chain))
+          # Each distinct key reached is written as text once (16.2).
+          reached <- chain_values(input, table, chain)
+          distinct <- unique(reached)
           band_list <- spec$id_bands
-          band <- match(key, band_list$key_value, incomparables = NA)
+          band <- match(value_text(distinct), band_list$key_value, incomparables = NA)[
+            match(reached, distinct)
+          ]
           number <- coerce_column(x, "double")$value
           # A row whose chain breaks, ends in NA, a blank or a sentinel (which no band's key
           # is) or a key no band has, or whose ID is NA, blank or a sentinel, isn't compared

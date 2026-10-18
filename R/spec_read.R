@@ -1157,8 +1157,9 @@ build_codes <- function(code_list_map, code_lists, crosswalks) {
 #' foreign keys from `table` (parse_chain()), and a key whose last attribute isn't a column of
 #' the `labels_from` sheet (D18.2, D18.18). Each band's `key_value` is that column's value on
 #' the `labels_from` row of the band's label, NA for a reserved or unknown label or without a
-#' key; `columns` has the one row of id_band_columns, `labels_from`'s sheet and column with it
-#' (D18.38), when the three are given and none of their findings is made.
+#' key; each band after the first of its key value is a finding naming the first (D18.57).
+#' `columns` has the one row of id_band_columns, `labels_from`'s sheet and column with it
+#' (D18.38), when the three are given and none of the column's or the key's findings is made.
 #' @noRd
 build_id_bands <- function(id_bands, code_lists, file,
                            attributes = empty_table(spec_schema()$attributes),
@@ -1356,6 +1357,7 @@ build_id_bands <- function(id_bands, code_lists, file,
   # column's row only when there is none.
   key_value <- rep(NA_character_, nrow(bands))
   column_findings <- NULL
+  duplicate_findings <- NULL
   if (with_column) {
     problems <- character()
     known_column <- any(
@@ -1393,6 +1395,23 @@ build_id_bands <- function(id_bands, code_lists, file,
       row_of <- labels$source_row[match(bands$label, labels$value)]
       key_value <- values$value[match(row_of, values$source_row)]
       key_value[bands$reserved] <- NA_character_
+      # One band per key value (D18.57): each band after the first of its key value is a
+      # finding naming the first, at its own cell.
+      repeated <- which(duplicated(key_value, incomparables = NA))
+      if (length(repeated) > 0L) {
+        first <- match(key_value[repeated], key_value)
+        duplicate_findings <- finding(
+          report_text(
+            "preflight_detail_site_id_range_invalid_duplicate_key",
+            label = bands$label[first],
+            location = band_location(bands$source_cell[first], bands$source_row[first]),
+            other_label = bands$label[repeated],
+            other_location = band_location(bands$source_cell[repeated], bands$source_row[repeated]),
+            attribute_name = chain$attribute, value = key_value[repeated]
+          ),
+          bands$source_cell[repeated]
+        )
+      }
     }
     if (length(problems) == 0L) {
       out$columns <- data.table(
@@ -1408,7 +1427,8 @@ build_id_bands <- function(id_bands, code_lists, file,
   out$bands <- bands
   out$findings <- bind_component("read_findings", c(
     bound_findings, list(
-      blank_label_findings, label_findings, order_findings, overlap_findings, column_findings
+      blank_label_findings, label_findings, order_findings, overlap_findings, column_findings,
+      duplicate_findings
     )
   ))
   out

@@ -376,6 +376,15 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(meas$height == "200"), rate(nrow(meas)))
   expect_equal(sum(tables$magp_sites$ec_zone == "1A"), rate(nrow(tables$magp_sites)))
   expect_equal(sum(tables$magp_sites$magp_site_id < 50001L), rate(nrow(tables$magp_sites)))
+  # The moved IDs moved in every table holding them, so each still names a site.
+  dd <- magp_spec()$attributes
+  holders <- dd$table_name[dd$attribute_name == "magp_site_id"]
+  for (table in setdiff(holders, "magp_sites")) {
+    expect_true(
+      all(tables[[table]]$magp_site_id %in% tables$magp_sites$magp_site_id),
+      label = table
+    )
+  }
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

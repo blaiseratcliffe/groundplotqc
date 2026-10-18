@@ -174,6 +174,7 @@ test_that("code_not_in_list reads translation tables; UNKN.SPP is Layer 2's (D7.
   )
 })
 
+# task 4's fix round (the datatable review's Minor, 98c095c)
 test_that("only the values that may be blank reach space_padding() (16.2)", {
   # domain_skipped() reads the values outside the list, and of those only one that is blank or
   # holds text that isn't plain ASCII goes to space_padding(): here the no-break space, not
@@ -484,10 +485,15 @@ test_that("a site's ID is checked against its contributor's band, bounds inclusi
   tables <- moved(tables, 350003L, 400000L)
   tables <- moved(tables, 450006L, 450001L)
   tables <- moved(tables, 450007L, 500001L)
+  before <- lapply(tables, data.table::copy)
   results <- withCallingHandlers(
     gpq_check_conformance(tables, magp_spec(), rules = magp_rules(), layers = 3),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
+  # The rule leaves the caller's tables as they were (16.2).
+  for (table in names(tables)) {
+    expect_identical(tables[[table]], before[[table]], info = table)
+  }
   found <- opened(results)
   expect_equal(unique(found$rule_id), "site_id_out_of_range")
   expect_equal(placed_at(found), c("magp_sites magp_site_id 1", "magp_sites magp_site_id 6"))
@@ -542,5 +548,52 @@ test_that("without a banded column site_id_out_of_range is one not_run row, no_i
   expect_equal(
     c(band$table_name, band$column_name, band$status, band$not_run_reason),
     c("*", "*", "not_run", "no_input")
+  )
+})
+
+# task 6's fix round (the datatable review's #1)
+test_that("site_id_out_of_range writes as text no banded ID but a failing one (16.2)", {
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  # Site 1 outside every band, site 5's ID NA and site 6's the sentinel -9.
+  data.table::set(tables$magp_sites, i = c(1L, 5L, 6L), j = "magp_site_id", value = c(1L, NA, -9L))
+  input <- conformance_input(tables, spec)
+  context <- conformance_context(spec, NULL, list(), 3L)
+  ids <- tables$magp_sites$magp_site_id
+  real_text <- value_text
+  written <- integer()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    if (identical(x, ids)) {
+      written <<- c(written, length(x))
+    }
+    real_text(x)
+  })
+  found <- check_domains(input, context)$site_id_out_of_range[[1L]]
+  expect_length(written, 0L)
+  expect_equal(found$fail, 1L)
+  expect_equal(found$expected, "350001 to 400000")
+  expect_equal(found$unchecked, c(5L, 6L))
+})
+
+# task 6's fix round (the datatable review's #1)
+test_that("domain_skipped() reads plain numbers as numbers, as it reads their text (16.2)", {
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(), 3L)
+  # depth's own sentinels are -99 and -88; "NaN" and "7" given here as its unknown codes.
+  context$unknown_codes <- c(depth = "NaN", depth = "7")
+  input <- conformance_input(fx_fish_clean(), spec)
+  row <- input$columns[input$columns$attribute_name == "depth"]
+  # -99 - 1e-14 isn't -99, but its text to 15 significant digits is the code "-99".
+  x <- c(1.5, NA, NaN, Inf, -99, 7, -88, 7.25, -99 - 1e-14)
+  skipped <- domain_skipped(x, row, context, x)
+  expect_identical(skipped, domain_skipped(value_text(x), row, context, x))
+  expect_identical(skipped, c(FALSE, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE))
+  # Without "NaN" among the codes, NaN is left to the rule, as its text is.
+  context$unknown_codes <- c(depth = "7")
+  expect_false(domain_skipped(NaN, row, context, NaN))
+  expect_identical(
+    domain_skipped(c(NaN, 1L), row, context, c(NaN, 1)),
+    domain_skipped(c("NaN", "1"), row, context, c(NaN, 1))
   )
 })

@@ -1754,3 +1754,74 @@ test_that("id_bands' column and key are optional, and come together or not at al
     )
   }
 })
+
+# task 6's fix round (the spec review's I1, D18.57)
+test_that("each value of the bands' key has one band; a later one names the first (D18.57)", {
+  read_with <- function(ranges, contributor) {
+    gpq_read_spec(
+      data.frame(
+        table_name = c("sites", "sites", "datasets", "datasets"),
+        attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id"),
+        key_type = c("PK", "FK", "PK", NA), reference_table = c(NA, "datasets", NA, NA),
+        data_type = c("integer", "character", "character", "character")
+      ),
+      code_lists = list(ranges = ranges, contributor = contributor),
+      non_code_sheets = c("ranges", "contributor"),
+      id_bands = list(
+        sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+        labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+        reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "site_id",
+        key = "dataset_id > contributor_id"
+      )
+    )
+  }
+  found <- function(spec) {
+    findings <- spec$read_findings
+    findings$detail[findings$rule_id == "site_id_range_invalid"]
+  }
+  contributors <- data.frame(
+    abbreviated_name = c("AB", "PE", "BC"), contributor_id = c("100", "120", "110")
+  )
+  # One label with two bands: the second names the first.
+  twice <- read_with(
+    data.frame(
+      contributor = c("AB", "PE", "AB"), v2_start = c("1", "100", "300"),
+      v2_end = c("99", "199", "399")
+    ),
+    contributors
+  )
+  expect_equal(found(twice), paste(
+    "Bands \"AB\" (row 1) and \"AB\" (row 3) both belong to contributor_id \"100\";",
+    "each contributor_id can have only one band."
+  ))
+  expect_error(gpq_preflight(twice), class = "gpq_preflight_error")
+  # Two labels with one key, and a third: each later band names the first of its key.
+  shared <- read_with(
+    data.frame(
+      contributor = c("AB", "AL", "PE", "AQ"), v2_start = c("1", "100", "200", "300"),
+      v2_end = c("99", "199", "299", "399")
+    ),
+    data.frame(
+      abbreviated_name = c("AB", "AL", "PE", "AQ"),
+      contributor_id = c("100", "100", "120", "100")
+    )
+  )
+  expect_equal(found(shared), report_text(
+    "preflight_detail_site_id_range_invalid_duplicate_key",
+    label = "AB", location = "row 1", other_label = c("AL", "AQ"),
+    other_location = c("row 2", "row 4"), attribute_name = "contributor_id", value = "100"
+  ))
+  # The bands keep their keys and the column its row; pre-flight stops on the findings.
+  expect_equal(shared$id_bands$key_value, c("100", "100", "120", "100"))
+  expect_equal(nrow(shared$id_band_columns), 1L)
+  expect_error(gpq_preflight(shared), class = "gpq_preflight_error")
+  # Reserved bands have no key, so two of them repeat none; one band per key passes.
+  reserved <- read_with(
+    data.frame(
+      contributor = c("AB", "reserved_1", "reserved_2", "BC"),
+      v2_start = c("1", "100", "200", "300"), v2_end = c("99", "199", "299", "399")
+    ),
+    contributors
+  )
+  expect_equal(found(reserved), character())
+})
