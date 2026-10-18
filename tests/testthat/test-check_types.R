@@ -106,9 +106,9 @@ test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8
 })
 
 test_that("a key of only Unicode spaces is blank to Layer 4 (D18.15, m53)", {
-  # A key of only Unicode spaces is blank, as D16.42 reads it: in a number-typed key stored as
-  # text coercion_loss reports it first and masks pk_missing there, and in a text-typed key
-  # fk_unassigned reports it.
+  # A key of only Unicode spaces is blank, as D16.42 reads it, to Layer 1 too: in a
+  # number-typed key stored as text coercion_loss leaves it to pk_missing, and in a text-typed
+  # key fk_unassigned reports it (D18.62, D18.63).
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
   key <- which(attributes$attribute_name == "catch_id")
@@ -125,11 +125,54 @@ test_that("a key of only Unicode spaces is blank to Layer 4 (D18.15, m53)", {
   open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
   expect_equal(
     paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value),
-    paste(c("coercion_loss catches catch_id 1", "fk_unassigned catches haul_id 2"), nbsp)
+    paste(c("pk_missing catches catch_id 1", "fk_unassigned catches haul_id 2"), nbsp)
   )
-  masked <- issues[issues$rule_id == "pk_missing"]
-  expect_equal(masked$row_number, 1L)
-  expect_equal(masked$status, "not_evaluated")
+  expect_false(any(issues$rule_id == "coercion_loss"))
+})
+
+test_that("a date-typed key of only Unicode spaces is blank to Layer 1 too (D18.62, D18.63)", {
+  # date_unparseable leaves it to Layer 4, as coercion_loss does in a number-typed key: a
+  # haul's key is pk_missing's and a catch's fk_unassigned's (D7.9, D18.15).
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  dictionary$kind[dictionary$field == "haul_id"] <- "day"
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  nbsp <- intToUtf8(0xA0)
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  catches <- data.table::copy(fish$catches)
+  dates <- format(as.Date("2020-01-01") + seq_len(nrow(hauls)) - 1L)
+  catches$haul_id <- dates[match(catches$haul_id, hauls$haul_id)]
+  hauls$haul_id <- dates
+  hauls$haul_id[[1L]] <- nbsp
+  catches$haul_id[[2L]] <- nbsp
+  fish$hauls <- hauls
+  fish$catches <- catches
+  issues <- gpq_check_conformance(fish, spec, layers = 0:4)$issues
+  open <- issues[issues$status == "open"]
+  # Catch 1 names the haul whose key is now blank, so its key names no haul.
+  expect_equal(paste(open$rule_id, open$table_name, open$row_number, open$value), c(
+    paste("pk_missing hauls 1", nbsp), paste("fk_orphan catches 1", dates[[1L]]),
+    paste("fk_unassigned catches 2", nbsp)
+  ))
+  expect_false(any(issues$rule_id == "date_unparseable"))
+})
+
+test_that("coercion_loss and date_unparseable are at rule_version 2 (D15.6, D18.62, D18.63)", {
+  registry <- rule_registry()
+  at <- match(c("coercion_loss", "date_unparseable"), registry$rule_id)
+  expect_equal(registry$rule_version[at], c(2L, 2L))
 })
 
 test_that("an ID column's \"NA\" is Layer 2's and a plain column's is coercion_loss's (D8.8)", {

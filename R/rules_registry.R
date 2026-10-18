@@ -48,7 +48,7 @@ build_rule_registry <- function() {
   # its fingerprint takes in the rule's entry (D16.54); the settings entries follow the
   # specification components, in their names' order.
   conformance <- function(rule_id, layer, severity, class, inputs, strategy = "none",
-                          unit = FALSE) {
+                          unit = FALSE, rule_version = 1L) {
     read <- strsplit(inputs, "; ", fixed = TRUE)[[1L]]
     named <- startsWith(read, "settings:")
     settings <- sort(unique(c(read[named], "settings:severity")), method = "radix")
@@ -56,7 +56,7 @@ build_rule_registry <- function() {
     data.table(
       rule_id = rule_id, stage = "conformance", layer = layer, check_type = "conformance",
       default_severity = severity, default_class = class, inputs = inputs,
-      strategy = strategy, message_id = rule_id, rule_version = 1L, unit = unit
+      strategy = strategy, message_id = rule_id, rule_version = rule_version, unit = unit
     )
   }
   lists <- "code_list_map; code_lists; non_code_sheets"
@@ -108,19 +108,22 @@ build_rule_registry <- function() {
       "class_mismatch", 1L, "error", "harmonization", "attributes; type_map",
       unit = TRUE
     ),
+    # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63).
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
         "attributes; keys; type_map; sentinels; codes; code_list_map;",
         "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
-      )
+      ),
+      rule_version = 2L
     ),
     conformance(
       "date_unparseable", 1L, "error", "depends",
       paste(
         "attributes; keys; type_map; sentinels; codes; code_list_map;",
         "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
-      )
+      ),
+      rule_version = 2L
     ),
     conformance(
       "integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map",

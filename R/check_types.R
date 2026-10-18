@@ -5,12 +5,13 @@
 # another type's sentinel, a rogue code outside the keys, an unknown code of the attribute,
 # the text "NA" in an ID) is left to Layer 2, so it is reported once (D8.8); so is a padded
 # value that whitespace_padding checks and whose trimmed form passes (D16.42, m25). A blank
-# in a key column is Layer 4's (D7.9), which Layer 1 leaves alone too. Text marked latin1 is
-# read as UTF-8 (D16.36). Text marked as bytes, text that isn't valid UTF-8 even so, and a
-# date longer than its format can write are read by nothing that stops or warns on them:
-# each is lost or unparseable as given (D16.33, D16.34, D16.36). A run refuses a table
-# holding text marked as bytes before Layer 1 (D16.38), so for such text this is a second
-# line. A table read from CSV is all text, so the storage-class rules don't run on it (D9.23).
+# in a key column, Unicode spaces included, is Layer 4's (D7.9, D18.62, D18.63), which Layer 1
+# leaves alone too. Text marked latin1 is read as UTF-8 (D16.36). Text marked as bytes, text
+# that isn't valid UTF-8 even so, and a date longer than its format can write are read by
+# nothing that stops or warns on them: each is lost or unparseable as given (D16.33, D16.34,
+# D16.36). A run refuses a table holding text marked as bytes before Layer 1 (D16.38), so for
+# such text this is a second line. A table read from CSV is all text, so the storage-class
+# rules don't run on it (D9.23).
 
 #' Which of a column's values a later layer reports: a blank (in a key column Layer 4's,
 #' `pk_missing` and `fk_unassigned`, otherwise Layer 2's), a sentinel of another type, a
@@ -20,11 +21,11 @@
 #' `text` is the values as text; `row` the attribute's row of the input's columns table.
 #' Key columns take no rogue codes: Layer 2 leaves their values to Layer 4 (D7.9). A sentinel
 #' of another type is Layer 2's only where the column's own type has sentinels, since
-#' `sentinel_wrong_type` has nothing to check it against otherwise (D16.32). Outside the keys
-#' a blank is blank_string's, as space_padding() reads it, any Unicode space counting in text
-#' that isn't plain ASCII (D16.42, m35); in a key a blank is as is_blank() reads it. An
-#' unknown code is species_unknown_code's, compared as text (D16.42, m25). Text marked as
-#' bytes is none of these, so the rule reading it reports it (D16.36).
+#' `sentinel_wrong_type` has nothing to check it against otherwise (D16.32). A blank is read
+#' as space_padding() reads it, any Unicode space counting in text that isn't plain ASCII
+#' (D16.42, m35), in a key column too, whatever its type (D18.62, D18.63). An unknown code is
+#' species_unknown_code's, compared as text (D16.42, m25). Text marked as bytes is none of
+#' these, so the rule reading it reports it (D16.36).
 #' @noRd
 missing_like <- function(text, row, context) {
   # %chin% stops on text marked as bytes, which has no encoding to compare it in: it is
@@ -51,7 +52,7 @@ missing_like <- function(text, row, context) {
   }
   unknown <- context$unknown_codes
   unknown <- unname(unknown[names(unknown) == row$attribute_name])
-  blank <- if (key) is_blank(text) else space_padding(text)$blank
+  blank <- space_padding(text)$blank
   id <- key || isTRUE(row$id_marked)
   layer_two <- blank | text %chin% other | text %chin% rogue | text %chin% unknown
   plain & (layer_two | (id & text %chin% "NA"))
