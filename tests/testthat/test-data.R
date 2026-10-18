@@ -243,9 +243,12 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
   data_rules <- registry$rule_id[registry$check_type != "preflight"]
   expect_true(all(sheet$rule_id %in% data_rules))
   # Every data rule has a defect block, but the three MAGPlot's DD gives no values for, which
-  # are tested on the fish toy (21 M5, R15); pre-flight checks have their planted spec.
+  # are tested on the fish toy (21 M5, R15), and two that raise no issue at M5:
+  # fk_not_applicable_mismatch, not_run until a matrix (M10a), and parent_without_children,
+  # an information rule (D9.21). Pre-flight checks have their planted spec.
   fish_only <- c("string_too_long", "decimals_exceeded", "coordinate_out_of_bounds")
-  expect_equal(setdiff(data_rules, c(sheet$rule_id, fish_only)), character())
+  no_issue <- c("fk_not_applicable_mismatch", "parent_without_children")
+  expect_equal(setdiff(data_rules, c(sheet$rule_id, fish_only, no_issue)), character())
   # No row lists its own rule as a cascade, which would let the rule's other issues pass.
   own_cascade <- mapply(function(rule, cascade) rule %in% split_joined(cascade),
     sheet$rule_id, sheet$cascade_rule_ids,
@@ -292,11 +295,17 @@ test_that("planted vs caught: each block caught by its rule with its witness, it
     row <- sheet[i]
     results <- fx_caught(blocks[[row$defect_id]](base))
     caught <- results$issues[results$issues$status == "open"]
+    # A row lists every record its block makes fail, one hit each: two holders of one value
+    # where every holder fails (D18.10 (2), D18.3, D18.39). The witness is the first one's.
+    pks <- if (is.na(row$record_pk)) NA_character_ else split_joined(row$record_pk)
     is_hit <- caught$rule_id == row$rule_id & caught$table_name == row$table_name &
-      caught$column_name == row$column_name & caught$record_pk %in% row$record_pk
+      caught$column_name == row$column_name & caught$record_pk %in% pks
     hit <- caught[is_hit]
-    expect_equal(nrow(hit), 1L, info = row$defect_id)
-    expect_identical(hit$value, row$witness, info = row$defect_id)
+    expect_equal(nrow(hit), length(pks), info = row$defect_id)
+    expect_identical(
+      hit$value[match(pks[[1L]], hit$record_pk)], row$witness,
+      info = row$defect_id
+    )
     cascade <- split_joined(row$cascade_rule_ids)
     allowed <- c(row$rule_id, cascade)
     expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
@@ -376,16 +385,22 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(meas$height == "200"), rate(nrow(meas)))
   expect_equal(sum(tables$magp_sites$ec_zone == "1A"), rate(nrow(tables$magp_sites)))
   expect_equal(sum(tables$magp_sites$magp_site_id < 50001L), rate(nrow(tables$magp_sites)))
-  # The moved IDs moved in every table holding them, so each still names a site.
+  # The moved IDs moved in every table holding them, so each still names a site; the -9s
+  # planted in magp_site_dist (fk_sentinel_unverified) name none and are counted below.
   dd <- magp_spec()$attributes
   holders <- dd$table_name[dd$attribute_name == "magp_site_id"]
   for (table in setdiff(holders, "magp_sites")) {
-    expect_true(
-      all(tables[[table]]$magp_site_id %in% tables$magp_sites$magp_site_id),
-      label = table
-    )
+    ids <- tables[[table]]$magp_site_id
+    expect_true(all(ids[ids != -9L] %in% tables$magp_sites$magp_site_id), label = table)
   }
   expect_true(all(tables$magp_tally_trees$ht_class == "B"))
+  cond <- tables$magp_tree_cond
+  expect_equal(sum(cond$magp_cond_id == "magp_tree_cond_1", na.rm = TRUE), rate(nrow(cond)) + 1L)
+  expect_equal(sum(is.na(cond$magp_cond_id)), rate(nrow(cond)))
+  expect_equal(sum(cond$magp_treemeas_id == "magp_tree_meas_0", na.rm = TRUE), rate(nrow(cond)))
+  expect_equal(sum(is.na(cond$magp_treemeas_id)), rate(nrow(cond)))
+  sites <- tables$magp_site_dist$magp_site_id
+  expect_equal(sum(sites == -9L), rate(length(sites)))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

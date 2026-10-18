@@ -105,10 +105,10 @@ test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8
   expect_equal(loss$value, c("UNK", "abc"))
 })
 
-test_that("a key of only Unicode spaces, as M4a leaves it until M5 decides (D16.45, m53)", {
-  # A key's blank is Layer 4's as is_blank() reads it (R74), and a no-break space is none: in
-  # a number-typed key stored as text it is coercion_loss's, and in a text-typed key no rule
-  # of Layers 0 to 2 reports it (whitespace_padding skips blanks, blank_string keys).
+test_that("a key of only Unicode spaces is blank to Layer 4 (D18.15, m53)", {
+  # A key of only Unicode spaces is blank, as D16.42 reads it: in a number-typed key stored as
+  # text coercion_loss reports it first and masks pk_missing there, and in a text-typed key
+  # fk_unassigned reports it.
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
   key <- which(attributes$attribute_name == "catch_id")
@@ -121,12 +121,15 @@ test_that("a key of only Unicode spaces, as M4a leaves it until M5 decides (D16.
   catches$catch_id <- c(nbsp, as.character(seq_len(nrow(catches))[-1L]))
   catches$haul_id[[2L]] <- nbsp
   fish$catches <- catches
-  issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
+  issues <- gpq_check_conformance(fish, spec, layers = 0:4)$issues
   open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
   expect_equal(
     paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value),
-    paste("coercion_loss catches catch_id 1", nbsp)
+    paste(c("coercion_loss catches catch_id 1", "fk_unassigned catches haul_id 2"), nbsp)
   )
+  masked <- issues[issues$rule_id == "pk_missing"]
+  expect_equal(masked$row_number, 1L)
+  expect_equal(masked$status, "not_evaluated")
 })
 
 test_that("an ID column's \"NA\" is Layer 2's and a plain column's is coercion_loss's (D8.8)", {

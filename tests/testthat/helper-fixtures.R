@@ -304,6 +304,9 @@ fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_
 
 # The answer sheet (18.3): one row per defect block, each a single edit to MAGPlot's clean
 # base (fx_magp_clean()), caught by gpq_check_conformance() with magp_rules() (fx_caught()).
+# A row's record_pk lists every record the block makes fail, "; "-joined: two holders of one
+# value where every holder fails (pk_duplicate, src_id_duplicate, the design candidates); the
+# witness is the first one's value.
 fx_answer_sheet <- function() {
   data.table::rbindlist(list(
     fx_defect(character(), character(), character(), character(), character(), character()),
@@ -418,6 +421,30 @@ fx_answer_sheet <- function() {
       "undeclared_code_set", "magp_tree_age", "bore_ht", "*",
       "magp_tree_age$bore_ht all \"B\"", "undeclared_code_set",
       witness = "B"
+    ),
+    # ---- Layer 4 (M5) ----
+    fx_defect(
+      "pk_duplicate", "magp_tree_cond", "magp_cond_id", "magp_tree_cond_1; magp_tree_cond_1",
+      "magp_tree_cond$magp_cond_id row 2 \"magp_tree_cond_1\", row 1's", "pk_duplicate",
+      witness = "magp_tree_cond_1"
+    ),
+    fx_defect(
+      "pk_missing", "magp_tree_cond", "magp_cond_id", NA_character_,
+      "magp_tree_cond$magp_cond_id row 1 NA", "pk_missing"
+    ),
+    fx_defect(
+      "fk_orphan", "magp_tree_cond", "magp_treemeas_id", "magp_tree_cond_1",
+      "magp_tree_cond$magp_treemeas_id row 1 \"magp_tree_meas_0\"", "fk_orphan",
+      witness = "magp_tree_meas_0"
+    ),
+    fx_defect(
+      "fk_unassigned", "magp_tree_cond", "magp_treemeas_id", "magp_tree_cond_1",
+      "magp_tree_cond$magp_treemeas_id row 1 NA", "fk_unassigned"
+    ),
+    fx_defect(
+      "fk_sentinel_unverified", "magp_site_dist", "magp_site_id", "magp_site_dist_1",
+      "magp_site_dist$magp_site_id row 1 -9", "fk_sentinel_unverified",
+      witness = "-9"
     )
   ))
 }
@@ -514,7 +541,13 @@ fx_defect_blocks <- function() {
     },
     undeclared_code_set = fx_set_column("magp_tree_age", "bore_ht", function(x) {
       rep("B", length(x))
-    })
+    }),
+    # ---- Layer 4 (M5) ----
+    pk_duplicate = fx_set_cell("magp_tree_cond", "magp_cond_id", 2L, "magp_tree_cond_1"),
+    pk_missing = fx_set_cell("magp_tree_cond", "magp_cond_id", 1L, NA_character_),
+    fk_orphan = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, "magp_tree_meas_0"),
+    fk_unassigned = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, NA_character_),
+    fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L)
   )
 }
 

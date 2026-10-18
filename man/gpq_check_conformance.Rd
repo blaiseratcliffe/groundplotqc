@@ -107,11 +107,13 @@ Layers and the rules they can raise:
 \item Layer 3, value domains: \code{code_not_in_list}, \code{value_below_min}, \code{value_above_max},
 \code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{site_id_out_of_range},
 \code{coordinate_out_of_bounds}, \code{undeclared_code_set}.
+\item Layer 4, keys and relationships: \code{pk_duplicate}, \code{pk_missing}, \code{fk_orphan},
+\code{fk_unassigned}, \code{fk_sentinel_unverified}, \code{fk_not_applicable_mismatch}.
 }
 
-Layers 4 and 5 have no rules yet. A column whose name differs from its dictionary
-attribute's only in letter case or spaces is reported by \code{column_name_mismatch} and
-checked as that attribute. \code{class_mismatch}, \code{integer_stored_as_double},
+Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's
+only in letter case or spaces is reported by \code{column_name_mismatch} and checked as that
+attribute. \code{class_mismatch}, \code{integer_stored_as_double},
 \code{undeclared_code_set} and Layer 0's rules count tables or columns, not records, and their
 rows have \code{"*"} in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its

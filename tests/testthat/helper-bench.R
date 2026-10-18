@@ -231,6 +231,12 @@ fx_scaled_defects <- function(tables) {
   }
   # undeclared_code_set: magp_tree_age is dropped here, so a tally column holds one value.
   data.table::set(tables$magp_tally_trees, j = "ht_class", value = "B")
+  # Layer 4 (M5): each from a first row of its own; the repeated key is row 1's.
+  plant("magp_tree_cond", "magp_cond_id", 2L, "magp_tree_cond_1")
+  plant("magp_tree_cond", "magp_cond_id", 3L, NA_character_)
+  plant("magp_tree_cond", "magp_treemeas_id", 4L, "magp_tree_meas_0")
+  plant("magp_tree_cond", "magp_treemeas_id", 5L, NA_character_)
+  plant("magp_site_dist", "magp_site_id", 1L, -9L)
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

@@ -226,7 +226,30 @@ build_rule_registry <- function() {
         "settings:unknown_codes"
       ),
       unit = TRUE
-    )
+    ),
+    # ---- M5: Layer 4, keys and relationships (6.1; D7.3, D7.9, D16.2, D18.10, D18.33) ----
+    # Each record rule reads the keys and the sentinels' allowed_in_pk and allowed_in_fk (3.5).
+    conformance(
+      "pk_duplicate", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+    ),
+    conformance(
+      "pk_missing", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+    ),
+    conformance(
+      "fk_orphan", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+    ),
+    conformance(
+      "fk_unassigned", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+    ),
+    conformance(
+      "fk_sentinel_unverified", 4L, "warning", "harmonization",
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+    ),
+    conformance("fk_not_applicable_mismatch", 4L, "error", "harmonization", "attributes; keys")
   ))
 }
 
