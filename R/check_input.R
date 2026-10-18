@@ -446,32 +446,9 @@ reach_column <- function(input, table, column_name) {
   if (is.null(path)) {
     return(list(home = NA_character_, rows = rep(NA_integer_, n)))
   }
-  rows <- seq_len(n)
-  current <- table
-  for (k in seq_len(nrow(path))) {
-    parent <- path$reference_table[[k]]
-    child <- key_values(input, current, path$attribute_name[[k]])
-    parent_keys <- key_values(input, parent, path$reference_attribute[[k]])
-    # The first step matches the child's column itself, a later one the rows reached (16.2).
-    from <- if (k == 1L) child$value else child$value[rows]
-    to <- parent_keys$value
-    from_open <- child$open
-    to_open <- parent_keys$open
-    # Numbers join numbers as stored; where one side is text and the other numbers, only the
-    # numeric side is written as text, its sentinels with it (D16.42, m9).
-    if (is.numeric(from) && is.character(to)) {
-      from <- value_text(from)
-      from_open <- value_text(from_open)
-    } else if (is.character(from) && is.numeric(to)) {
-      to <- value_text(to)
-      to_open <- value_text(to_open)
-    }
-    # NA and every sentinel of the child's and the parent's types match nothing, masked inside
-    # the match rather than in a copy of the column (16.2; D16.26; D16.42, m8).
-    rows <- match(from, to, incomparables = c(NA, from_open, to_open))
-    current <- parent
-  }
-  list(home = current, rows = rows)
+  # The path followed one key join per hop, as a key_pairs side or the bands' key is
+  # (chain_rows(), D18.27).
+  list(home = path$reference_table[[nrow(path)]], rows = chain_rows(input, table, path))
 }
 
 #' The values of a column in its home table at the rows a record reached, as given; NA where
