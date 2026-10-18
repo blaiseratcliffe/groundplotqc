@@ -1871,3 +1871,35 @@ test_that("key_pairs is read, each bad table or side one finding at its cell (D1
     fixed = TRUE
   )
 })
+
+# task 11's fix round (the report review's M3)
+test_that("a key pair's blank table or blank side is one finding at its cell, read (blank)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "stand", "tree_id", "plot_id", "stand"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Row 1 has no table, so its sides aren't read; rows 2 and 3 a blank left and right side.
+  data.table::fwrite(data.frame(
+    table_name = c(NA, "trees", "trees"), left = c("stand", NA, "stand"),
+    right = c("plot_id > stand", "plot_id > stand", NA), note = NA
+  ), path)
+  spec <- gpq_read_spec(dictionary, key_pairs = path)
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_key_pair_invalid_table", table_name = NA_character_),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = NA_character_, table_name = "trees"
+    ),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = NA_character_, table_name = "trees"
+    )
+  ))
+  expect_true(all(grepl("(blank)", found$detail, fixed = TRUE)))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 2:4))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})

@@ -542,3 +542,52 @@ test_that("each site's ID is in its contributor's band; ec_* follow their patter
   in_band(fx_magp_scaled(0.01), "0.01x")
   in_band(fx_magp_scaled(0.01, many_groups = TRUE), "0.01x, many groups")
 })
+
+# task 11's fix round (the fixture review's M3)
+test_that("the clean bases label frames and subplots as the DD forms a label (D18.41)", {
+  # About 0.5 s; skipped on CRAN, as the other tests of the scaled base are.
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  # The frame_type codes both lists hold, the sentinels left out, in the lists' order.
+  held <- function(table) {
+    codes <- spec$codes[spec$codes$table_name == table & spec$codes$attribute_name == "frame_type"]
+    setdiff(codes$code, spec$sentinels$value)
+  }
+  types <- intersect(held("magp_design_frames"), held("magp_subplots"))
+  # Each design's k-th frame and each plot's k-th subplot: frame_type the k-th code,
+  # frame_num k, and subplot the two joined with no separator.
+  expect_labels <- function(frames, parent, label) {
+    k <- data.table::rowid(frames[[parent]])
+    expect_equal(frames$frame_num, k, label = label)
+    expect_equal(frames$frame_type, types[k], label = label)
+    expect_equal(frames$subplot, paste0(frames$frame_type, frames$frame_num), label = label)
+  }
+  clean <- fx_magp_clean()
+  expect_labels(clean$magp_design_frames, "magp_design_id", "clean frames")
+  expect_labels(clean$magp_subplots, "magp_plot_id", "clean subplots")
+  scaled <- fx_magp_scaled(0.01)
+  expect_labels(scaled$magp_design_frames, "magp_design_id", "scaled frames")
+  expect_labels(scaled$magp_subplots, "magp_plot_id", "scaled subplots")
+  # Four labelled frames per design in the scaled base, and each plot's subplots the same four.
+  expect_equal(as.vector(table(scaled$magp_design_frames$magp_design_id)), c(4L, 4L))
+  expect_equal(scaled$magp_design_frames$subplot, rep(c("M1", "S2", "R3", "O4"), 2L))
+  expect_equal(unique(scaled$magp_subplots$subplot), c("M1", "S2", "R3", "O4"))
+})
+
+# task 11's fix round (the datatable review's F2 and the fixture review's M1)
+test_that("fx_copy_key_pairs() copies parents' tables first, whatever the pairs' order", {
+  # About 0.2 s; skipped on CRAN with the label test above.
+  testthat::skip_on_cran()
+  # visit_num is copied from the visit down to the tree measurement, three copies in turn:
+  # with the pairs reversed, a table's depth alone must order them.
+  spec <- magp_spec()
+  spec$key_pairs <- spec$key_pairs[rev(seq_len(nrow(spec$key_pairs)))]
+  tables <- fx_clean_tables(spec)
+  copied <- function(child, key, parent) {
+    from <- tables[[parent]]
+    tables[[child]]$visit_num == from$visit_num[match(tables[[child]][[key]], from[[key]])]
+  }
+  expect_true(all(copied("magp_plot_meas", "magp_visit_id", "magp_site_visits")))
+  expect_true(all(copied("magp_subplot_meas", "magp_plotmeas_id", "magp_plot_meas")))
+  expect_true(all(copied("magp_tree_meas", "magp_subpmeas_id", "magp_subplot_meas")))
+})

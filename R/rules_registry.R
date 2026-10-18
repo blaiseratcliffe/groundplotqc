@@ -83,7 +83,7 @@ build_rule_registry <- function() {
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),
     preflight("crosswalk_unreadable", "error", "read_findings"),
-    # ---- M5: the DD's range and format columns (4.2; D18.9) ----
+    # ---- M5: the DD's range and format columns and the key pairs (4.2; D18.9, D18.36) ----
     preflight("dd_format_invalid", "error", "read_findings"),
     preflight("key_pair_invalid", "error", "read_findings"),
     # ---- task 5 ----

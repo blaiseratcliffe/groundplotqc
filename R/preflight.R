@@ -143,8 +143,8 @@ attribute_rows <- function(spec, tables, attributes) {
 
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22 and M5's `dd_format_invalid` here, then the rule set's and the text's from
-#' R/preflight_config.R.
+#' M2's 22, M5's `dd_format_invalid` and `key_pair_invalid` here, then the rule set's and
+#' the text's from R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.

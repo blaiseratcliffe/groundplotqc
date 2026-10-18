@@ -374,3 +374,51 @@ test_that("the clean bases' key_pairs copies agree with their parents (D18.30, D
   expect_setequal(unique(paste(rows$table_name, rows$column_name)), heads)
   expect_true(all(rows$status == "pass"))
 })
+
+# task 11's fix round (the datatable review's F1)
+test_that("key_incoherent compares mixed storage as text, each distinct value written once", {
+  # Copies read from a CSV file as text against their parent's integer and Date columns.
+  dictionary <- data.frame(
+    table_name = c("parent", "parent", "parent", "child", "child", "child", "child"),
+    attribute_name = c("p_id", "n", "day", "c_id", "p_id", "n", "day"),
+    key_type = c("PK", NA, NA, "PK", "FK", NA, NA),
+    reference_table = c(NA, NA, NA, NA, "parent", NA, NA),
+    data_type = c("character", "integer", "date", "character", "character", "integer", "date")
+  )
+  spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "child", left = c("n", "day"), right = c("p_id > n", "p_id > day"), note = NA
+  ))
+  tables <- list(
+    parent = data.table::data.table(
+      p_id = c("a", "b", "c", "d"), n = c(1L, 2L, 7L, 4L),
+      day = as.Date(c("2020-06-01", "2020-06-02", "2020-06-03", "2020-06-04"))
+    ),
+    # Row 4, both copies missing, is the only row to reach parent d.
+    child = data.table::data.table(
+      c_id = paste0("c", 1:6), p_id = c("a", "b", "a", "d", "b", "c"),
+      n = c("1", "2", "9", NA, "5", "07"),
+      day = c("2020-06-01", "2020-06-09", "2020-06-01", NA, "2020-06-02", "2020-06-03")
+    )
+  )
+  real_text <- value_text
+  written <- list()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    written[[length(written) + 1L]] <<- x
+    real_text(x)
+  })
+  results <- gpq_check_conformance(tables, spec, layers = 4)
+  found <- opened(results, "key_incoherent")
+  # As text, "07" isn't 7; row 4 is checked by neither pair (D18.1).
+  expect_equal(placed_at(found), c("child n 3", "child n 5", "child n 6", "child day 2"))
+  expect_equal(found$value, c("n=9", "n=5", "n=07", "day=2020-06-09"))
+  expect_equal(found$expected, c("n=1", "n=2", "n=7", "day=2020-06-02"))
+  rows <- results$results[results$results$rule_id == "key_incoherent"]
+  expect_equal(rows$n_checked, c(5L, 5L))
+  # Written as text (16.2): each distinct value the compared rows reach, once, then the
+  # failing rows' sides; never the skipped row's parent d.
+  expect_equal(Filter(is.integer, written), list(c(1L, 2L, 7L), c(1L, 2L, 7L)))
+  expect_equal(
+    Filter(function(x) inherits(x, "Date"), written),
+    list(as.Date(c("2020-06-01", "2020-06-02", "2020-06-03")), as.Date("2020-06-02"))
+  )
+})

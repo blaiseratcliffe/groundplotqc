@@ -206,9 +206,10 @@ fx_clean_tables <- function(spec, n = 2L) {
 }
 
 # Each key_pairs row whose left side is one attribute set from its right side, the value its
-# chain reaches, so the copy agrees with the record's parent (D18.26, D18.30): the tables of
-# the deepest parents first, as a right side may read a column another row sets. A chained
-# left side isn't set here (D18.41). Sets the fixture's own tables by reference; returns them.
+# chain reaches, so the copy agrees with the record's parent (D18.26, D18.30): parents'
+# tables before their children's, as a right side may read a column another row sets. A
+# chained left side isn't set here (D18.41). Sets the fixture's own tables by reference;
+# returns them.
 fx_copy_key_pairs <- function(tables, spec) {
   fx_require_fixture(tables)
   pairs <- spec$key_pairs
@@ -217,13 +218,15 @@ fx_copy_key_pairs <- function(tables, spec) {
   if (is.null(pairs) || nrow(pairs) == 0L) {
     return(tables)
   }
-  # Each table's depth below the tables nothing points from.
+  # Each table's depth: its longest path of foreign keys to a table that points nowhere, each
+  # pass taking the deepest of its parents.
   keys <- spec$keys
   links <- keys[keys$key_type == "FK" & !is.na(keys$reference_table)]
   table_names <- unique(spec$attributes$table_name)
   depth <- stats::setNames(integer(length(table_names)), table_names)
   for (pass in seq_along(table_names)) {
-    depth[links$table_name] <- pmax(depth[links$table_name], depth[links$reference_table] + 1L)
+    step <- tapply(depth[links$reference_table] + 1L, links$table_name, max)
+    depth[names(step)] <- pmax(depth[names(step)], step)
   }
   pairs <- pairs[order(depth[pairs$table_name])]
   input <- conformance_input(tables, spec)

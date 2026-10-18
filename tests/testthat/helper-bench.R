@@ -7,14 +7,14 @@
 
 # MAGPlot's tables at `scale` of the AB file's shape (D17.7): at 1x D1.9a's counts for
 # magp_tree_cond (2,012,280), magp_tree_meas (1,615,305) and magp_trees (517,508), the other
-# 14 tables sized by children per parent to 124,919 rows, 4,270,012 in all (R6). Each site
-# has one plot of four subplots and three or four visits; each visit one plot measurement of
-# four subplot measurements; each tree measurement a tree of its subplot, so it agrees with
-# its tree along both paths. The contributors, datasets, designs and frames don't scale:
-# one contributor with its two datasets, or with `many_groups` every dataset of the
-# specification's datasets sheet in its contributor and jurisdiction (R8); two designs per
-# contributor and four frames per design, a subplot measurement's frame its subplot's
-# (D18.41). `defects` plants D17.8's defects (see below).
+# 14 tables sized by children per parent to 124,923 rows, 4,270,016 in all (R6, D18.41).
+# Each site has one plot of four subplots and three or four visits; each visit one plot
+# measurement of four subplot measurements; each tree measurement a tree of its subplot, so
+# it agrees with its tree along both paths. The contributors, datasets, designs and frames
+# don't scale: one contributor with its two datasets, or with `many_groups` every dataset
+# of the specification's datasets sheet in its contributor and jurisdiction (R8); two
+# designs per contributor and four frames per design, a subplot measurement's frame its
+# subplot's (D18.41). `defects` plants D17.8's defects (see below).
 fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   spec <- magp_spec()
   base <- fx_magp_clean()

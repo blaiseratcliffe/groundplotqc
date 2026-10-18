@@ -280,8 +280,13 @@ check_keys <- function(input, context) {
             if (is.null(left) || is.null(right)) {
               next
             }
-            lv <- chain_values(input, table, left)
-            rv <- chain_values(input, table, right)
+            # A side of one attribute is the column as given, read where it is (16.2): the
+            # left one is `x` itself.
+            lv <- if (nrow(left$steps) == 0L) x else chain_values(input, table, left)
+            rv <- if (nrow(right$steps) == 0L) data_of(table, right$attribute)
+            if (is.null(rv)) {
+              rv <- chain_values(input, table, right)
+            }
             # A side whose chain breaks gives NA; NA, blanks and sentinels of the side's own
             # attribute's type aren't compared (D18.1).
             skipped <- logical(n)
@@ -292,16 +297,31 @@ check_keys <- function(input, context) {
               )
               skipped[c(found$missing, found$open)] <- TRUE
             }
-            # Compared as text: as stored where both sides are plain numbers or both text.
-            same <- if (is.numeric(lv) && !is.object(lv) && is.numeric(rv) && !is.object(rv)) {
-              lv == rv
-            } else if (is.character(lv) && is.character(rv)) {
-              lv == rv
+            # Compared as text, the rows compared only: as stored where both sides are plain
+            # numbers or both text; otherwise each distinct stored value of a side that isn't
+            # text is written once, by its dense rank, so equal values give one text (16.2).
+            compared <- which(!skipped)
+            every_row <- length(compared) == n
+            lc <- if (every_row) lv else lv[compared]
+            rc <- if (every_row) rv else rv[compared]
+            same <- if (is.numeric(lc) && !is.object(lc) && is.numeric(rc) && !is.object(rc)) {
+              lc == rc
+            } else if (is.character(lc) && is.character(rc)) {
+              lc == rc
             } else {
-              value_text(lv) == value_text(rv)
+              written <- lapply(list(lc, rc), function(v) {
+                if (is.character(v) || length(v) == 0L) {
+                  return(value_text(v))
+                }
+                rank <- frankv(v, ties.method = "dense")
+                value_text(v[match(seq_len(max(rank)), rank)])[rank]
+              })
+              written[[1L]] == written[[2L]]
             }
             any_compared <- any_compared | !skipped
-            differs[[length(differs) + 1L]] <- !skipped & !same %in% TRUE
+            differ <- logical(n)
+            differ[compared[!same %in% TRUE]] <- TRUE
+            differs[[length(differs) + 1L]] <- differ
             labels <- c(labels, left$attribute)
             left_values[[length(left_values) + 1L]] <- lv
             right_values[[length(right_values) + 1L]] <- rv
