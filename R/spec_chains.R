@@ -50,14 +50,24 @@ parse_chain <- function(chain, table, keys, attributes) {
 #' `steps` are FK rows in order (parse_chain()'s `steps`, or fk_path()'s path). Each hop is
 #' one match() of the column as given against its parent's PK (key_values()): a column stored
 #' as plain numbers joins as stored, and against text only the numeric side is written as
-#' text, its sentinels with it (D16.42, m9); NA and every sentinel of the child's and the
-#' parent's types match nothing, masked inside the match rather than in a copy of the column
-#' (16.2; D16.26; D16.42, m8). A row whose chain breaks (an NA, sentinel or orphan key on the
-#' way, or a table or column on it not given) gets NA; with no steps every row is its own.
+#' text, its sentinels with it (D16.42, m9); NA, every sentinel of the child's and the
+#' parent's types, and a blank key as space_padding() reads it (Unicode spaces included) match
+#' nothing, masked inside the match rather than in a copy of the column (16.2; D16.26; D16.42,
+#' m8; D18.31). A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or
+#' a table or column on it not given) gets NA; with no steps every row is its own.
 #' @noRd
 chain_rows <- function(input, table, steps) {
   rows <- seq_len(nrow(input$data[[table]]))
   current <- table
+  # The blank values of a text key, read only where they may be blank (16.2). A blank on the
+  # parent's side can only meet the same blank on the child's, so the child's suffice.
+  blanks <- function(x) {
+    if (!is.character(x)) {
+      return(character())
+    }
+    maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", x, useBytes = TRUE))
+    unique(x[maybe][space_padding(x[maybe])$blank])
+  }
   for (k in seq_len(nrow(steps))) {
     parent <- steps$reference_table[[k]]
     child <- key_values(input, current, steps$attribute_name[[k]])
@@ -74,7 +84,7 @@ chain_rows <- function(input, table, steps) {
       to <- value_text(to)
       to_open <- value_text(to_open)
     }
-    rows <- match(from, to, incomparables = c(NA, from_open, to_open))
+    rows <- match(from, to, incomparables = c(NA, from_open, to_open, blanks(from)))
     current <- parent
   }
   rows

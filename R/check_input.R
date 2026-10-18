@@ -431,9 +431,9 @@ key_values <- function(input, table, attribute) {
 #' The table a record reaches a column in, and each record's row there (D16.13)
 #'
 #' A table holding the column uses its own rows; otherwise the shortest path of foreign keys
-#' to a table holding it (fk_path()). A record whose path breaks (an NA, sentinel or orphan
-#' key on the way, or a table or column on it not given) gets NA. `home` is NA when no table
-#' holding the column is reachable.
+#' to a table holding it (fk_path()). A record whose path breaks (an NA, blank, sentinel or
+#' orphan key on the way, or a table or column on it not given) gets NA. `home` is NA when no
+#' table holding the column is reachable.
 #' @noRd
 reach_column <- function(input, table, column_name) {
   n <- nrow(input$data[[table]])

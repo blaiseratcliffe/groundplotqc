@@ -96,3 +96,26 @@ test_that("chain_values() reads the attribute where the chain ends, NA where it 
   input <- conformance_input(fish, spec)
   expect_true(all(is.na(chain_values(input, "catches", chain))))
 })
+
+test_that("a blank key matches nothing, so no record reaches a parent through it (D18.31)", {
+  spec <- fx_fish_spec()
+  steps <- parse_chain("station_id > water_body", "hauls", spec$keys, spec$attributes)$steps
+  # Empty, ASCII spaces and a no-break space, on both sides of the join (D16.42, D18.15).
+  for (blank in c("", "  ", intToUtf8(160L))) {
+    fish <- fx_fish_clean()
+    fish$stations <- data.table::copy(fish$stations)
+    fish$hauls <- data.table::copy(fish$hauls)
+    data.table::set(fish$stations, i = 1L, j = "station_id", value = blank)
+    data.table::set(fish$hauls, i = 1:2, j = "station_id", value = blank)
+    input <- conformance_input(fish, spec, "water_body")
+    expect_equal(chain_rows(input, "hauls", steps), c(NA, NA, 2L, 2L), info = blank)
+    # So hauls 1 and 2 have no group value, where they had station 1's.
+    groups <- input$groups$hauls
+    expect_equal(
+      groups$values$water_body[groups$row_group], c("*", "*", "RV", "RV"),
+      info = blank
+    )
+    # The record reaches nothing through reach_column() either.
+    expect_equal(reach_column(input, "hauls", "water_body")$rows, c(NA, NA, 2L, 2L), info = blank)
+  }
+})
