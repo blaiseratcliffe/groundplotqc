@@ -2,6 +2,7 @@
 /plans/
 /prompts/
 /temp pipeline scripts for development/
+/temp data/
 
 # Delivered data: never committed (brief)
 /4_magpv2_final_tables.Rdata
