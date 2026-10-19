@@ -484,8 +484,9 @@ test_that("a contributor's documented one-to-many ID isn't warned; another's is 
   found <- opened(results, "src_id_duplicate")
   expect_equal(found$row_number, ab)
   expect_equal(found$value, c("a1", "a1"))
-  # A row pre-flight finds can't apply is left unapplied: documented for AB, whose A2 has no
-  # src_tree_id entry, AB's repeats still warn and BC's now do too (D18.36).
+  # A row pre-flight finds can't apply is left unapplied: documented for AB, which isn't a
+  # label A2 uses, so the row isn't applied, AB's repeats still warn and BC's now do too
+  # (D18.36).
   spec$one_to_many$contributor_label <- "AB"
   results <- withCallingHandlers(
     gpq_check_conformance(
@@ -496,4 +497,83 @@ test_that("a contributor's documented one-to-many ID isn't warned; another's is 
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
   expect_equal(sort(opened(results, "src_id_duplicate")$row_number), sort(c(ab, bc)))
+})
+
+# task 12's fix round (the datatable review's Minors 1 and 3)
+test_that("each table's labels are found once, through the key's own table (D18.6, 16.2)", {
+  # Sites reach their contributor through their dataset; both of a site's IDs are documented
+  # for ON, so ON's repeats are left alone and AB's warn. Notes reach no contributor.
+  dictionary <- data.frame(
+    table_name = c("datasets", "datasets", "sites", "sites", "sites", "sites", "notes"),
+    attribute_name = c(
+      "dataset_id", "contributor_id", "site_id", "dataset_id", "src_site_id", "src_plot_id",
+      "note_id"
+    ),
+    key_type = c("PK", NA, "PK", "FK", NA, NA, "PK"),
+    reference_table = c(NA, NA, NA, "datasets", NA, NA, NA),
+    appendix = c(NA, NA, NA, NA, "A2", "A2", NA),
+    data_type = c(
+      "character", "character", "integer", "character", "character", "character", "character"
+    )
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    code_lists = list(
+      ranges = data.frame(
+        contributor = c("ON", "AB"), v2_start = c("1", "100"), v2_end = c("99", "199")
+      ),
+      contributor = data.frame(
+        abbreviated_name = c("ON", "AB"), contributor_id = c("130", "100")
+      )
+    ),
+    non_code_sheets = c("ranges", "contributor"),
+    lineage_spec = data.frame(
+      contributor_label = c("ON", "ON", "AB", "AB"), table_name = "sites",
+      attribute_name = c("src_site_id", "src_plot_id", "src_site_id", "src_plot_id"),
+      spec_type = "id", source_text = c("site.id", "plot.id", "site.id", "plot.id"), note = NA,
+      source_cell = c("A2!D2", "A2!D3", "A2!F2", "A2!F3")
+    ),
+    id_pattern = "^src_.*_id$",
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = NULL, table = "sites", attribute = "site_id",
+      key = "dataset_id > contributor_id"
+    ),
+    one_to_many = data.frame(
+      contributor_label = "ON", table_name = "sites",
+      attribute_name = c("src_site_id", "src_plot_id"), note = NA
+    ),
+    column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+  )
+  tables <- list(
+    datasets = data.table::data.table(
+      dataset_id = c("d1", "d2"), contributor_id = c("130", "100")
+    ),
+    sites = data.table::data.table(
+      site_id = c(1L, 2L, 101L, 102L), dataset_id = c("d1", "d1", "d2", "d2"),
+      src_site_id = c("a", "a", "b", "b"), src_plot_id = c("p", "p", "q", "q")
+    ),
+    notes = data.table::data.table(note_id = "n1")
+  )
+  input <- conformance_input(tables, spec)
+  # Through a foreign key, from the key's own table, and from a table that reaches no holder.
+  expect_equal(record_labels(input, "sites"), c("ON", "ON", "AB", "AB"))
+  expect_equal(record_labels(input, "datasets"), c("ON", "AB"))
+  expect_equal(record_labels(input, "notes"), NA_character_)
+  real_labels <- record_labels
+  calls <- character()
+  testthat::local_mocked_bindings(record_labels = function(input, table) {
+    calls <<- c(calls, table)
+    real_labels(input, table)
+  })
+  results <- withCallingHandlers(
+    gpq_check_conformance(tables, spec, layers = 4),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_equal(placed_at(opened(results, "src_id_duplicate")), c(
+    "sites src_site_id 3", "sites src_site_id 4", "sites src_plot_id 3", "sites src_plot_id 4"
+  ))
+  # The sites' labels are found once for both their documented IDs.
+  expect_equal(calls, "sites")
 })

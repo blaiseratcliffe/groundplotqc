@@ -360,6 +360,10 @@ test_that("fx_magp_scaled()'s many groups: each sheet dataset in its contributor
   expect_setequal(sites$magp_dataset_id, sheet$magp_dataset_id)
   expect_equal(nrow(tables$magp_trees), 5175L)
   expect_clean_base(tables, spec)
+  # Each dataset holds its sheet row's own src_dataset_id, so the base raises nothing (R46).
+  expect_equal(datasets$src_dataset_id, sheet$src_dataset_id[at])
+  results <- fx_caught(tables)
+  expect_equal(nrow(results$issues[results$issues$status == "open"]), 0L)
 })
 
 test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)", {
@@ -423,9 +427,15 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
 test_that("the defect run raises each answer-sheet rule (D17.8)", {
   # A full MAGPlot run (D16.50).
   testthat::skip_on_cran()
-  results <- fx_caught(fx_magp_scaled(0.01, defects = TRUE))
+  tables <- fx_magp_scaled(0.01, defects = TRUE)
+  results <- fx_caught(tables)
   open <- results$issues[results$issues$status == "open"]
   expect_equal(setdiff(fx_answer_sheet()$rule_id, open$rule_id), character())
+  # src_id_duplicate's issues are the "dup" plant's, one for each planted row.
+  dup <- open[open$rule_id == "src_id_duplicate"]
+  placed <- paste(dup$table_name, dup$column_name, dup$value)
+  expect_equal(unique(placed), "magp_trees src_tree_id dup")
+  expect_equal(nrow(dup), sum(tables$magp_trees$src_tree_id == "dup"))
 })
 
 test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R14, R16)", {

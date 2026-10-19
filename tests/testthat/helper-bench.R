@@ -4,7 +4,8 @@
 # helper-fixtures.R; the 0.1x smoke test calls fx_magp_scaled() directly. Every value that
 # isn't a key or a src_*_id is one of fx_magp_clean()'s, or for the sites' datum and ec_* made
 # by its formulas site by site (D18.20), so the scaled base is as clean as the clean base;
-# each src_*_id holds its record's key as text, so none repeats (R46).
+# each src_*_id holds its record's key as text, and magp_datasets' coded src_dataset_id its
+# datasets sheet row's, so none repeats (R46).
 
 # MAGPlot's tables at `scale` of the AB file's shape (D17.7): at 1x D1.9a's counts for
 # magp_tree_cond (2,012,280), magp_tree_meas (1,615,305) and magp_trees (517,508), the other
@@ -150,7 +151,8 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
     # An ID-marked attribute holds its record's key as text (src_id_duplicate, R46): the
     # key's own strings, no new ones at 1x, in a vector of its own (copy()), since
     # as.character() returns a text key itself and fx_scaled_defects() plants keys in place.
-    # A coded one keeps the base's codes, which its code list holds.
+    # A coded one keeps the base's codes, which its code list holds; magp_datasets' is set
+    # from the datasets sheet below.
     marked <- setdiff(
       spec$attributes$attribute_name[
         spec$attributes$table_name == table & spec$attributes$id_marked %in% TRUE
@@ -178,6 +180,12 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   data.table::set(
     tables$magp_sites,
     j = "jurisdiction", value = sheet$jurisdiction[of_dataset][site_dataset]
+  )
+  # Each dataset its sheet row's own src_dataset_id, as its contributor and jurisdiction are
+  # (R8): the base's four codes, cycled, would repeat within a contributor (R46).
+  data.table::set(
+    tables$magp_datasets,
+    j = "src_dataset_id", value = sheet$src_dataset_id[of_dataset]
   )
   # Each site its own datum and ec_* values, by fx_magp_clean()'s formula, so no text column
   # of the scaled sites reads as a code set (undeclared_code_set, D18.20). The other judged
@@ -255,6 +263,9 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_cond", "magp_treemeas_id", 5L, NA_character_)
   plant("magp_site_dist", "magp_site_id", 1L, -9L)
   plant("magp_tree_meas", "visit_num", 6L, 99)
+  # src_id_duplicate in magp_trees: here magp_tree_meas and magp_tree_cond are in report unit
+  # "*" (m34's padded frame key, below), where the rule checks nothing; the clean runs check
+  # them.
   plant("magp_trees", "src_tree_id", 4L, "dup")
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")

@@ -21,7 +21,18 @@ test_that("MAGPlot's texts follow the engine file's rules: ASCII, braces only fo
   expect_equal(nrow(found), 0L)
 })
 
-# The three tests above check the shipped file's rows (D18.54); the tests below read planted
+# task 12's fix round (the report review's M2)
+test_that("MAGPlot's src_id_duplicate row overrides the engine's when given as text (D14.8)", {
+  texts <- magp_texts()
+  row <- texts$text[texts$text_id == "src_id_duplicate" & texts$lang == "en"]
+  expect_length(row, 1L)
+  # The words aren't pinned: only that the table's row is the one used, and differs.
+  overridden <- report_text("src_id_duplicate", text = texts)
+  expect_equal(overridden, row)
+  expect_false(identical(overridden, report_text("src_id_duplicate")))
+})
+
+# The four tests above check the shipped file's rows (D18.54); the tests below read planted
 # files through magp_texts().
 
 test_that("magp_texts hands on a clean file's rows, checked", {

@@ -131,7 +131,15 @@ record_labels <- function(input, table) {
     return(rep(NA_character_, n))
   }
   key <- chain$attribute
-  value <- value_text(reached_values(input, reach_column(input, table, key), key))
+  reached <- reach_column(input, table, key)
+  if (is.na(reached$home)) {
+    return(rep(NA_character_, n))
+  }
+  # The key's home table written as text and labelled once, then read at each record's row
+  # there, so only the home table's values are converted (16.2).
+  home_n <- if (reached$home %chin% names(input$data)) nrow(input$data[[reached$home]]) else 0L
+  home <- list(home = reached$home, rows = seq_len(home_n))
+  value <- value_text(reached_values(input, home, key))
   lists <- spec$code_lists
   # Worked out before the brackets, so no name inside them is taken for a column.
   in_sheet <- lists$sheet == bands$labels_sheet[[1L]] & lists$source_row > 1L
@@ -142,7 +150,8 @@ record_labels <- function(input, table) {
   keyed <- sheet[is_key]
   labelled <- sheet[is_label]
   label <- labelled$value[match(keyed$source_row, labelled$source_row)]
-  label[match(value, keyed$value, incomparables = NA)]
+  home_label <- label[match(value, keyed$value, incomparables = NA)]
+  home_label[reached$rows]
 }
 
 #' Layer 4's outcomes, by rule
@@ -310,25 +319,35 @@ check_keys <- function(input, context) {
       # A row pre-flight finds can't apply is left unapplied, its repeats warning (D18.36).
       applies <- is.na(one_to_many_problems(spec))
       documented <- spec$one_to_many[applies]
+      # Each table's labels, found once for all its documented attributes (16.2).
+      labelled <- new.env(parent = emptyenv())
+      labels_of <- function(table) {
+        if (is.null(labelled[[table]])) {
+          assign(table, record_labels(input, table), envir = labelled)
+        }
+        labelled[[table]]
+      }
       rule_outcomes("src_id_duplicate", scope, input, function(table, attribute, x, row) {
         found <- key_rows(x, row, sentinels, "allowed_in_fk")
-        # NA, blanks and every sentinel of the type ("X" and "Z") are no IDs (D18.3).
+        # NA, blanks and every sentinel of the type (the type's missing and not-applicable
+        # codes) are no IDs (D18.3).
         left_alone <- logical(length(x))
         left_alone[c(found$missing, found$open)] <- TRUE
         # The records of a contributor whose A2 documents this ID as one-to-many, found
         # through the record's A2 label (D18.3, D18.6).
         is_documented <- documented$table_name == table & documented$attribute_name == attribute
         if (any(is_documented)) {
-          labels <- record_labels(input, table)
+          labels <- labels_of(table)
           left_alone <- left_alone | labels %chin% documented$contributor_label[is_documented]
         }
         unit <- units_of(table, length(x))
         star <- unit == "*"
         compared <- which(!left_alone & !star)
-        # Made by reference, the caller's column read where it is when every record is
-        # compared (16.2).
+        # Made by reference, the units and the caller's column read where they are when every
+        # record is compared (16.2).
+        every_row <- length(compared) == length(x)
         pool <- setDT(list(
-          unit = unit[compared], value = if (length(compared) == length(x)) x else x[compared]
+          unit = if (every_row) unit else unit[compared], value = if (every_row) x else x[compared]
         ))
         fail <- compared[duplicated(pool) | duplicated(pool, fromLast = TRUE)]
         record_outcome(
