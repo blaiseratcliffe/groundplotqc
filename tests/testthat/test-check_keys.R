@@ -834,3 +834,88 @@ test_that("MAGPlot without its plot measurements: table_missing once, and tree 2
     expect_equal(sum(rows$n_checked[rows$table_name == table]), 0L, info = table)
   }
 })
+
+# task 13's fix round 3 (D18.68): what only a key column not given could reach is unchecked
+test_that("a record only a key column not given could reach is unchecked; another still fails", {
+  # The catches are the root and reach the hauls, then the stations, through their keys; no
+  # haul names station 2.
+  spec <- fx_fish_spec(reach = data.frame(
+    table_name = c("catches", "catches", "hauls"),
+    attribute_name = c(NA, "haul_id", "station_id"), how = c("root", "from_child", "from_child")
+  ))
+  fish <- edited("hauls", "station_id", 3:4, c("stations_1", "stations_1"))
+  real_rows <- reach_rows
+  walks <- 0L
+  testthat::local_mocked_bindings(reach_rows = function(input, reach) {
+    walks <<- walks + 1L
+    real_rows(input, reach)
+  })
+  # Every column given: one walk, and station 2 fails.
+  found <- opened(fish_run(fish, spec = spec))
+  expect_equal(walks, 1L)
+  expect_equal(paste(found$rule_id, placed_at(found)), "record_unreachable stations station_id 2")
+  # The catches' haul_id not given: a second walk counts that link as reaching every haul with
+  # a key. Layer 0 reports the column, once; the hauls are unchecked, and station 2 still fails.
+  walks <- 0L
+  catches <- data.table::copy(fish$catches)
+  data.table::set(catches, j = "haul_id", value = NULL)
+  fish$catches <- catches
+  results <- fish_run(fish, spec = spec)
+  expect_equal(walks, 2L)
+  found <- opened(results)
+  expect_equal(paste(found$rule_id, found$table_name, found$column_name, found$row_number), c(
+    "column_missing catches haul_id NA", "record_unreachable stations station_id 2"
+  ))
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  hauls <- rows[rows$table_name == "hauls"]
+  expect_equal(c(hauls$status, hauls$not_run_reason), c("not_run", "none_checked"))
+  stations <- rows[rows$table_name == "stations"]
+  expect_equal(c(stations$n_checked, stations$n_fail), c(1L, 1L))
+})
+
+# task 13's fix round 3 (D18.68): the second re-review's cases
+test_that("MAGPlot without a link's key column: column_missing once, and tree 2 alone fails", {
+  testthat::skip_on_cran()
+  # The subplot measurements' key to their plot measurement not given, and tree 2 never
+  # measured: its measurements now name tree 1, of the same subplot.
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  meas <- tables$magp_tree_meas
+  data.table::set(
+    meas,
+    i = which(meas$magp_tree_id == tables$magp_trees$magp_tree_id[[2L]]),
+    j = "magp_tree_id", value = tables$magp_trees$magp_tree_id[[1L]]
+  )
+  data.table::set(tables$magp_subplot_meas, j = "magp_plotmeas_id", value = NULL)
+  found <- opened(fx_caught(fx_mark_fixture(tables)))
+  expect_setequal(paste(found$rule_id, found$table_name, found$column_name), c(
+    "column_missing magp_subplot_meas magp_plotmeas_id",
+    "record_unreachable magp_trees magp_tree_id"
+  ))
+  expect_equal(
+    found$record_pk[found$rule_id == "record_unreachable"], tables$magp_trees$magp_tree_id[[2L]]
+  )
+  # The tree measurements' key to their tree not given: every tree unchecked, none failing.
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  data.table::set(tables$magp_tree_meas, j = "magp_tree_id", value = NULL)
+  results <- fx_caught(fx_mark_fixture(tables))
+  found <- opened(results)
+  expect_equal(
+    paste(found$rule_id, found$table_name, found$column_name),
+    "column_missing magp_tree_meas magp_tree_id"
+  )
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  expect_equal(sum(rows$n_checked[rows$table_name == "magp_trees"]), 0L)
+})
+
+# task 13's fix round 3 (R114, the re-reviews' O1 and Minor 2)
+test_that("a root not given reaches no child row whose key is NA, blank or a sentinel", {
+  # The hauls, not given, taken as a root as the second walk takes them: a catch is reached
+  # through them only when its haul_id holds a key, as a join to a given haul reads it.
+  fish <- edited("catches", "haul_id", 1:4, c(NA, intToUtf8(0xA0), "?", "~"))
+  input <- conformance_input(fish[c("stations", "catches")], fx_fish_spec())
+  reach <- data.table::data.table(
+    table_name = c("hauls", "catches"), attribute_name = c(NA, "haul_id"),
+    how = c("root", "from_parent")
+  )
+  expect_equal(reach_rows(input, reach)$catches, rep(c(FALSE, TRUE), each = 4L))
+})

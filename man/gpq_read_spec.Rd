@@ -81,7 +81,7 @@ checked; \code{from_parent}, a record reached through this foreign key when its 
 \code{from_child}, a reached record reaching its parent through this foreign key.
 \code{attribute_name} is blank for \code{root} and \code{exempt}. The tables checked are those the rows
 name, but the exempt ones, and the parents \code{from_child} links reach. A record reachable
-only through a table not given is left unchecked.}
+only through a table or key column not given is left unchecked.}
 
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
 named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
