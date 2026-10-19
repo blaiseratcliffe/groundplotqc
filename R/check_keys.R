@@ -533,44 +533,46 @@ check_keys <- function(input, context) {
         }
       )
     },
-    record_unreachable = if (!given(spec, "reach")) {
-      list(not_run_outcome("record_unreachable", "*", "*", "no_input"))
-    } else {
-      reach <- spec$reach
-      roots <- unique(reach$table_name[reach$how %chin% "root"])
-      no_root <- !all(roots %chin% supplied)
-      reached <- if (!no_root) reach_rows(input, reach)
-      from_above <- unique(reach$table_name[reach$how %chin% "from_parent"])
-      # The tables checked: those a row names, but the exempt ones, and those a from_child
-      # link reaches. A from_parent link's parent no row names isn't checked; its children
-      # are then under unreached rows.
-      exempt <- reach$table_name[reach$how %chin% "exempt"]
-      is_child_link <- reach$how %chin% "from_child"
-      targets <- edges$reference_table[match(
-        paste(reach$table_name[is_child_link], reach$attribute_name[is_child_link], sep = "\r"),
-        paste(edges$table_name, edges$attribute_name, sep = "\r")
-      )]
-      walked <- setdiff(
-        unique(c(reach$table_name[!reach$how %chin% "exempt"], targets)), c(exempt, NA)
-      )
-      walked <- walked[order(match(walked, columns$table_name))]
-      firsts <- primary[primary$key_part == 1L & primary$table_name %chin% walked]
-      scope <- rows_of(firsts$table_name, firsts$attribute_name)
-      rule_outcomes("record_unreachable", scope, input, function(table, attribute, x, row) {
-        if (no_root) {
-          return(not_run_outcome("record_unreachable", table, attribute, "no_table"))
-        }
-        unreached <- which(!reached[[table]])
-        # A table reached from above leaves each unreached row to the FK rules or under an
-        # unreached parent: reported once, at its topmost row (D18.4, D18.43).
-        above <- table %chin% from_above
-        fail <- if (above) integer() else unreached
-        record_outcome(
-          "record_unreachable", table, attribute, fail, value_text(x[fail]),
-          unchecked = if (above) unreached else integer(), masked_by = "pk_missing"
+    record_unreachable = local({
+      if (!given(spec, "reach")) {
+        list(not_run_outcome("record_unreachable", "*", "*", "no_input"))
+      } else {
+        reach <- spec$reach
+        roots <- unique(reach$table_name[reach$how %chin% "root"])
+        no_root <- !all(roots %chin% supplied)
+        reached <- if (!no_root) reach_rows(input, reach)
+        from_above <- unique(reach$table_name[reach$how %chin% "from_parent"])
+        # The tables checked: those a row names, but the exempt ones, and those a from_child
+        # link reaches. A from_parent link's parent no row names isn't checked; its children
+        # are then under unreached rows.
+        exempt <- reach$table_name[reach$how %chin% "exempt"]
+        is_child_link <- reach$how %chin% "from_child"
+        targets <- edges$reference_table[match(
+          paste(reach$table_name[is_child_link], reach$attribute_name[is_child_link], sep = "\r"),
+          paste(edges$table_name, edges$attribute_name, sep = "\r")
+        )]
+        walked <- setdiff(
+          unique(c(reach$table_name[!reach$how %chin% "exempt"], targets)), c(exempt, NA)
         )
-      })
-    },
+        walked <- walked[order(match(walked, columns$table_name))]
+        firsts <- primary[primary$key_part == 1L & primary$table_name %chin% walked]
+        scope <- rows_of(firsts$table_name, firsts$attribute_name)
+        rule_outcomes("record_unreachable", scope, input, function(table, attribute, x, row) {
+          if (no_root) {
+            return(not_run_outcome("record_unreachable", table, attribute, "no_table"))
+          }
+          unreached <- which(!reached[[table]])
+          # A table reached from above leaves each unreached row to the FK rules or under an
+          # unreached parent: reported once, at its topmost row (D18.4, D18.43).
+          above <- table %chin% from_above
+          fail <- if (above) integer() else unreached
+          record_outcome(
+            "record_unreachable", table, attribute, fail, value_text(x[fail]),
+            unchecked = if (above) unreached else integer(), masked_by = "pk_missing"
+          )
+        })
+      }
+    }),
     parent_without_children = rule_outcomes(
       "parent_without_children", rows_of(edges$table_name, edges$attribute_name), input,
       function(table, attribute, x, row) {

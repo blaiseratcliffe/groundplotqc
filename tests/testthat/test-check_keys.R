@@ -661,6 +661,9 @@ test_that("record_unreachable without its root table is not_run, no_table (D18.4
   tables$magp_site_visits <- NULL
   results <- fx_caught(fx_mark_fixture(tables))
   rows <- results$results[results$results$rule_id == "record_unreachable"]
+  # The rows exist, as all() of none is TRUE (task 13's fix round: the spec review's F2, the
+  # datatable review's F4).
+  expect_gt(nrow(rows), 0L)
   expect_true(all(rows$status == "not_run" & rows$not_run_reason == "no_table"))
   expect_equal(nrow(opened(results, "record_unreachable")), 0L)
 })
@@ -695,4 +698,49 @@ test_that("parent_without_children counts childless parents per relation, no iss
   rows <- fish_run(fx_fish_clean()[c("hauls", "catches")], layers = 4)$results
   row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "hauls"]
   expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_table"))
+})
+
+# task 13's fix round (the datatable review's F3): the walk run in CRAN mode too (D18.48)
+test_that("record_unreachable walks the fish toy from its root: a station no haul names fails", {
+  # The hauls are the root; a catch is reached through its haul, and a station through a haul
+  # that names it (D18.4).
+  spec <- fx_fish_spec(reach = data.frame(
+    table_name = c("hauls", "catches", "hauls"), attribute_name = c(NA, "haul_id", "station_id"),
+    how = c("root", "from_parent", "from_child")
+  ))
+  # Every haul at station 1, so no haul names station 2; catch 1 names no haul.
+  fish <- edited("hauls", "station_id", 3:4, c("stations_1", "stations_1"))
+  fish <- edited("catches", "haul_id", 1L, "hauls_9", fish)
+  real_rows <- reach_rows
+  walks <- 0L
+  testthat::local_mocked_bindings(reach_rows = function(input, reach) {
+    walks <<- walks + 1L
+    real_rows(input, reach)
+  })
+  results <- fish_run(fish, layers = 4, spec = spec)
+  expect_equal(walks, 1L)
+  found <- opened(results, "record_unreachable")
+  expect_equal(placed_at(found), "stations station_id 2")
+  expect_equal(c(found$value, found$severity), c("stations_2", "error"))
+  # Station 1 reached and passing, every haul a root's, and catch 1, under no reached haul,
+  # unchecked: it is fk_orphan's.
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  expect_equal(rows$table_name, c("stations", "hauls", "catches"))
+  expect_equal(rows$n_checked, c(2L, 4L, 7L))
+  expect_equal(rows$n_fail, c(1L, 0L, 0L))
+  expect_equal(placed_at(opened(results, "fk_orphan")), "catches haul_id 1")
+})
+
+# task 13's fix round (the fixture review's Minor 4)
+test_that("a design no plot measurement names is one record_unreachable warning (D18.13)", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  added <- tables$magp_designs[1L]
+  data.table::set(added, j = "magp_design_id", value = "magp_designs_9")
+  tables$magp_designs <- rbind(tables$magp_designs, added)
+  found <- opened(fx_caught(fx_mark_fixture(tables)))
+  expect_equal(
+    paste(found$rule_id, found$table_name, found$record_pk, found$severity),
+    "record_unreachable magp_designs magp_designs_9 warning"
+  )
 })

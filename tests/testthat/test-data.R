@@ -371,7 +371,8 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   meas <- tables$magp_tree_meas
   trees <- tables$magp_trees
   # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
-  # 1 to 5, gives the same count).
+  # 1 to 5, gives the same count). record_unreachable's plant is the exception, slightly
+  # fewer: a tree whose next tree is in another subplot is skipped (5 of 6 here).
   rate <- function(n) ceiling(0.001 * n)
   expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
   expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))
@@ -412,7 +413,12 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(sites == -9L), rate(length(sites)))
   expect_equal(sum(meas$visit_num == 99), rate(nrow(meas)))
   expect_equal(sum(trees$src_tree_id == "dup"), rate(nrow(trees)))
-  expect_gt(sum(!trees$magp_tree_id %in% meas$magp_tree_id), 0L)
+  # The unmeasured trees are exactly record_unreachable's plant: every 1000th from row 7 whose
+  # next tree is of its subplot (the IDs are row numbers, m9).
+  lost <- seq.int(7L, nrow(trees) - 1L, by = 1000L)
+  lost <- lost[trees$magp_subplot_id[lost] == trees$magp_subplot_id[lost + 1L]]
+  expect_gt(length(lost), 0L)
+  expect_equal(trees$magp_tree_id[!trees$magp_tree_id %in% meas$magp_tree_id], lost)
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))
@@ -437,6 +443,12 @@ test_that("the defect run raises each answer-sheet rule (D17.8)", {
   placed <- paste(dup$table_name, dup$column_name, dup$value)
   expect_equal(unique(placed), "magp_trees src_tree_id dup")
   expect_equal(nrow(dup), sum(tables$magp_trees$src_tree_id == "dup"))
+  # record_unreachable's issues are the unmeasured trees', one each, warnings (D18.13).
+  lost <- open[open$rule_id == "record_unreachable"]
+  trees <- tables$magp_trees$magp_tree_id
+  unmeasured <- trees[!trees %in% tables$magp_tree_meas$magp_tree_id]
+  expect_equal(unique(paste(lost$table_name, lost$severity)), "magp_trees warning")
+  expect_equal(sort(lost$record_pk), sort(as.character(unmeasured)))
 })
 
 test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R14, R16)", {

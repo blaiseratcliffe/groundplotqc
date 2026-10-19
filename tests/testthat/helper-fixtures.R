@@ -524,7 +524,8 @@ fx_answer_sheet <- function() {
     ),
     fx_defect(
       "record_unreachable", "magp_trees", "magp_tree_id", "magp_trees_2",
-      "magp_tree_meas naming tree 2 name tree 1, of the same subplot", "record_unreachable",
+      "magp_tree_meas rows naming tree 2 now name tree 1, of the same subplot",
+      "record_unreachable",
       witness = "magp_trees_2"
     )
   ))

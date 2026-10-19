@@ -214,12 +214,14 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
 
 # D17.8's defect run, made in place on fx_magp_scaled()'s own tables: each of the answer
 # sheet's defects (fx_answer_sheet()), the record defects in 0.1% of their table's rows
-# (every 1000th row, from a different first row where two share a column), the table and
-# column defects once, column_missing on magp_tree_cond's comments rather than magp_trees',
-# which blank_string and sentinel_rogue_code read (R9); and three carried from M4a: m9's key
-# typed as text but stored as numbers (magp_trees' PK and magp_tree_meas' FK to it), m34's
-# fully padded key column (magp_tree_meas' magp_frame_id) and m64's column with half its
-# values failing coercion (magp_tree_meas' tree_wt as text, every second value "x").
+# (every 1000th row, from a different first row where two share a column), but for
+# record_unreachable's, slightly fewer, since a tree whose next tree is in another subplot is
+# skipped (5 of 6 at 0.01x), the table and column defects once, column_missing on
+# magp_tree_cond's comments rather than magp_trees', which blank_string and sentinel_rogue_code
+# read (R9); and three carried from M4a: m9's key typed as text but stored as numbers
+# (magp_trees' PK and magp_tree_meas' FK to it), m34's fully padded key column
+# (magp_tree_meas' magp_frame_id) and m64's column with half its values failing coercion
+# (magp_tree_meas' tree_wt as text, every second value "x").
 fx_scaled_defects <- function(tables) {
   every <- function(table, first) {
     n <- nrow(tables[[table]])
@@ -236,7 +238,8 @@ fx_scaled_defects <- function(tables) {
   data.table::set(meas, j = "magp_tree_id", value = tree_row)
   data.table::set(trees, j = "magp_tree_id", value = seq_len(nrow(trees)))
   # record_unreachable: every 1000th tree from row 7 whose next tree is of its subplot gives
-  # that tree its measurements, so none reaches it.
+  # its measurements to that next tree, so none reaches it. The trees whose next tree is in
+  # another subplot are skipped, so the plant falls slightly below D17.8's 0.1%.
   lost <- every("magp_trees", 7L)
   lost <- lost[lost < nrow(trees)]
   lost <- lost[trees$magp_subplot_id[lost] == trees$magp_subplot_id[lost + 1L]]
