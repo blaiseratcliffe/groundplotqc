@@ -83,9 +83,10 @@ build_rule_registry <- function() {
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),
     preflight("crosswalk_unreadable", "error", "read_findings"),
-    # ---- M5: the DD's ranges and formats, key pairs, one-to-many IDs (4.2; D18.9, D18.36) ----
+    # ---- M5: DD ranges and formats, key pairs, the walk, one-to-many IDs (4.2; D18.9, D18.36) ----
     preflight("dd_format_invalid", "error", "read_findings"),
     preflight("key_pair_invalid", "error", "read_findings"),
+    preflight("reach_invalid", "error", "read_findings"),
     preflight(
       "one_to_many_invalid", "warning", "attributes; id_band_columns; lineage_spec; one_to_many"
     ),
@@ -267,6 +268,13 @@ build_rule_registry <- function() {
     conformance(
       "key_incoherent", 4L, "error", "harmonization",
       "attributes; keys; type_map; sentinels; key_pairs; settings:column_level_min_n"
+    ),
+    conformance(
+      "record_unreachable", 4L, "error", "harmonization",
+      "attributes; keys; type_map; sentinels; reach; settings:column_level_min_n"
+    ),
+    conformance(
+      "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels"
     )
   ))
 }

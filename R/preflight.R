@@ -186,8 +186,8 @@ one_to_many_problems <- function(spec) {
 
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22, M5's `dd_format_invalid`, `key_pair_invalid` and `one_to_many_invalid` here, then
-#' the rule set's and the text's from R/preflight_config.R.
+#' M2's 22, M5's `dd_format_invalid`, `key_pair_invalid`, `reach_invalid` and
+#' `one_to_many_invalid` here, then the rule set's and the text's from R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.
@@ -595,6 +595,13 @@ preflight_check_functions <- function() {
       # The reader makes every finding of this check, at its cell (D18.36).
       read_findings_of(spec, "key_pair_invalid")
     },
+    reach_invalid = function(spec, context) {
+      if (!given(spec, "reach")) {
+        return("no_input")
+      }
+      # The reader makes every finding of this check, at its cell (D18.36).
+      read_findings_of(spec, "reach_invalid")
+    },
     one_to_many_invalid = function(spec, context) {
       if (!given(spec, "one_to_many")) {
         return("no_input")
@@ -657,12 +664,12 @@ preflight_check_functions <- function() {
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
-#' `dd_format_invalid`, `key_pair_invalid`, `one_to_many_invalid`; with a rule set,
-#' `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a severity
-#' setting, `rule_id_unknown` and `rule_set_override_invalid`; and `text_id_missing`,
-#' `text_id_fallback` and `text_slot_unknown`, on the report text of the registered rules in
-#' English and in the run language and on a caller's text table. No rule set or setting
-#' changes what a check stops or warns on.
+#' `dd_format_invalid`, `key_pair_invalid`, `reach_invalid`, `one_to_many_invalid`; with a
+#' rule set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a
+#' severity setting, `rule_id_unknown` and `rule_set_override_invalid`; and
+#' `text_id_missing`, `text_id_fallback` and `text_slot_unknown`, on the report text of the
+#' registered rules in English and in the run language and on a caller's text table. No rule
+#' set or setting changes what a check stops or warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(

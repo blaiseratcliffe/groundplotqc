@@ -42,7 +42,8 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   found <- check_keys(conformance_input(fish, spec), context)
   expect_named(found, c(
     "pk_duplicate", "pk_missing", "fk_orphan", "fk_unassigned", "fk_sentinel_unverified",
-    "fk_not_applicable_mismatch", "src_id_duplicate", "key_incoherent"
+    "fk_not_applicable_mismatch", "src_id_duplicate", "key_incoherent", "record_unreachable",
+    "parent_without_children"
   ))
   # Three tables of one key column each; two foreign keys, neither of a number type.
   expect_length(found$pk_duplicate, 3L)
@@ -55,8 +56,11 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   )
   # The fish spec marks no ID column outside its keys.
   expect_length(found$src_id_duplicate, 0L)
-  # No key_pairs: one not_run row, no_input.
-  expect_equal(found$key_incoherent[[1L]]$reason, "no_input")
+  # No key_pairs or reach: one not_run row each, no_input.
+  for (rule in c("key_incoherent", "record_unreachable")) {
+    expect_equal(found[[rule]][[1L]]$reason, "no_input", info = rule)
+  }
+  expect_length(found$parent_without_children, 2L)
 })
 
 # ---- task 10 ----
@@ -576,4 +580,119 @@ test_that("each table's labels are found once, through the key's own table (D18.
   ))
   # The sites' labels are found once for both their documented IDs.
   expect_equal(calls, "sites")
+})
+
+# ---- task 13 ----
+
+test_that("record_unreachable reports unmeasured records from below, once (D18.4, D18.43)", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  tables <- fx_mark_fixture(tables)
+  # Tree 2 never measured: its measurements now name tree 1, of the same subplot.
+  meas <- tables$magp_tree_meas
+  data.table::set(
+    meas,
+    i = which(meas$magp_tree_id == tables$magp_trees$magp_tree_id[[2L]]),
+    j = "magp_tree_id", value = tables$magp_trees$magp_tree_id[[1L]]
+  )
+  # Site 8 never visited: its visits removed with everything measured on them, so its plots,
+  # subplots and trees are unmeasured too.
+  site <- tables$magp_sites$magp_site_id[[8L]]
+  gone <- tables$magp_site_visits$magp_visit_id[tables$magp_site_visits$magp_site_id == site]
+  plot_meas <- tables$magp_plot_meas$magp_plotmeas_id[tables$magp_plot_meas$magp_visit_id %in% gone]
+  subp <- tables$magp_subplot_meas$magp_subpmeas_id[
+    tables$magp_subplot_meas$magp_plotmeas_id %in% plot_meas
+  ]
+  tree_meas <- meas$magp_treemeas_id[meas$magp_subpmeas_id %in% subp]
+  keep <- function(table, column, out) {
+    tables[[table]] <<- tables[[table]][!tables[[table]][[column]] %in% out]
+  }
+  keep("magp_site_visits", "magp_visit_id", gone)
+  keep("magp_plot_meas", "magp_plotmeas_id", plot_meas)
+  keep("magp_subplot_meas", "magp_subpmeas_id", subp)
+  keep("magp_tree_meas", "magp_treemeas_id", tree_meas)
+  keep("magp_tree_cond", "magp_treemeas_id", tree_meas)
+  keep("magp_tree_age", "magp_treemeas_id", tree_meas)
+  keep("magp_tally_trees", "magp_subpmeas_id", subp)
+  tables <- fx_mark_fixture(tables)
+  results <- fx_caught(tables)
+  found <- opened(results, "record_unreachable")
+  # The site, its plots, subplots and trees each once, and tree 2; its disturbance and
+  # treatment are under the unreached site, so left alone (unchecked).
+  expect_setequal(unique(found$table_name), c(
+    "magp_sites", "magp_plots", "magp_subplots", "magp_trees"
+  ))
+  expect_equal(sum(found$table_name == "magp_sites"), 1L)
+  expect_true(tables$magp_trees$magp_tree_id[[2L]] %in% found$record_pk)
+  # Trees are warnings in MAGPlot's rule set (D18.13); sites, plots and subplots errors.
+  expect_equal(unique(found$severity[found$table_name == "magp_trees"]), "warning")
+  expect_equal(unique(found$severity[found$table_name == "magp_sites"]), "error")
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  dist <- rows[rows$table_name == "magp_site_dist"]
+  # Each of site 8's disturbances is under it, so unchecked; the others are checked.
+  expect_equal(sum(dist$n_checked), sum(tables$magp_site_dist$magp_site_id != site))
+  expect_equal(sum(dist$n_fail), 0L)
+})
+
+test_that("a record with no key isn't evaluated, rooted at pk_missing; a repeat reaches both", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  # Tree 3's key missing: no measurement can name it (D18.14).
+  data.table::set(tables$magp_trees, i = 3L, j = "magp_tree_id", value = NA_character_)
+  # Tree 4 takes tree 5's key: a measurement of either reaches both holders (D18.14).
+  data.table::set(
+    tables$magp_trees,
+    i = 4L, j = "magp_tree_id", value = tables$magp_trees$magp_tree_id[[5L]]
+  )
+  results <- fx_caught(fx_mark_fixture(tables))
+  issues <- results$issues
+  unreachable <- issues[issues$rule_id == "record_unreachable" & issues$table_name == "magp_trees"]
+  missing <- issues[issues$rule_id == "pk_missing" & issues$table_name == "magp_trees"]
+  expect_equal(unreachable$row_number[unreachable$status == "not_evaluated"], 3L)
+  expect_equal(
+    unreachable$root_issue_id[unreachable$status == "not_evaluated"], missing$issue_id
+  )
+  expect_false(any(unreachable$row_number %in% 4:5 & unreachable$status == "open"))
+})
+
+test_that("record_unreachable without its root table is not_run, no_table (D18.43)", {
+  testthat::skip_on_cran()
+  tables <- fx_magp_clean()
+  tables$magp_site_visits <- NULL
+  results <- fx_caught(fx_mark_fixture(tables))
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  expect_true(all(rows$status == "not_run" & rows$not_run_reason == "no_table"))
+  expect_equal(nrow(opened(results, "record_unreachable")), 0L)
+})
+
+test_that("parent_without_children counts childless parents per relation, no issue (D18.34)", {
+  fish <- fx_fish_clean()
+  # Haul 1 loses its catches.
+  catches <- fish$catches[fish$catches$haul_id != "hauls_1"]
+  fish$catches <- catches
+  results <- gpq_check_conformance(fish, fx_fish_spec(), group_cols = "gear", layers = 4)
+  rows <- results$results[results$results$rule_id == "parent_without_children"]
+  of_catches <- rows[rows$table_name == "catches"]
+  expect_equal(unique(of_catches$column_name), "haul_id")
+  # The hauls' own groups: one row per gear, the hauls counted.
+  hauls <- fx_fish_clean()$hauls
+  expect_equal(sum(of_catches$n_checked), nrow(hauls))
+  expect_equal(sum(of_catches$n_fail), 1L)
+  expect_equal(of_catches$gear[of_catches$n_fail == 1L], hauls$gear[[1L]])
+  expect_false(any(results$issues$rule_id == "parent_without_children"))
+  # An empty child table: every parent childless; an empty parent table: no_records.
+  empty <- fx_fish_clean()
+  empty$catches <- empty$catches[0L]
+  rows <- fish_run(empty, layers = 4)$results
+  row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "catches"]
+  expect_equal(c(row$n_checked, row$n_fail), c(4L, 4L))
+  no_stations <- fx_fish_clean()
+  no_stations$stations <- no_stations$stations[0L]
+  rows <- fish_run(no_stations, layers = 4)$results
+  row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "hauls"]
+  expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_records"))
+  # A parent table not given: not_run, no_table.
+  rows <- fish_run(fx_fish_clean()[c("hauls", "catches")], layers = 4)$results
+  row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "hauls"]
+  expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_table"))
 })

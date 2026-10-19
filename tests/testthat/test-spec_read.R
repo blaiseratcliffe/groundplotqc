@@ -16,7 +16,7 @@ test_that("the schema lists 3.6's components in order", {
     "attributes", "keys", "code_lists", "code_list_sheets", "code_list_map", "codes",
     "non_code_sheets",
     "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
-    "one_to_many", "type_map", "sentinels",
+    "one_to_many", "reach", "type_map", "sentinels",
     "clashes", "read_findings", "manifest"
   ))
   expect_equal(spec_schema()$manifest, c(
@@ -1240,7 +1240,7 @@ test_that("absent inputs give empty components with their columns", {
   fish <- fx_fish_spec()
   for (name in c(
     "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
-    "one_to_many", "clashes"
+    "one_to_many", "reach", "clashes"
   )) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
@@ -1992,4 +1992,48 @@ test_that("one_to_many is read, and each row that can't apply is one warning (D1
     "`one_to_many` must have exactly the columns",
     fixed = TRUE
   )
+})
+
+# ---- task 13 ----
+
+test_that("reach is read, each bad row one finding at its cell (D18.4, D18.36)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "trees", "trees"),
+    attribute_name = c("plot_id", "tree_id", "plot_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "plots"),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Two sound rows, then on lines 4 to 7 an unknown table, an unknown how, a link on a key
+  # that isn't a foreign key, and an exempt row naming an attribute.
+  data.table::fwrite(data.frame(
+    table_name = c("plots", "trees", "stands", "trees", "trees", "plots"),
+    attribute_name = c(NA, "plot_id", NA, "plot_id", "tree_id", "plot_id"),
+    how = c("root", "from_parent", "root", "sometimes", "from_child", "exempt")
+  ), path)
+  spec <- gpq_read_spec(dictionary, reach = path)
+  expect_equal(
+    spec$reach$how, c("root", "from_parent", "root", "sometimes", "from_child", "exempt")
+  )
+  found <- spec$read_findings[spec$read_findings$rule_id == "reach_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_reach_invalid_table", table_name = "stands"),
+    report_text("preflight_detail_reach_invalid_how", value = "sometimes", table_name = "trees"),
+    report_text(
+      "preflight_detail_reach_invalid_key",
+      table_name = "trees", attribute_name = "tree_id"
+    ),
+    report_text(
+      "preflight_detail_reach_invalid_attribute",
+      table_name = "plots", attribute_name = "plot_id", value = "exempt"
+    )
+  ))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 4:7))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # The sound rows alone pass.
+  sound <- gpq_read_spec(dictionary, reach = data.frame(
+    table_name = c("plots", "trees"), attribute_name = c(NA, "plot_id"),
+    how = c("root", "from_parent")
+  ))
+  expect_false("reach_invalid" %in% sound$read_findings$rule_id)
 })

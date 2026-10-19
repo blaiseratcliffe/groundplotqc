@@ -12,4 +12,5 @@
 "id_bands","in memory",,
 "precedence","data-raw/magp/precedence.csv",,"f3844fe37149405cca45a4d2eb055081d2d582eb8fe705d1ff15c01de87806b3"
 "key_pairs","data-raw/magp/key_pairs.csv",,"e4c4f272e949ab913d84b0993821d3a01cc8f124f54b238a15cfe93276855610"
+"reach","data-raw/magp/reach.csv",,"da049d9f455545ae3bab41f9036dad72db63f624a9303a4e803352be2ca79cbd"
 "dictionary:exceptions","data-raw/magp/spec_exceptions.csv",,"73ba517c7d450d8bd17e0d7630e6080f6bea4ec0e5ff3e034257bd04066e5975"

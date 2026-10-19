@@ -78,7 +78,7 @@ fx_forest_spec <- function() {
 #   many: spec_csv_malformed 1; cond's bad byte: crosswalk_unreadable 1; shape's min_value
 #   "abc": dd_format_invalid 1. plots' key pair "nothing > soil": key_pair_invalid 1. A
 #   one_to_many row for ON's plots.src_plot_id, which can't apply without the bands' key:
-#   one_to_many_invalid 1.
+#   one_to_many_invalid 1. A reach row whose how is "sometimes": reach_invalid 1.
 # Intended overlaps, each counted: site_id_range_invalid 2 (ZZ unknown, and AA and ZZ
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD
@@ -152,6 +152,7 @@ fx_planted_spec <- function() {
       contributor_label = "ON", table_name = "plots", attribute_name = "src_plot_id",
       note = NA
     ),
+    reach = data.frame(table_name = "plots", attribute_name = NA, how = "sometimes"),
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )
 }

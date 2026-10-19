@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9008 (development version)
+# groundplotqc 0.0.0.9009 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -37,3 +37,4 @@
 - Layer 4, keys and relationships, starts: `pk_duplicate` and `pk_missing` check each table's primary key, `fk_orphan` and `fk_unassigned` each foreign key, `fk_sentinel_unverified` warns of a number foreign key holding a missing-value code it may hold, and `fk_not_applicable_mismatch` doesn't run until a later version brings the applicability matrix. A key of only spaces, Unicode spaces included, counts as blank in a number-typed or date-typed key too, so `pk_missing` or `fk_unassigned` reports it, not `coercion_loss` or `date_unparseable`.
 - `gpq_read_spec()` takes `key_pairs`: pairs of ways to reach one value from a record, which pre-flight checks (`key_pair_invalid`) and `key_incoherent` compares. MAGPlot's 21 pairs are in `data-raw/magp/key_pairs.csv`.
 - `src_id_duplicate` warns of an ID outside the keys (an attribute `id_pattern` marks, MAGPlot's `src_*_id`) held by more than one record of a table in one report unit. `gpq_read_spec()` takes `one_to_many`, the IDs a contributor documents as one-to-many, which `src_id_duplicate` leaves alone for that contributor's records and pre-flight checks (`one_to_many_invalid`, a warning: a row pre-flight can't apply is left out). MAGPlot's come from A2's sheet `one_to_many` once A2 has one.
+- `record_unreachable` reports a record that no walk from the root reaches through its keys, the walk given by `gpq_read_spec()`'s new `reach` input, which pre-flight checks (`reach_invalid`). MAGPlot's walk starts at the site visits; its unreached designs and trees are warnings. `parent_without_children` counts, with no issue, the parent records no child record names.

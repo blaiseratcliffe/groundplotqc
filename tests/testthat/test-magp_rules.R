@@ -9,6 +9,12 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_identical(rules, validate_rule_set(rules))
   # Each component keeps the file it was read from and each row's line (D14.19).
   expect_equal(attr(rules$rules, "source_file"), "rules_rules.csv")
+  expect_equal(attr(rules$rules, "source_lines"), 2:3)
+  # Designs and trees no root reaches warn (D18.4 (b), D18.13).
+  expect_equal(rules$rules$table_name, c("magp_designs", "magp_trees"))
+  expect_equal(
+    unique(paste(rules$rules$rule_id, rules$rules$severity)), "record_unreachable warning"
+  )
   expect_equal(attr(rules$settings, "source_lines"), 2:11)
 })
 

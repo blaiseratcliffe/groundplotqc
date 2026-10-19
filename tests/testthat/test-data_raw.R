@@ -172,15 +172,18 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   writeLines("exception_id", file.path(config, "spec_exceptions.csv"))
   writeLines("sheet", file.path(config, "precedence.csv"))
   writeLines("table_name", file.path(config, "key_pairs.csv"))
+  writeLines("table_name", file.path(config, "reach.csv"))
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
     precedence = data.frame(
       sheet = "s", key_col = "k", attribute_name = "c", winner = "datasets", blank_rule = "wins"
     ),
     key_pairs = data.frame(table_name = "t", left = "a", right = "a", note = NA),
+    reach = data.frame(table_name = "t", attribute_name = NA, how = "root"),
     origins = list(
       precedence = list(path = file.path(config, "precedence.csv"), rows = 2L),
-      key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L)
+      key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L),
+      reach = list(path = file.path(config, "reach.csv"), rows = 2L)
     )
   )
   given <- data.table::copy(spec$manifest)
@@ -189,6 +192,7 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   expect_identical(spec$manifest, given)
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
   expect_equal(manifest$file[manifest$input == "key_pairs"], "data-raw/magp/key_pairs.csv")
+  expect_equal(manifest$file[manifest$input == "reach"], "data-raw/magp/reach.csv")
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
   expect_equal(
@@ -424,6 +428,8 @@ test_that("the hand-kept files have their columns", {
     c("data_type", "role", "value", "allowed_in_pk", "allowed_in_fk")
   )
   expect_named(hand_kept("precedence.csv"), c(spec_input_schema()$precedence, "decision"))
+  expect_named(hand_kept("key_pairs.csv"), spec_input_schema()$key_pairs)
+  expect_named(hand_kept("reach.csv"), spec_input_schema()$reach)
   expect_true(all(hand_kept("non_code_sheets.csv")$reason %in% c("reference", "superseded")))
 })
 
@@ -433,6 +439,8 @@ test_that("the hand-kept rows are valid where the build takes them", {
   precedence <- hand_kept("precedence.csv")
   # The reader's own checks: winner and blank_rule from their lists, one row per key.
   expect_no_error(read_precedence(precedence[, spec_input_schema()$precedence, with = FALSE]))
+  found <- magp_spec()$read_findings$rule_id
+  expect_false(any(c("key_pair_invalid", "reach_invalid") %in% found))
 })
 
 test_that("the reader reads the DD workbook in spec/ from its first sheet", {

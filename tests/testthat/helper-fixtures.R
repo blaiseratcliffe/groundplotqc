@@ -521,6 +521,11 @@ fx_answer_sheet <- function() {
       "src_id_duplicate", "magp_trees", "src_tree_id", "magp_trees_1; magp_trees_2",
       "magp_trees$src_tree_id row 2 \"s1\", row 1's", "src_id_duplicate",
       witness = "s1"
+    ),
+    fx_defect(
+      "record_unreachable", "magp_trees", "magp_tree_id", "magp_trees_2",
+      "magp_tree_meas naming tree 2 name tree 1, of the same subplot", "record_unreachable",
+      witness = "magp_trees_2"
     )
   ))
 }
@@ -625,7 +630,10 @@ fx_defect_blocks <- function() {
     fk_unassigned = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, NA_character_),
     fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L),
     key_incoherent = fx_set_cell("magp_tree_meas", "visit_num", 1L, 99L),
-    src_id_duplicate = fx_set_cell("magp_trees", "src_tree_id", 2L, "s1")
+    src_id_duplicate = fx_set_cell("magp_trees", "src_tree_id", 2L, "s1"),
+    record_unreachable = fx_set_column("magp_tree_meas", "magp_tree_id", function(x) {
+      data.table::fifelse(x == "magp_trees_2", "magp_trees_1", x)
+    })
   )
 }
 

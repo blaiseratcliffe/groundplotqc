@@ -57,7 +57,8 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   subplot_meas_subplot <- 4L * (visit_site[subplot_meas_of] - 1L) + quarter
   subplot_meas_frame <- 4L * (plot_meas_design[subplot_meas_of] - 1L) + quarter
   tree_subplot <- spread(4L * n_sites, n_trees)
-  # Each tree measurement takes a tree of its subplot, in turn.
+  # Each tree measurement takes a tree of its subplot, in turn over all the subplot's
+  # measurements, so every tree is measured (record_unreachable, R46).
   tree_meas_of <- spread(4L * n_visits, n_tree_meas)
   subplot <- subplot_meas_subplot[tree_meas_of]
   first_tree <- match(seq_len(4L * n_sites), tree_subplot)
@@ -65,7 +66,7 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
   if (any(trees_in[subplot] == 0L)) {
     stop("fx_magp_scaled() needs a tree in every subplot: use a larger scale.")
   }
-  turn <- data.table::rowid(tree_meas_of) - 1L
+  turn <- data.table::rowid(subplot) - 1L
   tree_meas_tree <- first_tree[subplot] + turn %% trees_in[subplot]
   tally_of <- spread(4L * n_visits, scaled(8000))
   plan <- list(
@@ -234,6 +235,13 @@ fx_scaled_defects <- function(tables) {
   tree_row <- match(meas$magp_tree_id, trees$magp_tree_id)
   data.table::set(meas, j = "magp_tree_id", value = tree_row)
   data.table::set(trees, j = "magp_tree_id", value = seq_len(nrow(trees)))
+  # record_unreachable: every 1000th tree from row 7 whose next tree is of its subplot gives
+  # that tree its measurements, so none reaches it.
+  lost <- every("magp_trees", 7L)
+  lost <- lost[lost < nrow(trees)]
+  lost <- lost[trees$magp_subplot_id[lost] == trees$magp_subplot_id[lost + 1L]]
+  moved <- which(meas$magp_tree_id %in% lost)
+  data.table::set(meas, i = moved, j = "magp_tree_id", value = meas$magp_tree_id[moved] + 1L)
   data.table::set(meas, j = "height", value = as.character(meas$height))
   plant("magp_tree_meas", "height", 1L, "tall")
   plant("magp_tree_meas", "dbh", 2L, Inf)

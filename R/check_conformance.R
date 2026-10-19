@@ -42,7 +42,7 @@
 #'   `coordinate_out_of_bounds`, `undeclared_code_set`.
 #' - Layer 4, keys and relationships: `pk_duplicate`, `pk_missing`, `fk_orphan`,
 #'   `fk_unassigned`, `fk_sentinel_unverified`, `fk_not_applicable_mismatch`,
-#'   `src_id_duplicate`, `key_incoherent`.
+#'   `src_id_duplicate`, `key_incoherent`, `record_unreachable`, `parent_without_children`.
 #'
 #' Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's
 #' only in letter case or spaces is reported by `column_name_mismatch` and checked as that
