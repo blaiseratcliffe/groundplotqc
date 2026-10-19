@@ -57,6 +57,10 @@ spec_schema <- function() {
       labels_column = chr
     ),
     key_pairs = c(table_name = chr, left = chr, right = chr, note = chr),
+    one_to_many = c(
+      contributor_label = chr, table_name = chr, attribute_name = chr, note = chr,
+      source_cell = chr
+    ),
     type_map = c(data_type = chr, r_class = chr, date_format = chr),
     sentinels = c(
       data_type = chr, role = chr, value = chr, allowed_in_pk = lgl, allowed_in_fk = lgl
@@ -73,7 +77,7 @@ spec_schema <- function() {
   )
 }
 
-#' The columns of the precedence, lineage-spec, site-ID-band and key-pair inputs
+#' The columns of the precedence, lineage-spec, site-ID-band, key-pair and one-to-many inputs
 #' @noRd
 spec_input_schema <- function() {
   list(
@@ -86,7 +90,8 @@ spec_input_schema <- function() {
       "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern", "table",
       "attribute", "key"
     ),
-    key_pairs = c("table_name", "left", "right", "note")
+    key_pairs = c("table_name", "left", "right", "note"),
+    one_to_many = c("contributor_label", "table_name", "attribute_name", "note")
   )
 }
 
@@ -1568,6 +1573,24 @@ read_key_pairs <- function(x, attributes, keys, origin = NULL) {
   )
 }
 
+#' The one_to_many input, read and checked (D18.3, D18.6, D18.36)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). Each row's `source_cell` is its
+#' contributor cell, as the input's form allows (NA in memory), for one_to_many_invalid's
+#' findings; what the rows say is pre-flight's to check (one_to_many_problems()).
+#' @noRd
+read_one_to_many <- function(x, origin = NULL) {
+  table <- read_input_table(x, "one_to_many", origin)
+  columns <- spec_input_schema()$one_to_many
+  check_input_columns(table$data, columns, "one_to_many")
+  data <- table$data[, columns, with = FALSE]
+  n <- nrow(data)
+  set(data, j = "source_cell", value = cell_references(
+    table$where, seq_len(n) + 1L, rep(match("contributor_label", names(table$data)), n)
+  ))
+  list(data = data, manifest = table$manifest, findings = table$findings)
+}
+
 #' Read a specification
 #'
 #' @description
@@ -1579,11 +1602,12 @@ read_key_pairs <- function(x, attributes, keys, origin = NULL) {
 #' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 #' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 #' unless it is a translation table, which is then a finding; a
-#' dictionary without its table or attribute column; a `precedence`, `lineage_spec` or
-#' `key_pairs` table without exactly its columns; a `precedence` table with an unknown
-#' `winner` or `blank_rule`, or with two rows for one sheet, key and attribute; a name given
-#' in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-#' values for an attribute that uses it; or an origin that doesn't fit its input.
+#' dictionary without its table or attribute column; a `precedence`, `lineage_spec`,
+#' `key_pairs` or `one_to_many` table without exactly its columns; a `precedence` table
+#' with an unknown `winner` or `blank_rule`, or with two rows for one sheet, key and
+#' attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+#' column it lacks, or with no values for an attribute that uses it; or an origin that
+#' doesn't fit its input.
 #'
 #' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
 #'   `.xlsx` workbook, read from its first sheet. One row per table and attribute.
@@ -1618,10 +1642,17 @@ read_key_pairs <- function(x, attributes, keys, origin = NULL) {
 #'   joined by " > " ending in an attribute, such as `"haul_id > station_id"`.
 #'   `key_incoherent` compares the two sides and reports a record where they differ on the
 #'   left side's first attribute.
+#' @param one_to_many `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `contributor_label`, `table_name`, `attribute_name` and `note`: each row an ID attribute
+#'   a contributor documents as one-to-many, whose repeats `src_id_duplicate` doesn't report
+#'   among that contributor's records. A record's contributor is found through `id_bands`'
+#'   `key` and `labels_from`, so the rows apply only when `id_bands` gives `table`,
+#'   `attribute`, `key` and `labels_from`; pre-flight warns of a row it can't apply
+#'   (`one_to_many_invalid`), which is left out.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
 #'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
-#'   `key_pairs`, `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = ,
-#'   rows = , columns = )`: the file, named in findings and hashed in the manifest; a
+#'   `key_pairs`, `one_to_many`, `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = ,
+#'   sheet = , rows = , columns = )`: the file, named in findings and hashed in the manifest; a
 #'   workbook's sheet, or `NULL` for a CSV file; the file row of the first data row, later
 #'   rows following on, or the file row of every data row, or `NULL` to count rows as R
 #'   counts them; and the file column, by number or letter, of every column of the
@@ -1635,9 +1666,9 @@ read_key_pairs <- function(x, attributes, keys, origin = NULL) {
 #'   `attributes`, `keys`, `code_lists`, `code_list_sheets`, `code_list_map`, `codes`,
 #'   `non_code_sheets`,
 #'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `id_band_columns`, `key_pairs`,
-#'   `type_map`, `sentinels`, `clashes`, `read_findings` and `manifest`. An input not given
-#'   leaves its component empty, with its columns. A blank cell is `NA`; text is kept exactly
-#'   as written.
+#'   `one_to_many`, `type_map`, `sentinels`, `clashes`, `read_findings` and `manifest`. An
+#'   input not given leaves its component empty, with its columns. A blank cell is `NA`; text
+#'   is kept exactly as written.
 #' @section Components:
 #' Each component is a data.table with these columns:
 #'
@@ -1675,7 +1706,8 @@ read_key_pairs <- function(x, attributes, keys, origin = NULL) {
 gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
                           datasets = NULL, lineage_spec = NULL, crosswalks = NULL,
                           id_pattern = NULL, id_bands = NULL, precedence = NULL,
-                          key_pairs = NULL, origins = NULL, column_map = gpq_column_map(),
+                          key_pairs = NULL, one_to_many = NULL, origins = NULL,
+                          column_map = gpq_column_map(),
                           type_map = gpq_type_map(), sentinels = gpq_sentinels()) {
   # data.table's automatic indexing would add index attributes as the reader subsets;
   # off here and restored on exit, so the spec reloads identical() (D12.27).
@@ -1731,7 +1763,8 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
       },
       if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
       if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
-      if (!is.null(precedence)) "precedence", if (!is.null(key_pairs)) "key_pairs"
+      if (!is.null(precedence)) "precedence", if (!is.null(key_pairs)) "key_pairs",
+      if (!is.null(one_to_many)) "one_to_many"
     ),
     no_origin = c(
       if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
@@ -1767,6 +1800,9 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   bands <- build_id_bands(id_bands, lists$long, bands_file, attributes, keys)
   pairs_in <- if (!is.null(key_pairs)) {
     read_key_pairs(key_pairs, attributes, keys, origins[["key_pairs"]])
+  }
+  many_in <- if (!is.null(one_to_many)) {
+    read_one_to_many(one_to_many, origins[["one_to_many"]])
   }
   datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
   # Each precedence sheet's own file, its CSV or the workbook, named by sheet (D12.28).
@@ -1807,19 +1843,20 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     id_bands = bands$bands,
     id_band_columns = bands$columns,
     key_pairs = if (is.null(pairs_in)) empty_table(spec_schema()$key_pairs) else pairs_in$data,
+    one_to_many = if (is.null(many_in)) empty_table(spec_schema()$one_to_many) else many_in$data,
     type_map = type_map,
     sentinels = sentinels,
     clashes = bind_component("clashes", list(clashes$clashes, lineage$clashes)),
     read_findings = bind_component("read_findings", list(
       dictionary_in$findings, dictionary_read$findings, type_findings, lists$findings,
       walks$findings, datasets_in$findings, lineage_in$findings, precedence_in$findings,
-      bands$findings, clashes$findings, lineage$findings, pairs_in$findings
+      bands$findings, clashes$findings, lineage$findings, pairs_in$findings, many_in$findings
     )),
     manifest = bind_component("manifest", list(
       dictionary_in$manifest, lists$manifest, memory_row(non_code_sheets, "non_code_sheets"),
       datasets_in$manifest, lineage_in$manifest, walks$manifest,
       memory_row(id_pattern, "id_pattern"), memory_row(id_bands, "id_bands"),
-      precedence_in$manifest, pairs_in$manifest
+      precedence_in$manifest, pairs_in$manifest, many_in$manifest
     ))
   ))
 }

@@ -2,8 +2,9 @@
 # MAGPlot's clean base scaled to the shape of the AB file, every key path to one ancestor
 # agreeing, with the fixture marker. bench/generate.R and bench/run.R source this file with
 # helper-fixtures.R; the 0.1x smoke test calls fx_magp_scaled() directly. Every value that
-# isn't a key is one of fx_magp_clean()'s, or for the sites' datum and ec_* made by its
-# formulas site by site (D18.20), so the scaled base is as clean as the clean base.
+# isn't a key or a src_*_id is one of fx_magp_clean()'s, or for the sites' datum and ec_* made
+# by its formulas site by site (D18.20), so the scaled base is as clean as the clean base;
+# each src_*_id holds its record's key as text, so none repeats (R46).
 
 # MAGPlot's tables at `scale` of the AB file's shape (D17.7): at 1x D1.9a's counts for
 # magp_tree_cond (2,012,280), magp_tree_meas (1,615,305) and magp_trees (517,508), the other
@@ -146,6 +147,16 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
       magp_sites = site_ids,
       paste0(table, "_", seq_len(rows))
     )
+    # An ID-marked attribute holds its record's key as text (src_id_duplicate, R46): the
+    # key's own strings, no new ones at 1x, in a vector of its own (copy()), since
+    # as.character() returns a text key itself and fx_scaled_defects() plants keys in place.
+    # A coded one keeps the base's codes, which its code list holds.
+    marked <- setdiff(
+      spec$attributes$attribute_name[
+        spec$attributes$table_name == table & spec$attributes$id_marked %in% TRUE
+      ],
+      spec$code_list_map$attribute_name[spec$code_list_map$table_name == table]
+    )
     columns <- lapply(names(template), function(column) {
       if (identical(column, pk)) {
         return(pk_values[[table]])
@@ -155,6 +166,9 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
           foreign$table_name == table & foreign$attribute_name == column
         ]
         return(pk_values[[parent]][refs[[column]]])
+      }
+      if (column %chin% marked) {
+        return(data.table::copy(as.character(pk_values[[table]])))
       }
       rep_len(template[[column]], rows)
     })
@@ -241,6 +255,7 @@ fx_scaled_defects <- function(tables) {
   plant("magp_tree_cond", "magp_treemeas_id", 5L, NA_character_)
   plant("magp_site_dist", "magp_site_id", 1L, -9L)
   plant("magp_tree_meas", "visit_num", 6L, 99)
+  plant("magp_trees", "src_tree_id", 4L, "dup")
   data.table::set(meas, j = "visit_num", value = as.double(meas$visit_num))
   data.table::setnames(meas, "dbh", "DBH")
   data.table::set(meas, j = "magp_frame_id", value = paste0(meas$magp_frame_id, "  "))

@@ -83,9 +83,12 @@ build_rule_registry <- function() {
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),
     preflight("crosswalk_unreadable", "error", "read_findings"),
-    # ---- M5: the DD's range and format columns and the key pairs (4.2; D18.9, D18.36) ----
+    # ---- M5: the DD's ranges and formats, key pairs, one-to-many IDs (4.2; D18.9, D18.36) ----
     preflight("dd_format_invalid", "error", "read_findings"),
     preflight("key_pair_invalid", "error", "read_findings"),
+    preflight(
+      "one_to_many_invalid", "warning", "attributes; id_band_columns; lineage_spec; one_to_many"
+    ),
     # ---- task 5 ----
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
     preflight("rule_id_unknown", "error", "rules; settings:severity"),
@@ -254,6 +257,13 @@ build_rule_registry <- function() {
       "attributes; keys; type_map; sentinels; settings:column_level_min_n"
     ),
     conformance("fk_not_applicable_mismatch", 4L, "error", "harmonization", "attributes; keys"),
+    conformance(
+      "src_id_duplicate", 4L, "warning", "depends",
+      paste(
+        "attributes; code_lists; id_band_columns; keys; lineage_spec; one_to_many; type_map;",
+        "sentinels; settings:column_level_min_n"
+      )
+    ),
     conformance(
       "key_incoherent", 4L, "error", "harmonization",
       "attributes; keys; type_map; sentinels; key_pairs; settings:column_level_min_n"

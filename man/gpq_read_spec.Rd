@@ -15,6 +15,7 @@ gpq_read_spec(
   id_bands = NULL,
   precedence = NULL,
   key_pairs = NULL,
+  one_to_many = NULL,
   origins = NULL,
   column_map = gpq_column_map(),
   type_map = gpq_type_map(),
@@ -64,9 +65,17 @@ joined by " > " ending in an attribute, such as \code{"haul_id > station_id"}.
 \code{key_incoherent} compares the two sides and reports a record where they differ on the
 left side's first attribute.}
 
+\item{one_to_many}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{contributor_label}, \code{table_name}, \code{attribute_name} and \code{note}: each row an ID attribute
+a contributor documents as one-to-many, whose repeats \code{src_id_duplicate} doesn't report
+among that contributor's records. A record's contributor is found through \code{id_bands}'
+\code{key} and \code{labels_from}, so the rows apply only when \code{id_bands} gives \code{table},
+\code{attribute}, \code{key} and \code{labels_from}; pre-flight warns of a row it can't apply
+(\code{one_to_many_invalid}), which is left out.}
+
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
 named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
-\code{key_pairs}, \verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of \code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in the manifest; a
+\code{key_pairs}, \code{one_to_many}, \verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of \code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in the manifest; a
 workbook's sheet, or \code{NULL} for a CSV file; the file row of the first data row, later
 rows following on, or the file row of every data row, or \code{NULL} to count rows as R
 counts them; and the file column, by number or letter, of every column of the
@@ -85,9 +94,9 @@ An object of class \code{gpq_spec}: a named list of data.tables, the components
 \code{attributes}, \code{keys}, \code{code_lists}, \code{code_list_sheets}, \code{code_list_map}, \code{codes},
 \code{non_code_sheets},
 \code{datasets}, \code{lineage_spec}, \code{crosswalks}, \code{id_bands}, \code{id_band_columns}, \code{key_pairs},
-\code{type_map}, \code{sentinels}, \code{clashes}, \code{read_findings} and \code{manifest}. An input not given
-leaves its component empty, with its columns. A blank cell is \code{NA}; text is kept exactly
-as written.
+\code{one_to_many}, \code{type_map}, \code{sentinels}, \code{clashes}, \code{read_findings} and \code{manifest}. An
+input not given leaves its component empty, with its columns. A blank cell is \code{NA}; text
+is kept exactly as written.
 }
 \description{
 Reads a data dictionary and its companion inputs into one specification object, which
@@ -98,11 +107,12 @@ and \code{\link[=gpq_preflight]{gpq_preflight()}} decides whether it stops.
 It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a \code{precedence}, \code{lineage_spec} or
-\code{key_pairs} table without exactly its columns; a \code{precedence} table with an unknown
-\code{winner} or \code{blank_rule}, or with two rows for one sheet, key and attribute; a name given
-in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-values for an attribute that uses it; or an origin that doesn't fit its input.
+dictionary without its table or attribute column; a \code{precedence}, \code{lineage_spec},
+\code{key_pairs} or \code{one_to_many} table without exactly its columns; a \code{precedence} table
+with an unknown \code{winner} or \code{blank_rule}, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+column it lacks, or with no values for an attribute that uses it; or an origin that
+doesn't fit its input.
 }
 \section{Components}{
 
@@ -121,6 +131,7 @@ Each component is a data.table with these columns:
 \item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}, \code{key_value}
 \item \code{id_band_columns}: \code{table_name}, \code{attribute_name}, \code{key_attribute}, \code{labels_sheet}, \code{labels_column}
 \item \code{key_pairs}: \code{table_name}, \code{left}, \code{right}, \code{note}
+\item \code{one_to_many}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{note}, \code{source_cell}
 \item \code{type_map}: \code{data_type}, \code{r_class}, \code{date_format}
 \item \code{sentinels}: \code{data_type}, \code{role}, \code{value}, \code{allowed_in_pk}, \code{allowed_in_fk}
 \item \code{clashes}: \code{rule_id}, \code{kind}, \code{key_col}, \code{key_value}, \code{column_name}, \code{source_a}, \code{value_a}, \code{source_b}, \code{value_b}, \code{winner}, \code{basis}, \code{source_cell_a}, \code{source_cell_b}

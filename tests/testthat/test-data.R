@@ -402,9 +402,12 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(is.na(cond$magp_cond_id)), rate(nrow(cond)))
   expect_equal(sum(cond$magp_treemeas_id == "magp_tree_meas_0", na.rm = TRUE), rate(nrow(cond)))
   expect_equal(sum(is.na(cond$magp_treemeas_id)), rate(nrow(cond)))
+  # Each src_*_id is a column of its own, so the keys planted in place leave it as built (R46).
+  expect_equal(cond$src_cond_id, paste0("magp_tree_cond_", seq_len(nrow(cond))))
   sites <- tables$magp_site_dist$magp_site_id
   expect_equal(sum(sites == -9L), rate(length(sites)))
   expect_equal(sum(meas$visit_num == 99), rate(nrow(meas)))
+  expect_equal(sum(trees$src_tree_id == "dup"), rate(nrow(trees)))
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))

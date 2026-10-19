@@ -263,6 +263,37 @@ test_that("build_lineage_input stops naming what A2 lacks", {
   )
 })
 
+test_that("build_one_to_many_input reads A2's one_to_many sheet once A2 has one (D18.36)", {
+  build <- load_data_raw("build_magp_config.R")
+  sheets <- "A2"
+  raw <- data.table::data.table(
+    V1 = c("reason", "a note"), V2 = c("table_name", "magp_trees"),
+    V3 = c("attribute_name", "src_tree_id"), V4 = c("contributor", "BC")
+  )
+  local_mocked_bindings(
+    workbook_sheets = function(path) sheets,
+    read_xlsx_raw = function(path, sheet) raw,
+    .package = "groundplotqc"
+  )
+  expect_null(build$build_one_to_many_input("A2.xlsx"))
+  sheets <- c("A2", "one_to_many")
+  built <- build$build_one_to_many_input("A2.xlsx")
+  expect_equal(as.list(built$data), list(
+    contributor_label = "BC", table_name = "magp_trees", attribute_name = "src_tree_id",
+    note = "a note"
+  ))
+  expect_equal(built$origin, list(
+    path = "A2.xlsx", sheet = "one_to_many", rows = 2L,
+    columns = c(contributor_label = 4L, table_name = 2L, attribute_name = 3L, note = 1L)
+  ))
+  raw <- raw[, c("V1", "V2"), with = FALSE]
+  expect_error(
+    build$build_one_to_many_input("A2.xlsx"),
+    "A2's sheet one_to_many has no column named contributor or attribute_name.",
+    fixed = TRUE
+  )
+})
+
 test_that("crosswalk_element builds each form of element and stops on rows that disagree", {
   build <- load_data_raw("build_magp_config.R")
   columns <- data.table::data.table(

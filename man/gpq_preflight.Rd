@@ -74,12 +74,12 @@ the specification's \code{clashes} component.
 \code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
 \code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
 \code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable},
-\code{dd_format_invalid}, \code{key_pair_invalid}; with a rule set, \code{rule_set_unknown_column}
-and \code{rule_set_duplicate_row}; with a rule set or a severity setting, \code{rule_id_unknown}
-and \code{rule_set_override_invalid}; and \code{text_id_missing}, \code{text_id_fallback} and
-\code{text_slot_unknown}, on the report text of the registered rules in English and in the run
-language and on a caller's text table. No rule set or setting changes what a check stops
-or warns on.
+\code{dd_format_invalid}, \code{key_pair_invalid}, \code{one_to_many_invalid}; with a rule set,
+\code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a severity
+setting, \code{rule_id_unknown} and \code{rule_set_override_invalid}; and \code{text_id_missing},
+\code{text_id_fallback} and \code{text_slot_unknown}, on the report text of the registered rules in
+English and in the run language and on a caller's text table. No rule set or setting
+changes what a check stops or warns on.
 }
 
 \examples{

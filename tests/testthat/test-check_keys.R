@@ -42,7 +42,7 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   found <- check_keys(conformance_input(fish, spec), context)
   expect_named(found, c(
     "pk_duplicate", "pk_missing", "fk_orphan", "fk_unassigned", "fk_sentinel_unverified",
-    "fk_not_applicable_mismatch", "key_incoherent"
+    "fk_not_applicable_mismatch", "src_id_duplicate", "key_incoherent"
   ))
   # Three tables of one key column each; two foreign keys, neither of a number type.
   expect_length(found$pk_duplicate, 3L)
@@ -53,6 +53,8 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   expect_equal(
     vapply(found$fk_not_applicable_mismatch, `[[`, "", "reason"), c("no_matrix", "no_matrix")
   )
+  # The fish spec marks no ID column outside its keys.
+  expect_length(found$src_id_duplicate, 0L)
   # No key_pairs: one not_run row, no_input.
   expect_equal(found$key_incoherent[[1L]]$reason, "no_input")
 })
@@ -421,4 +423,77 @@ test_that("key_incoherent compares mixed storage as text, each distinct value wr
     Filter(function(x) inherits(x, "Date"), written),
     list(as.Date(c("2020-06-01", "2020-06-02", "2020-06-03")), as.Date("2020-06-02"))
   )
+})
+
+# ---- task 12 ----
+
+test_that("src_id_duplicate fails every holder of a repeated ID within its report unit (D18.3)", {
+  spec <- fx_fish_spec(id_pattern = "^station_name$")
+  fish <- edited("stations", "station_name", 1:2, c("same", "same"))
+  # Without group columns the stations are one pool. Layer 4 alone, as the toy's pattern for
+  # station_name refuses "same" in Layer 3, which would mask it.
+  found <- opened(fish_run(fish, spec = spec, layers = 4), "src_id_duplicate")
+  expect_equal(placed_at(found), c("stations station_name 1", "stations station_name 2"))
+  expect_equal(found$value, c("same", "same"))
+  # Each station in its own report unit, its water body: nothing repeats within one.
+  by_water <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 4)
+  expect_equal(nrow(opened(by_water, "src_id_duplicate")), 0L)
+  # The sentinels, NA and blanks are no IDs: never compared, checked and passing (D18.35).
+  marks <- edited("stations", "station_name", 1:2, c("?", "?"))
+  rows <- fish_run(marks, spec = spec, layers = 4)$results
+  row <- rows[rows$rule_id == "src_id_duplicate"]
+  expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
+})
+
+test_that("a record whose report unit is \"*\" isn't checked: its group none_checked (D18.35)", {
+  spec <- fx_fish_spec(id_pattern = "^station_name$")
+  fish <- edited("stations", "water_body", 1:2, c(NA, NA))
+  fish <- edited("stations", "station_name", 1:2, c("same", "same"), fish)
+  results <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 4)
+  expect_equal(nrow(opened(results, "src_id_duplicate")), 0L)
+  row <- results$results[results$results$rule_id == "src_id_duplicate"]
+  expect_equal(c(row$water_body, row$status, row$not_run_reason), c("*", "not_run", "none_checked"))
+  expect_equal(c(row$n_checked, row$n_not_evaluated), c(0L, 2L))
+})
+
+test_that("a contributor's documented one-to-many ID isn't warned; another's is (D18.3, D18.6)", {
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  tables <- fx_magp_clean()
+  labels <- record_labels(conformance_input(tables, spec), "magp_trees")
+  # Each tree's A2 label, through its dataset's contributor and the contributor sheet.
+  expect_true(all(labels %chin% c("AB", "BC")))
+  ab <- which(labels == "AB")[1:2]
+  bc <- which(labels == "BC")[1:2]
+  trees <- data.table::copy(tables$magp_trees)
+  data.table::set(trees, i = c(ab, bc), j = "src_tree_id", value = c("a1", "a1", "b1", "b1"))
+  tables$magp_trees <- trees
+  # BC's A2 gives src_tree_id an ID (A2!D13), so its row applies (D18.36).
+  spec$one_to_many <- data.table::data.table(
+    contributor_label = "BC", table_name = "magp_trees", attribute_name = "src_tree_id",
+    note = NA_character_, source_cell = NA_character_
+  )
+  results <- withCallingHandlers(
+    gpq_check_conformance(
+      fx_mark_fixture(tables), spec,
+      group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+      rules = magp_rules(), layers = 4
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  found <- opened(results, "src_id_duplicate")
+  expect_equal(found$row_number, ab)
+  expect_equal(found$value, c("a1", "a1"))
+  # A row pre-flight finds can't apply is left unapplied: documented for AB, whose A2 has no
+  # src_tree_id entry, AB's repeats still warn and BC's now do too (D18.36).
+  spec$one_to_many$contributor_label <- "AB"
+  results <- withCallingHandlers(
+    gpq_check_conformance(
+      fx_mark_fixture(tables), spec,
+      group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+      rules = magp_rules(), layers = 4
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_equal(sort(opened(results, "src_id_duplicate")$row_number), sort(c(ab, bc)))
 })

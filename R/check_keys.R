@@ -109,6 +109,42 @@ pk_holders <- function(input, table) {
   holders
 }
 
+#' Each record's A2 label (D18.6, D18.37, D18.38)
+#'
+#' The record reaches the last attribute of id_band_columns' key chain by D16.13's shortest
+#' path (reach_column()); that value is looked up in the key's column of the labels sheet
+#' (`labels_sheet` in the code_lists component), and the label is the same row's
+#' `labels_column`. NA where id_band_columns has no row, the record reaches no value, or the
+#' sheet holds no row of it.
+#' @noRd
+record_labels <- function(input, table) {
+  spec <- input$spec
+  bands <- spec$id_band_columns
+  n <- nrow(input$data[[table]])
+  if (nrow(bands) == 0L) {
+    return(rep(NA_character_, n))
+  }
+  chain <- parse_chain(
+    bands$key_attribute[[1L]], bands$table_name[[1L]], spec$keys, spec$attributes
+  )
+  if (is.null(chain)) {
+    return(rep(NA_character_, n))
+  }
+  key <- chain$attribute
+  value <- value_text(reached_values(input, reach_column(input, table, key), key))
+  lists <- spec$code_lists
+  # Worked out before the brackets, so no name inside them is taken for a column.
+  in_sheet <- lists$sheet == bands$labels_sheet[[1L]] & lists$source_row > 1L
+  sheet <- lists[in_sheet]
+  # Worked out before the brackets too: `sheet` is also a column of the code lists.
+  is_key <- sheet$sheet_column == key
+  is_label <- sheet$sheet_column == bands$labels_column[[1L]]
+  keyed <- sheet[is_key]
+  labelled <- sheet[is_label]
+  label <- labelled$value[match(keyed$source_row, labelled$source_row)]
+  label[match(value, keyed$value, incomparables = NA)]
+}
+
 #' Layer 4's outcomes, by rule
 #'
 #' `pk_duplicate` per table: every record holding a primary key value another record holds,
@@ -125,6 +161,10 @@ pk_holders <- function(input, table) {
 #' `fk_sentinel_unverified` per foreign key of a number type: each record holding a sentinel
 #' `allowed_in_fk` allows, never looked up (D12.31, D16.2, D18.33). `fk_not_applicable_mismatch`
 #' per foreign key: not_run, no_matrix, until a matrix says where "Z" belongs (D7.3).
+#' `src_id_duplicate` per ID-marked attribute outside the keys: every record whose value
+#' another record of its table and report unit (the first group column) holds; NA, blanks,
+#' sentinels and the records of a contributor `one_to_many` documents for the attribute are
+#' left alone, and a record whose unit is "*" isn't checked (D2.30, D18.3, D18.6, D18.35).
 #' `key_incoherent` per table and first attribute of a `key_pairs` left side: a record whose
 #' two sides of a pair differ, compared as text; its value and expected the failing pairs'
 #' sides labelled by the left side's last attribute; a side whose chain breaks, or whose value
@@ -174,6 +214,15 @@ check_keys <- function(input, context) {
       assign(name, chain_rows(input, edge$table_name, edge), envir = joined)
     }
     joined[[name]]
+  }
+  # Each row's report unit, the first group column's text ("*" where it reaches none); one
+  # unit for all without group columns.
+  units_of <- function(table, n) {
+    if (length(input$group_cols) == 0L) {
+      return(rep("1", n))
+    }
+    grouping <- input$groups[[table]]
+    grouping$values[[input$group_cols[[1L]]]][grouping$row_group]
   }
   list(
     pk_duplicate = rule_outcomes(
@@ -256,6 +305,38 @@ check_keys <- function(input, context) {
         not_run_outcome("fk_not_applicable_mismatch", table, attribute, "no_matrix")
       }
     ),
+    src_id_duplicate = local({
+      scope <- columns[columns$id_marked & is.na(columns$key_type)]
+      # A row pre-flight finds can't apply is left unapplied, its repeats warning (D18.36).
+      applies <- is.na(one_to_many_problems(spec))
+      documented <- spec$one_to_many[applies]
+      rule_outcomes("src_id_duplicate", scope, input, function(table, attribute, x, row) {
+        found <- key_rows(x, row, sentinels, "allowed_in_fk")
+        # NA, blanks and every sentinel of the type ("X" and "Z") are no IDs (D18.3).
+        left_alone <- logical(length(x))
+        left_alone[c(found$missing, found$open)] <- TRUE
+        # The records of a contributor whose A2 documents this ID as one-to-many, found
+        # through the record's A2 label (D18.3, D18.6).
+        is_documented <- documented$table_name == table & documented$attribute_name == attribute
+        if (any(is_documented)) {
+          labels <- record_labels(input, table)
+          left_alone <- left_alone | labels %chin% documented$contributor_label[is_documented]
+        }
+        unit <- units_of(table, length(x))
+        star <- unit == "*"
+        compared <- which(!left_alone & !star)
+        # Made by reference, the caller's column read where it is when every record is
+        # compared (16.2).
+        pool <- setDT(list(
+          unit = unit[compared], value = if (length(compared) == length(x)) x else x[compared]
+        ))
+        fail <- compared[duplicated(pool) | duplicated(pool, fromLast = TRUE)]
+        record_outcome(
+          "src_id_duplicate", table, attribute, fail, value_text(x[fail]),
+          unchecked = which(star)
+        )
+      })
+    }),
     key_incoherent = if (!given(spec, "key_pairs")) {
       list(not_run_outcome("key_incoherent", "*", "*", "no_input"))
     } else {

@@ -107,6 +107,33 @@ build_lineage_input <- function(raw, sheet = "A2") {
   }))
 }
 
+# MAGPlot's documented one-to-many IDs are A2's sheet one_to_many, once the workbook has one
+# (D18.3, D18.36): its columns contributor, table_name, attribute_name and reason become the
+# engine's contributor_label, table_name, attribute_name and note. NULL without the sheet;
+# else list(data, origin), the origin placing each row on its sheet row and column.
+build_one_to_many_input <- function(path, sheet = "one_to_many") {
+  if (!sheet %in% workbook_sheets(path)) {
+    return(NULL)
+  }
+  raw <- raw_to_table(read_xlsx_raw(path, sheet))
+  taken <- c(
+    contributor = "contributor_label", table_name = "table_name",
+    attribute_name = "attribute_name", reason = "note"
+  )
+  absent <- setdiff(names(taken), names(raw))
+  if (length(absent) > 0L) {
+    stop(
+      "A2's sheet ", sheet, " has no column named ", paste(absent, collapse = " or "), ".",
+      call. = FALSE
+    )
+  }
+  columns <- match(names(taken), names(raw))
+  names(columns) <- unname(taken)
+  data <- raw[, names(taken), with = FALSE]
+  data.table::setnames(data, unname(taken))
+  list(data = data, origin = list(path = path, sheet = sheet, rows = 2L, columns = columns))
+}
+
 crosswalk_element <- function(path, columns) {
   if (nrow(columns) == 0L) {
     return(path)
@@ -237,6 +264,8 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   names(precedence_columns) <- taken
   # One sheet name for A2's read and for the cells its rows carry.
   sheet <- "A2"
+  # A2's documented one-to-many IDs, NULL until A2 has the sheet (D18.3).
+  one_to_many <- build_one_to_many_input(files[["A2"]])
   spec <- gpq_read_spec(
     dictionary = dictionary, code_lists = files[["Lookup_Tables"]],
     non_code_sheets = non_code_sheets, datasets = files[["datasets"]],
@@ -244,7 +273,8 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
     crosswalks = if (length(crosswalks) > 0L) crosswalks,
     id_pattern = id_pattern, id_bands = id_bands,
     precedence = precedence$data[, taken, with = FALSE], key_pairs = key_pairs$data,
-    origins = list(
+    one_to_many = one_to_many$data,
+    origins = c(list(
       # The DD's data rows are its workbook's from row 2, the header above: no exception
       # adds or removes a row. One that did would need one file row per data row.
       dictionary = list(path = files[["DD"]], sheet = dd_sheet, rows = 2L),
@@ -262,7 +292,7 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
         path = file.path(config_dir, "key_pairs.csv"),
         rows = if (length(key_pairs$lines) > 0L) key_pairs$lines else 2L
       )
-    ),
+    ), if (!is.null(one_to_many)) list(one_to_many = one_to_many$origin)),
     column_map = gpq_column_map(lineage_flag = lineage_flag),
     type_map = gpq_type_map(file.path(config_dir, "type_map.csv")),
     sentinels = sentinels

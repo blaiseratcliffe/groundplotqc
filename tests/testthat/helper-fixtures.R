@@ -516,6 +516,11 @@ fx_answer_sheet <- function() {
       "key_incoherent", "magp_tree_meas", "visit_num", "magp_tree_meas_1",
       "magp_tree_meas$visit_num row 1 99", "key_incoherent",
       witness = "visit_num=99"
+    ),
+    fx_defect(
+      "src_id_duplicate", "magp_trees", "src_tree_id", "magp_trees_1; magp_trees_2",
+      "magp_trees$src_tree_id row 2 \"s1\", row 1's", "src_id_duplicate",
+      witness = "s1"
     )
   ))
 }
@@ -619,7 +624,8 @@ fx_defect_blocks <- function() {
     fk_orphan = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, "magp_tree_meas_0"),
     fk_unassigned = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, NA_character_),
     fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L),
-    key_incoherent = fx_set_cell("magp_tree_meas", "visit_num", 1L, 99L)
+    key_incoherent = fx_set_cell("magp_tree_meas", "visit_num", 1L, 99L),
+    src_id_duplicate = fx_set_cell("magp_trees", "src_tree_id", 2L, "s1")
   )
 }
 

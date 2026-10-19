@@ -16,7 +16,7 @@ test_that("the schema lists 3.6's components in order", {
     "attributes", "keys", "code_lists", "code_list_sheets", "code_list_map", "codes",
     "non_code_sheets",
     "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
-    "type_map", "sentinels",
+    "one_to_many", "type_map", "sentinels",
     "clashes", "read_findings", "manifest"
   ))
   expect_equal(spec_schema()$manifest, c(
@@ -1240,7 +1240,7 @@ test_that("absent inputs give empty components with their columns", {
   fish <- fx_fish_spec()
   for (name in c(
     "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
-    "clashes"
+    "one_to_many", "clashes"
   )) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
@@ -1902,4 +1902,94 @@ test_that("a key pair's blank table or blank side is one finding at its cell, re
   expect_true(all(grepl("(blank)", found$detail, fixed = TRUE)))
   expect_equal(found$source_cell, paste0(basename(path), ":", 2:4))
   expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})
+
+# ---- task 12 ----
+
+test_that("one_to_many is read, and each row that can't apply is one warning (D18.36)", {
+  # Sites and visits reach their contributor through their dataset; A2 gives ON's sites and
+  # visits an ID and AB's visits none.
+  read_with <- function(one_to_many, banded = TRUE) {
+    bands <- list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = NULL
+    )
+    if (banded) {
+      bands <- c(bands, list(
+        table = "sites", attribute = "site_id", key = "dataset_id > contributor_id"
+      ))
+    }
+    gpq_read_spec(
+      data.frame(
+        table_name = c(
+          "sites", "sites", "sites", "visits", "visits", "visits", "datasets", "datasets"
+        ),
+        attribute_name = c(
+          "site_id", "dataset_id", "src_site_id", "visit_id", "site_id", "src_visit_id",
+          "dataset_id", "contributor_id"
+        ),
+        key_type = c("PK", "FK", NA, "PK", "FK", NA, "PK", NA),
+        reference_table = c(NA, "datasets", NA, NA, "sites", NA, NA, NA),
+        appendix = c(NA, NA, "A2", NA, NA, "A2", NA, NA),
+        data_type = c(
+          "integer", "character", "character", "character", "integer", "character",
+          "character", "character"
+        )
+      ),
+      code_lists = list(
+        ranges = data.frame(
+          contributor = c("AB", "ON"), v2_start = c("1", "100"), v2_end = c("99", "199")
+        ),
+        contributor = data.frame(
+          abbreviated_name = c("AB", "ON"), contributor_id = c("100", "130")
+        )
+      ),
+      non_code_sheets = c("ranges", "contributor"),
+      lineage_spec = data.frame(
+        contributor_label = c("ON", "ON", "AB", "AB"),
+        table_name = c("sites", "visits", "sites", "visits"),
+        attribute_name = c("src_site_id", "src_visit_id", "src_site_id", "src_visit_id"),
+        spec_type = "id", source_text = c("site.id", "visit.id", "plot.id", NA), note = NA,
+        source_cell = c("A2!D2", "A2!D3", "A2!F2", "A2!F3")
+      ),
+      id_pattern = "^src_.*_id$", id_bands = bands, one_to_many = one_to_many,
+      column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+    )
+  }
+  path <- withr::local_tempfile(fileext = ".csv")
+  # ON's visits apply; ON's dataset_id isn't an ID; QC isn't an A2 label; AB's A2 cell is blank.
+  data.table::fwrite(data.frame(
+    contributor_label = c("ON", "ON", "QC", "AB"),
+    table_name = c("visits", "sites", "visits", "visits"),
+    attribute_name = c("src_visit_id", "dataset_id", "src_visit_id", "src_visit_id"),
+    note = NA
+  ), path)
+  spec <- read_with(path)
+  rows <- spec$one_to_many
+  expect_equal(rows$source_cell, paste0(basename(path), ":", 2:5))
+  detail <- function(case, row) {
+    report_text(
+      paste0("preflight_detail_one_to_many_invalid_", case),
+      contributor_label = rows$contributor_label[[row]], table_name = rows$table_name[[row]],
+      attribute_name = rows$attribute_name[[row]]
+    )
+  }
+  expect_equal(one_to_many_problems(spec), c(
+    NA, detail("attribute", 2L), detail("contributor", 3L), detail("no_id", 4L)
+  ))
+  results <- preflight_checks(spec)
+  found <- results[results$rule_id == "one_to_many_invalid"]
+  expect_equal(found$outcome, rep("warn", 3L))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 3:5))
+  # Without the bands' column and key, no record has a label: every row no_label first.
+  unbanded <- read_with(path, banded = FALSE)
+  expect_equal(
+    one_to_many_problems(unbanded), vapply(1:4, function(row) detail("no_label", row), "")
+  )
+  expect_error(
+    read_with(data.frame(contributor_label = "ON", table_name = "visits")),
+    "`one_to_many` must have exactly the columns",
+    fixed = TRUE
+  )
 })

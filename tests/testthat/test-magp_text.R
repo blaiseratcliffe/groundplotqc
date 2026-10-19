@@ -21,8 +21,8 @@ test_that("MAGPlot's texts follow the engine file's rules: ASCII, braces only fo
   expect_equal(nrow(found), 0L)
 })
 
-# The shipped file has no rows, so the three tests above assert nothing about a row until
-# one arrives; the tests below read planted files through magp_texts() instead.
+# The three tests above check the shipped file's rows (D18.54); the tests below read planted
+# files through magp_texts().
 
 test_that("magp_texts hands on a clean file's rows, checked", {
   file <- withr::local_tempfile(fileext = ".csv")
