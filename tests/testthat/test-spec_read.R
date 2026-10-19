@@ -2026,9 +2026,12 @@ test_that("reach is read, each bad row one finding at its cell (D18.4, D18.36)",
     report_text(
       "preflight_detail_reach_invalid_attribute",
       table_name = "plots", attribute_name = "plot_id", value = "exempt"
-    )
+    ),
+    # The exempt row makes plots, the root, exempt too, so no walk reaches trees, which the
+    # walk checks: one finding at its first row, line 3 (task 13's fix round, D18.65).
+    report_text("preflight_detail_reach_invalid_unreachable", table_name = "trees")
   ))
-  expect_equal(found$source_cell, paste0(basename(path), ":", 4:7))
+  expect_equal(found$source_cell, paste0(basename(path), ":", c(4:7, 3L)))
   expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
   # The sound rows alone pass.
   sound <- gpq_read_spec(dictionary, reach = data.frame(
@@ -2036,4 +2039,63 @@ test_that("reach is read, each bad row one finding at its cell (D18.4, D18.36)",
     how = c("root", "from_parent")
   ))
   expect_false("reach_invalid" %in% sound$read_findings$rule_id)
+})
+
+# task 13's fix round (D18.65)
+test_that("reach_invalid finds each table the walk checks that no walk from a root reaches", {
+  # Sites, their plots and the plots' trees.
+  dictionary <- data.frame(
+    table_name = c("sites", "plots", "plots", "trees", "trees"),
+    attribute_name = c("site_id", "plot_id", "site_id", "tree_id", "plot_id"),
+    key_type = c("PK", "PK", "FK", "PK", "FK"),
+    reference_table = c(NA, NA, "sites", NA, "plots"), data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  read_from <- function(reach) {
+    data.table::fwrite(reach, path)
+    gpq_read_spec(dictionary, reach = path)
+  }
+  found_in <- function(spec) spec$read_findings[spec$read_findings$rule_id == "reach_invalid"]
+  unreached <- function(tables) {
+    vapply(tables, function(table) {
+      report_text("preflight_detail_reach_invalid_unreachable", table_name = table)
+    }, "", USE.NAMES = FALSE)
+  }
+  at <- function(lines) paste0(basename(path), ":", lines)
+  # No root: each table the walk checks, the parent a from_child row names included, one
+  # finding, at its own row or, without one, at the from_child row naming it.
+  rootless <- read_from(data.frame(
+    table_name = "trees", attribute_name = "plot_id", how = "from_child"
+  ))
+  found <- found_in(rootless)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(c(2L, 2L)))
+  expect_error(gpq_preflight(rootless), class = "gpq_preflight_error")
+  # The only root also exempt: no walk starts, so neither table below it is reached.
+  exempt_root <- read_from(data.frame(
+    table_name = c("sites", "sites", "plots", "trees"),
+    attribute_name = c(NA, NA, "site_id", "plot_id"),
+    how = c("root", "exempt", "from_parent", "from_parent")
+  ))
+  found <- found_in(exempt_root)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(4:5))
+  # A root, but trees named only by a from_child row: nothing reaches trees, nor so the plots
+  # its row names.
+  from_below <- read_from(data.frame(
+    table_name = c("sites", "trees"), attribute_name = c(NA, "plot_id"),
+    how = c("root", "from_child")
+  ))
+  found <- found_in(from_below)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(c(3L, 3L)))
+  # Every table reached: from the root down, and back up from the trees.
+  walked <- read_from(data.frame(
+    table_name = c("sites", "plots", "trees", "trees"),
+    attribute_name = c(NA, "site_id", "plot_id", "plot_id"),
+    how = c("root", "from_parent", "from_parent", "from_child")
+  ))
+  expect_equal(nrow(found_in(walked)), 0L)
+  checks <- preflight_checks(walked)
+  expect_equal(checks$outcome[checks$rule_id == "reach_invalid"], "pass")
 })

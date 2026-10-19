@@ -1599,15 +1599,17 @@ read_one_to_many <- function(x, origin = NULL) {
 #' isn't the dictionary's is a reach_invalid finding; so is a row of a known table whose `how`
 #' isn't root, exempt, from_parent or from_child, a from_parent or from_child row whose
 #' attribute isn't a foreign key of its table that the dictionary links to a parent's key
-#' (D18.42), and a root or exempt row that names an attribute. Each finding cites its cell, as
-#' the input's form allows.
+#' (D18.42), and a root or exempt row that names an attribute. So is each table the walk
+#' checks that no walk from a root reaches (D18.65), the walk read as check_keys() and
+#' reach_rows() read it. Each finding cites its cell, as the input's form allows.
 #' @noRd
 read_reach <- function(x, attributes, keys, origin = NULL) {
   table <- read_input_table(x, "reach", origin)
   columns <- spec_input_schema()$reach
   check_input_columns(table$data, columns, "reach")
   data <- table$data[, columns, with = FALSE]
-  # One finding per row in `rows`, at its cell in `column`; none for no row.
+  # One finding per row in `rows`, at its cell in `column` (one, or one per row); none for no
+  # row.
   finding <- function(rows, column, text_id, ...) {
     if (length(rows) == 0L) {
       return(NULL)
@@ -1616,7 +1618,7 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
       rule_id = "reach_invalid", input = "reach", file = table$where$file,
       detail = report_text(text_id, ...),
       source_cell = cell_references(
-        table$where, rows + 1L, rep(match(column, names(table$data)), length(rows))
+        table$where, rows + 1L, rep_len(match(column, names(table$data)), length(rows))
       )
     )
   }
@@ -1631,6 +1633,38 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
   bad_how <- which(known & !how_known)
   bad_key <- which(known & is_link & !on_key)
   bad_attribute <- which(known & how_known & !is_link & !is.na(data$attribute_name))
+  # The walk, read as check_keys() and reach_rows() read it (D18.65). The tables it checks are
+  # those a row names, but the exempt ones, and the parents a from_child row's key names, each
+  # with a primary key. The roots that aren't exempt are reached; a from_parent row's table is
+  # reached when its key's parent is, and a from_child row's parent when the row's table is;
+  # a link to or from an exempt table is followed by none.
+  parent <- keys$reference_table[linked][match(
+    paste(data$table_name, data$attribute_name, sep = "\r"), links
+  )]
+  exempt <- data$table_name[data$how %chin% "exempt"]
+  is_child_link <- data$how %chin% "from_child"
+  keyed <- keys$table_name[keys$key_type %chin% "PK" & keys$key_part %in% 1L]
+  checked <- setdiff(
+    unique(c(data$table_name[!data$how %chin% "exempt"], parent[is_child_link])), c(exempt, NA)
+  )
+  checked <- checked[checked %chin% keyed]
+  checked <- checked[order(match(checked, attributes$table_name))]
+  usable <- is_link & !is.na(parent) & !data$table_name %chin% exempt & !parent %chin% exempt
+  reached <- setdiff(data$table_name[data$how %chin% "root"], c(exempt, NA))
+  repeat {
+    up <- usable & is_child_link & data$table_name %chin% reached
+    down <- usable & data$how %chin% "from_parent" & parent %chin% reached
+    more <- setdiff(c(parent[up], data$table_name[down]), reached)
+    if (length(more) == 0L) {
+      break
+    }
+    reached <- c(reached, more)
+  }
+  # Each table no walk reaches, at its own first row's table cell or, without a row of its
+  # own, at the key cell of the first from_child row naming it.
+  unreached <- setdiff(checked, reached)
+  own <- match(unreached, data$table_name)
+  named <- match(unreached, fifelse(is_child_link, parent, NA_character_))
   findings <- list(
     table$findings,
     finding(
@@ -1649,6 +1683,11 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
       bad_attribute, "attribute_name", "preflight_detail_reach_invalid_attribute",
       table_name = data$table_name[bad_attribute],
       attribute_name = data$attribute_name[bad_attribute], value = data$how[bad_attribute]
+    ),
+    finding(
+      fifelse(is.na(own), named, own), fifelse(is.na(own), "attribute_name", "table_name"),
+      "preflight_detail_reach_invalid_unreachable",
+      table_name = unreached
     )
   )
   list(
