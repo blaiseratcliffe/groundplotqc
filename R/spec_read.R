@@ -1759,7 +1759,8 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #'   checked; `from_parent`, a record reached through this foreign key when its parent is;
 #'   `from_child`, a reached record reaching its parent through this foreign key.
 #'   `attribute_name` is blank for `root` and `exempt`. The tables checked are those the rows
-#'   name, but the exempt ones, and the parents `from_child` links reach.
+#'   name, but the exempt ones, and the parents `from_child` links reach. A record reachable
+#'   only through a table not given is left unchecked.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
 #'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
 #'   `key_pairs`, `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`) of

@@ -744,3 +744,93 @@ test_that("a design no plot measurement names is one record_unreachable warning 
     "record_unreachable magp_designs magp_designs_9 warning"
   )
 })
+
+# task 13's fix round 2 (D18.66): what only a table not given could reach is left unchecked
+test_that("a record only a table not given could reach is unchecked, by a second walk", {
+  # The catches are the root and reach the stations through the hauls, which aren't given.
+  spec <- fx_fish_spec(reach = data.frame(
+    table_name = c("catches", "catches", "hauls"),
+    attribute_name = c(NA, "haul_id", "station_id"), how = c("root", "from_child", "from_child")
+  ))
+  real_rows <- reach_rows
+  walks <- 0L
+  testthat::local_mocked_bindings(reach_rows = function(input, reach) {
+    walks <<- walks + 1L
+    real_rows(input, reach)
+  })
+  results <- fish_run(fx_fish_clean()[c("stations", "catches")], spec = spec)
+  # The second walk takes the hauls as a root. Layer 0 reports them, once; no station fails,
+  # each unchecked, so their group checked nothing (D18.21, D18.22).
+  expect_equal(walks, 2L)
+  found <- opened(results)
+  expect_equal(paste(found$rule_id, found$table_name), "table_missing hauls")
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  stations <- rows[rows$table_name == "stations"]
+  expect_equal(c(stations$status, stations$not_run_reason), c("not_run", "none_checked"))
+  expect_equal(c(stations$n_checked, stations$n_not_evaluated), c(0L, 2L))
+})
+
+# task 13's fix round 2 (D18.66)
+test_that("a record no walk could reach fails though a table isn't given; joins made once", {
+  # The hauls are the root; the catches, linked both ways, aren't given, so a second walk
+  # takes them as a root; no haul names station 2, so even that walk doesn't reach it.
+  spec <- fx_fish_spec(reach = data.frame(
+    table_name = c("hauls", "catches", "catches", "hauls"),
+    attribute_name = c(NA, "haul_id", "haul_id", "station_id"),
+    how = c("root", "from_parent", "from_child", "from_child")
+  ))
+  fish <- edited("hauls", "station_id", 3:4, c("stations_1", "stations_1"))
+  real_rows <- reach_rows
+  real_chain <- chain_rows
+  walks <- 0L
+  inside <- FALSE
+  joins <- 0L
+  testthat::local_mocked_bindings(
+    reach_rows = function(input, reach) {
+      walks <<- walks + 1L
+      inside <<- TRUE
+      on.exit(inside <<- FALSE)
+      real_rows(input, reach)
+    },
+    chain_rows = function(input, table, steps) {
+      joins <<- joins + inside
+      real_chain(input, table, steps)
+    }
+  )
+  results <- fish_run(fish[c("stations", "hauls")], spec = spec)
+  # Two walks, the hauls' one join made in the first and kept for the second.
+  expect_equal(c(walks, joins), c(2L, 1L))
+  found <- opened(results)
+  expect_equal(
+    paste(found$rule_id, placed_at(found)),
+    c("table_missing catches * NA", "record_unreachable stations station_id 2")
+  )
+})
+
+# task 13's fix round 2 (D18.66): the re-review's case
+test_that("MAGPlot without its plot measurements: table_missing once, and tree 2 alone fails", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  # Tree 2 never measured: its measurements now name tree 1, of the same subplot.
+  meas <- tables$magp_tree_meas
+  data.table::set(
+    meas,
+    i = which(meas$magp_tree_id == tables$magp_trees$magp_tree_id[[2L]]),
+    j = "magp_tree_id", value = tables$magp_trees$magp_tree_id[[1L]]
+  )
+  tables$magp_plot_meas <- NULL
+  results <- fx_caught(fx_mark_fixture(tables))
+  found <- opened(results)
+  # The plots, designs, subplots and other trees, reached only through the plot
+  # measurements, are unchecked; tree 2, which no walk reaches even through them, fails.
+  expect_setequal(paste(found$rule_id, found$table_name), c(
+    "table_missing magp_plot_meas", "record_unreachable magp_trees"
+  ))
+  expect_equal(
+    found$record_pk[found$rule_id == "record_unreachable"], tables$magp_trees$magp_tree_id[[2L]]
+  )
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  for (table in c("magp_plots", "magp_subplots", "magp_designs")) {
+    expect_equal(sum(rows$n_checked[rows$table_name == table]), 0L, info = table)
+  }
+})

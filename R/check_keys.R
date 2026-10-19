@@ -117,8 +117,11 @@ pk_holders <- function(input, table) {
 #' reaches every holder of it, and is reached when any holder is (pk_holders()). The links
 #' are passed over until a pass reaches nothing new; each link's rows are matched once, before
 #' the passes, one key join each (chain_rows(), 16.2). An exempt table is walked by no link.
-#' Returns a logical per row for each table the walk names but the exempt ones, a table not
-#' given having none.
+#' A root not given, as record_unreachable's second walk takes each linked table not given
+#' (D18.66), reaches every row its links can: a child row holding a key, or a parent row whose
+#' key a child can hold. When a link's table isn't given, the joins are kept in the input's
+#' cache, so that second walk makes none again. Returns a logical per row for each table the
+#' walk names but the exempt ones, a table not given having none.
 #' @noRd
 reach_rows <- function(input, reach) {
   keys <- input$spec$keys
@@ -145,18 +148,53 @@ reach_rows <- function(input, reach) {
     rep(table %chin% reach$table_name[reach$how %chin% "root"], size(table))
   })
   names(reached) <- walked
-  usable <- which(
-    !links$table_name %chin% exempt & !link_edges$reference_table %chin% exempt &
-      links$table_name %chin% given & link_edges$reference_table %chin% given
+  followed <- !links$table_name %chin% exempt & !link_edges$reference_table %chin% exempt
+  child_given <- links$table_name %chin% given
+  parent_given <- link_edges$reference_table %chin% given
+  usable <- which(followed & child_given & parent_given)
+  # The followed links from a table not given into one given, the only ones a second walk
+  # starts from (D18.66).
+  from_absent <- followed & fifelse(
+    links$how == "from_parent", child_given & !parent_given, parent_given & !child_given
   )
+  # A link's join, kept in the input's cache when such a link makes a second walk follow;
+  # made afresh otherwise, as nothing reads it again.
+  keep <- any(from_absent)
+  joined <- function(edge) {
+    name <- paste("reach_rows", edge$table_name, edge$attribute_name, sep = "\r")
+    rows <- input$cache[[name]]
+    if (is.null(rows)) {
+      rows <- chain_rows(input, edge$table_name, edge)
+      if (keep) {
+        assign(name, rows, envir = input$cache)
+      }
+    }
+    rows
+  }
   prepared <- lapply(usable, function(k) {
     edge <- link_edges[k]
     list(
       how = links$how[[k]], child = edge$table_name, parent = edge$reference_table,
-      parent_row = chain_rows(input, edge$table_name, edge),
-      holders = pk_holders(input, edge$reference_table)
+      parent_row = joined(edge), holders = pk_holders(input, edge$reference_table)
     )
   })
+  # A root not given reaches, through each followed link from it, every child row holding a
+  # key (its key joined to itself, as chain_rows() joins it to a parent) or every parent row
+  # holding one (pk_holders()) (D18.66).
+  absent <- setdiff(reach$table_name[reach$how %chin% "root"], given)
+  for (k in which(from_absent)) {
+    edge <- link_edges[k]
+    if (links$how[[k]] == "from_parent" && edge$reference_table %chin% absent) {
+      itself <- link_edges[k]
+      set(itself, j = "reference_table", value = edge$table_name)
+      set(itself, j = "reference_attribute", value = edge$attribute_name)
+      holds <- !is.na(chain_rows(input, edge$table_name, itself))
+      reached[[edge$table_name]] <- reached[[edge$table_name]] | holds
+    } else if (links$how[[k]] == "from_child" && edge$table_name %chin% absent) {
+      holds <- !is.na(pk_holders(input, edge$reference_table))
+      reached[[edge$reference_table]] <- reached[[edge$reference_table]] | holds
+    }
+  }
   repeat {
     changed <- FALSE
     for (link in prepared) {
@@ -259,11 +297,12 @@ record_labels <- function(input, table) {
 #' is NA, blank or a sentinel, isn't compared, and a record none of whose pairs was compared
 #' isn't checked (D18.1, D18.40). `record_unreachable` per table the `reach` input walks: a row
 #' no link reaches, on its PK's first part; a table with a `from_parent` link leaves its
-#' unreached rows unchecked, each left to the FK rules or under an unreached parent; a record
-#' pk_missing reports is not evaluated, rooted there; not_run (no_table) where a root table
-#' wasn't given (D18.4, D18.14, D18.43). `parent_without_children` per foreign key to a
-#' parent's PK: the parent rows no child row names, counted in the parent rows' own groups,
-#' with no issue (D18.10 (4), D18.34).
+#' unreached rows unchecked, each left to the FK rules or under an unreached parent; a row
+#' only a linked table not given could reach, found by a second walk taking each such table as
+#' a root, is unchecked; a record pk_missing reports is not evaluated, rooted there; not_run
+#' (no_table) where a root table wasn't given (D18.4, D18.14, D18.43, D18.66).
+#' `parent_without_children` per foreign key to a parent's PK: the parent rows no child row
+#' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34).
 #' @noRd
 check_keys <- function(input, context) {
   spec <- context$spec
@@ -557,18 +596,44 @@ check_keys <- function(input, context) {
         walked <- walked[order(match(walked, columns$table_name))]
         firsts <- primary[primary$key_part == 1L & primary$table_name %chin% walked]
         scope <- rows_of(firsts$table_name, firsts$attribute_name)
+        # The tables not given that a followed link leads from into a table given: only then a
+        # second walk, each taken as a root, finds the rows only they could reach (D18.66).
+        at <- match(
+          paste(reach$table_name, reach$attribute_name, sep = "\r"),
+          paste(edges$table_name, edges$attribute_name, sep = "\r")
+        )
+        is_link <- reach$how %chin% c("from_parent", "from_child") & !is.na(at)
+        ends <- edges[at[is_link]]
+        how <- reach$how[is_link]
+        followed <- !ends$table_name %chin% exempt & !ends$reference_table %chin% exempt
+        child_given <- ends$table_name %chin% supplied
+        parent_given <- ends$reference_table %chin% supplied
+        absent <- unique(c(
+          ends$reference_table[followed & how == "from_parent" & child_given & !parent_given],
+          ends$table_name[followed & how == "from_child" & parent_given & !child_given]
+        ))
+        possible <- if (!no_root && length(absent) > 0L) {
+          reach_rows(input, rbind(reach, data.table(
+            table_name = absent, attribute_name = NA_character_, how = "root"
+          )))
+        }
         rule_outcomes("record_unreachable", scope, input, function(table, attribute, x, row) {
           if (no_root) {
             return(not_run_outcome("record_unreachable", table, attribute, "no_table"))
           }
           unreached <- which(!reached[[table]])
+          # A row only a table not given could reach is left unchecked (D18.21, D18.66).
+          could <- logical(length(unreached))
+          if (!is.null(possible)) {
+            could <- possible[[table]][unreached]
+          }
           # A table reached from above leaves each unreached row to the FK rules or under an
           # unreached parent: reported once, at its topmost row (D18.4, D18.43).
           above <- table %chin% from_above
-          fail <- if (above) integer() else unreached
+          fail <- if (above) integer() else unreached[!could]
           record_outcome(
             "record_unreachable", table, attribute, fail, value_text(x[fail]),
-            unchecked = if (above) unreached else integer(), masked_by = "pk_missing"
+            unchecked = if (above) unreached else unreached[could], masked_by = "pk_missing"
           )
         })
       }
