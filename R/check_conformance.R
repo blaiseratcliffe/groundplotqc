@@ -251,7 +251,8 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
 
 #' A run's state while its layers are recorded: the results and issue rows so far, the next
 #' issue ID, the failures later layers' checks are masked by (record-level cells, and
-#' column-level failures by group), and the rules the self-test doesn't expect
+#' column-level failures by group; a Layer 3 failure in a key column doesn't mask Layer 4's
+#' checks of that column, D18.76), and the rules the self-test doesn't expect
 #' @noRd
 new_run_state <- function() {
   state <- new.env(parent = emptyenv())
@@ -725,9 +726,11 @@ record_count <- function(outcome, rule, severity, input, context, state, run_id)
 #' mark_not_evaluated(), and a column-level failure of an earlier one of those layers masks
 #' every record of its group. A failure of a rule `masked_by` names, of the check's own layer,
 #' masks its record or its group in the same way (D18.14, D18.32). A record masked twice keeps
-#' the lowest issue ID, which is the lowest layer's, as IDs are given layer by layer. Returns
-#' `row_number` and `root_issue_id`, or NULL where nothing failed in the column, so no table
-#' is built (D16.18).
+#' the lowest issue ID, which is the lowest layer's, as IDs are given layer by layer. `state`
+#' is the run's state, or a list of its `failed` and `column_failed` slots: record_records()
+#' hands a Layer 4 check of a key column that column's failures without Layer 3's, which don't
+#' mask it (D18.76). Returns `row_number` and `root_issue_id`, or NULL where nothing failed in
+#' the column, so no table is built (D16.18).
 #' @noRd
 cascade_masks <- function(state, table, attribute, layer, row_group, masked_by = character()) {
   key <- paste(table, attribute, sep = "\r")
@@ -773,12 +776,13 @@ cascade_masks <- function(state, table, attribute, layer, row_group, masked_by =
 #' `column_level_min_n` were checked, the failures become one column-level issue (6.3);
 #' masked records sharing one root, as many as that, become one not_evaluated column-level
 #' issue (D16.10). Each failure is kept with its rule: Layers 1 to 3's mask later layers'
-#' checks (6.2), and any rule's mask a later rule of its own layer that names it in masked_by
-#' (D18.32). Rows the rule counts as not evaluated count in n_not_evaluated with no issue, a
-#' masked one as masked. A table with no rows gives one not_run row with "*" groups, reason
-#' no_records (D16.17, D18.29). Rows the rule didn't check count in neither n_checked nor
-#' n_fail, a masked one as masked; a group that checked nothing is not_run, reason
-#' none_checked, its records not evaluated (D18.21, D18.22).
+#' checks (6.2), but Layer 3's in a primary or foreign key column don't mask Layer 4's checks
+#' of that column, which still read the value as a key (D18.76); and any rule's mask a later
+#' rule of its own layer that names it in masked_by (D18.32). Rows the rule counts as not
+#' evaluated count in n_not_evaluated with no issue, a masked one as masked. A table with no
+#' rows gives one not_run row with "*" groups, reason no_records (D16.17, D18.29). Rows the
+#' rule didn't check count in neither n_checked nor n_fail, a masked one as masked; a group that
+#' checked nothing is not_run, reason none_checked, its records not evaluated (D18.21, D18.22).
 #' @noRd
 record_records <- function(outcome, rule, severity, layer, input, context, state, run_id) {
   table <- outcome$table_name
@@ -794,7 +798,30 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     return(invisible(state))
   }
   n_groups <- grouping$n
-  masked <- cascade_masks(state, table, attribute, layer, row_group, outcome$masked_by)
+  key <- paste(table, attribute, sep = "\r")
+  # A Layer 3 failure in a primary or foreign key column doesn't mask Layer 4's checks of that
+  # column: such a value still joins, so Layer 4 checks it as a key. Layers 1 and 2's failures
+  # still mask it, and Layer 3's still mask later layers and every other column (D18.76). The
+  # cascade then reads the column's failures without Layer 3's, the run's state unchanged.
+  failures <- state
+  columns <- input$columns
+  in_key <- layer == 4L && any(!is.na(columns$key_type[
+    columns$table_name == table & columns$attribute_name == attribute
+  ]))
+  if (in_key) {
+    failures <- list(failed = list(), column_failed = list())
+    for (slot in c("failed", "column_failed")) {
+      pieces <- lapply(state[[slot]][[key]], function(piece) {
+        others <- piece$layer != 3L
+        piece[others]
+      })
+      pieces <- pieces[vapply(pieces, nrow, integer(1)) > 0L]
+      if (length(pieces) > 0L) {
+        failures[[slot]][[key]] <- pieces
+      }
+    }
+  }
+  masked <- cascade_masks(failures, table, attribute, layer, row_group, outcome$masked_by)
   masked_rows <- if (is.null(masked)) integer() else masked$row_number
   kept <- !outcome$fail %in% masked_rows
   fail <- outcome$fail[kept]
@@ -851,9 +878,9 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     status = fifelse(fail_count[present] > 0L, "fail", fifelse(none, "not_run", "pass")),
     reason = fifelse(none, "none_checked", NA_character_)
   )
-  # Each failure is kept with its rule: Layers 1 to 3's mask later layers' checks (6.2), and
+  # Each failure is kept with its rule, under `key`: Layers 1 to 3's mask later layers' checks
+  # (6.2), but for Layer 3's in a key column, which don't mask Layer 4's there (D18.76), and
   # any rule's mask a later rule of its own layer that names it in masked_by (D18.32).
-  key <- paste(table, attribute, sep = "\r")
   # Failures: column-level per group where 6.3 says so, record-level otherwise.
   whole <- which(collapse_column_level(fail_count, checked, context$column_level_min_n))
   if (length(whole) > 0L) {

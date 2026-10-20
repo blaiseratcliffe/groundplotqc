@@ -52,9 +52,11 @@ parse_chain <- function(chain, table, keys, attributes) {
 #' as plain numbers joins as stored, and against text only the numeric side is written as
 #' text, its sentinels with it (D16.42, m9); NA, every sentinel of the child's and the
 #' parent's types, and a blank key as space_padding() reads it (Unicode spaces included) match
-#' nothing, masked inside the match rather than in a copy of the column (16.2; D16.26; D16.42,
-#' m8; D18.31). A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or
-#' a table or column on it not given) gets NA; with no steps every row is its own.
+#' nothing, whatever the parent's key holds (D16.26; D16.42, m8; D18.31). They are masked after
+#' a plain match(), read with %in% in the key's own type rather than in a copy of the column
+#' (16.2), as match()'s `incomparables` isn't always honoured when it holds more than one value
+#' (D18.73). A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or a
+#' table or column on it not given) gets NA; with no steps every row is its own.
 #' @noRd
 chain_rows <- function(input, table, steps) {
   rows <- seq_len(nrow(input$data[[table]]))
@@ -84,7 +86,15 @@ chain_rows <- function(input, table, steps) {
       to <- value_text(to)
       to_open <- value_text(to_open)
     }
-    rows <- match(from, to, incomparables = c(NA, from_open, to_open, blanks(from)))
+    rows <- match(from, to)
+    # The keys that match nothing, NA where the child's key is one: a parent's key equal to one
+    # is one too. Held in the child's type, so %in% writes no number key as text (16.2): a
+    # parent's column not given has no codes, which c() would otherwise make text.
+    masked <- c(NA, from_open, to_open, blanks(from))
+    if (is.numeric(from)) {
+      masked <- suppressWarnings(as.numeric(masked))
+    }
+    rows[from %in% masked] <- NA_integer_
     current <- parent
   }
   rows

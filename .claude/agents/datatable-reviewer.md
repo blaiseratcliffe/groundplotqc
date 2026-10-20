@@ -12,7 +12,8 @@ building issues, keyed or `on =` joins, no `uniqueN` by group on large tables, `
 over columns, user tables never modified by reference inside checks. Check names
 against NAMING.md. Check code calls package functions by name, never by string
 (`do.call("x")`, `match.fun("x")`, `get()`), which the check-hash test can't follow
-(D15.13).
+(D15.13). Check that no `match()` call passes more than one value in `incomparables`,
+which base R doesn't always honour; mask after the match with `%in%` instead (D18.73).
 
 Grade each finding Critical (wrong or unsafe), Important (the change can't be trusted
 until it's fixed: wrong or fragile behaviour, a missed requirement, a test that

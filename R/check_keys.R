@@ -5,7 +5,8 @@
 # parents no child points at, and the three design candidates of Appendix E. A key is read as
 # given: NA, a blank (any Unicode space in text that isn't plain ASCII, D16.42, D18.15) and the
 # key type's sentinels are kept apart as 3.5's allowed_in_pk and allowed_in_fk say. A value
-# that failed Layers 1 to 3 is masked by the run (6.2). The engine names no table, column or
+# that failed Layers 1 to 3 is masked by the run (6.2), but for a Layer 3 failure in a key
+# column, which is still checked as a key (D18.76). The engine names no table, column or
 # code: the keys come from the dictionary, the pairs and the walk from the specification, and
 # the candidates' tables and columns from the settings (CLAUDE.md "Code").
 #
@@ -80,8 +81,10 @@ key_rows <- function(x, row, sentinels, allowed) {
 #' A child joined to its parent reaches the parent's first holder of its key (chain_rows());
 #' the holders let it reach every holder of a repeated key. NA for a row whose key is NA,
 #' blank (as space_padding() reads it) or a sentinel of its type, which no child can name
-#' (D16.26, D18.31), and for every row of a table not given or whose key isn't one column, which
-#' no foreign key follows (D18.42). Kept in the input's cache, by table.
+#' (D16.26, D18.31), masked after a plain match() with %in% in the key's own type (16.2), as
+#' match()'s `incomparables` isn't always honoured when it holds more than one value (D18.73);
+#' and for every row of a table not given or whose key isn't one column, which no foreign key
+#' follows (D18.42). Kept in the input's cache, by table.
 #' @noRd
 pk_holders <- function(input, table) {
   name <- paste("pk_holders", table, sep = "\r")
@@ -98,12 +101,14 @@ pk_holders <- function(input, table) {
   if (length(pk) == 1L && n > 0L) {
     found <- key_values(input, table, pk)
     value <- found$value
-    blanks <- character()
+    # NULL unless the key is text, so the codes keep a number key's type (16.2).
+    blanks <- NULL
     if (is.character(value)) {
       maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", value, useBytes = TRUE))
       blanks <- unique(value[maybe][space_padding(value[maybe])$blank])
     }
-    holders <- match(value, value, incomparables = c(NA, found$open, blanks))
+    holders <- match(value, value)
+    holders[value %in% c(NA, found$open, blanks)] <- NA_integer_
   }
   assign(name, holders, envir = input$cache)
   holders
@@ -119,12 +124,14 @@ pk_holders <- function(input, table) {
 #' the passes, one key join each (chain_rows(), 16.2). An exempt table is walked by no link.
 #' A root not given, as record_unreachable's second walk takes each linked table not given
 #' (D18.66), reaches every row its links can: a child row holding a key, or a parent row whose
-#' key a child can hold. A root row naming an attribute, as that walk takes each link's key
-#' column not given (D18.68), makes each link through that column reach, once a row on its near
-#' side that holds a key is reached, every row on its far side that holds one; a row whose key
-#' column isn't given counts as holding one. When a second walk will follow, the joins are kept
-#' in the input's cache, so it makes none again. Returns a logical per row for each table the
-#' walk names but the exempt ones, a table not given having none.
+#' key a child can hold, a key being neither NA, blank nor a missing-value code of the child's
+#' or the parent's type, as a join reads it (D18.75). A root row naming an attribute, as that
+#' walk takes each link's key column not given (D18.68), makes each link through that column
+#' reach, once a row on its near side that holds a key is reached, every row on its far side
+#' that holds one; a row whose key column isn't given counts as holding one. When a second walk
+#' will follow, the joins are kept in the input's cache, so it makes none again. Returns a
+#' logical per row for each table the walk names but the exempt ones, a table not given having
+#' none.
 #' @noRd
 reach_rows <- function(input, reach) {
   keys <- input$spec$keys
@@ -193,10 +200,29 @@ reach_rows <- function(input, reach) {
       parent_row = joined(edge), holders = pk_holders(input, edge$reference_table)
     )
   })
-  # Whether each row of a link's child holds a key: not NA, a sentinel of its type or blank,
-  # the keys chain_rows() masks on the child's side, read with %in%, as match()'s
-  # `incomparables` isn't always honoured when it holds more than one value (R 4.5.2); and of
-  # its parent (pk_holders()). Every row, where the key column isn't given.
+  # The missing-value codes of the other side's type, read from the columns table, in the type
+  # of a side's key: numbers for a key of numbers, as key_values() gives a key's own codes;
+  # text otherwise, a number type's codes written as value_text() writes numbers, as
+  # chain_rows() compares them (D16.26, D18.75).
+  sentinels <- input$spec$sentinels
+  child_family <- input$columns$family[match(child_at, column_key)]
+  parent_family <- input$columns$family[match(parent_at, column_key)]
+  codes_as <- function(family, value) {
+    codes <- sentinels$value[sentinels$data_type == family]
+    if (!is.numeric(value) && family != "numeric") {
+      return(codes)
+    }
+    number <- suppressWarnings(as.numeric(codes))
+    if (family != "numeric") {
+      number <- number[!is.na(number) & value_text(number) == codes]
+    }
+    if (is.numeric(value)) number else value_text(number)
+  }
+  # Whether each row of a link's child holds a key: not NA, blank or a sentinel of its type or
+  # its parent's, the keys chain_rows() masks on the child's side; and of its parent: one
+  # pk_holders() holds, not a sentinel of the child's type. Read with %in% in the key's own
+  # type (16.2), as match()'s `incomparables` isn't always honoured when it holds more than one
+  # value (D18.73). Every row, where the key column isn't given.
   child_keys <- function(k) {
     table <- links$table_name[[k]]
     if (!child_column[[k]]) {
@@ -204,19 +230,21 @@ reach_rows <- function(input, reach) {
     }
     found <- key_values(input, table, links$attribute_name[[k]])
     value <- found$value
-    blanks <- character()
+    # NULL unless the key is text, so the codes keep a number key's type (16.2).
+    blanks <- NULL
     if (is.character(value)) {
       maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", value, useBytes = TRUE))
       blanks <- unique(value[maybe][space_padding(value[maybe])$blank])
     }
-    !value %in% c(NA, found$open, blanks)
+    !value %in% c(NA, found$open, codes_as(parent_family[[k]], value), blanks)
   }
   parent_keys <- function(k) {
     parent <- link_edges$reference_table[[k]]
     if (!parent_column[[k]]) {
       return(rep(TRUE, size(parent)))
     }
-    !is.na(pk_holders(input, parent))
+    value <- key_values(input, parent, link_edges$reference_attribute[[k]])$value
+    !is.na(pk_holders(input, parent)) & !value %in% codes_as(child_family[[k]], value)
   }
   # A root table not given reaches, through each followed link from it, every row holding a
   # key on the link's far side (D18.66).

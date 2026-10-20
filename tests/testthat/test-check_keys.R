@@ -919,3 +919,216 @@ test_that("a root not given reaches no child row whose key is NA, blank or a sen
   )
   expect_equal(reach_rows(input, reach)$catches, rep(c(FALSE, TRUE), each = 4L))
 })
+
+# task 13's fix round 4 (the datatable re-review's F2): a link from a table not given whose own
+# key column isn't given either
+test_that("MAGPlot without its plot measurements or their key's column: tree 2 alone fails", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  # Tree 2 never measured: its measurements now name tree 1, of the same subplot.
+  meas <- tables$magp_tree_meas
+  data.table::set(
+    meas,
+    i = which(meas$magp_tree_id == tables$magp_trees$magp_tree_id[[2L]]),
+    j = "magp_tree_id", value = tables$magp_trees$magp_tree_id[[1L]]
+  )
+  tables$magp_plot_meas <- NULL
+  data.table::set(tables$magp_subplot_meas, j = "magp_plotmeas_id", value = NULL)
+  results <- fx_caught(fx_mark_fixture(tables))
+  found <- opened(results)
+  # Every subplot measurement counts as reached through the plot measurements, so the
+  # subplots and the other trees are unchecked; tree 2, which no walk reaches, fails.
+  expect_setequal(paste(found$rule_id, found$table_name, found$column_name), c(
+    "table_missing magp_plot_meas *", "column_missing magp_subplot_meas magp_plotmeas_id",
+    "record_unreachable magp_trees magp_tree_id"
+  ))
+  expect_equal(
+    found$record_pk[found$rule_id == "record_unreachable"], tables$magp_trees$magp_tree_id[[2L]]
+  )
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  expect_equal(sum(rows$n_checked[rows$table_name == "magp_subplots"]), 0L)
+})
+
+# task 13's fix round 4 (D18.73)
+test_that("pk_holders() gives no holder to a missing-value code, whatever comes first", {
+  # The fish spec with "X" and "Z" as the missing-value codes of text, as MAGPlot's; the
+  # stations keyed "X", "Z" and a key marked UTF-8, which makes R hash text by its content, so
+  # match()'s slip is the same in every session.
+  spec <- gpq_read_spec(
+    dictionary = example_file("fish_dictionary.csv"), code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "X", not_applicable = "Z"),
+      date = c(missing = "X", not_applicable = "Z")
+    )
+  )
+  stations <- fx_fish_clean()$stations[c(1L, 2L, 1L, 1L, 1L, 2L)]
+  marked <- paste0("stations_", intToUtf8(0xE9))
+  data.table::set(
+    stations,
+    j = "station_id", value = c("stations_1", "stations_2", "X", "Z", marked, "Z")
+  )
+  expect_equal(Encoding(marked), "UTF-8")
+  input <- conformance_input(list(stations = stations), spec)
+  expect_equal(pk_holders(input, "stations"), c(1L, 2L, NA, NA, 5L, NA))
+})
+
+# task 13's fix round 4 (D18.75): the second walk masks both sides' types' missing-value codes
+test_that("a key holding the other side's type's missing-value code reaches nothing", {
+  # trips (the root) > hauls (a whole-number key) > catches (a text haul_id); the catches name
+  # the stations. Catch 3's haul_id is "-88", the numbers' not-applicable code.
+  dictionary <- data.frame(
+    table = c("trips", "hauls", "hauls", "catches", "catches", "catches", "stations"),
+    field = c("trip_id", "haul_id", "trip_id", "catch_id", "haul_id", "station_id", "station_id"),
+    kind = c("text", "whole", "text", "text", "text", "text", "text"),
+    key = c("pk", "pk", "fk", "pk", "fk", "fk", "pk"),
+    parent = c(NA, NA, "trips", NA, "hauls", "stations", NA), codes = NA, notes = "x", low = NA,
+    high = NA, low_in = NA, high_in = NA, format = NA, width = NA, places = NA, unit = NA
+  )
+  reach <- data.frame(
+    table_name = c("trips", "hauls", "catches", "catches"),
+    attribute_name = c(NA, "trip_id", "haul_id", "station_id"),
+    how = c("root", "from_parent", "from_parent", "from_child")
+  )
+  sentinels <- gpq_sentinels(
+    numeric = c(missing = -99, not_applicable = -88),
+    character = c(missing = "?", not_applicable = "~"),
+    date = c(missing = "?", not_applicable = "~")
+  )
+  spec <- gpq_read_spec(
+    dictionary = dictionary, column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")), sentinels = sentinels, reach = reach
+  )
+  tables <- list(
+    trips = data.table::data.table(trip_id = "t1"),
+    hauls = data.table::data.table(haul_id = 1:2, trip_id = "t1"),
+    catches = data.table::data.table(
+      catch_id = c("c1", "c2", "c3"), haul_id = c("1", "2", "-88"), station_id = c("s1", "s2", "s3")
+    ),
+    stations = data.table::data.table(station_id = c("s1", "s2", "s3"))
+  )
+  # With the hauls given, catch 3 joins no haul, so station 3 fails.
+  results <- gpq_check_conformance(tables, spec, layers = 4)
+  expect_equal(placed_at(opened(results, "record_unreachable")), "stations station_id 3")
+  # Without them, the second walk reaches catches 1 and 2 only, as a join would: stations 1
+  # and 2 are unchecked, and station 3 still fails.
+  results <- gpq_check_conformance(tables[c("trips", "catches", "stations")], spec, layers = 4)
+  expect_equal(placed_at(opened(results, "record_unreachable")), "stations station_id 3")
+  rows <- results$results[results$results$rule_id == "record_unreachable"]
+  expect_equal(
+    c(rows$n_checked[rows$table_name == "stations"], rows$n_fail[rows$table_name == "stations"]),
+    c(1L, 1L)
+  )
+  # The parent's side: the catches' station_id a whole number, not given, taken as a root as the
+  # second walk takes it; a station keyed "-88" is one no catch could name.
+  dictionary$kind[[6L]] <- "whole"
+  spec <- gpq_read_spec(
+    dictionary = dictionary, column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")), sentinels = sentinels
+  )
+  input <- conformance_input(
+    list(stations = data.table::data.table(station_id = c("1", "2", "-88"))), spec
+  )
+  walk <- data.table::data.table(
+    table_name = c("catches", "catches"), attribute_name = c(NA, "station_id"),
+    how = c("root", "from_child")
+  )
+  expect_equal(reach_rows(input, walk)$stations, c(TRUE, TRUE, FALSE))
+})
+
+# task 13's fix round 4 (D18.76): a Layer 3 failure in a key column doesn't mask Layer 4 there
+test_that("a key that fails Layer 3 is still a key to Layer 4; Layers 1 and 2 still mask it", {
+  # hauls.station_id is a foreign key with a code list; hauls.water_body, a coded copy of its
+  # station's, is no key.
+  dictionary <- data.frame(
+    table = c("stations", "stations", "hauls", "hauls", "hauls"),
+    field = c("station_id", "water_body", "haul_id", "station_id", "water_body"),
+    kind = "text", key = c("pk", NA, "pk", "fk", NA), parent = c(NA, NA, NA, "stations", NA),
+    codes = c(NA, "y", NA, "y", "y"), notes = "x", low = NA, high = NA, low_in = NA,
+    high_in = NA, format = NA, width = NA, places = NA, unit = NA
+  )
+  spec <- gpq_read_spec(
+    dictionary = dictionary,
+    code_lists = list(
+      water_body = example_file("fish_water_body.csv"),
+      station_id = data.frame(station_id = c("s1", "s2"))
+    ),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    ),
+    key_pairs = data.frame(
+      table_name = "hauls", left = "water_body", right = "station_id > water_body", note = NA
+    )
+  )
+  stations <- data.table::data.table(station_id = c("s1", "s2"), water_body = c("LK", "RV"))
+  # Haul 2 names a station outside the code list and the stations; haul 3's key is padded
+  # (Layer 2); haul 4's water_body is outside its list.
+  hauls <- data.table::data.table(
+    haul_id = c("h1", "h2", "h3", "h4"), station_id = c("s1", "s9", "s2 ", "s2"),
+    water_body = c("LK", "LK", "RV", "XX")
+  )
+  results <- gpq_check_conformance(list(stations = stations, hauls = hauls), spec, layers = 0:4)
+  issues <- results$issues
+  padding <- issues[issues$rule_id == "whitespace_padding"]
+  coded <- issues[issues$rule_id == "code_not_in_list" & issues$column_name == "water_body"]
+  orphan <- issues[issues$rule_id == "fk_orphan"]
+  orphan <- orphan[order(orphan$row_number)]
+  # Haul 2's key fails code_not_in_list and is still followed: fk_orphan fails it. Haul 3's
+  # padding still masks it.
+  expect_equal(orphan$row_number, 2:3)
+  expect_equal(orphan$status, c("open", "not_evaluated"))
+  expect_equal(orphan$root_issue_id, c(NA, padding$issue_id))
+  row <- results$results[results$results$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(3L, 1L, 1L))
+  # Haul 4's water_body, no key, fails code_not_in_list, which still masks key_incoherent.
+  incoherent <- issues[issues$rule_id == "key_incoherent"]
+  expect_equal(incoherent$row_number, 4L)
+  expect_equal(incoherent$status, "not_evaluated")
+  expect_equal(incoherent$root_issue_id, coded$issue_id)
+  # A column-level failure in a key: every haul names a station outside the code list, and
+  # haul 3 one the stations lack. fk_orphan still checks each haul, and fails haul 3's.
+  stations <- data.table::data.table(station_id = c("s1", "s2", "s3"), water_body = "RV")
+  hauls <- data.table::data.table(
+    haul_id = c("h1", "h2", "h3"), station_id = c("s3", "s3", "s9"), water_body = "RV"
+  )
+  results <- gpq_check_conformance(
+    list(stations = stations, hauls = hauls), spec,
+    layers = 0:4, settings = list(column_level_min_n = 2L)
+  )
+  coded <- opened(results, "code_not_in_list")
+  expect_equal(c(coded$level, coded$column_name), c("column", "station_id"))
+  expect_equal(placed_at(opened(results, "fk_orphan")), "hauls station_id 3")
+  row <- results$results[results$results$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(3L, 1L, 0L))
+})
+
+# task 13's fix round 4 (D18.76): the band rule on MAGPlot's site IDs
+test_that("a site ID outside its band is still checked as a key (D18.76)", {
+  testthat::skip_on_cran()
+  tables <- lapply(fx_magp_clean(), data.table::copy)
+  # Two sites more, of site 1's contributor, sharing one ID in a reserved band; no visit
+  # names them.
+  sites <- tables$magp_sites
+  added <- sites[c(1L, 1L)]
+  data.table::set(added, j = "magp_site_id", value = c(900500L, 900500L))
+  tables$magp_sites <- rbind(sites, added)
+  results <- fx_caught(fx_mark_fixture(tables))
+  rows <- nrow(sites) + 1:2
+  for (rule in c("site_id_out_of_range", "pk_duplicate", "record_unreachable")) {
+    found <- opened(results, rule)
+    expect_equal(found$row_number[found$table_name == "magp_sites"], rows, info = rule)
+  }
+  # pk_missing checks them too, and nothing on the sites is left not evaluated.
+  keyed <- c("pk_duplicate", "pk_missing", "record_unreachable")
+  on_sites <- results$results$table_name == "magp_sites" & results$results$rule_id %in% keyed
+  counts <- results$results[on_sites]
+  for (rule in keyed) {
+    mine <- counts$rule_id == rule
+    expect_equal(sum(counts$n_checked[mine]), nrow(sites) + 2L, info = rule)
+    expect_equal(sum(counts$n_not_evaluated[mine]), 0L, info = rule)
+  }
+})

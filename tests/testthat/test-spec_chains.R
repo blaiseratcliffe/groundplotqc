@@ -119,3 +119,40 @@ test_that("a blank key matches nothing, so no record reaches a parent through it
     expect_equal(reach_column(input, "hauls", "water_body")$rows, c(NA, NA, 2L, 2L), info = blank)
   }
 })
+
+# task 13's fix round 4 (D18.73): match()'s `incomparables` of more than one value isn't always
+# honoured, so the keys that match nothing are masked after the match
+test_that("a missing-value code matches nothing, whatever codes the parent's key holds", {
+  # The fish spec with "X" and "Z" as the missing-value codes of text and dates, as MAGPlot's.
+  spec <- gpq_read_spec(
+    dictionary = example_file("fish_dictionary.csv"), code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "X", not_applicable = "Z"),
+      date = c(missing = "X", not_applicable = "Z")
+    )
+  )
+  # The stations keyed "X", "Z" and a key marked UTF-8, which makes R hash text by its content,
+  # so the slip is the same in every session; haul 1 names "Z".
+  fish <- fx_fish_clean()
+  stations <- rbind(fish$stations, fish$stations[c(1L, 1L, 1L)])
+  marked <- paste0("stations_", intToUtf8(0xE9))
+  data.table::set(stations, i = 3:5, j = "station_id", value = c("X", "Z", marked))
+  data.table::set(stations, i = 3:5, j = "water_body", value = c("LK", "RV", "LK"))
+  fish$stations <- stations
+  fish$hauls <- data.table::copy(fish$hauls)
+  data.table::set(fish$hauls, i = 1L, j = "station_id", value = "Z")
+  expect_equal(Encoding(stations$station_id[[5L]]), "UTF-8")
+  input <- conformance_input(fish, spec, "water_body")
+  steps <- parse_chain("station_id > water_body", "hauls", spec$keys, spec$attributes)$steps
+  # Haul 1's "Z" doesn't reach the station keyed "Z", although "X" comes before it, so neither
+  # do its catches.
+  expect_equal(chain_rows(input, "hauls", steps), c(NA, 1L, 2L, 2L))
+  through <- parse_chain("haul_id > station_id > water_body", "catches", spec$keys, spec$attributes)
+  expect_equal(chain_rows(input, "catches", through$steps), c(NA, NA, 1L, 1L, 2L, 2L, 2L, 2L))
+  # So haul 1 has no group value, where it took the station keyed "Z"'s (reach_column()).
+  groups <- input$groups$hauls
+  expect_equal(groups$values$water_body[groups$row_group], c("*", "LK", "RV", "RV"))
+  expect_equal(reach_column(input, "hauls", "water_body")$rows, c(NA, 1L, 2L, 2L))
+})
