@@ -701,6 +701,27 @@ test_that("option_unknown_name warns of each name an option gives that the dicti
   expect_equal(check("option_unknown_name", test_context()), "no_input")
 })
 
+# task 14's fix round 1 (the datatable review's F1)
+test_that("a design column setting given as none names nothing (D18.46)", {
+  settings <- list(
+    design_geometry_table = "catches", design_geometry_by = "haul_id",
+    design_geometry_columns = character()
+  )
+  expect_equal(nrow(check("setting_unknown_name", test_context(settings = settings))), 0L)
+  # MAGPlot's rule set with its signature's columns given as none.
+  context <- test_context(magp_rules(), list(design_signature_columns = character()))
+  expect_equal(nrow(check("setting_unknown_name", context, magp_spec())), 0L)
+  # A blank rule-set row gives none too.
+  blank <- list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("design_geometry_table", "design_geometry_columns"),
+      value = c("catches", NA), type = "character"
+    )
+  )
+  expect_equal(nrow(check("setting_unknown_name", test_context(blank))), 0L)
+})
+
 test_that("MAGPlot's rule set names only tables and attributes its spec has (D18.45)", {
   results <- suppressWarnings(gpq_preflight(magp_spec(), rules = magp_rules()))
   expect_equal(results$outcome[results$rule_id == "setting_unknown_name"], "pass")

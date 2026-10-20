@@ -1158,6 +1158,12 @@ test_that("design_geometry_inconsistent fails a group's records whose values dif
   row <- fish_run(fx_fish_clean())$results
   row <- row[row$rule_id == "design_geometry_inconsistent"]
   expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_input"))
+  # A record whose grouping value is NA or blank isn't grouped: catches 1 and 2 differ in
+  # weight and count, but neither has a species (D18.39).
+  for (none in c(NA_character_, "")) {
+    ungrouped <- fish_run(edited("catches", "species", 1:2, none), settings)
+    expect_equal(nrow(opened(ungrouped, "design_geometry_inconsistent")), 0L, info = none)
+  }
 })
 
 test_that("subplot_label_ambiguous fails records of other keys sharing the labels (K8)", {
@@ -1169,6 +1175,17 @@ test_that("subplot_label_ambiguous fails records of other keys sharing the label
   found <- opened(fish_run(fish, settings), "subplot_label_ambiguous")
   expect_equal(placed_at(found), c("hauls gear 1", "hauls gear 2"))
   expect_equal(found$value, rep(fx_fish_clean()$hauls$gear[[1L]], 2L))
+  # A record whose label is NA or blank isn't grouped: hauls 1 and 2 share a gear but have no
+  # station. (The last label is the reported cell, which Layer 2 would mask.)
+  for (none in c(NA_character_, "")) {
+    unlabelled <- edited("hauls", "station_id", 1:2, none, fish = fish)
+    found <- opened(fish_run(unlabelled, settings), "subplot_label_ambiguous")
+    expect_equal(nrow(found), 0L, info = none)
+  }
+  # Records of one key aren't ambiguous: haul 2 given haul 1's key and gear is pk_duplicate's.
+  same_key <- fish_run(edited("hauls", "haul_id", 2L, "hauls_1", fish = fish), settings)
+  expect_equal(nrow(opened(same_key, "subplot_label_ambiguous")), 0L)
+  expect_equal(nrow(opened(same_key, "pk_duplicate")), 2L)
 })
 
 test_that("design_duplicate_signature fails keys of one report unit sharing rows (K10)", {
@@ -1182,10 +1199,166 @@ test_that("design_duplicate_signature fails keys of one report unit sharing rows
   found <- opened(fish_run(fish, settings), "design_duplicate_signature")
   expect_equal(placed_at(found), paste("hauls haul_id", 1:4))
   expect_equal(found$expected, c("hauls_3", "hauls_4", "hauls_1", "hauls_2"))
+  # Each haul's rows are sorted before they are compared: haul 3's two catches swapped change
+  # nothing.
+  swapped <- edited("catches", "species", 5:6, fx_fish_clean()$catches$species[6:5])
+  again <- opened(fish_run(swapped, settings), "design_duplicate_signature")
+  expect_equal(placed_at(again), placed_at(found))
+  expect_equal(again$expected, found$expected)
   # Each station a report unit: its two hauls differ, so nothing fails.
   by_station <- gpq_check_conformance(
     fish, fx_fish_spec(),
     group_cols = "station_id", settings = settings, layers = 4
   )
   expect_equal(nrow(opened(by_station, "design_duplicate_signature")), 0L)
+})
+
+# ---- task 14's fix round 1 ----
+
+test_that("a number read as text is compared by its number, written as given (D18.80)", {
+  dir <- withr::local_tempdir()
+  # The fish tables as CSV files, every column read as text, catches' weight as given here.
+  as_csv <- function(tables, weight, name) {
+    tables$catches <- data.table::copy(tables$catches)
+    data.table::set(tables$catches, j = "weight", value = weight)
+    paths <- file.path(dir, paste0(name, "_", names(tables), ".csv"))
+    names(paths) <- names(tables)
+    for (table in names(tables)) {
+      data.table::fwrite(tables[[table]], paths[[table]])
+    }
+    paths
+  }
+  weights <- as.character(fx_fish_clean()$catches$weight)
+  geometry <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = "weight"
+  )
+  # Catch 2 joins catch 1's group with its weight: 1.5 and "1.50" agree, as 1.5 and 1.5 do.
+  grouped <- edited("catches", "species", 2L, "WAE")
+  as_double <- edited("catches", "weight", 2L, 1.5, fish = grouped)
+  expect_equal(nrow(opened(fish_run(as_double, geometry), "design_geometry_inconsistent")), 0L)
+  same <- as_csv(grouped, replace(weights, 1:2, c("1.5", "1.50")), "same")
+  expect_equal(nrow(opened(fish_run(same, geometry), "design_geometry_inconsistent")), 0L)
+  # Another number fails, its value and expected as written.
+  other <- as_csv(grouped, replace(weights, 1:2, c("1.5", "2.50")), "other")
+  found <- opened(fish_run(other, geometry), "design_geometry_inconsistent")
+  expect_equal(found$value, c("1.5", "2.50"))
+  expect_equal(found$expected, c("1.5; 2.50", "1.5; 2.50"))
+  # A signature differing only so is a duplicate: haul 3's catches weigh what haul 1's do.
+  signature <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = c("species", "weight")
+  )
+  twins <- as_csv(fx_fish_clean(), replace(weights, 5:6, c("1.50", "2.5")), "twins")
+  found <- opened(fish_run(twins, signature), "design_duplicate_signature")
+  expect_equal(placed_at(found), c("hauls haul_id 1", "hauls haul_id 3"))
+  expect_equal(found$expected, c("hauls_3", "hauls_1"))
+})
+
+test_that("expected lists example_cap values, then the count of the rest (D18.81)", {
+  geometry <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = "weight"
+  )
+  grouped <- edited("catches", "species", 2L, "WAE")
+  capped <- opened(
+    fish_run(grouped, c(geometry, list(example_cap = 1L))), "design_geometry_inconsistent"
+  )
+  expect_equal(capped$expected, rep("1.5 (and 1 more)", 2L))
+  full <- opened(
+    fish_run(grouped, c(geometry, list(example_cap = 2L))), "design_geometry_inconsistent"
+  )
+  expect_equal(full$expected, rep("1.5; 2.5", 2L))
+  # Hauls 1, 2 and 3 catch the same species: each expects the other two, or one and a count.
+  signature <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  three <- edited("catches", "species", 3:4, c("WAE", "NOP"))
+  found <- opened(fish_run(three, signature), "design_duplicate_signature")
+  expect_equal(placed_at(found), paste("hauls haul_id", 1:3))
+  expect_equal(found$expected, c("hauls_2; hauls_3", "hauls_1; hauls_3", "hauls_1; hauls_2"))
+  capped <- opened(
+    fish_run(three, c(signature, list(example_cap = 1L))), "design_duplicate_signature"
+  )
+  expect_equal(
+    capped$expected, c("hauls_2 (and 1 more)", "hauls_1 (and 1 more)", "hauls_1 (and 1 more)")
+  )
+  expect_equal(capped$expected[[1L]], report_text("expected_capped", values = "hauls_2", n = 1L))
+  full <- opened(
+    fish_run(three, c(signature, list(example_cap = 2L))), "design_duplicate_signature"
+  )
+  expect_equal(full$expected, found$expected)
+})
+
+test_that("design_geometry_inconsistent sorts expected in C order, whatever the locale", {
+  settings <- list(
+    design_geometry_table = "catches", design_geometry_by = "haul_id",
+    design_geometry_columns = "species"
+  )
+  # testthat sorts in C order: the run is made in a locale whose own order puts "aaa" before
+  # "NOP", where one is installed, and upper case still sorts first.
+  sorts_lower_first <- function(locale) {
+    withr::local_collate(locale)
+    identical(sort(c("NOP", "aaa")), c("aaa", "NOP"))
+  }
+  locales <- c("en_US.UTF-8", "English_United States.utf8", "en_GB.UTF-8")
+  usable <- Filter(function(locale) isTRUE(suppressWarnings(sorts_lower_first(locale))), locales)
+  testthat::skip_if(length(usable) == 0L, "no locale sorting lower case first is installed")
+  withr::local_collate(usable[[1L]])
+  fish <- edited("catches", "species", 1L, "aaa")
+  found <- opened(fish_run(fish, settings, layers = 4), "design_geometry_inconsistent")
+  expect_equal(found$expected[found$row_number %in% 1:2], rep("NOP; aaa", 2L))
+})
+
+test_that("subplot_label_ambiguous doesn't run on a table given without its key (D9.24)", {
+  settings <- list(
+    subplot_label_table = "hauls", subplot_label_columns = c("station_id", "gear")
+  )
+  fish <- edited("hauls", "gear", 2L, fx_fish_clean()$hauls$gear[[1L]])
+  hauls <- data.table::copy(fish$hauls)
+  data.table::set(hauls, j = "haul_id", value = NULL)
+  fish$hauls <- hauls
+  rows <- fish_run(fish, settings)$results
+  row <- rows[rows$rule_id == "subplot_label_ambiguous"]
+  expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_column"))
+})
+
+test_that("subplot_label_ambiguous leaves a record without a key to pk_missing (R45)", {
+  settings <- list(
+    subplot_label_table = "hauls", subplot_label_columns = c("station_id", "gear")
+  )
+  fish <- edited("hauls", "gear", 2L, fx_fish_clean()$hauls$gear[[1L]])
+  # Haul 2's key NA, or the missing-value code "?", which a key can't hold: it has none.
+  for (none in c(NA_character_, "?")) {
+    run <- fish_run(edited("hauls", "haul_id", 2L, none, fish = fish), settings)
+    expect_equal(nrow(opened(run, "subplot_label_ambiguous")), 0L, info = none)
+    expect_equal(placed_at(opened(run, "pk_missing")), "hauls haul_id 2", info = none)
+  }
+})
+
+test_that("subplot_label_ambiguous compares a composite key by its parts (D18.42)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("a", "b", "label"), key_type = c("PK", "PK", "."),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary)
+  # "x|y" and "z", and "x" and "y|z": two keys, which their parts joined with "|" would make one.
+  tables <- list(t = data.table::data.table(
+    a = c("x|y", "x"), b = c("z", "y|z"), label = c("L", "L")
+  ))
+  settings <- list(subplot_label_table = "t", subplot_label_columns = "label")
+  results <- gpq_check_conformance(tables, spec, settings = settings, layers = 4)
+  expect_equal(placed_at(opened(results, "subplot_label_ambiguous")), c("t label 1", "t label 2"))
+})
+
+test_that("design_duplicate_signature keeps rows apart whatever their text holds", {
+  settings <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  # Haul 1's rows "P\nQ" and "X", haul 2's "P" and "Q\nX": joined by line breaks they read alike.
+  fish <- edited("catches", "species", 1:4, c("P\nQ", "X", "P", "Q\nX"))
+  found <- opened(fish_run(fish, settings, layers = 4), "design_duplicate_signature")
+  expect_equal(nrow(found), 0L)
 })

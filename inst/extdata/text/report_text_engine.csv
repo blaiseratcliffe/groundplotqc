@@ -2,6 +2,7 @@
 "report_contents","en","Contents"
 "report_filter_label","en","Filter rows"
 "report_rows_capped","en","Showing {n} of {total} rows; the full list is in {csv_name}."
+"expected_capped","en","{values} (and {n} more)"
 "preflight_title","en","Pre-flight report"
 "preflight_intro","en","Pre-flight checks the specification and the run's configuration, never the data. A check that stops prevents the run; a warning lets it continue."
 "preflight_summary_title","en","Checks"

@@ -32,6 +32,19 @@ test_that("MAGPlot's src_id_duplicate row overrides the engine's when given as t
   expect_false(identical(overridden, report_text("src_id_duplicate")))
 })
 
+# task 14's fix round 1 (the report review's F2)
+test_that("MAGPlot's design candidate rows override the engine's when given as text (D14.8)", {
+  texts <- magp_texts()
+  for (id in c("design_geometry_inconsistent", "design_duplicate_signature")) {
+    row <- texts$text[texts$text_id == id & texts$lang == "en"]
+    expect_length(row, 1L)
+    # The words aren't pinned: only that the table's row is the one used, and differs.
+    overridden <- report_text(id, text = texts)
+    expect_equal(overridden, row, info = id)
+    expect_false(identical(overridden, report_text(id)), info = id)
+  }
+})
+
 # The four tests above check the shipped file's rows (D18.54); the tests below read planted
 # files through magp_texts().
 

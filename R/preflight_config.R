@@ -145,6 +145,10 @@ unknown_setting_names <- function(spec, settings) {
     }
     for (setting in tabled[[table_setting]]) {
       given <- names_in(setting)
+      # A column setting given as none names nothing.
+      if (length(given) == 0L) {
+        next
+      }
       named <- paste(table, given, sep = "\r")
       known <- named %chin% pairs
       not_key <- setting == "design_signature_by" & known & !named %chin% links

@@ -366,10 +366,14 @@ disagreeing_rows <- function(groups, value) {
   if (length(grouped) == 0L) {
     return(integer())
   }
-  pairs <- data.table(group = groups[grouped], value = value[grouped])
+  # The vectors are read where they are, a subset taken only where some row is in no group,
+  # and the pairs are a table made by reference over them (16.2).
+  every_row <- length(grouped) == length(groups)
+  group <- if (every_row) groups else groups[grouped]
+  pairs <- setDT(list(group = group, value = if (every_row) value else value[grouped]))
   distinct <- pairs[!duplicated(pairs)]
-  several <- tabulate(distinct$group, max(groups[grouped])) > 1L
-  grouped[several[groups[grouped]]]
+  several <- tabulate(distinct$group, max(group)) > 1L
+  grouped[several[group]]
 }
 
 #' Layer 4's outcomes, by rule
@@ -410,12 +414,16 @@ disagreeing_rows <- function(groups, value) {
 #' unknown name and conformance_context() drops an option's, D18.45, D18.47), one not_run row
 #' (no_input) without them: `design_geometry_inconsistent` per
 #' compared column, every record of a `design_geometry_by` group holding more than one
-#' distinct value, expected the group's values; `subplot_label_ambiguous` on the last of
-#' `subplot_label_columns`, every record whose values there a record of another PK holds;
+#' distinct value, expected the group's values as given; `subplot_label_ambiguous` on the last
+#' of `subplot_label_columns`, every record whose values there a record of another PK holds,
+#' the key compared by its parts as given, a record whose key is NA, blank or a missing-value
+#' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
 #' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
-#' frames, written as text and sorted, another row of its report unit has too, expected the
-#' others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A record whose grouping value
-#' is NA, blank or a sentinel isn't grouped.
+#' frames, sorted, another row of its report unit has too, expected the others' keys
+#' (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed column stored as text is
+#' compared by its numbers, text that doesn't coerce as written (D18.80); an `expected` list
+#' shows its first example_cap values in C order and the count of the rest (D18.81). A record
+#' whose grouping value is NA, blank or a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   spec <- context$spec
@@ -479,10 +487,40 @@ check_keys <- function(input, context) {
     }
     groups <- rep(NA_integer_, length(missing))
     present <- which(!missing)
-    if (length(present) > 0L) {
+    # The columns are read where they are, a subset taken only where some row is left out
+    # (16.2).
+    if (length(present) > 0L && length(present) == length(missing)) {
+      groups <- frankv(values, ties.method = "dense")
+    } else if (length(present) > 0L) {
       groups[present] <- frankv(lapply(values, function(v) v[present]), ties.method = "dense")
     }
     groups
+  }
+  # A column's values as the design candidates compare them (D18.80): a number-typed column
+  # stored as text, or as a factor, by its numbers, as Layer 1 coerces them, and text that
+  # doesn't coerce as written, each distinct pair one dense rank, NA a value of its own; any
+  # other column as given.
+  as_compared <- function(x, row) {
+    written <- if (row$family == "numeric") stored_text(x)
+    if (is.null(written)) {
+      return(x)
+    }
+    number <- coerce_column(x, row$r_class)$value
+    frankv(
+      list(number, fifelse(is.na(number), written, NA_character_)),
+      ties.method = "dense", na.last = TRUE
+    )
+  }
+  # The most values an `expected` list shows (D18.81): example_cap, or every value where it is
+  # 0, which leaves no value to show before the count.
+  most <- if (context$example_cap == 0L) .Machine$integer.max else context$example_cap
+  # An `expected` list ending, where `rest` values are left out, with their count (D18.81).
+  with_rest <- function(shown, rest) {
+    capped <- which(rest > 0L)
+    if (length(capped) > 0L) {
+      shown[capped] <- report_text("expected_capped", values = shown[capped], n = rest[capped])
+    }
+    shown
   }
   # Each row's report unit, the first group column's text ("*" where it reaches none); one
   # unit for all without group columns.
@@ -820,14 +858,23 @@ check_keys <- function(input, context) {
             if (is.character(groups)) {
               return(not_run_outcome("design_geometry_inconsistent", table, attribute, groups))
             }
-            fail <- disagreeing_rows(groups, x)
+            fail <- disagreeing_rows(groups, as_compared(x, row))
             text <- value_text(x[fail])
-            shared <- vapply(split(text, groups[fail]), function(values) {
-              paste(sort(unique(values), na.last = TRUE), collapse = "; ")
+            # Each failing group's distinct values as given, in C order (radix), the first
+            # example_cap of them shown and the rest counted (D18.81).
+            at <- groups[fail]
+            pairs <- setDT(list(group = at, value = text))
+            distinct <- pairs[!duplicated(pairs)]
+            ordered <- order(distinct$group, distinct$value, method = "radix", na.last = TRUE)
+            by_group <- split(distinct$value[ordered], distinct$group[ordered])
+            count <- lengths(by_group)
+            shown <- vapply(by_group, function(values) {
+              paste(values[seq_len(min(length(values), most))], collapse = "; ")
             }, "")
+            listed <- with_rest(unname(shown), count - pmin(count, most))
             record_outcome(
               "design_geometry_inconsistent", table, attribute, fail, text,
-              unname(shared[as.character(groups[fail])])
+              listed[match(at, as.integer(names(by_group)))]
             )
           }
         )
@@ -847,10 +894,30 @@ check_keys <- function(input, context) {
             if (is.character(groups)) {
               return(not_run_outcome("subplot_label_ambiguous", table, attribute, groups))
             }
-            pk <- record_pk_text(input, table, seq_along(x))$record_pk
-            # A record with no primary key is pk_missing's.
-            groups[is.na(pk)] <- NA_integer_
-            fail <- disagreeing_rows(groups, pk)
+            parts <- primary[primary$table_name == table]
+            keyed <- lapply(parts$attribute_name, function(part) data_of(table, part))
+            # A table given without a column of its key compares nothing (D9.24), as for
+            # pk_duplicate.
+            if (any(vapply(keyed, is.null, logical(1)))) {
+              return(not_run_outcome("subplot_label_ambiguous", table, attribute, "no_column"))
+            }
+            # A record whose key is NA, blank or a missing-value code a key can't hold has none:
+            # it is pk_missing's (R45), and isn't grouped.
+            for (k in seq_along(keyed)) {
+              part_row <- rows_of(table, parts$attribute_name[[k]])
+              groups[key_rows(keyed[[k]], part_row, sentinels, "allowed_in_pk")$missing] <- NA
+            }
+            # Each record's key by its parts' values as given, as pk_duplicate compares them
+            # (D18.42): one dense rank, the columns read where they are and a subset taken only
+            # where some record isn't grouped, so no key is written as text (16.2).
+            grouped <- which(!is.na(groups))
+            key <- rep(NA_integer_, length(x))
+            if (length(grouped) > 0L && length(grouped) == length(x)) {
+              key <- frankv(keyed, ties.method = "dense")
+            } else if (length(grouped) > 0L) {
+              key[grouped] <- frankv(lapply(keyed, function(v) v[grouped]), ties.method = "dense")
+            }
+            fail <- disagreeing_rows(groups, key)
             record_outcome("subplot_label_ambiguous", table, attribute, fail, value_text(x[fail]))
           }
         )
@@ -878,29 +945,58 @@ check_keys <- function(input, context) {
             }
             owner <- parent_rows(edge)
             kept <- which(!is.na(owner))
-            # Each of the table's rows as one text, its owner's rows sorted and joined: the
-            # owner's signature (Appendix E K10).
-            text <- do.call(paste, c(lapply(parts$column, function(column) {
-              value_text(input$data[[table]][[column]][kept])
-            }), sep = "\r"))
-            ordered <- order(owner[kept], text, method = "radix")
-            joined_rows <- split(text[ordered], owner[kept][ordered])
             signature <- rep(NA_character_, length(x))
-            signature[as.integer(names(joined_rows))] <- vapply(
-              joined_rows, paste, "",
-              collapse = "\n"
-            )
+            if (length(kept) > 0L) {
+              # Each of the table's rows by its signed values, compared as the candidates
+              # compare them (D18.80): one dense rank over the columns, read where they are, so
+              # no value is written as text and no value can make two rows one (16.2).
+              every_row <- length(kept) == length(owner)
+              signed_values <- lapply(seq_len(nrow(parts)), function(k) {
+                column <- input$data[[table]][[parts$column[[k]]]]
+                as_compared(if (every_row) column else column[kept], parts[k])
+              })
+              ranked <- frankv(signed_values, ties.method = "dense", na.last = TRUE)
+              mine <- if (every_row) owner else owner[kept]
+              # Each owner's signature: its rows' ranks, sorted and joined (Appendix E K10).
+              ordered <- order(mine, ranked, method = "radix")
+              joined_rows <- split(ranked[ordered], mine[ordered])
+              signature[as.integer(names(joined_rows))] <- vapply(
+                joined_rows, paste, "",
+                collapse = " "
+              )
+            }
             unit <- units_of(parent, length(x))
             star <- !is.na(signature) & unit == "*"
             compared <- which(!is.na(signature) & !star)
-            pool <- data.table(unit = unit[compared], signature = signature[compared])
-            fail <- compared[duplicated(pool) | duplicated(pool, fromLast = TRUE)]
-            ids <- value_text(x[fail])
-            same <- paste(unit[fail], signature[fail], sep = "\n")
-            members <- split(ids, same)
-            others <- vapply(seq_along(fail), function(k) {
-              paste(setdiff(members[[same[[k]]]], ids[[k]]), collapse = "; ")
-            }, "")
+            fail <- integer()
+            ids <- character()
+            others <- character()
+            if (length(compared) > 0L) {
+              # Each compared owner's group, by its unit and signature: one dense rank.
+              group <- frankv(list(unit[compared], signature[compared]), ties.method = "dense")
+              size <- tabulate(group)
+              twinned <- size[group] > 1L
+              fail <- compared[twinned]
+              at <- group[twinned]
+              ids <- value_text(x[fail])
+              # Each failing owner's twins in C order (radix), the first example_cap shown and
+              # the rest counted (D18.81), built a place at a time over every row together.
+              ordered <- order(at, ids, method = "radix")
+              sorted_ids <- ids[ordered]
+              place <- integer(length(fail))
+              place[ordered] <- rowid(at[ordered])
+              first <- match(at, at[ordered])
+              twins <- size[at] - 1L
+              shown <- pmin(twins, most)
+              others <- character(length(fail))
+              for (j in seq_len(max(c(0L, shown)))) {
+                more <- which(shown >= j)
+                # The j-th twin: the group's j-th member, or the next once past the row itself.
+                twin <- sorted_ids[first[more] + j - 1L + (j >= place[more])]
+                others[more] <- if (j == 1L) twin else paste0(others[more], "; ", twin)
+              }
+              others <- with_rest(others, twins - shown)
+            }
             record_outcome(
               "design_duplicate_signature", parent, attribute, fail, ids, others,
               unchecked = which(star)

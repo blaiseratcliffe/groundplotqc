@@ -372,7 +372,8 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   trees <- tables$magp_trees
   # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
   # 1 to 5, gives the same count). record_unreachable's plant is the exception, slightly
-  # fewer: a tree whose next tree is in another subplot is skipped (5 of 6 here).
+  # fewer: a tree whose next tree is in another subplot is skipped (5 of 6 here); and the
+  # design candidates, planted once each.
   rate <- function(n) ceiling(0.001 * n)
   expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
   expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))
@@ -453,7 +454,7 @@ test_that("the defect run raises each answer-sheet rule (D17.8)", {
   trees <- tables$magp_trees$magp_tree_id
   unmeasured <- trees[!trees %in% tables$magp_tree_meas$magp_tree_id]
   subplots <- tables$magp_subplots$magp_subplot_id
-  expect_equal(
+  expect_setequal(
     unique(paste(lost$table_name, lost$severity)), c("magp_subplots error", "magp_trees warning")
   )
   expect_equal(

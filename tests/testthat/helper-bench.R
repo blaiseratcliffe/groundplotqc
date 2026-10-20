@@ -216,7 +216,8 @@ fx_magp_scaled <- function(scale = 1, many_groups = FALSE, defects = FALSE) {
 # sheet's defects (fx_answer_sheet()), the record defects in 0.1% of their table's rows
 # (every 1000th row, from a different first row where two share a column), but for
 # record_unreachable's, slightly fewer, since a tree whose next tree is in another subplot is
-# skipped (5 of 6 at 0.01x), the table and column defects once, column_missing on
+# skipped (5 of 6 at 0.01x), the table and column defects once, the three design candidates
+# once each (frames and a subplot copied under new keys), column_missing on
 # magp_tree_cond's comments rather than magp_trees', which blank_string and sentinel_rogue_code
 # read (R9); and three carried from M4a: m9's key typed as text but stored as numbers
 # (magp_trees' PK and magp_tree_meas' FK to it), m34's fully padded key column
@@ -249,6 +250,8 @@ fx_scaled_defects <- function(tables) {
   # (design_duplicate_signature); then each design's first frame copied under a new key with
   # another plot_area, so both still share one signature (design_geometry_inconsistent); and
   # subplot 1 copied under a new key (subplot_label_ambiguous). A copy's src_* ID is its key.
+  # No measurement names the copied subplot, so record_unreachable lists it too (the answer
+  # sheet's cascade).
   frames <- tables$magp_design_frames
   signed <- c(
     "frame_type", "subplot", "plot_area", "plot_shape", "min_dbh", "max_dbh", "min_ht",
