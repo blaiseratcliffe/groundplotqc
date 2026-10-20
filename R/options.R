@@ -37,9 +37,11 @@
 #'   a group before a rule that fails on all of them is recorded as one
 #'   column-level issue. Built-in: `10`.
 #' - `groundplotqc.raw_na_policy`: when a raw `NA` is an error (`raw_na`) in a
-#'   column outside the primary and foreign keys, whose missing values Layer 4
-#'   reports: `"when_sentinels"`, only in a column whose type has missing-value
-#'   codes; `"always"`; or `"never"`. Built-in: `"when_sentinels"`.
+#'   column outside the primary and foreign keys, whose missing values
+#'   `pk_missing` and `fk_unassigned` report (Layer 4, see
+#'   [gpq_check_conformance()]): `"when_sentinels"`, only in a column whose type
+#'   has missing-value codes; `"always"`; or `"never"`. Built-in:
+#'   `"when_sentinels"`.
 #' - `groundplotqc.rogue_codes`: values that stand in for a missing value but
 #'   aren't the agreed codes (`sentinel_rogue_code`), compared as numbers in a
 #'   column stored as numbers, as text otherwise. A value is never one when it

@@ -47,9 +47,11 @@ issue's \code{expected}, which then ends with a count of the rest; at 0,
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: \code{10}.
 \item \code{groundplotqc.raw_na_policy}: when a raw \code{NA} is an error (\code{raw_na}) in a
-column outside the primary and foreign keys, whose missing values Layer 4
-reports: \code{"when_sentinels"}, only in a column whose type has missing-value
-codes; \code{"always"}; or \code{"never"}. Built-in: \code{"when_sentinels"}.
+column outside the primary and foreign keys, whose missing values
+\code{pk_missing} and \code{fk_unassigned} report (Layer 4, see
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}}): \code{"when_sentinels"}, only in a column whose type
+has missing-value codes; \code{"always"}; or \code{"never"}. Built-in:
+\code{"when_sentinels"}.
 \item \code{groundplotqc.rogue_codes}: values that stand in for a missing value but
 aren't the agreed codes (\code{sentinel_rogue_code}), compared as numbers in a
 column stored as numbers, as text otherwise. A value is never one when it

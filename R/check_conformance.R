@@ -7,7 +7,8 @@
 # earlier layer masked as not_evaluated (6.2); failures and masked records collapsed into
 # column-level issues (6.3, D16.10); and the run's metadata with its self-test (9.5, 9.7).
 
-#' Check tables against a specification: structure, types, missing-value codes and value domains
+#' Check tables against a specification: structure, types, missing-value codes, value
+#' domains and keys
 #'
 #' @description
 #' Runs the conformance stage on a set of related tables: pre-flight of the
@@ -53,8 +54,14 @@
 #' A value that failed Layer 1 is not evaluated by Layer 2: its
 #' issue there has status `not_evaluated` and names the earlier issue as its root. A value
 #' that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
-#' value, a blank, a missing-value code and an unknown code to Layer 2. When a
-#' rule fails on every checked record of a column in a group, and at least
+#' value, a blank, a missing-value code and an unknown code to Layer 2. A value that failed
+#' Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is in
+#' a primary or foreign key column: such a value still joins, so Layer 4 checks it as a key.
+#' Layer 4 leaves a key that is missing, blank or a missing-value code the key can't hold to
+#' `pk_missing` and `fk_unassigned`, counts a foreign key's missing-value code that it may
+#' hold as not evaluated in `fk_orphan` (and warns of it in `fk_sentinel_unverified` where
+#' the key is a number), and doesn't evaluate `record_unreachable` on a record `pk_missing`
+#' reports. When a rule fails on every checked record of a column in a group, and at least
 #' `column_level_min_n` records were checked, the run records one column-level issue; masked
 #' records sharing one root collapse the same way.
 #'

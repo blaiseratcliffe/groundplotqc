@@ -2,7 +2,8 @@
 % Please edit documentation in R/check_conformance.R
 \name{gpq_check_conformance}
 \alias{gpq_check_conformance}
-\title{Check tables against a specification: structure, types, missing-value codes and value domains}
+\title{Check tables against a specification: structure, types, missing-value codes, value
+domains and keys}
 \usage{
 gpq_check_conformance(
   tables,
@@ -121,8 +122,14 @@ rows have \code{"*"} in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status \code{not_evaluated} and names the earlier issue as its root. A value
 that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
-value, a blank, a missing-value code and an unknown code to Layer 2. When a
-rule fails on every checked record of a column in a group, and at least
+value, a blank, a missing-value code and an unknown code to Layer 2. A value that failed
+Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is in
+a primary or foreign key column: such a value still joins, so Layer 4 checks it as a key.
+Layer 4 leaves a key that is missing, blank or a missing-value code the key can't hold to
+\code{pk_missing} and \code{fk_unassigned}, counts a foreign key's missing-value code that it may
+hold as not evaluated in \code{fk_orphan} (and warns of it in \code{fk_sentinel_unverified} where
+the key is a number), and doesn't evaluate \code{record_unreachable} on a record \code{pk_missing}
+reports. When a rule fails on every checked record of a column in a group, and at least
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.
 
