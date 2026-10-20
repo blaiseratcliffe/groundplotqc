@@ -4,8 +4,9 @@
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
 # unknown_codes from M4a, read by the conformance checks; coordinate_attributes,
 # code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
-# Layer 3 (D18.9, D18.20). A rule-set row gives a setting as text: a whole number for type
-# "integer", several values "; "-joined, a named value as "name=value" (D16.12).
+# Layer 3 (D18.9, D18.20), and the design candidates' eight, read by Layer 4 (D18.39). A
+# rule-set row gives a setting as text: a whole number for type "integer", several values
+# "; "-joined, a named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value, what the test wants, and how a rule-set row's text becomes a value
@@ -44,6 +45,24 @@ setting_definitions <- function() {
   as_whole <- function(text) {
     if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
   }
+  # The design candidates' settings (D18.39): a table setting names one table,
+  # design_signature_by one attribute, the others any number of attributes; none built in.
+  one_name <- function(wants) {
+    list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && length(x) <= 1L && plain(x, ";"),
+      wants = wants, from_text = parts
+    )
+  }
+  attribute_names <- list(
+    type = "character", built_in = character(),
+    valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+    wants = paste(
+      "a character vector of attribute names, none of them NA, empty, padded with spaces",
+      "or holding \";\""
+    ),
+    from_text = parts
+  )
   list(
     lang = list(
       type = "character", built_in = "en",
@@ -148,7 +167,23 @@ setting_definitions <- function() {
       },
       wants = "one regular expression R can read, or none",
       from_text = function(text) if (is.na(text)) character() else text
-    )
+    ),
+    design_geometry_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_geometry_by = attribute_names,
+    design_geometry_columns = attribute_names,
+    subplot_label_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    subplot_label_columns = attribute_names,
+    design_signature_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_signature_by = one_name(
+      "one attribute name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_signature_columns = attribute_names
   )
 }
 

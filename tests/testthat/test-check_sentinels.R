@@ -341,10 +341,16 @@ test_that("species_unknown_code finds the unknown codes; without any it doesn't 
     ),
     c("*", "*", "not_run", "no_input")
   )
-  # A name no attribute has: nothing to check, so no row and nothing expected (D16.17).
-  elsewhere <- fish_run(fish, list(unknown_codes = c(colour = "red")))
-  expect_false("species_unknown_code" %in% elsewhere$results$rule_id)
-  expect_false("species_unknown_code" %in% elsewhere$metadata$self_test$rule_id)
+  # A name no attribute has stops pre-flight given as an argument (D18.45); set as an option
+  # it warns and is ignored, so the rule has no code to look for (D18.47).
+  expect_error(
+    fish_run(fish, list(unknown_codes = c(colour = "red"))),
+    class = "gpq_preflight_error"
+  )
+  withr::local_options(groundplotqc.unknown_codes = c(colour = "red"))
+  expect_warning(elsewhere <- fish_run(fish), class = "gpq_preflight_warning")
+  unknown <- elsewhere$results[elsewhere$results$rule_id == "species_unknown_code"]
+  expect_equal(c(unknown$status, unknown$not_run_reason), c("not_run", "no_input"))
 })
 
 test_that("whitespace_padding finds padded codes and IDs, keys included", {

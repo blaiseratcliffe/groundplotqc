@@ -61,14 +61,33 @@
 #' - `groundplotqc.code_set_skip_pattern`: one regular expression;
 #'   `undeclared_code_set` doesn't judge an attribute whose name matches it.
 #'   Built-in: none.
+#' - `groundplotqc.design_geometry_table`, `groundplotqc.design_geometry_by` and
+#'   `groundplotqc.design_geometry_columns`: the table
+#'   `design_geometry_inconsistent` reads, the attributes that group its
+#'   records, and the attributes that must agree within a group. Built-in: none.
+#' - `groundplotqc.subplot_label_table` and `groundplotqc.subplot_label_columns`:
+#'   the table `subplot_label_ambiguous` reads and the attributes that label its
+#'   records. Built-in: none.
+#' - `groundplotqc.design_signature_table`, `groundplotqc.design_signature_by`
+#'   and `groundplotqc.design_signature_columns`: the table
+#'   `design_duplicate_signature` reads, its foreign key to the records
+#'   compared, and the attributes whose values, over the table's rows that name
+#'   a record, make up that record's signature. Built-in: none.
 #'
 #' In a rule set's settings rows, a whole number has type `integer`, a setting
 #' with several values gives them joined by "; ", and a named one gives
 #' "name=value" parts. In every tier, a code can't be empty, begin or end with
 #' a space, tab or line break, or hold ";". In `groundplotqc.unknown_codes` the
 #' same holds for each name, and neither a code nor a name can hold "=". The
-#' same holds for each attribute name in `groundplotqc.coordinate_attributes`
-#' and `groundplotqc.code_set_skip_attributes`.
+#' same holds for each table and attribute name in
+#' `groundplotqc.coordinate_attributes`, `groundplotqc.code_set_skip_attributes`
+#' and the eight options above.
+#'
+#' Options apply to every specification checked in the session. A table or
+#' attribute an option names that a specification doesn't have is reported by
+#' pre-flight as a warning (`option_unknown_name`) and otherwise ignored; given
+#' as an argument or in a rule set, such a name stops pre-flight
+#' (`setting_unknown_name`).
 #'
 #' More options are added by the versions that bring the settings they control.
 #'

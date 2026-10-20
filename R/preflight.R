@@ -187,7 +187,8 @@ one_to_many_problems <- function(spec) {
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
 #' M2's 22, M5's `dd_format_invalid`, `key_pair_invalid`, `reach_invalid` and
-#' `one_to_many_invalid` here, then the rule set's and the text's from R/preflight_config.R.
+#' `one_to_many_invalid` here, then the rule set's (M5's `setting_unknown_name` and
+#' `option_unknown_name` last among them) and the text's from R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.
@@ -629,8 +630,13 @@ preflight_check_functions <- function() {
 #'   registered rules, and its `settings` rows give settings.
 #' @param settings A named list of settings, which come before the rule set's, the
 #'   options' and the built-in values (see [groundplotqc_options]). Pre-flight reads `lang`,
-#'   the run language, whose text `text_id_fallback` checks, and `severity`, severities by
-#'   rule ID; it accepts the other settings by name and doesn't read them.
+#'   the run language, whose text `text_id_fallback` checks; `severity`, severities by rule
+#'   ID; and the settings that name tables and attributes (`unknown_codes`,
+#'   `coordinate_attributes`, `code_set_skip_attributes` and the eight settings of
+#'   `design_geometry_inconsistent`, `subplot_label_ambiguous` and
+#'   `design_duplicate_signature`), whose names `setting_unknown_name` and
+#'   `option_unknown_name` check against the specification. It accepts the other settings by
+#'   name and doesn't read them.
 #' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
 #'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`
 #'   when pre-flight checks the registered rules' text; pre-flight's own page and table use
@@ -666,10 +672,12 @@ preflight_check_functions <- function() {
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
 #' `dd_format_invalid`, `key_pair_invalid`, `reach_invalid`, `one_to_many_invalid`; with a
 #' rule set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a
-#' severity setting, `rule_id_unknown` and `rule_set_override_invalid`; and
-#' `text_id_missing`, `text_id_fallback` and `text_slot_unknown`, on the report text of the
-#' registered rules in English and in the run language and on a caller's text table. No rule
-#' set or setting changes what a check stops or warns on.
+#' severity setting, `rule_id_unknown` and `rule_set_override_invalid`; with a setting that
+#' names tables or attributes, `setting_unknown_name` (given as an argument or in the rule
+#' set) and `option_unknown_name` (set as an option); and `text_id_missing`,
+#' `text_id_fallback` and `text_slot_unknown`, on the report text of the registered rules in
+#' English and in the run language and on a caller's text table. No rule set or setting
+#' changes what a check stops or warns on.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(

@@ -1,21 +1,31 @@
 # Pre-flight checks of the rule set, the settings and the report text (plan 4.2; D9.21,
-# D14.5 to D14.8, D14.13, D14.19, D14.21). Each takes the spec and pre-flight's context and
-# returns findings_of(...) or the reason it couldn't run, as the checks in R/preflight.R do.
-# A finding on a rule-set row read from a file names the file and the row's line (D14.19);
-# the other findings concern no file, so `file` is NA.
+# D14.5 to D14.8, D14.13, D14.19, D14.21, D18.45 to D18.47). Each takes the spec and
+# pre-flight's context and returns findings_of(...) or the reason it couldn't run, as the
+# checks in R/preflight.R do. A finding on a rule-set row read from a file names the file and
+# the row's line (D14.19); the other findings concern no file, so `file` is NA.
 
-#' What pre-flight's checks read besides the spec (D14.6, D14.13)
+#' What pre-flight's checks read besides the spec (D14.6, D14.13, D18.46)
 #'
 #' The rule set and the text table as checked, the severity setting's argument and option
-#' entries, the resolved run language and the registry. Caller errors in any of them stop
-#' here, before a check runs.
+#' entries, the resolved run language, the settings that name tables and attributes, each
+#' resolved with its tier (`settings`, which setting_unknown_name and option_unknown_name
+#' read), and the registry. Caller errors in any of them stop here, before a check runs.
 #' @noRd
 preflight_context <- function(rules = NULL, settings = list(), text = NULL) {
   rules <- validate_rule_set(rules)
   check_settings(settings, rules)
+  # The settings that name tables and attributes of the dictionary (D18.45).
+  named <- c(
+    "unknown_codes", "coordinate_attributes", "code_set_skip_attributes",
+    "design_geometry_table", "design_geometry_by", "design_geometry_columns",
+    "subplot_label_table", "subplot_label_columns", "design_signature_table",
+    "design_signature_by", "design_signature_columns"
+  )
+  resolved <- lapply(named, resolve_setting, settings = settings, rules = rules)
+  names(resolved) <- named
   list(
     rules = rules, severity = severity_entries(settings),
-    lang = resolve_setting("lang", settings, rules)$value,
+    lang = resolve_setting("lang", settings, rules)$value, settings = resolved,
     text = validate_text_table(text), registry = rule_registry()
   )
 }
@@ -79,9 +89,114 @@ allowed_text <- function(allowed, rule_ids) {
   texts
 }
 
-#' The checks of the rule set and the severity setting (4.2; D9.21, D14.5, D14.19, D16.6)
+#' The names the settings give that the dictionary lacks, one row per name (D18.45 to D18.47)
+#'
+#' `settings` holds the resolved settings that name tables and attributes, each a list of
+#' its value and tier, as preflight_context() keeps them. `unknown_codes`' names and the
+#' values of `coordinate_attributes` and `code_set_skip_attributes` are attributes of any
+#' table; each design candidate's table setting names a table and its column settings
+#' attributes of that table, `design_signature_by` a foreign key of it that the dictionary
+#' links to a parent's key (D18.42). Column settings aren't read without their table setting,
+#' and with an unknown table only the table is listed (D18.46). Columns: `setting`, `tier`,
+#' `case` (table, attribute, any or key), `table_name` and `attribute_name`, NA where the case
+#' has none. Read by setting_unknown_name, option_unknown_name and conformance_context().
+#' @noRd
+unknown_setting_names <- function(spec, settings) {
+  # A setting's names, each once; a setting not given names nothing.
+  names_in <- function(setting) {
+    value <- settings[[setting]]$value
+    unique(if (setting == "unknown_codes") names(value) else value)
+  }
+  a <- spec$attributes
+  pairs <- paste(a$table_name, a$attribute_name, sep = "\r")
+  keys <- spec$keys
+  linked <- keys$key_type == "FK" & !is.na(keys$reference_table) &
+    !is.na(keys$reference_attribute)
+  links <- paste(keys$table_name, keys$attribute_name, sep = "\r")[linked]
+  # One row per unknown name; NULL for none.
+  unknown <- function(setting, case, table, attribute) {
+    if (length(attribute) == 0L) {
+      return(NULL)
+    }
+    data.table(
+      setting = setting, tier = settings[[setting]]$tier, case = case, table_name = table,
+      attribute_name = attribute
+    )
+  }
+  anywhere <- c("unknown_codes", "coordinate_attributes", "code_set_skip_attributes")
+  # Each design candidate's table setting and the settings naming its columns (D18.39).
+  tabled <- list(
+    design_geometry_table = c("design_geometry_by", "design_geometry_columns"),
+    subplot_label_table = "subplot_label_columns",
+    design_signature_table = c("design_signature_by", "design_signature_columns")
+  )
+  found <- lapply(anywhere, function(setting) {
+    given <- names_in(setting)
+    unknown(setting, "any", NA_character_, given[!given %chin% a$attribute_name])
+  })
+  for (table_setting in names(tabled)) {
+    table <- names_in(table_setting)
+    if (length(table) == 0L) {
+      next
+    }
+    if (!table %chin% a$table_name) {
+      found[[length(found) + 1L]] <- unknown(table_setting, "table", table, NA_character_)
+      next
+    }
+    for (setting in tabled[[table_setting]]) {
+      given <- names_in(setting)
+      named <- paste(table, given, sep = "\r")
+      known <- named %chin% pairs
+      not_key <- setting == "design_signature_by" & known & !named %chin% links
+      found[[length(found) + 1L]] <- unknown(setting, "attribute", table, given[!known])
+      found[[length(found) + 1L]] <- unknown(setting, "key", table, given[not_key])
+    }
+  }
+  rbindlist(c(list(data.table(
+    setting = character(), tier = character(), case = character(), table_name = character(),
+    attribute_name = character()
+  )), found))
+}
+
+#' The checks of the rule set and the severity setting, and the names the settings give (4.2;
+#' D9.21, D14.5, D14.19, D16.6, D18.45 to D18.47)
 #' @noRd
 preflight_rule_set_checks <- function() {
+  # The names the settings of `tiers` give that the dictionary lacks
+  # (unknown_setting_names()), or NULL where none of those settings names anything, so the
+  # check doesn't run (D18.46, D18.47).
+  unknown_from <- function(spec, context, tiers) {
+    settings <- context$settings
+    naming <- vapply(names(settings), function(name) {
+      value <- settings[[name]]$value
+      settings[[name]]$tier %chin% tiers &&
+        length(if (name == "unknown_codes") names(value) else value) > 0L
+    }, logical(1))
+    if (!any(naming)) {
+      return(NULL)
+    }
+    found <- unknown_setting_names(spec, settings)
+    # Worked out before the brackets: `tier` is a column of `found`.
+    mine <- found$tier %chin% tiers
+    found[mine]
+  }
+  # One finding per unknown name, its detail the check's text for the name's case, the cases
+  # in rule_set_unknown_column's order.
+  unknown_findings <- function(found, check) {
+    rbindlist(lapply(c("table", "attribute", "any", "key"), function(case) {
+      at <- found$case == case
+      rows <- found[at]
+      findings_of(
+        rows$file,
+        report_text(
+          paste0("preflight_detail_", check, "_", case),
+          setting = rows$setting, where = rows$where, table_name = rows$table_name,
+          attribute_name = rows$attribute_name
+        ),
+        rows$source_cell
+      )
+    }))
+  }
   list(
     rule_set_unknown_column = function(spec, context) {
       if (is.null(context$rules)) {
@@ -248,6 +363,42 @@ preflight_rule_set_checks <- function() {
         ),
         repeats$source_cell
       )
+    },
+    setting_unknown_name = function(spec, context) {
+      # A name given as an argument or in the rule set travels with the spec, so one the
+      # dictionary lacks stops (D18.45, D18.47).
+      found <- unknown_from(spec, context, c("argument", "rule set"))
+      if (is.null(found)) {
+        return("no_input")
+      }
+      # A rule-set name is placed by its settings row's file line, where the rule set was read
+      # from files (D18.46).
+      rows <- context$rules$settings
+      file <- attr(rows, "source_file", exact = TRUE) %||% NA_character_
+      lines <- attr(rows, "source_lines", exact = TRUE)[match(found$setting, rows$setting)]
+      from_rows <- found$tier == "rule set"
+      on_file <- from_rows & !is.na(file)
+      set(found, j = c("where", "file", "source_cell"), value = list(
+        fifelse(
+          from_rows, report_text("preflight_setting_rule_set"),
+          report_text("preflight_setting_argument")
+        ),
+        fifelse(on_file, file, NA_character_),
+        fifelse(on_file, paste0(file, ":", lines), NA_character_)
+      ))
+      unknown_findings(found, "setting_unknown_name")
+    },
+    option_unknown_name = function(spec, context) {
+      # An option applies to every spec the session checks, so a name this one lacks warns
+      # and is otherwise ignored (conformance_context(), D18.47).
+      found <- unknown_from(spec, context, "option")
+      if (is.null(found)) {
+        return("no_input")
+      }
+      set(found, j = c("where", "file", "source_cell"), value = list(
+        NA_character_, NA_character_, NA_character_
+      ))
+      unknown_findings(found, "option_unknown_name")
     }
   )
 }

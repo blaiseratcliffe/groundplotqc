@@ -10,11 +10,13 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two, M4a's five and M5's four (D14.9, D16.11, D18.25)", {
+test_that("the declared settings are M3a's two, M4a's five and M5's (D14.9, D16.11, D18.39)", {
   expect_named(setting_definitions(), c(
     "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
     "unknown_codes", "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
-    "code_set_skip_pattern"
+    "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
+    "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
+    "design_signature_table", "design_signature_by", "design_signature_columns"
   ))
 })
 
@@ -110,7 +112,10 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
     paste(
       "can't give there: severity. A settings row can give only lang, example_cap,",
       "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes, coordinate_attributes,",
-      "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern."
+      "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern,",
+      "design_geometry_table, design_geometry_by, design_geometry_columns, subplot_label_table,",
+      "subplot_label_columns, design_signature_table, design_signature_by,",
+      "design_signature_columns."
     ),
     fixed = TRUE
   )
@@ -498,5 +503,59 @@ test_that("the code-set settings resolve, refuse what they can't read (D18.20, D
   expect_identical(
     resolve_setting("code_set_skip_pattern", list(code_set_skip_pattern = character()))$value,
     character()
+  )
+})
+
+# ---- task 14 ----
+
+test_that("the design candidates' settings resolve; a table setting takes one name (D18.39)", {
+  designs <- c(
+    "design_geometry_table", "design_geometry_by", "design_geometry_columns",
+    "subplot_label_table", "subplot_label_columns", "design_signature_table",
+    "design_signature_by", "design_signature_columns"
+  )
+  for (name in designs) {
+    expect_identical(resolve_setting(name)$value, character(), info = name)
+  }
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("design_geometry_table", "design_geometry_by"),
+      value = c("magp_design_frames", "magp_design_id; subplot"), type = "character"
+    )
+  ))
+  expect_equal(
+    resolve_setting("design_geometry_table", rules = rows),
+    list(value = "magp_design_frames", tier = "rule set")
+  )
+  expect_equal(
+    resolve_setting("design_geometry_by", rules = rows)$value, c("magp_design_id", "subplot")
+  )
+  one_table <- paste(
+    "must be one table name, not NA, empty, padded with spaces or holding \";\",",
+    "or none."
+  )
+  for (name in c("design_geometry_table", "subplot_label_table", "design_signature_table")) {
+    for (bad in list(c("a", "b"), NA_character_, " a", "a;b", 1)) {
+      given <- list(bad)
+      names(given) <- name
+      expect_error(
+        resolve_setting(name, given), paste0("Setting ", name, " (argument) ", one_table),
+        fixed = TRUE, info = paste(name, deparse(bad))
+      )
+    }
+  }
+  expect_error(
+    resolve_setting("design_signature_by", list(design_signature_by = c("a", "b"))),
+    paste(
+      "Setting design_signature_by (argument) must be one attribute name, not NA, empty,",
+      "padded with spaces or holding \";\", or none."
+    ),
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("design_signature_columns", list(design_signature_columns = "a;b")),
+    "Setting design_signature_columns (argument) must be a character vector of attribute names",
+    fixed = TRUE
   )
 })

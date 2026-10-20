@@ -9,3 +9,11 @@ coordinate_attributes,latitude; longitude; utm_e; utm_n,character
 code_set_max_values,25,integer
 code_set_skip_attributes,meas_plots; meas_frames; temporal_extent; meas_cycle; subplot,character
 code_set_skip_pattern,_id$|^comments$|name|_date$|^src_|^meas_subplots$,character
+design_geometry_table,magp_design_frames,character
+design_geometry_by,magp_design_id; subplot,character
+design_geometry_columns,plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf,character
+subplot_label_table,magp_subplots,character
+subplot_label_columns,magp_plot_id; subplot,character
+design_signature_table,magp_design_frames,character
+design_signature_by,magp_design_id,character
+design_signature_columns,frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf,character

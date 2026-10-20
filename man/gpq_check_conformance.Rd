@@ -134,11 +134,13 @@ run, naming the column, the table it is read from and its first such row.
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
 \code{coordinate_attributes}, \code{code_set_max_values}, \code{code_set_skip_attributes},
-\code{code_set_skip_pattern}, \code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule
-set's \code{rules} rows give a rule's severity and turn it off (\code{enabled}) for a table and
-attribute: the most specific row that gives a value wins (table and attribute, then table
-and \code{"*"}, then \code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no
-rows there.
+\code{code_set_skip_pattern}, \code{design_geometry_table}, \code{design_geometry_by},
+\code{design_geometry_columns}, \code{subplot_label_table}, \code{subplot_label_columns},
+\code{design_signature_table}, \code{design_signature_by}, \code{design_signature_columns},
+\code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule set's \code{rules} rows give
+a rule's severity and turn it off (\code{enabled}) for a table and attribute: the most specific
+row that gives a value wins (table and attribute, then table and \code{"*"}, then \code{"*"} and
+attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no rows there.
 }
 \examples{
 # magp_example with one planted defect: a missing value in a column that must hold one.

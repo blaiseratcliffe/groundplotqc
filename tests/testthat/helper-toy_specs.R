@@ -170,7 +170,8 @@ fx_planted_spec <- function() {
 # 5, its only finding, D16.6); the rule set's language, fr,
 # has no rows (text_id_fallback, one finding per registered rule). text_id_missing can't fire
 # on the registry's own rules, which all have English text; its test gives the check a
-# registry of its own. text_slot_unknown 1 is the planted test's text row.
+# registry of its own. text_slot_unknown 1 is the planted test's text row. The settings'
+# coordinate_attributes names an attribute nowhere in the spec (setting_unknown_name 1).
 fx_planted_rule_set <- function() {
   list(
     meta = data.frame(
@@ -187,7 +188,7 @@ fx_planted_rule_set <- function() {
 }
 
 fx_planted_settings <- function() {
-  list(severity = c(also_unknown = "error"))
+  list(severity = c(also_unknown = "error"), coordinate_attributes = "nowhere")
 }
 
 # An empty rule set: every check of the rule set runs and finds nothing.

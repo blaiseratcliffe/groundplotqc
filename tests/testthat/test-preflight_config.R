@@ -579,3 +579,129 @@ test_that("MAGPlot's rule set has no repeated row (D16.6)", {
   context <- preflight_context(magp_rules())
   expect_equal(nrow(preflight_check_functions()$rule_set_duplicate_row(magp_spec(), context)), 0L)
 })
+
+# ---- task 14 ----
+
+test_that("setting_unknown_name stops on each name an argument gives that the dictionary lacks", {
+  # D18.45 to D18.47: an argument's names travel with the spec.
+  settings <- list(
+    unknown_codes = c(species = "UNK", colour = "red", colour = "?"),
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "net"),
+    design_geometry_columns = "weight", subplot_label_table = "nets",
+    subplot_label_columns = "mesh", design_signature_table = "catches",
+    design_signature_by = "species", design_signature_columns = "length"
+  )
+  found <- check("setting_unknown_name", test_context(settings = settings))
+  detail <- function(case, ...) {
+    report_text(
+      paste0("preflight_detail_setting_unknown_name_", case),
+      where = report_text("preflight_setting_argument"), ...
+    )
+  }
+  # By case, as rule_set_unknown_column orders its findings; a name given twice once; with an
+  # unknown table its columns aren't read (D18.46).
+  expect_equal(found$detail, c(
+    detail("table", setting = "subplot_label_table", table_name = "nets"),
+    detail(
+      "attribute",
+      setting = "design_geometry_by", table_name = "catches", attribute_name = "net"
+    ),
+    detail(
+      "attribute",
+      setting = "design_signature_columns", table_name = "catches", attribute_name = "length"
+    ),
+    detail("any", setting = "unknown_codes", attribute_name = "colour"),
+    detail(
+      "key",
+      setting = "design_signature_by", table_name = "catches", attribute_name = "species"
+    )
+  ))
+  expect_true(all(is.na(found$file) & is.na(found$source_cell)))
+  # No argument or rule-set setting names anything: not run; names it has: a pass.
+  expect_equal(check("setting_unknown_name", test_context()), "no_input")
+  known <- test_context(settings = list(coordinate_attributes = "depth"))
+  expect_equal(nrow(check("setting_unknown_name", known)), 0L)
+  # A value of the wrong shape is a caller's error before any check (D18.46).
+  expect_error(
+    gpq_preflight(fx_fish_spec(), settings = list(coordinate_attributes = NA_character_)),
+    "Setting coordinate_attributes (argument)",
+    fixed = TRUE
+  )
+})
+
+test_that("a name from a rule set read from files is placed by its settings row (D18.46)", {
+  dir <- withr::local_tempdir()
+  writeLines(
+    c("rule_id,table_name,attribute_name,severity,class,enabled", "conform,*,*,,,TRUE"),
+    file.path(dir, "rules_rules.csv")
+  )
+  writeLines(
+    c(
+      "setting,value,type", "lang,en,character",
+      "code_set_skip_attributes,station_name; notes,character"
+    ),
+    file.path(dir, "rules_settings.csv")
+  )
+  found <- check("setting_unknown_name", test_context(read_rule_set(dir)))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_setting_unknown_name_any",
+    setting = "code_set_skip_attributes", where = report_text("preflight_setting_rule_set"),
+    attribute_name = "notes"
+  ))
+  expect_equal(found$file, "rules_settings.csv")
+  expect_equal(found$source_cell, "rules_settings.csv:3")
+  # Given in memory, the rule set's row has no line.
+  in_memory <- list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "code_set_skip_attributes", value = "notes", type = "character")
+  )
+  found <- check("setting_unknown_name", test_context(in_memory))
+  expect_equal(c(found$file, found$source_cell), c(NA_character_, NA_character_))
+})
+
+test_that("design_signature_by must be a foreign key linked to its parent's key (D18.42)", {
+  # b's a1 points at a table with a composite key, which the dictionary links to no key.
+  spec <- gpq_read_spec(data.frame(
+    table_name = c("a", "a", "b", "b"), attribute_name = c("a1", "a2", "b_id", "a1"),
+    key_type = c("PK", "PK", "PK", "FK"), reference_table = c(NA, NA, NA, "a"),
+    data_type = "character"
+  ))
+  context <- test_context(settings = list(
+    design_signature_table = "b", design_signature_by = "a1", design_signature_columns = "b_id"
+  ))
+  found <- check("setting_unknown_name", context, spec)
+  expect_equal(found$detail, report_text(
+    "preflight_detail_setting_unknown_name_key",
+    setting = "design_signature_by", where = report_text("preflight_setting_argument"),
+    table_name = "b", attribute_name = "a1"
+  ))
+})
+
+test_that("option_unknown_name warns of each name an option gives that the dictionary lacks", {
+  # D18.47: an option applies to every spec the session checks.
+  withr::local_options(
+    groundplotqc.coordinate_attributes = c("depth", "latitude"),
+    groundplotqc.design_signature_table = "plots"
+  )
+  context <- test_context()
+  found <- check("option_unknown_name", context)
+  detail <- function(case, ...) {
+    report_text(paste0("preflight_detail_option_unknown_name_", case), ...)
+  }
+  expect_equal(found$detail, c(
+    detail("table", setting = "design_signature_table", table_name = "plots"),
+    detail("any", setting = "coordinate_attributes", attribute_name = "latitude")
+  ))
+  expect_true(all(is.na(found$file) & is.na(found$source_cell)))
+  # An option's names are the option check's alone.
+  expect_equal(check("setting_unknown_name", context), "no_input")
+  withr::local_options(
+    groundplotqc.coordinate_attributes = NULL, groundplotqc.design_signature_table = NULL
+  )
+  expect_equal(check("option_unknown_name", test_context()), "no_input")
+})
+
+test_that("MAGPlot's rule set names only tables and attributes its spec has (D18.45)", {
+  results <- suppressWarnings(gpq_preflight(magp_spec(), rules = magp_rules()))
+  expect_equal(results$outcome[results$rule_id == "setting_unknown_name"], "pass")
+})

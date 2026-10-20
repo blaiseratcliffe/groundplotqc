@@ -60,6 +60,16 @@ build_rule_registry <- function() {
     )
   }
   lists <- "code_list_map; code_lists; non_code_sheets"
+  # The settings that name tables and attributes, which setting_unknown_name and
+  # option_unknown_name read (D18.45, D18.47).
+  naming <- paste(
+    "attributes; keys; rules; settings:code_set_skip_attributes;",
+    "settings:coordinate_attributes; settings:design_geometry_by;",
+    "settings:design_geometry_columns; settings:design_geometry_table;",
+    "settings:design_signature_by; settings:design_signature_columns;",
+    "settings:design_signature_table; settings:subplot_label_columns;",
+    "settings:subplot_label_table; settings:unknown_codes"
+  )
   rbindlist(list(
     preflight("dd_duplicate_attribute", "error", "attributes"),
     preflight("dd_type_unknown", "error", "attributes; type_map; read_findings"),
@@ -95,6 +105,9 @@ build_rule_registry <- function() {
     preflight("rule_id_unknown", "error", "rules; settings:severity"),
     preflight("rule_set_override_invalid", "error", "rules; settings:severity"),
     preflight("rule_set_duplicate_row", "error", "rules"),
+    # ---- M5: the names the settings give (4.2; D18.45 to D18.47) ----
+    preflight("setting_unknown_name", "error", naming),
+    preflight("option_unknown_name", "warning", naming),
     # ---- task 6 ----
     preflight("text_id_missing", "error", "text"),
     preflight("text_id_fallback", "warning", "text; settings:lang"),

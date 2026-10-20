@@ -66,11 +66,13 @@
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
 #' `coordinate_attributes`, `code_set_max_values`, `code_set_skip_attributes`,
-#' `code_set_skip_pattern`, `column_level_min_n`, `example_cap`, `lang` and `severity`. A rule
-#' set's `rules` rows give a rule's severity and turn it off (`enabled`) for a table and
-#' attribute: the most specific row that gives a value wins (table and attribute, then table
-#' and `"*"`, then `"*"` and attribute, then `"*"` and `"*"`). A rule turned off writes no
-#' rows there.
+#' `code_set_skip_pattern`, `design_geometry_table`, `design_geometry_by`,
+#' `design_geometry_columns`, `subplot_label_table`, `subplot_label_columns`,
+#' `design_signature_table`, `design_signature_by`, `design_signature_columns`,
+#' `column_level_min_n`, `example_cap`, `lang` and `severity`. A rule set's `rules` rows give
+#' a rule's severity and turn it off (`enabled`) for a table and attribute: the most specific
+#' row that gives a value wins (table and attribute, then table and `"*"`, then `"*"` and
+#' attribute, then `"*"` and `"*"`). A rule turned off writes no rows there.
 #'
 #' @param tables The tables, one per table of the specification, named as it names them: a
 #'   named list whose elements are data.frames or paths of CSV files, mixed as you like, or
@@ -302,16 +304,40 @@ conformance_context <- function(spec, rules, settings, layers) {
   asked <- run_rules$layer %in% layers
   run_rules <- run_rules[asked]
   setting <- function(name) resolve_setting(name, settings, rules)$value
+  # The settings naming tables and attributes, less the names the dictionary lacks: once
+  # pre-flight has passed only an option can hold one, which option_unknown_name warns of,
+  # and it is ignored (D18.47).
+  named <- preflight_context(rules, settings)$settings
+  unknown <- unknown_setting_names(spec, named)
+  known <- function(name) {
+    value <- named[[name]]$value
+    # Worked out before the brackets: `setting` is a column of `unknown`.
+    mine <- unknown$setting == name
+    gone <- unknown[mine]
+    dropped <- c(
+      gone$table_name[gone$case == "table"], gone$attribute_name[gone$case != "table"]
+    )
+    by_name <- if (name == "unknown_codes") names(value) else value
+    value[!by_name %chin% dropped]
+  }
   codes <- spec$codes
   list(
     spec = spec, registry = registry, run_rules = run_rules, rule_rows = rules$rules,
     severity = severity_entries(settings),
     raw_na_policy = setting("raw_na_policy"), rogue_codes = setting("rogue_codes"),
-    unknown_codes = setting("unknown_codes"),
-    coordinate_attributes = setting("coordinate_attributes"),
+    unknown_codes = known("unknown_codes"),
+    coordinate_attributes = known("coordinate_attributes"),
     code_set_max_values = as.integer(setting("code_set_max_values")),
-    code_set_skip_attributes = setting("code_set_skip_attributes"),
+    code_set_skip_attributes = known("code_set_skip_attributes"),
     code_set_skip_pattern = setting("code_set_skip_pattern"),
+    design_geometry_table = known("design_geometry_table"),
+    design_geometry_by = known("design_geometry_by"),
+    design_geometry_columns = known("design_geometry_columns"),
+    subplot_label_table = known("subplot_label_table"),
+    subplot_label_columns = known("subplot_label_columns"),
+    design_signature_table = known("design_signature_table"),
+    design_signature_by = known("design_signature_by"),
+    design_signature_columns = known("design_signature_columns"),
     column_level_min_n = as.integer(setting("column_level_min_n")),
     example_cap = as.integer(setting("example_cap")),
     codes = split(codes$code, paste(codes$table_name, codes$attribute_name, sep = "\r")),
