@@ -31,9 +31,10 @@ domain_skipped <- function(x, row, context, number = NULL) {
   )
   if (!is.null(number) && is.numeric(x) && !is.object(x)) {
     # Plain numbers aren't all written as text (16.2): NA is NA, and only NaN and the values
-    # whose 15-digit text may be a code are written. A value written as a number's code lies
-    # within 1e-14 of it, relative, so the wider margin here only narrows what is written;
-    # the text decides, as for every other value.
+    # whose 15-digit text may be a code are written, each distinct value once (m34). A value
+    # written as a number's code lies within 1e-14 of it, relative, so the wider margin here
+    # only narrows what is written; the text decides, as for every other value. The margin
+    # rests on value_text() writing 15 significant digits: a change to them revisits it (R84).
     numbers <- suppressWarnings(as.numeric(codes))
     near <- is.nan(x)
     for (code in numbers[!is.na(numbers)]) {
@@ -42,7 +43,9 @@ domain_skipped <- function(x, row, context, number = NULL) {
     }
     skipped <- is.na(x) & !is.nan(x)
     maybe <- which(near)
-    skipped[maybe] <- value_text(x[maybe]) %chin% codes
+    held <- x[maybe]
+    distinct <- unique(held)
+    skipped[maybe] <- (value_text(distinct) %chin% codes)[match(held, distinct)]
   } else {
     text <- value_text(x)
     skipped <- is.na(text) | text %chin% codes

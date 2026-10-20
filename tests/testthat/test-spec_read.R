@@ -1661,6 +1661,12 @@ test_that("the toys' dictionaries give ranges and formats under their own names 
   dbh <- as.numeric(meas$DBH)
   expect_true(all(dbh > 0 & dbh <= 300))
   expect_true(all(nchar(sub("^[0-9]*[.]?", "", meas$DBH)) <= 1L))
+  # The clean base's bounded, long and decimal columns too (the finish's minors pass, m20).
+  expect_true(all(clean$PLOTS$PLOT_AREA > 0 & clean$PLOTS$PLOT_AREA <= 1))
+  expect_true(all(clean$TREES$TREE_NO >= 1L & clean$TREES$TREE_NO <= 999L))
+  expect_true(all(nchar(clean$TREE_MEAS$SPECIES) <= 4L))
+  expect_true(all(clean$TREE_MEAS$DBH > 0 & clean$TREE_MEAS$DBH <= 300))
+  expect_true(all(decimal_places(clean$TREE_MEAS$DBH) <= 1L))
 })
 
 test_that("the bands' column and key give id_band_columns and each band's key (D18.2, D18.18)", {

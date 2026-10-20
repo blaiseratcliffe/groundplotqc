@@ -831,14 +831,14 @@ test_that("a table_map in a classed character vector is read as its text (m25, D
 test_that("a CSV that changes while it is read stops the run before any check (m28, D17.32)", {
   dir <- withr::local_tempdir()
   paths <- fish_csv(dir)
-  # The spec is read before the mock, so the first fread() the mock sees is stations.csv's,
-  # not one of the spec's own files.
+  # The spec is read before the mock; the mock acts on stations.csv's read only, whatever else
+  # (such as the report text, when no earlier test has read it) is read first.
   spec <- fx_fish_spec()
   real_fread <- data.table::fread
   grown <- FALSE
   # The first read of stations.csv adds a line to it, as a program still writing it would.
   testthat::local_mocked_bindings(fread = function(...) {
-    if (!grown) {
+    if (!grown && identical(list(...)$file, paths[["stations"]])) {
       grown <<- TRUE
       cat("S9,t9,lake,1.5,2020-06-09\n", file = paths[["stations"]], append = TRUE)
     }
@@ -858,4 +858,25 @@ test_that("a CSV that changes while it is read stops the run before any check (m
   dir.create(again)
   results <- gpq_check_conformance(fish_csv(again), fx_fish_spec(), run_id = run_id)
   expect_equal(results$metadata$inputs$file, paste0(c("stations", "hauls", "catches"), ".csv"))
+  # A file whose modification time alone changes stops the run too, its size the same (the
+  # finish's minors pass, m13).
+  touched <- file.path(dir, "touched")
+  dir.create(touched)
+  paths <- fish_csv(touched)
+  moved <- FALSE
+  testthat::local_mocked_bindings(fread = function(...) {
+    if (!moved && identical(list(...)$file, paths[["stations"]])) {
+      moved <<- TRUE
+      Sys.setFileTime(paths[["stations"]], file.info(paths[["stations"]])$mtime + 3600)
+    }
+    real_fread(...)
+  })
+  size <- file.size(paths[["stations"]])
+  expect_error(
+    gpq_check_conformance(paths, spec, run_id = run_id),
+    "Table stations: the file stations.csv changed while it was read",
+    fixed = TRUE
+  )
+  expect_true(moved)
+  expect_equal(file.size(paths[["stations"]]), size)
 })

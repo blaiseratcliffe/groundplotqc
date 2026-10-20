@@ -85,7 +85,8 @@ read_tables <- function(tables, spec, table_map = NULL) {
 #' line than the first, in a file of more than one column (D17.16, D17.24), stop the run,
 #' naming the table and the file, whatever the session's `warn`. A file cut exactly at a line
 #' end can't be told from a shorter one. A file whose size or modification time changes
-#' between the read and its hash stops the run too (D17.32). Returns `data`, `file` (the
+#' between the stamp taken before its last byte is read and the one taken after its hash stops
+#' the run too (D17.32). Returns `data`, `file` (the
 #' file's name without its folder, R2), `sha256` and `detail` (the rows, the separator as a
 #' word and the values converted, D17.27).
 #' @noRd

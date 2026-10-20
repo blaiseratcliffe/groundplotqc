@@ -2,10 +2,12 @@
 # MAGPlot's clean base scaled to the shape of the AB file, every key path to one ancestor
 # agreeing, with the fixture marker. bench/generate.R and bench/run.R source this file with
 # helper-fixtures.R; the 0.1x smoke test calls fx_magp_scaled() directly. Every value that
-# isn't a key or a src_*_id is one of fx_magp_clean()'s, or for the sites' datum and ec_* made
-# by its formulas site by site (D18.20), so the scaled base is as clean as the clean base;
-# each src_*_id holds its record's key as text, and magp_datasets' coded src_dataset_id its
-# datasets sheet row's, so none repeats (R46).
+# isn't a key or a src_*_id is one of fx_magp_clean()'s, but the sites' datum and ec_*, made
+# by its formulas site by site (D18.20), the third and fourth frames' labels and their
+# subplots' (D18.41), and with `many_groups` the sites' jurisdiction, their dataset's on the
+# datasets sheet (R8; m38); so the scaled base is as clean as the clean base. Each src_*_id
+# holds its record's key as text, and magp_datasets' coded src_dataset_id its datasets sheet
+# row's, so none repeats (R46).
 
 # MAGPlot's tables at `scale` of the AB file's shape (D17.7): at 1x D1.9a's counts for
 # magp_tree_cond (2,012,280), magp_tree_meas (1,615,305) and magp_trees (517,508), the other

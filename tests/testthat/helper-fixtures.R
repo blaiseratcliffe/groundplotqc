@@ -12,10 +12,12 @@
 # parent row that agrees with the record's own ancestors, so two key paths to one ancestor
 # reach the same row; where the record and that parent share an ancestor and no parent row
 # agrees, the build stops. Keys are unique and point to a parent's row; a coded column holds
-# codes of its list, never a sentinel; a date column dates in its format; other columns
-# made-up numbers and text with no blanks and no spaces. Single-column primary keys only,
-# foreign keys to their parent's PK, and no table that points at itself. Last, each
-# key_pairs copy is taken from the record's parent (fx_copy_key_pairs()).
+# codes of its list, never a sentinel; a date column dates in its format; a number column
+# made-up numbers inside the dictionary's bounds where it gives them, the build stopping where
+# none fits (within_bounds()); other columns made-up text with no blanks and no spaces.
+# Single-column primary keys only, foreign keys to their parent's PK, and no table that
+# points at itself. Last, each key_pairs copy is taken from the record's parent
+# (fx_copy_key_pairs()).
 fx_clean_tables <- function(spec, n = 2L) {
   attributes <- spec$attributes
   keys <- spec$keys

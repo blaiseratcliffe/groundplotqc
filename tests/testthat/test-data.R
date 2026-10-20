@@ -526,6 +526,15 @@ test_that("a number column is made inside bounds with each flag, or the base sto
   expect_equal(tables$catches$fish_count, c(7L, 6L, 7L, 6L, 7L, 6L, 7L, 6L))
   expect_equal(tables$catches$weight, c(1.5, 2.5, 3.5, 1.5, 2.5, 3.5, 1.5, 2.5))
   expect_clean_base(tables, bounded)
+  # A minimum above 1 with no maximum: the values start at the minimum (the finish's minors
+  # pass, m20); minutes from 3, weight above 2.
+  set_bounds("minutes", 3, NA_real_, TRUE, NA)
+  set_bounds("weight", 2, NA_real_, FALSE, NA)
+  bounded$attributes <- attributes
+  tables <- fx_clean_tables(bounded)
+  expect_equal(tables$hauls$minutes, 3:6)
+  expect_equal(tables$catches$weight, seq_len(8L) + 1.5)
+  expect_clean_base(tables, bounded)
   # A bound no whole number (plus 0.5 for a double) fits stops the base.
   set_bounds("weight", 1.6, 2.4, TRUE, TRUE)
   bounded$attributes <- attributes
@@ -566,18 +575,26 @@ test_that("each site's ID is in its contributor's band; ec_* follow their patter
   expect_equal(base$magp_sites$magp_site_id, c(350002:350005, 450006:450009))
   patterned <- c("ec_zone", "ec_province", "ec_region", "ec_district")
   a <- spec$attributes
-  for (column in patterned) {
-    pattern <- a$pattern[a$table_name == "magp_sites" & a$attribute_name == column]
-    expect_true(all(grepl(pattern, base$magp_sites[[column]])), label = column)
+  on_pattern <- function(tables, label) {
+    for (column in patterned) {
+      pattern <- a$pattern[a$table_name == "magp_sites" & a$attribute_name == column]
+      expect_true(all(grepl(pattern, tables$magp_sites[[column]])), label = paste(label, column))
+    }
   }
+  on_pattern(base, "clean base")
   expect_equal(
     unlist(base$magp_sites[1L, patterned, with = FALSE], use.names = FALSE),
     c("1", "1.1", "01.1.001", "01.1.001.0001")
   )
-  # The scaled base numbers each site within its contributor's band (R26).
+  # The scaled base numbers each site within its contributor's band (R26), its ec_* on their
+  # patterns too (the finish's minors pass, m20).
   testthat::skip_on_cran()
-  in_band(fx_magp_scaled(0.01), "0.01x")
-  in_band(fx_magp_scaled(0.01, many_groups = TRUE), "0.01x, many groups")
+  for (many_groups in c(FALSE, TRUE)) {
+    scaled <- fx_magp_scaled(0.01, many_groups = many_groups)
+    label <- if (many_groups) "0.01x, many groups" else "0.01x"
+    in_band(scaled, label)
+    on_pattern(scaled, label)
+  }
 })
 
 # task 11's fix round (the fixture review's M3)

@@ -399,20 +399,28 @@ test_that("coordinate_out_of_bounds reads a one-sided bound (D18.9)", {
   expect_equal(c(found$value, found$expected), c("600", "500"))
 })
 
-# task 5's fix round (the spec review's finding 2 and the datatable review's M3, b30f767)
-test_that("coordinate_out_of_bounds passes, excludes a bound, leaves Layer 2's values (R19)", {
-  # A coordinate within its bounds passes: one row, checked.
-  rows <- fish_run(fx_fish_clean(), settings = list(coordinate_attributes = "depth"))$results
+# task 5's fix round (the spec review's finding 2 and the datatable review's M3, b30f767), one
+# test in four since the finish's minors pass (m31)
+test_that("coordinate_out_of_bounds passes a coordinate within its bounds (R19)", {
+  # One row, every station checked.
+  fish <- fx_fish_clean()
+  rows <- fish_run(fish, settings = list(coordinate_attributes = "depth"))$results
   row <- rows[rows$rule_id == "coordinate_out_of_bounds"]
   expect_equal(c(row$table_name, row$column_name, row$status), c("stations", "depth", "pass"))
-  expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
+  expect_equal(c(row$n_checked, row$n_fail), c(nrow(fish$stations), 0L))
+})
+
+test_that("coordinate_out_of_bounds excludes a bound whose flag says so (D18.9)", {
   # weight's minimum 0 is excluded, its maximum 1000 allowed.
   fish <- edited("catches", "weight", 1:2, c(0, 1000))
   found <- opened(fish_run(fish, settings = list(coordinate_attributes = "weight")))
   expect_equal(paste(found$rule_id, placed_at(found)), "coordinate_out_of_bounds catches weight 1")
   expect_equal(c(found$value, found$expected), c("0", "0"))
-  # A sentinel and an unknown code are Layer 2's, checked and passing (R12, R20).
-  fish <- edited("stations", "depth", 1:2, c(-99, -5))
+})
+
+test_that("coordinate_out_of_bounds leaves a sentinel and an unknown code to Layer 2 (R12, R20)", {
+  # Both are checked and pass, the stations' depths being the two.
+  fish <- edited("stations", "depth", NULL, c(-99, -5))
   results <- fish_run(
     fish,
     settings = list(coordinate_attributes = "depth", unknown_codes = c(depth = "-5")),
@@ -421,8 +429,10 @@ test_that("coordinate_out_of_bounds passes, excludes a bound, leaves Layer 2's v
   expect_equal(nrow(opened(results)), 0L)
   row <- results$results[results$results$rule_id == "coordinate_out_of_bounds"]
   expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
-  # With every bounded attribute a coordinate, the range rules have none: one not_run row
-  # each (R19).
+})
+
+test_that("with every bounded attribute a coordinate, the range rules have none (R19)", {
+  # One not_run row each.
   bounded <- c("depth", "minutes", "fish_count", "weight")
   rows <- fish_run(fx_fish_clean(), settings = list(coordinate_attributes = bounded))$results
   for (rule in c("value_below_min", "value_above_max")) {
@@ -599,6 +609,18 @@ test_that("domain_skipped() reads plain numbers as numbers, as it reads their te
     domain_skipped(c(NaN, 1L), row, context, c(NaN, 1)),
     domain_skipped(c("NaN", "1"), row, context, c(NaN, 1))
   )
+  # Each distinct value near a code is written once (the finish's minors pass, m34).
+  real_text <- value_text
+  written <- list()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    written[[length(written) + 1L]] <<- x
+    real_text(x)
+  })
+  many <- c(-99, -99, 1.5, -99, -88, -88)
+  expect_identical(
+    domain_skipped(many, row, context, many), c(TRUE, TRUE, FALSE, TRUE, TRUE, TRUE)
+  )
+  expect_identical(written, list(c(-99, -88)))
 })
 
 # ---- task 7 ----
