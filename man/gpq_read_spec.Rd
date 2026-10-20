@@ -80,8 +80,11 @@ tables: \code{root}, a table whose records are all reached; \code{exempt}, a tab
 checked; \code{from_parent}, a record reached through this foreign key when its parent is;
 \code{from_child}, a reached record reaching its parent through this foreign key.
 \code{attribute_name} is blank for \code{root} and \code{exempt}. The tables checked are those the rows
-name, but the exempt ones, and the parents \code{from_child} links reach. A record reachable
-only through a table or key column not given is left unchecked.}
+name, but the exempt ones, and the parents \code{from_child} links reach. In a table reached
+\code{from_parent}, a record whose parent isn't reached is left unchecked; the break is
+reported once, by the foreign-key rules or at the topmost record no walk reaches.
+Pre-flight stops if a table the walk checks can't be reached from a root. A record
+reachable only through a table or key column not given is left unchecked.}
 
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
 named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
