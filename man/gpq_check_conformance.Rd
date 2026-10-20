@@ -27,7 +27,8 @@ files with data.table::fwrite(). A cell that
 isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
 define. A table holding text marked as bytes is refused. Or a DBI connection: the
 specification's tables are read from it under the names \code{table_map} gives, and its
-other tables are left alone.}
+other tables are left alone. A column stored as integer64 needs the bit64 package: the
+run loads it, and stops if it isn't installed.}
 
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}} or \code{\link[=magp_spec]{magp_spec()}}.}
 
@@ -114,6 +115,13 @@ Layers and the rules they can raise:
 \code{design_geometry_inconsistent}, \code{subplot_label_ambiguous}, \code{design_duplicate_signature}.
 }
 
+Two of these write no issue at this version: \code{parent_without_children} counts, in the
+results only, the parent records that no child record names, and
+\code{fk_not_applicable_mismatch} writes only \code{not_run} rows until a version brings the
+applicability matrix. \code{record_unreachable} runs only when \code{gpq_read_spec()} was given
+\code{reach}, and the design checks only when their settings name their tables and columns;
+otherwise each writes one \code{not_run} row (\code{no_input}).
+
 Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's
 only in letter case or spaces is reported by \code{column_name_mismatch} and checked as that
 attribute. \code{class_mismatch}, \code{integer_stored_as_double},
@@ -125,6 +133,9 @@ that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave
 value, a blank, a missing-value code and an unknown code to Layer 2. A value that failed
 Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is in
 a primary or foreign key column: such a value still joins, so Layer 4 checks it as a key.
+Masking applies only to a record's own values: \code{key_incoherent} and the design checks
+still use values they read from other records, even ones that failed an earlier layer in
+those records.
 Layer 4 leaves a key that is missing, blank or a missing-value code the key can't hold to
 \code{pk_missing} and \code{fk_unassigned}, counts a foreign key's missing-value code that it may
 hold as not evaluated in \code{fk_orphan} (and warns of it in \code{fk_sentinel_unverified} where

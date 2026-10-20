@@ -324,6 +324,8 @@ test_that("a given run ID is kept, and the run changes none of its tables (16.2)
 
 # the minors pass's fix round (D18.86)
 test_that("a table holding integer64 has bit64 loaded for it, or the run stops without it", {
+  # The test traces base requireNamespace(), which no CRAN check may change (R145).
+  testthat::skip_on_cran()
   # A column of class integer64 made from its 64-bit patterns, as readRDS() returns one in a
   # session where bit64 isn't loaded: little-endian words, NA as integer64's NA.
   bits_of <- function(values) {
@@ -412,6 +414,32 @@ test_that("a table holding integer64 has bit64 loaded for it, or the run stops w
     "fk_unassigned k p_id 2 -2"
   ))
   expect_identical(placed(wide), placed(plain))
+})
+
+# the final fix wave (D18.103)
+test_that("a unit rule's results examples are its value unless it gives its own", {
+  expect_equal(unit_outcome("test_cast", "t", "c", TRUE, 1L, value = "v")$examples, "v")
+  expect_equal(
+    unit_outcome("test_cast", "t", "c", TRUE, 1L, value = "v", examples = "w")$examples, "w"
+  )
+  # A column stored as text, an integer column stored as doubles, and one named in other case.
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  data.table::set(catches, j = "weight", value = as.character(catches$weight))
+  data.table::set(catches, j = "fish_count", value = as.numeric(catches$fish_count))
+  fish$catches <- catches
+  hauls <- data.table::copy(fish$hauls)
+  data.table::setnames(hauls, "gear", "Gear")
+  fish$hauls <- hauls
+  results <- gpq_check_conformance(fish, fx_fish_spec(), layers = 0:1)
+  for (rule in c("class_mismatch", "integer_stored_as_double", "column_name_mismatch")) {
+    # Worked out before the brackets: rule_id is also a column of the results.
+    failed <- results$results$rule_id == rule & results$results$status == "fail"
+    row <- results$results[failed]
+    found <- results$issues[results$issues$rule_id == rule]
+    expect_equal(nrow(row), 1L, info = rule)
+    expect_equal(row$examples, found$value, info = rule)
+  }
 })
 
 test_that("failures are record issues, or one column-level issue when every record fails (6.3)", {

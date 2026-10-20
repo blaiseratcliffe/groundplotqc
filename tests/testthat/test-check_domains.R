@@ -697,3 +697,21 @@ test_that("undeclared_code_set doesn't judge an attribute marked as an ID (R11)"
   # Unmarked, the same column fails.
   expect_equal(opened(fish_run(same, settings = one))$rule_id, "undeclared_code_set")
 })
+
+# the final fix wave (D18.103)
+test_that("undeclared_code_set's results show example_cap of its values, its issue all of them", {
+  fish <- fx_clean_tables(fx_fish_spec(), n = 6L)
+  stations <- data.table::copy(fish$stations)
+  data.table::set(stations, j = "station_name", value = rep(c("South", "North", "East"), 2L))
+  fish$stations <- stations
+  shown <- c(NA_character_, "East", "East; North; South")
+  caps <- c(0L, 1L, 5L)
+  for (k in seq_along(caps)) {
+    results <- fish_run(fish, settings = list(code_set_max_values = 3L, example_cap = caps[[k]]))
+    row <- results$results[results$results$rule_id == "undeclared_code_set"]
+    cap <- paste("example_cap", caps[[k]])
+    expect_equal(c(row$status, row$examples), c("fail", shown[[k]]), info = cap)
+    found <- opened(results, "undeclared_code_set")
+    expect_equal(found$value, "East; North; South", info = cap)
+  }
+})

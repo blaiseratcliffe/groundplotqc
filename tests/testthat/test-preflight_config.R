@@ -752,9 +752,8 @@ test_that("a run warns of an option's unknown names and ignores them (D18.47)", 
   # stop on its missing columns.
   geometry <- rows[rows$rule_id == "design_geometry_inconsistent"]
   expect_equal(c(geometry$status, geometry$not_run_reason), c("not_run", "no_input"))
-  # length is ignored and species read: hauls 1 and 3 catch the same species, as do 2 and 4.
-  found <- results$issues[
-    results$issues$rule_id == "design_duplicate_signature" & results$issues$status == "open"
-  ]
-  expect_equal(found$row_number, 1:4)
+  # length is unknown, so the signature's columns are ignored whole, not signed by species
+  # alone, and the rule has none (the final fix wave, D18.90).
+  signature <- rows[rows$rule_id == "design_duplicate_signature"]
+  expect_equal(c(signature$status, signature$not_run_reason), c("not_run", "no_input"))
 })

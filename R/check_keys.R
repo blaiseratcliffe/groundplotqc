@@ -404,7 +404,9 @@ disagreeing_rows <- function(groups, value) {
 #'
 #' `pk_duplicate` per table: every record holding a primary key value another record holds,
 #' a composite key compared whole and reported on its first part, its value the parts joined
-#' with "|" (D18.10 (2), D18.42); a key NA, blank or a sentinel, allowed or not, is left
+#' with "|" (D18.10 (2), D18.42), a number-typed part compared by its number, as the joins
+#' read it, and text that doesn't read as one as written (D18.100); a key NA, blank or a
+#' sentinel, allowed or not, is left
 #' alone, pk_missing's where `allowed_in_pk` refuses it; not_run (no_column) where a part's
 #' column wasn't given (D9.24). `pk_missing` per key part: NA, blank or a sentinel
 #' `allowed_in_pk` refuses (D7.9, D18.15). `fk_orphan` per foreign key to a parent's PK: a
@@ -422,7 +424,8 @@ disagreeing_rows <- function(groups, value) {
 #' sentinels and the records of a contributor `one_to_many` documents for the attribute are
 #' left alone, and a record whose unit is "*" isn't checked (D2.30, D18.3, D18.6, D18.35).
 #' `key_incoherent` per table and first attribute of a `key_pairs` left side: a record whose
-#' two sides of a pair differ, compared as text; its value and expected the failing pairs'
+#' two sides of a pair differ, compared as text, two plain numbers as stored and, where they
+#' differ, as written (D18.101); its value and expected the failing pairs'
 #' sides labelled by the left side's last attribute; a side whose chain breaks, or whose value
 #' is NA, blank or a sentinel, isn't compared, and a record none of whose pairs was compared
 #' isn't checked (D18.1, D18.40). `record_unreachable` per table the `reach` input walks: a row
@@ -436,20 +439,23 @@ disagreeing_rows <- function(groups, value) {
 #' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34). The
 #' candidates read their tables and columns from the
 #' settings, each name the dictionary's (pre-flight stops on an argument's or the rule set's
-#' unknown name and conformance_context() drops an option's, D18.45, D18.47), one not_run row
-#' (no_input) without them: `design_geometry_inconsistent` per
+#' unknown name and conformance_context() drops an option's, D18.45, D18.47, and with it every
+#' name of `design_geometry_by`, `subplot_label_columns` or `design_signature_columns`, D18.90),
+#' one not_run row (no_input) without them: `design_geometry_inconsistent` per
 #' compared column, every record of a `design_geometry_by` group holding more than one
 #' distinct value, expected the group's values as given; `subplot_label_ambiguous` on the last
 #' of `subplot_label_columns`, every record whose values there a record of another PK holds,
 #' the key compared by its parts as given, a record whose key is NA, blank or a missing-value
 #' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
 #' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
-#' frames, written as text and sorted, another row of its report unit has too, expected the
-#' others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed column is
-#' compared by its numbers, one stored as text too, text that doesn't coerce as written
-#' (D18.80); an `expected` list shows its first example_cap values in C order and the count of
-#' the rest (D18.81), a blank value as the blank text (D18.83), and is NA at example_cap 0
-#' (D18.82). A record whose grouping value is NA, blank or a sentinel isn't grouped.
+#' rows in the table, written as text and sorted, another row of its report unit has too,
+#' expected the others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed
+#' column is compared by its numbers, one stored as text too, text that doesn't coerce as
+#' written (D18.80); an `expected` list shows its first example_cap values in C order and the
+#' count of the rest (D18.81), but a number-typed attribute's blanks first, then its numbers in
+#' ascending order, then the rest in C order (D18.102), a blank value as the blank text
+#' (D18.83), and is NA at example_cap 0 (D18.82). A record whose grouping value is NA, blank or
+#' a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   # data.table's ranks and repeats read doubles exactly here, whatever setNumericRounding()
@@ -527,10 +533,10 @@ check_keys <- function(input, context) {
     }
     groups
   }
-  # A column's values as the design candidates compare them (D18.80): a number-typed column
-  # stored as text, or as a factor, by its numbers, as Layer 1 coerces them, and text that
-  # doesn't coerce as written, each distinct pair one dense rank, NA a value of its own; any
-  # other column as given.
+  # A column's values as the design candidates and pk_duplicate compare them (D18.80,
+  # D18.100): a number-typed column stored as text, or as a factor, by its numbers, as Layer 1
+  # coerces them, and text that doesn't coerce as written, each distinct pair one dense rank,
+  # NA a value of its own; any other column as given.
   as_compared <- function(x, row) {
     if (row$family != "numeric" || !(is.character(x) || is.factor(x))) {
       return(x)
@@ -576,20 +582,25 @@ check_keys <- function(input, context) {
           return(not_run_outcome("pk_duplicate", table, attribute, "no_column"))
         }
         missing <- logical(length(x))
+        # Each part as compared: a number-typed one by its number, as the joins read it, and
+        # text that doesn't read as one as written (as_compared(), D18.80); any other part as
+        # given (D18.10 (2), D18.100). The values are reported as given.
+        held <- values
         for (k in seq_along(values)) {
           # NA, blanks and every sentinel of the part's type, allowed or not, hold no key.
           part_row <- rows_of(table, parts$attribute_name[[k]])
           found <- key_rows(values[[k]], part_row, sentinels, "allowed_in_pk")
           missing[c(found$missing, found$open)] <- TRUE
+          held[[k]] <- as_compared(values[[k]], part_row)
         }
         compared <- which(!missing)
         # The caller's columns are read where they are; a subset is taken only where some
         # key is missing, and a composite key is a table made by reference over its parts,
         # as is integer64, whose own duplicated() ignores fromLast.
-        keyed <- if (length(values) == 1L) {
-          if (length(compared) == length(x)) x else x[compared]
+        keyed <- if (length(held) == 1L) {
+          if (length(compared) == length(x)) held[[1L]] else held[[1L]][compared]
         } else {
-          setDT(lapply(values, function(v) if (length(compared) == length(x)) v else v[compared]))
+          setDT(lapply(held, function(v) if (length(compared) == length(x)) v else v[compared]))
         }
         if (inherits(keyed, "integer64")) {
           keyed <- setDT(list(keyed))
@@ -733,15 +744,20 @@ check_keys <- function(input, context) {
               )
               skipped[c(found$missing, found$open)] <- TRUE
             }
-            # Compared as text, the rows compared only: as stored where both sides are plain
-            # numbers or both text; otherwise each distinct stored value of a side that isn't
-            # text is written once, by its dense rank, so equal values give one text (16.2).
+            # Compared as text, the rows compared only: as stored where both sides are text;
+            # where both are plain numbers, as stored, and the rows that differ so again as
+            # value_text() writes them, the text deciding (R84, D18.101), so only they are
+            # written; otherwise each distinct stored value of a side that isn't text is written
+            # once, by its dense rank, so equal values give one text (16.2).
             compared <- which(!skipped)
             every_row <- length(compared) == n
             lc <- if (every_row) lv else lv[compared]
             rc <- if (every_row) rv else rv[compared]
             same <- if (is.numeric(lc) && !is.object(lc) && is.numeric(rc) && !is.object(rc)) {
-              lc == rc
+              stored_same <- lc == rc
+              apart <- which(!stored_same %in% TRUE)
+              stored_same[apart] <- value_text(lc[apart]) == value_text(rc[apart])
+              stored_same
             } else if (is.character(lc) && is.character(rc)) {
               lc == rc
             } else {
@@ -888,7 +904,8 @@ check_keys <- function(input, context) {
         list(not_run_outcome("design_geometry_inconsistent", "*", "*", "no_input"))
       } else {
         # Each name is the dictionary's: pre-flight stops on an argument's or the rule set's
-        # unknown name and conformance_context() drops an option's (D18.45, D18.47).
+        # unknown name and conformance_context() drops an option's (D18.45, D18.47), with
+        # every name of `by` where `by` has one (D18.90).
         scope <- rows_of(rep(table, length(compared)), compared)
         groups <- by_groups(table, by)
         rule_outcomes(
@@ -899,17 +916,27 @@ check_keys <- function(input, context) {
             }
             fail <- disagreeing_rows(groups, as_compared(x, row))
             text <- value_text(x[fail])
-            # Each failing group's distinct values as given, in C order (radix), the first
-            # example_cap of them shown and the rest counted (D18.81).
             at <- groups[fail]
             pairs <- setDT(list(group = at, value = text))
             distinct <- pairs[!duplicated(pairs)]
-            ordered <- order(distinct$group, distinct$value, method = "radix", na.last = TRUE)
-            listed_values <- distinct$value[ordered]
+            distinct_text <- distinct$value
             # A blank value, as the checks read spaces, reads as the blank text (D18.83).
-            maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", listed_values, useBytes = TRUE))
-            blank <- maybe[space_padding(listed_values[maybe])$blank]
-            listed_values[blank] <- report_text("preflight_blank_value")
+            maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", distinct_text, useBytes = TRUE))
+            blank <- logical(length(distinct_text))
+            blank[maybe[space_padding(distinct_text[maybe])$blank]] <- TRUE
+            # Each failing group's distinct values as given, in C order (radix) (D18.81); for a
+            # number-typed attribute the blanks first, then the values that read as numbers in
+            # ascending order, then the rest in C order (D18.102), each distinct value read
+            # once (16.2). The first example_cap of them are shown and the rest counted.
+            ordered <- if (row$family == "numeric") {
+              number <- coerce_column(distinct_text, "double")$value
+              number[is.nan(number)] <- NA_real_
+              order(distinct$group, !blank, number, distinct_text, method = "radix", na.last = TRUE)
+            } else {
+              order(distinct$group, distinct_text, method = "radix", na.last = TRUE)
+            }
+            listed_values <- distinct_text[ordered]
+            listed_values[blank[ordered]] <- report_text("preflight_blank_value")
             by_group <- split(listed_values, distinct$group[ordered])
             count <- lengths(by_group)
             shown <- vapply(by_group, function(values) {
@@ -951,9 +978,9 @@ check_keys <- function(input, context) {
               part_row <- rows_of(table, parts$attribute_name[[k]])
               groups[key_rows(keyed[[k]], part_row, sentinels, "allowed_in_pk")$missing] <- NA
             }
-            # Each record's key by its parts' values as given, as pk_duplicate compares them
-            # (D18.42): one dense rank, the columns read where they are and a subset taken only
-            # where some record isn't grouped, so no key is written as text (16.2).
+            # Each record's key by its parts' values as given (D18.42): one dense rank, the
+            # columns read where they are and a subset taken only where some record isn't
+            # grouped, so no key is written as text (16.2).
             grouped <- which(!is.na(groups))
             key <- rep(NA_integer_, length(x))
             if (length(grouped) > 0L && length(grouped) == length(x)) {

@@ -1863,3 +1863,170 @@ test_that("design_duplicate_signature keeps rows apart whatever their text holds
   found <- opened(fish_run(fish, settings, layers = 4), "design_duplicate_signature")
   expect_equal(nrow(found), 0L)
 })
+
+# ---- the final fix wave ----
+
+test_that("design_geometry_by naming an unknown attribute in an option isn't read (D18.90)", {
+  withr::local_options(
+    groundplotqc.design_geometry_table = "catches",
+    groundplotqc.design_geometry_by = c("haul_id", "nothing_here"),
+    groundplotqc.design_geometry_columns = "weight"
+  )
+  run <- function() {
+    withCallingHandlers(
+      fish_run(fx_fish_clean(), layers = 4),
+      gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+    )
+  }
+  expect_warning(fish_run(fx_fish_clean(), layers = 4), class = "gpq_preflight_warning")
+  # Grouped by haul_id alone, every catch would fail: the rule doesn't run instead.
+  rows <- run()$results
+  row <- rows[rows$rule_id == "design_geometry_inconsistent"]
+  expect_equal(c(row$table_name, row$status, row$not_run_reason), c("*", "not_run", "no_input"))
+  # design_geometry_columns keeps the per-name drop, which only narrows what is compared: each
+  # haul's two catches are of different species.
+  withr::local_options(
+    groundplotqc.design_geometry_by = "haul_id",
+    groundplotqc.design_geometry_columns = c("nothing_here", "species")
+  )
+  found <- opened(run(), "design_geometry_inconsistent")
+  expect_equal(placed_at(found), paste("catches species", 1:8))
+})
+
+test_that("subplot_label_columns naming an unknown attribute in an option isn't read (D18.90)", {
+  withr::local_options(
+    groundplotqc.subplot_label_table = "hauls",
+    groundplotqc.subplot_label_columns = c("nothing_here", "gear")
+  )
+  results <- withCallingHandlers(
+    fish_run(fx_fish_clean(), layers = 4),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  # Labelled by gear alone, hauls 1 and 4 would fail: the rule doesn't run instead.
+  rows <- results$results
+  row <- rows[rows$rule_id == "subplot_label_ambiguous"]
+  expect_equal(c(row$table_name, row$status, row$not_run_reason), c("*", "not_run", "no_input"))
+  expect_equal(nrow(opened(results, "subplot_label_ambiguous")), 0L)
+})
+
+test_that("design_signature_columns naming an unknown attribute in an option isn't read (D18.90)", {
+  withr::local_options(
+    groundplotqc.design_signature_table = "catches",
+    groundplotqc.design_signature_by = "haul_id",
+    groundplotqc.design_signature_columns = c("species", "nothing_here")
+  )
+  results <- withCallingHandlers(
+    fish_run(fx_fish_clean(), layers = 4),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  # Signed by species alone, hauls 1 and 3, and 2 and 4, would be twins: the rule doesn't run
+  # instead.
+  rows <- results$results
+  row <- rows[rows$rule_id == "design_duplicate_signature"]
+  expect_equal(c(row$table_name, row$status, row$not_run_reason), c("*", "not_run", "no_input"))
+  expect_equal(nrow(opened(results, "design_duplicate_signature")), 0L)
+})
+
+test_that("the other settings an option names keep their known names (D18.90)", {
+  withr::local_options(
+    groundplotqc.coordinate_attributes = c("depth", "nothing_here"),
+    groundplotqc.code_set_skip_attributes = c("nothing_here", "station_name"),
+    groundplotqc.unknown_codes = c(nothing_here = "X", species = "UNK")
+  )
+  context <- conformance_context(fx_fish_spec(), NULL, list(), 0:4)
+  expect_equal(context$coordinate_attributes, "depth")
+  expect_equal(context$code_set_skip_attributes, "station_name")
+  expect_equal(context$unknown_codes, c(species = "UNK"))
+})
+
+test_that("pk_duplicate compares a number-typed key by its number, as the joins do (D18.100)", {
+  dir <- withr::local_tempdir()
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("k", "v"), key_type = c("PK", "."),
+    data_type = c("integer", "character")
+  )
+  as_csv <- function(name, lines) {
+    path <- file.path(dir, paste0(name, ".csv"))
+    writeLines(c("k,v", lines), path)
+    c(t = path)
+  }
+  # "1" and "01" read from a CSV file are one key to the joins, so both holders fail, each
+  # reported as given.
+  read <- as_csv("number", c("1,a", "01,b", "2,c"))
+  found <- opened(gpq_check_conformance(read, gpq_read_spec(dictionary), layers = 0:4))
+  expect_equal(paste(found$rule_id, placed_at(found)), paste("pk_duplicate", c("t k 1", "t k 2")))
+  expect_equal(found$value, c("1", "01"))
+  # Text that isn't a number is compared as written: "n/a" twice repeats, "tbd" doesn't. Layer 4
+  # alone, as coercion_loss would mask them.
+  written <- as_csv("written", c("n/a,a", "n/a,b", "tbd,c"))
+  found <- opened(gpq_check_conformance(written, gpq_read_spec(dictionary), layers = 4))
+  expect_equal(placed_at(found), c("t k 1", "t k 2"))
+  # A text-typed key is compared as given: "1" and "01" are two keys.
+  dictionary$data_type <- "character"
+  results <- gpq_check_conformance(read, gpq_read_spec(dictionary), layers = 0:4)
+  expect_equal(nrow(opened(results)), 0L)
+})
+
+test_that("key_incoherent compares differing plain numbers again as text (D18.101)", {
+  dictionary <- data.frame(
+    table_name = c("parent", "parent", "child", "child", "child"),
+    attribute_name = c("p_id", "x", "c_id", "p_id", "x"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "parent", NA),
+    data_type = c("character", "numeric", "character", "character", "numeric")
+  )
+  spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "child", left = "x", right = "p_id > x", note = NA
+  ))
+  # Child 1's copy differs from its parent's past the 15th significant digit, which
+  # value_text() doesn't write; child 2's within it; child 3's is its parent's as stored.
+  tables <- list(
+    parent = data.table::data.table(p_id = c("a", "b", "c"), x = c(0.1 + 0.2, 1, 5)),
+    child = data.table::data.table(
+      c_id = c("c1", "c2", "c3"), p_id = c("a", "b", "c"), x = c(0.3, 2, 5)
+    )
+  )
+  real_text <- value_text
+  written <- list()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    written[[length(written) + 1L]] <<- x
+    real_text(x)
+  })
+  found <- opened(gpq_check_conformance(tables, spec, layers = 4), "key_incoherent")
+  expect_equal(placed_at(found), "child x 2")
+  expect_equal(c(found$value, found$expected), c("x=2", "x=1"))
+  # Only the rows that differ as stored are written as text, never child 3's.
+  doubles <- Filter(is.double, written)
+  expect_true(any(vapply(doubles, identical, logical(1), c(0.3, 2))))
+  expect_false(any(vapply(doubles, function(x) 5 %in% x, logical(1))))
+})
+
+test_that("a number-typed attribute's expected lists blanks, numbers, then the rest (D18.102)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", "g", "v"), key_type = c("PK", ".", "."),
+    data_type = c("character", "character", "numeric")
+  )
+  spec <- gpq_read_spec(dictionary)
+  settings <- list(
+    design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = "v"
+  )
+  expected_at <- function(v, cap) {
+    tables <- list(t = data.table::data.table(id = paste0("r", seq_along(v)), g = "a", v = v))
+    results <- gpq_check_conformance(
+      tables, spec,
+      layers = 4, settings = c(settings, list(example_cap = cap))
+    )
+    unique(opened(results, "design_geometry_inconsistent")$expected)
+  }
+  # Read as text: numbers that sort otherwise as text, a blank, and two values that aren't
+  # numbers, in C order after the numbers.
+  read <- c("10", "2", "tbd", "  ", "25", "3", "n/a", "4")
+  expect_equal(expected_at(read, 10L), "(blank); 2; 3; 4; 10; 25; n/a; tbd")
+  expect_equal(
+    expected_at(read, 5L),
+    report_text("expected_capped", values = "(blank); 2; 3; 4; 10", n = 3L)
+  )
+  # Stored as numbers, the same order.
+  stored <- c(10, 2, 2, 4, 25, 3, 3, 4)
+  expect_equal(expected_at(stored, 10L), "2; 3; 4; 10; 25")
+  expect_equal(expected_at(stored, 3L), "2; 3; 4 (and 2 more)")
+})

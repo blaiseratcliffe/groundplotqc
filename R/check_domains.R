@@ -118,7 +118,8 @@ decimal_places <- function(number) {
 #' or marked as an ID, and that the `code_set_skip_*` settings don't name: one column-level
 #' warning where the column holds more than `code_set_max_values` values (not NA, blank, a
 #' sentinel of its type or an unknown code of the attribute) and no more than that many
-#' distinct ones, each distinct value read once (D8.24, D9.26, D18.20, R11).
+#' distinct ones, each distinct value read once (D8.24, D9.26, D18.20, R11); its issue lists
+#' them all in C order and its results row's examples the first `example_cap` (D18.103).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -308,9 +309,14 @@ check_domains <- function(input, context) {
           if (sum(text %in% kept) <= most) {
             return(NULL)
           }
+          listed <- sort(kept, method = "radix")
+          # The issue lists every value; the results row shows the first example_cap of them, NA
+          # at 0, as a record rule's examples do (D18.103).
+          shown <- listed[seq_len(min(length(listed), context$example_cap))]
           unit_outcome(
             "undeclared_code_set", table, attribute, TRUE, length(x),
-            value = paste(sort(kept, method = "radix"), collapse = "; ")
+            value = paste(listed, collapse = "; "),
+            examples = if (length(shown) > 0L) paste(shown, collapse = "; ") else NA_character_
           )
         }
       )

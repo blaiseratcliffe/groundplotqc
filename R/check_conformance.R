@@ -46,6 +46,13 @@
 #'   `src_id_duplicate`, `key_incoherent`, `record_unreachable`, `parent_without_children`,
 #'   `design_geometry_inconsistent`, `subplot_label_ambiguous`, `design_duplicate_signature`.
 #'
+#' Two of these write no issue at this version: `parent_without_children` counts, in the
+#' results only, the parent records that no child record names, and
+#' `fk_not_applicable_mismatch` writes only `not_run` rows until a version brings the
+#' applicability matrix. `record_unreachable` runs only when `gpq_read_spec()` was given
+#' `reach`, and the design checks only when their settings name their tables and columns;
+#' otherwise each writes one `not_run` row (`no_input`).
+#'
 #' Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's
 #' only in letter case or spaces is reported by `column_name_mismatch` and checked as that
 #' attribute. `class_mismatch`, `integer_stored_as_double`,
@@ -57,6 +64,9 @@
 #' value, a blank, a missing-value code and an unknown code to Layer 2. A value that failed
 #' Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is in
 #' a primary or foreign key column: such a value still joins, so Layer 4 checks it as a key.
+#' Masking applies only to a record's own values: `key_incoherent` and the design checks
+#' still use values they read from other records, even ones that failed an earlier layer in
+#' those records.
 #' Layer 4 leaves a key that is missing, blank or a missing-value code the key can't hold to
 #' `pk_missing` and `fk_unassigned`, counts a foreign key's missing-value code that it may
 #' hold as not evaluated in `fk_orphan` (and warns of it in `fk_sentinel_unverified` where
@@ -91,7 +101,8 @@
 #'   isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
 #'   define. A table holding text marked as bytes is refused. Or a DBI connection: the
 #'   specification's tables are read from it under the names `table_map` gives, and its
-#'   other tables are left alone.
+#'   other tables are left alone. A column stored as integer64 needs the bit64 package: the
+#'   run loads it, and stops if it isn't installed.
 #' @param table_map `NULL`, or, when `tables` is a DBI connection, a named character vector
 #'   of the database's names for tables of the specification: names the specification's
 #'   table names, values the database's, such as `c(trees = "survey.tree_list")` for the
@@ -332,7 +343,9 @@ conformance_context <- function(spec, rules, settings, layers) {
   setting <- function(name) resolve_setting(name, settings, rules)$value
   # The settings naming tables and attributes, less the names the dictionary lacks: once
   # pre-flight has passed only an option can hold one, which option_unknown_name warns of,
-  # and it is ignored (D18.47).
+  # and it is ignored (D18.47). A setting that groups or signs records loses every name with
+  # it, as grouping by the names left would report records that agree; its rule then has no
+  # input. Elsewhere a name dropped only narrows what is checked (D18.90).
   named <- preflight_context(rules, settings)$settings
   unknown <- unknown_setting_names(spec, named)
   known <- function(name) {
@@ -344,7 +357,14 @@ conformance_context <- function(spec, rules, settings, layers) {
       gone$table_name[gone$case == "table"], gone$attribute_name[gone$case != "table"]
     )
     by_name <- if (name == "unknown_codes") names(value) else value
-    value[!by_name %chin% dropped]
+    lost <- by_name %chin% dropped
+    whole <- name %chin% c(
+      "design_geometry_by", "subplot_label_columns", "design_signature_columns"
+    )
+    if (whole && any(lost)) {
+      return(value[0L])
+    }
+    value[!lost]
   }
   codes <- spec$codes
   list(
@@ -376,13 +396,16 @@ conformance_context <- function(spec, rules, settings, layers) {
 }
 
 #' A rule's outcome on a table or a column, which it checks as one unit (D16.8)
+#'
+#' `value` and `expected` are its issue's; `examples` its results row's, `value` unless the
+#' rule shows fewer values there than its issue holds (D18.103).
 #' @noRd
 unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
-                         value = NA_character_, expected = NA_character_) {
+                         value = NA_character_, expected = NA_character_, examples = value) {
   list(
     kind = "unit", rule_id = rule_id, table_name = table_name, column_name = column_name,
     failed = failed, n_records = as.integer(n_records), value = as.character(value),
-    expected = as.character(expected)
+    expected = as.character(expected), examples = as.character(examples)
   )
 }
 
@@ -689,8 +712,8 @@ group_values <- function(grouping, at) {
   lapply(grouping$values, function(column) column[at])
 }
 
-#' A unit outcome recorded: one results row with "*" groups, and one column-level issue when
-#' it failed, masking nothing (D16.8, D16.9)
+#' A unit outcome recorded: one results row with "*" groups, its examples the outcome's
+#' (D18.103), and one column-level issue when it failed, masking nothing (D16.8, D16.9)
 #' @noRd
 record_unit <- function(outcome, rule, severity, input, context, state, run_id) {
   failed <- isTRUE(outcome$failed)
@@ -698,7 +721,7 @@ record_unit <- function(outcome, rule, severity, input, context, state, run_id) 
     run_id, rule, severity, context, outcome$table_name, outcome$column_name, star_groups(input),
     n_checked = 1L, n_fail = as.integer(failed), n_not_evaluated = 0L,
     n_distinct = as.integer(failed && !is.na(outcome$value)),
-    examples = if (failed) outcome$value else NA_character_,
+    examples = if (failed) outcome$examples else NA_character_,
     status = if (failed) "fail" else "pass"
   )
   if (failed) {
