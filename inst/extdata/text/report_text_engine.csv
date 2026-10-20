@@ -213,3 +213,6 @@
 "key_incoherent","en","Two values that should agree differ: one value reached from the record in two ways, directly or through its keys."
 "record_unreachable","en","A record isn't linked through the keys to any record of the tables the checks start from."
 "parent_without_children","en","A record of a parent table is named by no record of the child table."
+"design_geometry_inconsistent","en","Records of one group disagree on a value that should be the same for the whole group."
+"subplot_label_ambiguous","en","Records of different keys carry the same labels, so the labels don't tell them apart."
+"design_duplicate_signature","en","Records of one report unit have the same rows in another table, so one may repeat the other."

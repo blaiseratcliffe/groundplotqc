@@ -705,3 +705,35 @@ test_that("MAGPlot's rule set names only tables and attributes its spec has (D18
   results <- suppressWarnings(gpq_preflight(magp_spec(), rules = magp_rules()))
   expect_equal(results$outcome[results$rule_id == "setting_unknown_name"], "pass")
 })
+
+# ---- task 14, second commit ----
+
+test_that("a run warns of an option's unknown names and ignores them (D18.47)", {
+  withr::local_options(
+    groundplotqc.design_geometry_table = "nets",
+    groundplotqc.design_signature_columns = c("species", "length")
+  )
+  # The geometry rule's columns are an argument's, unread without a known table (D18.46).
+  settings <- list(
+    design_geometry_by = "haul_id", design_geometry_columns = "weight",
+    design_signature_table = "catches", design_signature_by = "haul_id"
+  )
+  run <- function() {
+    gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), settings = settings, layers = 4)
+  }
+  expect_warning(run(), class = "gpq_preflight_warning")
+  results <- withCallingHandlers(
+    run(),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  rows <- results$results
+  # The option's table is ignored, so the rule has none: not run, where reading "nets" would
+  # stop on its missing columns.
+  geometry <- rows[rows$rule_id == "design_geometry_inconsistent"]
+  expect_equal(c(geometry$status, geometry$not_run_reason), c("not_run", "no_input"))
+  # length is ignored and species read: hauls 1 and 3 catch the same species, as do 2 and 4.
+  found <- results$issues[
+    results$issues$rule_id == "design_duplicate_signature" & results$issues$status == "open"
+  ]
+  expect_equal(found$row_number, 1:4)
+})

@@ -288,6 +288,30 @@ build_rule_registry <- function() {
     ),
     conformance(
       "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels"
+    ),
+    # ---- M5: Appendix E's design candidates (K1, K8, K10; D8.24, D9.26, D18.39) ----
+    conformance(
+      "design_geometry_inconsistent", 4L, "error", "harmonization",
+      paste(
+        "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
+        "settings:design_geometry_by; settings:design_geometry_columns;",
+        "settings:design_geometry_table"
+      )
+    ),
+    conformance(
+      "subplot_label_ambiguous", 4L, "error", "harmonization",
+      paste(
+        "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
+        "settings:subplot_label_columns; settings:subplot_label_table"
+      )
+    ),
+    conformance(
+      "design_duplicate_signature", 4L, "warning", "harmonization",
+      paste(
+        "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
+        "settings:design_signature_by; settings:design_signature_columns;",
+        "settings:design_signature_table"
+      )
     )
   ))
 }

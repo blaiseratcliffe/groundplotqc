@@ -245,6 +245,38 @@ fx_scaled_defects <- function(tables) {
   lost <- lost[trees$magp_subplot_id[lost] == trees$magp_subplot_id[lost + 1L]]
   moved <- which(meas$magp_tree_id %in% lost)
   data.table::set(meas, i = moved, j = "magp_tree_id", value = meas$magp_tree_id[moved] + 1L)
+  # The design candidates, once each: design 2's frames given design 1's frame columns
+  # (design_duplicate_signature); then each design's first frame copied under a new key with
+  # another plot_area, so both still share one signature (design_geometry_inconsistent); and
+  # subplot 1 copied under a new key (subplot_label_ambiguous). A copy's src_* ID is its key.
+  frames <- tables$magp_design_frames
+  signed <- c(
+    "frame_type", "subplot", "plot_area", "plot_shape", "min_dbh", "max_dbh", "min_ht",
+    "max_ht", "baf"
+  )
+  for (column in signed) {
+    data.table::set(frames, i = 5:8, j = column, value = frames[[column]][1:4])
+  }
+  spec <- magp_spec()
+  copied <- function(table, rows, key) {
+    added <- tables[[table]][rows]
+    pk <- spec$keys$attribute_name[spec$keys$table_name == table & spec$keys$key_type == "PK"]
+    data.table::set(added, j = pk, value = key)
+    is_marked <- spec$attributes$table_name == table & spec$attributes$id_marked %in% TRUE
+    for (column in spec$attributes$attribute_name[is_marked]) {
+      data.table::set(added, j = column, value = key)
+    }
+    added
+  }
+  n_frames <- nrow(frames)
+  extra <- copied("magp_design_frames", c(1L, 5L), paste0("magp_design_frames_", n_frames + 1:2))
+  data.table::set(extra, j = "plot_area", value = 9.5)
+  tables$magp_design_frames <- rbind(frames, extra)
+  n_subplots <- nrow(tables$magp_subplots)
+  tables$magp_subplots <- rbind(
+    tables$magp_subplots,
+    copied("magp_subplots", 1L, paste0("magp_subplots_", n_subplots + 1L))
+  )
   data.table::set(meas, j = "height", value = as.character(meas$height))
   plant("magp_tree_meas", "height", 1L, "tall")
   plant("magp_tree_meas", "dbh", 2L, Inf)

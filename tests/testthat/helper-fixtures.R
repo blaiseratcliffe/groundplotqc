@@ -527,6 +527,26 @@ fx_answer_sheet <- function() {
       "magp_tree_meas rows naming tree 2 now name tree 1, of the same subplot",
       "record_unreachable",
       witness = "magp_trees_2"
+    ),
+    fx_defect(
+      "design_geometry_inconsistent", "magp_design_frames", "plot_area",
+      "magp_design_frames_1; magp_design_frames_9",
+      "magp_design_frames row 9 added, frame 1's with plot_area 9.5",
+      "design_geometry_inconsistent",
+      witness = "1.5"
+    ),
+    fx_defect(
+      "subplot_label_ambiguous", "magp_subplots", "subplot", "magp_subplots_1; magp_subplots_99",
+      "magp_subplots row added, subplot 1's under the key magp_subplots_99",
+      "subplot_label_ambiguous",
+      cascade_rule_ids = "record_unreachable", witness = "M1"
+    ),
+    fx_defect(
+      "design_duplicate_signature", "magp_designs", "magp_design_id",
+      "magp_designs_1; magp_designs_2",
+      "magp_design_frames rows 3 and 4 given rows 1 and 2's frame columns",
+      "design_duplicate_signature",
+      witness = "magp_designs_1"
     )
   ))
 }
@@ -634,7 +654,50 @@ fx_defect_blocks <- function() {
     src_id_duplicate = fx_set_cell("magp_trees", "src_tree_id", 2L, "s1"),
     record_unreachable = fx_set_column("magp_tree_meas", "magp_tree_id", function(x) {
       data.table::fifelse(x == "magp_trees_2", "magp_trees_1", x)
-    })
+    }),
+    design_geometry_inconsistent = function(tables) {
+      fx_require_fixture(tables)
+      tables <- lapply(tables, data.table::copy)
+      added <- tables$magp_design_frames[1L]
+      data.table::set(added, j = "magp_frame_id", value = "magp_design_frames_9")
+      data.table::set(added, j = "plot_area", value = 9.5)
+      spec <- magp_spec()
+      # A fresh src_* ID, so the copy repeats none (src_id_duplicate).
+      is_marked <- spec$attributes$table_name == "magp_design_frames" &
+        spec$attributes$id_marked %in% TRUE
+      for (column in spec$attributes$attribute_name[is_marked]) {
+        data.table::set(added, j = column, value = paste0(added[[column]], "_copy"))
+      }
+      tables$magp_design_frames <- rbind(tables$magp_design_frames, added)
+      fx_mark_fixture(tables)
+    },
+    subplot_label_ambiguous = function(tables) {
+      fx_require_fixture(tables)
+      tables <- lapply(tables, data.table::copy)
+      added <- tables$magp_subplots[1L]
+      data.table::set(added, j = "magp_subplot_id", value = "magp_subplots_99")
+      spec <- magp_spec()
+      is_marked <- spec$attributes$table_name == "magp_subplots" &
+        spec$attributes$id_marked %in% TRUE
+      for (column in spec$attributes$attribute_name[is_marked]) {
+        data.table::set(added, j = column, value = paste0(added[[column]], "_copy"))
+      }
+      tables$magp_subplots <- rbind(tables$magp_subplots, added)
+      fx_mark_fixture(tables)
+    },
+    design_duplicate_signature = function(tables) {
+      fx_require_fixture(tables)
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      frames <- tables$magp_design_frames
+      signed <- c(
+        "frame_type", "subplot", "plot_area", "plot_shape", "min_dbh", "max_dbh", "min_ht",
+        "max_ht", "baf"
+      )
+      for (column in signed) {
+        data.table::set(frames, i = 3:4, j = column, value = frames[[column]][1:2])
+      }
+      tables
+    }
   )
 }
 

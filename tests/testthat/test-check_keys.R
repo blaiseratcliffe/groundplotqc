@@ -43,7 +43,8 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   expect_named(found, c(
     "pk_duplicate", "pk_missing", "fk_orphan", "fk_unassigned", "fk_sentinel_unverified",
     "fk_not_applicable_mismatch", "src_id_duplicate", "key_incoherent", "record_unreachable",
-    "parent_without_children"
+    "parent_without_children", "design_geometry_inconsistent", "subplot_label_ambiguous",
+    "design_duplicate_signature"
   ))
   # Three tables of one key column each; two foreign keys, neither of a number type.
   expect_length(found$pk_duplicate, 3L)
@@ -56,8 +57,11 @@ test_that("check_keys returns an outcome list for each Layer 4 rule", {
   )
   # The fish spec marks no ID column outside its keys.
   expect_length(found$src_id_duplicate, 0L)
-  # No key_pairs or reach: one not_run row each, no_input.
-  for (rule in c("key_incoherent", "record_unreachable")) {
+  # No key_pairs, reach or candidate settings: one not_run row each, no_input.
+  for (rule in c(
+    "key_incoherent", "record_unreachable", "design_geometry_inconsistent",
+    "subplot_label_ambiguous", "design_duplicate_signature"
+  )) {
     expect_equal(found[[rule]][[1L]]$reason, "no_input", info = rule)
   }
   expect_length(found$parent_without_children, 2L)
@@ -1131,4 +1135,57 @@ test_that("a site ID outside its band is still checked as a key (D18.76)", {
     expect_equal(sum(counts$n_checked[mine]), nrow(sites) + 2L, info = rule)
     expect_equal(sum(counts$n_not_evaluated[mine]), 0L, info = rule)
   }
+})
+
+# ---- task 14 ----
+
+test_that("design_geometry_inconsistent fails a group's records whose values differ (K1)", {
+  settings <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = c("weight", "fish_count")
+  )
+  clean <- fish_run(fx_fish_clean(), settings)
+  expect_equal(nrow(opened(clean, "design_geometry_inconsistent")), 0L)
+  # Catch 2 takes catch 1's species: two records of different keys, one group (D18.39).
+  fish <- edited("catches", "species", 2L, fx_fish_clean()$catches$species[[1L]])
+  found <- opened(fish_run(fish, settings), "design_geometry_inconsistent")
+  expect_equal(placed_at(found), c(
+    "catches weight 1", "catches weight 2", "catches fish_count 1", "catches fish_count 2"
+  ))
+  expect_equal(found$value, c("1.5", "2.5", "1", "2"))
+  expect_equal(found$expected, c("1.5; 2.5", "1.5; 2.5", "1; 2", "1; 2"))
+  # Without its settings: one not_run row, no_input.
+  row <- fish_run(fx_fish_clean())$results
+  row <- row[row$rule_id == "design_geometry_inconsistent"]
+  expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_input"))
+})
+
+test_that("subplot_label_ambiguous fails records of other keys sharing the labels (K8)", {
+  settings <- list(
+    subplot_label_table = "hauls", subplot_label_columns = c("station_id", "gear")
+  )
+  expect_equal(nrow(opened(fish_run(fx_fish_clean(), settings), "subplot_label_ambiguous")), 0L)
+  fish <- edited("hauls", "gear", 2L, fx_fish_clean()$hauls$gear[[1L]])
+  found <- opened(fish_run(fish, settings), "subplot_label_ambiguous")
+  expect_equal(placed_at(found), c("hauls gear 1", "hauls gear 2"))
+  expect_equal(found$value, rep(fx_fish_clean()$hauls$gear[[1L]], 2L))
+})
+
+test_that("design_duplicate_signature fails keys of one report unit sharing rows (K10)", {
+  settings <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  fish <- fx_fish_clean()
+  # Hauls 1 and 3 catch the same species, as do hauls 2 and 4: in one pool every haul fails,
+  # on the hauls' key, each expecting its twin.
+  found <- opened(fish_run(fish, settings), "design_duplicate_signature")
+  expect_equal(placed_at(found), paste("hauls haul_id", 1:4))
+  expect_equal(found$expected, c("hauls_3", "hauls_4", "hauls_1", "hauls_2"))
+  # Each station a report unit: its two hauls differ, so nothing fails.
+  by_station <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    group_cols = "station_id", settings = settings, layers = 4
+  )
+  expect_equal(nrow(opened(by_station, "design_duplicate_signature")), 0L)
 })

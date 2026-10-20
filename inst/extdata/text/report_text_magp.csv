@@ -1,2 +1,4 @@
 "text_id","lang","text"
 "src_id_duplicate","en","A source ID is held by more than one record of its table in one report unit."
+"design_geometry_inconsistent","en","Records of one design and subplot disagree on a value that describes the plot, such as its area or a size limit."
+"design_duplicate_signature","en","Designs of one report unit have the same frames, so one may repeat another."

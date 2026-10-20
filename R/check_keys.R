@@ -356,6 +356,22 @@ record_labels <- function(input, table) {
   home_label[reached$rows]
 }
 
+#' The rows whose group holds more than one distinct value
+#'
+#' `groups` gives each row's group, NA for a row in none, and `value` each row's value, compared
+#' as given, NA a value of its own (Appendix E K1, K8).
+#' @noRd
+disagreeing_rows <- function(groups, value) {
+  grouped <- which(!is.na(groups))
+  if (length(grouped) == 0L) {
+    return(integer())
+  }
+  pairs <- data.table(group = groups[grouped], value = value[grouped])
+  distinct <- pairs[!duplicated(pairs)]
+  several <- tabulate(distinct$group, max(groups[grouped])) > 1L
+  grouped[several[groups[grouped]]]
+}
+
 #' Layer 4's outcomes, by rule
 #'
 #' `pk_duplicate` per table: every record holding a primary key value another record holds,
@@ -388,7 +404,18 @@ record_labels <- function(input, table) {
 #' evaluated, rooted there; not_run (no_table) where a root table wasn't given (D18.4, D18.14,
 #' D18.43, D18.66, D18.68).
 #' `parent_without_children` per foreign key to a parent's PK: the parent rows no child row
-#' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34).
+#' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34). The
+#' candidates read their tables and columns from the
+#' settings, each name the dictionary's (pre-flight stops on an argument's or the rule set's
+#' unknown name and conformance_context() drops an option's, D18.45, D18.47), one not_run row
+#' (no_input) without them: `design_geometry_inconsistent` per
+#' compared column, every record of a `design_geometry_by` group holding more than one
+#' distinct value, expected the group's values; `subplot_label_ambiguous` on the last of
+#' `subplot_label_columns`, every record whose values there a record of another PK holds;
+#' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
+#' frames, written as text and sorted, another row of its report unit has too, expected the
+#' others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A record whose grouping value
+#' is NA, blank or a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   spec <- context$spec
@@ -433,6 +460,29 @@ check_keys <- function(input, context) {
       assign(name, chain_rows(input, edge$table_name, edge), envir = joined)
     }
     joined[[name]]
+  }
+  # Each row's group by `by`'s values in a table, NA where one of them is NA, blank or a
+  # sentinel; or why the groups can't be made.
+  by_groups <- function(table, by) {
+    if (!table %chin% supplied) {
+      return("no_table")
+    }
+    rows <- rows_of(rep(table, length(by)), by)
+    if (anyNA(rows$table_name) || anyNA(rows$column)) {
+      return("no_column")
+    }
+    values <- lapply(rows$column, function(column) input$data[[table]][[column]])
+    missing <- logical(length(values[[1L]]))
+    for (k in seq_along(values)) {
+      found <- key_rows(values[[k]], rows[k], sentinels, "allowed_in_fk")
+      missing[c(found$missing, found$open)] <- TRUE
+    }
+    groups <- rep(NA_integer_, length(missing))
+    present <- which(!missing)
+    if (length(present) > 0L) {
+      groups[present] <- frankv(lapply(values, function(v) v[present]), ties.method = "dense")
+    }
+    groups
   }
   # Each row's report unit, the first group column's text ("*" where it reaches none); one
   # unit for all without group columns.
@@ -752,6 +802,112 @@ check_keys <- function(input, context) {
           which(!named[holders] %in% TRUE)
         )
       }
-    )
+    ),
+    design_geometry_inconsistent = local({
+      table <- context$design_geometry_table
+      by <- context$design_geometry_by
+      compared <- context$design_geometry_columns
+      if (length(table) == 0L || length(by) == 0L || length(compared) == 0L) {
+        list(not_run_outcome("design_geometry_inconsistent", "*", "*", "no_input"))
+      } else {
+        # Each name is the dictionary's: pre-flight stops on an argument's or the rule set's
+        # unknown name and conformance_context() drops an option's (D18.45, D18.47).
+        scope <- rows_of(rep(table, length(compared)), compared)
+        groups <- by_groups(table, by)
+        rule_outcomes(
+          "design_geometry_inconsistent", scope, input,
+          function(table, attribute, x, row) {
+            if (is.character(groups)) {
+              return(not_run_outcome("design_geometry_inconsistent", table, attribute, groups))
+            }
+            fail <- disagreeing_rows(groups, x)
+            text <- value_text(x[fail])
+            shared <- vapply(split(text, groups[fail]), function(values) {
+              paste(sort(unique(values), na.last = TRUE), collapse = "; ")
+            }, "")
+            record_outcome(
+              "design_geometry_inconsistent", table, attribute, fail, text,
+              unname(shared[as.character(groups[fail])])
+            )
+          }
+        )
+      }
+    }),
+    subplot_label_ambiguous = local({
+      table <- context$subplot_label_table
+      labelled <- context$subplot_label_columns
+      if (length(table) == 0L || length(labelled) == 0L) {
+        list(not_run_outcome("subplot_label_ambiguous", "*", "*", "no_input"))
+      } else {
+        scope <- rows_of(table, labelled[[length(labelled)]])
+        rule_outcomes(
+          "subplot_label_ambiguous", scope, input,
+          function(table, attribute, x, row) {
+            groups <- by_groups(table, labelled)
+            if (is.character(groups)) {
+              return(not_run_outcome("subplot_label_ambiguous", table, attribute, groups))
+            }
+            pk <- record_pk_text(input, table, seq_along(x))$record_pk
+            # A record with no primary key is pk_missing's.
+            groups[is.na(pk)] <- NA_integer_
+            fail <- disagreeing_rows(groups, pk)
+            record_outcome("subplot_label_ambiguous", table, attribute, fail, value_text(x[fail]))
+          }
+        )
+      }
+    }),
+    design_duplicate_signature = local({
+      table <- context$design_signature_table
+      by <- context$design_signature_by
+      signed <- context$design_signature_columns
+      if (length(table) == 0L || length(by) == 0L || length(signed) == 0L) {
+        list(not_run_outcome("design_duplicate_signature", "*", "*", "no_input"))
+      } else {
+        # `by` is a foreign key of the table linked to its parent's key, and each column the
+        # table's, as for design_geometry_inconsistent (D18.45, D18.47).
+        edge <- edge_of(table, by)
+        scope <- rows_of(edge$reference_table, edge$reference_attribute)
+        rule_outcomes(
+          "design_duplicate_signature", scope, input, function(parent, attribute, x, row) {
+            if (!table %chin% supplied) {
+              return(not_run_outcome("design_duplicate_signature", parent, attribute, "no_table"))
+            }
+            parts <- rows_of(rep(table, length(signed)), signed)
+            if (anyNA(parts$column) || is.null(data_of(table, by))) {
+              return(not_run_outcome("design_duplicate_signature", parent, attribute, "no_column"))
+            }
+            owner <- parent_rows(edge)
+            kept <- which(!is.na(owner))
+            # Each of the table's rows as one text, its owner's rows sorted and joined: the
+            # owner's signature (Appendix E K10).
+            text <- do.call(paste, c(lapply(parts$column, function(column) {
+              value_text(input$data[[table]][[column]][kept])
+            }), sep = "\r"))
+            ordered <- order(owner[kept], text, method = "radix")
+            joined_rows <- split(text[ordered], owner[kept][ordered])
+            signature <- rep(NA_character_, length(x))
+            signature[as.integer(names(joined_rows))] <- vapply(
+              joined_rows, paste, "",
+              collapse = "\n"
+            )
+            unit <- units_of(parent, length(x))
+            star <- !is.na(signature) & unit == "*"
+            compared <- which(!is.na(signature) & !star)
+            pool <- data.table(unit = unit[compared], signature = signature[compared])
+            fail <- compared[duplicated(pool) | duplicated(pool, fromLast = TRUE)]
+            ids <- value_text(x[fail])
+            same <- paste(unit[fail], signature[fail], sep = "\n")
+            members <- split(ids, same)
+            others <- vapply(seq_along(fail), function(k) {
+              paste(setdiff(members[[same[[k]]]], ids[[k]]), collapse = "; ")
+            }, "")
+            record_outcome(
+              "design_duplicate_signature", parent, attribute, fail, ids, others,
+              unchecked = which(star)
+            )
+          }
+        )
+      }
+    })
   )
 }
