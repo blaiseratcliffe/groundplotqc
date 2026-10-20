@@ -1253,6 +1253,27 @@ test_that("a number read as text is compared by its number, written as given (D1
   found <- opened(fish_run(twins, signature), "design_duplicate_signature")
   expect_equal(placed_at(found), c("hauls haul_id 1", "hauls haul_id 3"))
   expect_equal(found$expected, c("hauls_3", "hauls_1"))
+  # Text that doesn't coerce is compared as written: "n/a" twice in hauls 1 and 3 makes twins,
+  # "n/a" against "tbd" doesn't.
+  written <- as_csv(
+    fx_fish_clean(), replace(weights, 1:6, c("n/a", "n/a", "x", "x", "n/a", "n/a")), "written"
+  )
+  found <- opened(fish_run(written, signature), "design_duplicate_signature")
+  expect_equal(placed_at(found), c("hauls haul_id 1", "hauls haul_id 3"))
+  apart <- as_csv(
+    fx_fish_clean(), replace(weights, 1:6, c("n/a", "n/a", "x", "x", "n/a", "tbd")), "apart"
+  )
+  expect_equal(nrow(opened(fish_run(apart, signature), "design_duplicate_signature")), 0L)
+  # A factor is read as its labels: 1.5 and "1.50" agree there too.
+  as_factor <- data.table::copy(grouped$catches)
+  data.table::set(
+    as_factor,
+    j = "weight", value = factor(replace(weights, 1:2, c("1.5", "1.50")))
+  )
+  factored <- grouped
+  factored$catches <- as_factor
+  found <- opened(fish_run(factored, geometry, layers = 4), "design_geometry_inconsistent")
+  expect_equal(nrow(found), 0L)
 })
 
 test_that("expected lists example_cap values, then the count of the rest (D18.81)", {
@@ -1331,6 +1352,75 @@ test_that("design_geometry_inconsistent sorts expected in C order, whatever the 
   fish <- edited("catches", "species", 1L, "aaa")
   found <- opened(fish_run(fish, settings, layers = 4), "design_geometry_inconsistent")
   expect_equal(found$expected[found$row_number %in% 1:2], rep("NOP; aaa", 2L))
+  # design_duplicate_signature lists its twins so too: hauls 1 to 3 share their species, and
+  # hauls 2 and 3 are renamed "NOP" and "aaa".
+  three <- edited("catches", "species", 3:4, c("WAE", "NOP"))
+  three <- edited("hauls", "haul_id", 2:3, c("NOP", "aaa"), fish = three)
+  three <- edited("catches", "haul_id", 3:6, c("NOP", "NOP", "aaa", "aaa"), fish = three)
+  signature <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  twins <- opened(fish_run(three, signature, layers = 4), "design_duplicate_signature")
+  expect_equal(twins$expected[twins$row_number == 1L], "NOP; aaa")
+})
+
+test_that("design_geometry_inconsistent gives each failing group its own expected", {
+  settings <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = "weight"
+  )
+  # Catches 4 and 8 join catches 3 and 7: the failing groups are the third and the sixth.
+  fish <- edited("catches", "species", c(4L, 8L), c("YEP", "YEP"))
+  found <- opened(fish_run(fish, settings), "design_geometry_inconsistent")
+  expect_equal(placed_at(found), paste("catches weight", c(3L, 4L, 7L, 8L)))
+  expect_equal(found$expected, c("3.5; 4.5", "3.5; 4.5", "7.5; 8.5", "7.5; 8.5"))
+})
+
+test_that("a blank value reads as the blank text in expected, capped or not (D18.83)", {
+  settings <- list(
+    design_geometry_table = "hauls", design_geometry_by = "station_id",
+    design_geometry_columns = "gear"
+  )
+  # Haul 1's gear blank, as written, of only spaces or of a no-break space: station 1's hauls
+  # disagree on it, station 2's on EF and GN. Values sort as given (C order), so an empty or
+  # ASCII-space value comes first and a no-break space after the letters.
+  nbsp <- intToUtf8(0xA0)
+  for (none in c("", "  ", nbsp)) {
+    first <- if (none == nbsp) {
+      c("TN; (blank)", "TN (and 1 more)")
+    } else {
+      c("(blank); TN", "(blank) (and 1 more)")
+    }
+    fish <- edited("hauls", "gear", 1L, none)
+    full <- opened(fish_run(fish, settings, layers = 4), "design_geometry_inconsistent")
+    expect_equal(full$expected, rep(c(first[[1L]], "EF; GN"), each = 2L), info = none)
+    expect_equal(full$value[[1L]], none, info = none)
+    capped <- opened(
+      fish_run(fish, c(settings, list(example_cap = 1L)), layers = 4),
+      "design_geometry_inconsistent"
+    )
+    expect_equal(
+      capped$expected, rep(c(first[[2L]], "EF (and 1 more)"), each = 2L),
+      info = none
+    )
+  }
+  expect_equal(report_text("preflight_blank_value"), "(blank)")
+})
+
+test_that("design_duplicate_signature writes a column of another type as text (D18.39)", {
+  settings <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  # A text-typed column stored as numbers: 0.1 + 0.2 and 0.3 write alike, so hauls 1 and 3
+  # are twins.
+  catches <- data.table::copy(fx_fish_clean()$catches)
+  data.table::set(catches, j = "species", value = c(0.1 + 0.2, 1, 2, 3, 0.3, 1, 4, 5))
+  fish <- fx_fish_clean()
+  fish$catches <- catches
+  found <- opened(fish_run(fish, settings, layers = 4), "design_duplicate_signature")
+  expect_equal(placed_at(found), c("hauls haul_id 1", "hauls haul_id 3"))
 })
 
 test_that("subplot_label_ambiguous doesn't run on a table given without its key (D9.24)", {

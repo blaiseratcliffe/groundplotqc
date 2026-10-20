@@ -419,12 +419,12 @@ disagreeing_rows <- function(groups, value) {
 #' the key compared by its parts as given, a record whose key is NA, blank or a missing-value
 #' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
 #' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
-#' frames, sorted, another row of its report unit has too, expected the others' keys
-#' (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed column stored as text is
-#' compared by its numbers, text that doesn't coerce as written (D18.80); an `expected` list
-#' shows its first example_cap values in C order and the count of the rest (D18.81), and is NA
-#' at example_cap 0 (D18.82). A record
-#' whose grouping value is NA, blank or a sentinel isn't grouped.
+#' frames, written as text and sorted, another row of its report unit has too, expected the
+#' others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed column is
+#' compared by its numbers, one stored as text too, text that doesn't coerce as written
+#' (D18.80); an `expected` list shows its first example_cap values in C order and the count of
+#' the rest (D18.81), a blank value as the blank text (D18.83), and is NA at example_cap 0
+#' (D18.82). A record whose grouping value is NA, blank or a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   spec <- context$spec
@@ -502,15 +502,15 @@ check_keys <- function(input, context) {
   # doesn't coerce as written, each distinct pair one dense rank, NA a value of its own; any
   # other column as given.
   as_compared <- function(x, row) {
-    written <- if (row$family == "numeric") stored_text(x)
-    if (is.null(written)) {
+    if (row$family != "numeric" || !(is.character(x) || is.factor(x))) {
       return(x)
     }
     number <- coerce_column(x, row$r_class)$value
-    frankv(
-      list(number, fifelse(is.na(number), written, NA_character_)),
-      ties.method = "dense", na.last = TRUE
-    )
+    # Text only where no number was read (16.2).
+    written <- rep(NA_character_, length(x))
+    lost <- which(is.na(number))
+    written[lost] <- stored_text(x[lost])
+    frankv(list(number, written), ties.method = "dense", na.last = TRUE)
   }
   # The most values an `expected` list shows: example_cap (D18.81).
   most <- context$example_cap
@@ -870,7 +870,12 @@ check_keys <- function(input, context) {
             pairs <- setDT(list(group = at, value = text))
             distinct <- pairs[!duplicated(pairs)]
             ordered <- order(distinct$group, distinct$value, method = "radix", na.last = TRUE)
-            by_group <- split(distinct$value[ordered], distinct$group[ordered])
+            listed_values <- distinct$value[ordered]
+            # A blank value, as the checks read spaces, reads as the blank text (D18.83).
+            maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", listed_values, useBytes = TRUE))
+            blank <- maybe[space_padding(listed_values[maybe])$blank]
+            listed_values[blank] <- report_text("preflight_blank_value")
+            by_group <- split(listed_values, distinct$group[ordered])
             count <- lengths(by_group)
             shown <- vapply(by_group, function(values) {
               paste(values[seq_len(min(length(values), most))], collapse = "; ")
@@ -951,13 +956,21 @@ check_keys <- function(input, context) {
             kept <- which(!is.na(owner))
             signature <- rep(NA_character_, length(x))
             if (length(kept) > 0L) {
-              # Each of the table's rows by its signed values, compared as the candidates
-              # compare them (D18.80): one dense rank over the columns, read where they are, so
-              # no value is written as text and no value can make two rows one (16.2).
+              # Each of the table's rows by its signed values, written as text but a
+              # number-typed one compared by its number (D18.80): one dense rank over the
+              # columns, read where they are, so no value can make two rows one (16.2).
               every_row <- length(kept) == length(owner)
               signed_values <- lapply(seq_len(nrow(parts)), function(k) {
                 column <- input$data[[table]][[parts$column[[k]]]]
-                as_compared(if (every_row) column else column[kept], parts[k])
+                values <- if (every_row) column else column[kept]
+                if (parts$family[[k]] == "numeric" || is.character(values) || is.factor(values)) {
+                  return(as_compared(values, parts[k]))
+                }
+                # Any other column as D18.39 writes a row's values, as text: each distinct value
+                # written once and matched back by its rank (16.2).
+                rank <- frankv(values, ties.method = "dense", na.last = TRUE)
+                distinct <- values[match(seq_len(max(c(0L, rank))), rank)]
+                frankv(value_text(distinct), ties.method = "dense", na.last = TRUE)[rank]
               })
               ranked <- frankv(signed_values, ties.method = "dense", na.last = TRUE)
               mine <- if (every_row) owner else owner[kept]
