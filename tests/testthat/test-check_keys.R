@@ -566,6 +566,11 @@ test_that("doubles differing in their last digits stay apart, whatever the sessi
   )
   results <- gpq_check_conformance(tables, spec, layers = 4, settings = settings)
   expect_equal(nrow(opened(results, "design_geometry_inconsistent")), 0L)
+  # The session's setting is put back when a check stops too (the minors pass's fix round,
+  # dt M3).
+  testthat::local_mocked_bindings(key_rows = function(...) stop("a check stopped"))
+  expect_error(gpq_check_conformance(tables, spec, layers = 4), "a check stopped", fixed = TRUE)
+  expect_identical(data.table::getNumericRounding(), 2L)
 })
 
 # the finish's minors pass (m68)
@@ -936,7 +941,7 @@ test_that("pre-flight's walk and record_unreachable check the same tables (D18.6
       table_name = c("stations", "hauls", "catches"),
       attribute_name = c(NA, "station_id", "haul_id"), how = c("root", "from_parent", "from_parent")
     ),
-    # The hauls and the stations are checked as from_child targets, with no row of their own.
+    # The hauls are checked as the from_child target, with no row of their own.
     from_below = data.frame(
       table_name = c("catches", "catches"), attribute_name = c(NA, "haul_id"),
       how = c("root", "from_child")
@@ -1170,6 +1175,20 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
     table_name = c("p", "k"), attribute_name = c(NA, "p_id"), how = c("root", "from_parent")
   )
   expect_equal(reach_rows(conformance_input(tables["k"], spec), reach)$k, c(TRUE, FALSE, TRUE))
+  # A NaN child key stored as doubles is written "NaN" against a parent's key stored as text,
+  # and still reaches nothing, though the parent holds the text "NaN" (the minors pass's fix
+  # round, spec F2).
+  typed_text <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "character"
+  )
+  text_spec <- gpq_read_spec(typed_text)
+  mixed <- list(
+    p = data.table::data.table(p_id = c("1", "NaN")),
+    k = data.table::data.table(k_id = c("a", "b"), p_id = c(1, NaN))
+  )
+  chain <- parse_chain("p_id > p_id", "k", text_spec$keys, text_spec$attributes)
+  expect_equal(chain_rows(conformance_input(mixed, text_spec), "k", chain$steps), c(1L, NA))
 })
 
 # the finish's minors pass (m86)

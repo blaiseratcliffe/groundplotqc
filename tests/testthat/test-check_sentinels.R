@@ -324,12 +324,13 @@ test_that("a column stored as integer64 holds the codes plain stored numbers hol
   at <- which(sentinels$data_type == "character" & sentinels$role == "not_applicable")
   data.table::set(sentinels, i = at, j = "value", value = "-1")
   spec$sentinels <- sentinels
-  found <- function(table, column, rows, codes, settings = list(), stored = identity) {
-    forest <- fx_clean_tables(spec)
+  found <- function(table, column, rows, codes, settings = list(), stored = identity,
+                    with = spec) {
+    forest <- fx_clean_tables(with)
     values <- as.numeric(seq_len(nrow(forest[[table]])) + 20200100)
     values[rows] <- codes
     forest <- edited(table, column, NULL, stored(values), forest)
-    open <- opened(fish_run(forest, settings, spec = spec))
+    open <- opened(fish_run(forest, settings, spec = with))
     open <- open[open$rule_id != "class_mismatch"]
     paste(open$rule_id, placed_at(open), open$value, open$expected)
   }
@@ -365,6 +366,44 @@ test_that("a column stored as integer64 holds the codes plain stored numbers hol
       "species_unknown_code TREE_MEAS DBH 2 555 -7"
     )
   )
+  # The spec's numeric missing-value code set to `code` (the minors pass's fix round, fixtures
+  # F1, F2).
+  numeric_missing <- function(code) {
+    changed <- spec
+    sentinels <- data.table::copy(spec$sentinels)
+    at <- which(sentinels$data_type == "numeric" & sentinels$role == "missing")
+    data.table::set(sentinels, i = at, j = "value", value = code)
+    changed$sentinels <- sentinels
+    changed
+  }
+  # A number code in a text key takes its role by its number, written in full, not as R
+  # writes 1e+05: the missing code's own, ".".
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1L, 100000, with = numeric_missing("100000")),
+    "sentinel_wrong_type TREE_MEAS MEAS_ID 1 100000 ."
+  )
+  # A code with a fraction equals no whole value: -99.5 isn't -99.
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1L, -99, with = numeric_missing("-99.5")), character()
+  )
+})
+
+test_that("integer64 is compared with whole codes within its range only, with no warning", {
+  testthat::skip_if_not_installed("bit64")
+  # bit64's == truncates a fraction, and a code beyond its range overflows with a warning
+  # (the minors pass's fix round, fixtures F2).
+  x <- bit64::as.integer64(c(-99, 5, NA))
+  expect_identical(rows_holding(x, "-99.5"), integer())
+  wide_code <- "12345678901234567890"
+  expect_no_warning(beyond <- rows_holding(x, wide_code))
+  expect_identical(beyond, integer())
+  sentinels <- data.table::data.table(
+    data_type = "date", value = wide_code, allowed_in_pk = FALSE, allowed_in_fk = FALSE
+  )
+  expect_no_warning(
+    found <- key_rows(x, data.table::data.table(family = "date"), sentinels, "allowed_in_fk")
+  )
+  expect_equal(found, list(missing = 3L, open = integer()))
 })
 
 test_that("the rules integer64 changed are at rule_version 2 (D15.6, D18.64, m55)", {

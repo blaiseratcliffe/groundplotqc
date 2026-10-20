@@ -322,6 +322,84 @@ test_that("a given run ID is kept, and the run changes none of its tables (16.2)
   expect_match(made$metadata$run$run_id, run_id_pattern)
 })
 
+# the minors pass's fix round (D18.86)
+test_that("a table holding integer64 has bit64 loaded for it, or the run stops without it", {
+  # A column of class integer64 made from its 64-bit patterns, as readRDS() returns one in a
+  # session where bit64 isn't loaded: little-endian words, NA as integer64's NA.
+  bits_of <- function(values) {
+    high <- floor(values / 2^32)
+    low <- values - high * 2^32
+    low <- ifelse(low >= 2^31, low - 2^32, low)
+    words <- as.integer(rbind(ifelse(is.na(values), 0, low), high))
+    bits <- writeBin(words, raw(), endian = "little")
+    structure(
+      readBin(bits, "double", n = length(values), endian = "little"),
+      class = "integer64"
+    )
+  }
+  # A text-typed key whose codes read as numbers, as test-check_keys.R's integer64 test has it.
+  dictionary <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "character"
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    sentinels = gpq_sentinels(character = c(missing = "-2", not_applicable = "99999999"))
+  )
+  tables_of <- function(stored) {
+    list(
+      p = data.table::data.table(p_id = c("1", "2")),
+      k = data.table::data.table(
+        k_id = stored(c(10, 11, 12, 13, -2, -2)), p_id = stored(c(1, -2, 99999999, 7, 1, 2))
+      )
+    )
+  }
+  # Each requireNamespace() call for bit64 counted; while `absent`, bit64 can't be loaded.
+  asked <- new.env()
+  asked$n <- 0L
+  asked$absent <- TRUE
+  suppressMessages(trace(
+    "requireNamespace",
+    tracer = bquote(if (identical(package, "bit64")) {
+      assign("n", get("n", envir = .(asked)) + 1L, envir = .(asked))
+      if (get("absent", envir = .(asked))) package <- "bit64.absent"
+    }),
+    where = baseenv(), print = FALSE
+  ))
+  withr::defer(suppressMessages(untrace("requireNamespace", where = baseenv())))
+  # Without bit64 the run stops, naming the first such column, W135's text.
+  expect_error(
+    gpq_check_conformance(tables_of(bits_of), spec, layers = 4),
+    paste(
+      "Table k: the column k_id is stored as integer64, which needs the bit64 package to be",
+      "read correctly. Install it with install.packages(\"bit64\") and run again."
+    ),
+    fixed = TRUE
+  )
+  expect_gte(asked$n, 1L)
+  # A run with no integer64 column asks for nothing.
+  asked$absent <- FALSE
+  asked$n <- 0L
+  plain <- gpq_check_conformance(tables_of(as.character), spec, layers = 4)
+  expect_identical(asked$n, 0L)
+  # With bit64, the run loads it and reads the column as the same keys stored as text. Found
+  # installed without loading it, so where no earlier test has, the run is what loads it.
+  testthat::skip_if(!nzchar(system.file(package = "bit64")), "bit64 isn't installed.")
+  asked$n <- 0L
+  wide <- gpq_check_conformance(tables_of(bits_of), spec, layers = 4)
+  expect_gte(asked$n, 1L)
+  expect_true(isNamespaceLoaded("bit64"))
+  placed <- function(results) {
+    open <- results$issues[results$issues$status == "open"]
+    paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value)
+  }
+  expect_equal(placed(wide), c(
+    "pk_missing k k_id 5 -2", "pk_missing k k_id 6 -2", "fk_orphan k p_id 4 7",
+    "fk_unassigned k p_id 2 -2"
+  ))
+  expect_identical(placed(wide), placed(plain))
+})
+
 test_that("failures are record issues, or one column-level issue when every record fails (6.3)", {
   local_stand_in_rules()
   catches <- fx_fish_clean()$catches

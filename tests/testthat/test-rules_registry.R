@@ -165,6 +165,28 @@ test_that("the record rules name column_level_min_n in their inputs (D16.47, m60
       info = rule
     )
   }
+  # The rules the fish survey leaves out, for want of their inputs, pinned; the unit rule and
+  # fk_not_applicable_mismatch aside, they are record rules, and on MAGPlot's clean base, whose
+  # spec and rule set give every input, each has record outcomes and names the setting (the
+  # minors pass's fix round, fixtures F3).
+  wanting <- c(
+    "site_id_out_of_range", "fk_sentinel_unverified", "src_id_duplicate", "key_incoherent",
+    "record_unreachable", "design_geometry_inconsistent", "subplot_label_ambiguous",
+    "design_duplicate_signature"
+  )
+  expect_setequal(
+    names(found)[!told], c(wanting, "undeclared_code_set", "fk_not_applicable_mismatch")
+  )
+  testthat::skip_on_cran()
+  magp <- magp_spec()
+  context <- conformance_context(magp, validate_rule_set(magp_rules()), list(), 3:4)
+  input <- conformance_input(fx_magp_clean(), magp)
+  found <- c(check_domains(input, context), check_keys(input, context))
+  for (rule in wanting) {
+    kind <- vapply(found[[rule]], function(outcome) outcome$kind, "")
+    expect_true(any(kind == "record"), info = rule)
+    expect_true("settings:column_level_min_n" %in% inputs[[rule]], info = rule)
+  }
 })
 
 test_that("a severity setting entry changes its conformance rule's fingerprint only (D16.54)", {

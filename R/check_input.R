@@ -620,6 +620,11 @@ record_pk_text <- function(input, table, rows) {
       } else {
         setDT(lapply(given, function(column) data[[column]]))
       }
+      # data.table reads the table's doubles exactly, whatever setNumericRounding() the session
+      # has set, as check_keys() does; the session's setting is put back on exit (m67; the
+      # minors pass's fix round, dt M2).
+      rounding <- setNumericRounding(0L)
+      on.exit(setNumericRounding(rounding), add = TRUE)
       repeats <- duplicated(keyed) | duplicated(keyed, fromLast = TRUE)
     }
     assign(name, repeats, envir = input$cache)

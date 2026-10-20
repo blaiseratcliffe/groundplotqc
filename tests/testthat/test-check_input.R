@@ -699,6 +699,24 @@ test_that("every holder of a repeated integer64 PK is positional, the first too"
   expect_identical(pk$positional, c(FALSE, TRUE, TRUE, FALSE))
 })
 
+# the minors pass's fix round (dt M2)
+test_that("composite PK doubles differing in their last digits stay apart, whatever the rounding", {
+  # data.table's setNumericRounding() above 0 would take them as one key; the session's
+  # setting is left as it was.
+  rounding <- data.table::setNumericRounding(2L)
+  withr::defer(data.table::setNumericRounding(rounding))
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = c("character", "numeric", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    a = c("x", "x", "y"), b = c(123456789012.345, 123456789012.346, 1), v = c("p", "q", "r")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  expect_identical(record_pk_text(input, "k", 1:3)$positional, c(FALSE, FALSE, FALSE))
+  expect_identical(data.table::getNumericRounding(), 2L)
+})
+
 test_that("a composite PK's parts are joined with \"|\"", {
   spec <- fx_fish_spec()
   keys <- data.table::copy(spec$keys)
