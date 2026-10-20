@@ -560,11 +560,15 @@ check_keys <- function(input, context) {
         }
         compared <- which(!missing)
         # The caller's columns are read where they are; a subset is taken only where some
-        # key is missing, and a composite key is a table made by reference over its parts.
+        # key is missing, and a composite key is a table made by reference over its parts,
+        # as is integer64, whose own duplicated() ignores fromLast.
         keyed <- if (length(values) == 1L) {
           if (length(compared) == length(x)) x else x[compared]
         } else {
           setDT(lapply(values, function(v) if (length(compared) == length(x)) v else v[compared]))
+        }
+        if (inherits(keyed, "integer64")) {
+          keyed <- setDT(list(keyed))
         }
         fail <- compared[duplicated(keyed) | duplicated(keyed, fromLast = TRUE)]
         value <- if (length(values) == 1L) {

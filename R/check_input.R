@@ -613,8 +613,9 @@ record_pk_text <- function(input, table, rows) {
       repeats <- logical(nrow(data))
     } else {
       # The caller's columns are read where they are: a one-column PK as it is, a composite
-      # one as a table made by reference over them, none copied (16.2).
-      keyed <- if (length(given) == 1L) {
+      # one, or one stored as integer64, whose own duplicated() ignores fromLast, as a table
+      # made by reference over them, none copied (16.2).
+      keyed <- if (length(given) == 1L && !inherits(data[[given]], "integer64")) {
         data[[given]]
       } else {
         setDT(lapply(given, function(column) data[[column]]))

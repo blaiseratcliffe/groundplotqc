@@ -682,6 +682,23 @@ test_that("a record's PK is text, NA when missing, positional when missing or re
   expect_identical(gone$positional, c(TRUE, TRUE))
 })
 
+# the finish's minors pass
+test_that("every holder of a repeated integer64 PK is positional, the first too", {
+  # bit64's duplicated() ignores fromLast, so the first holder was missed.
+  testthat::skip_if_not_installed("bit64")
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("k_id", "v"), key_type = c("PK", "."),
+    data_type = c("integer", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    k_id = bit64::as.integer64(c(10, 11, 11, 12)), v = c("a", "b", "c", "d")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  pk <- record_pk_text(input, "k", 1:4)
+  expect_identical(pk$record_pk, c("10", "11", "11", "12"))
+  expect_identical(pk$positional, c(FALSE, TRUE, TRUE, FALSE))
+})
+
 test_that("a composite PK's parts are joined with \"|\"", {
   spec <- fx_fish_spec()
   keys <- data.table::copy(spec$keys)

@@ -375,6 +375,23 @@ test_that("an integer64 key's codes are pk_missing's, fk_unassigned's or waiting
   )
 })
 
+test_that("pk_duplicate fails every holder of a repeated integer64 key, the first too", {
+  # bit64's duplicated() ignores fromLast, so the first holder was missed (D18.10 (2)).
+  testthat::skip_if_not_installed("bit64")
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("k_id", "v"), key_type = c("PK", "."),
+    data_type = c("integer", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    k_id = bit64::as.integer64(c(10, 11, 11, 12, 11)), v = c("a", "b", "c", "d", "e")
+  ))
+  results <- gpq_check_conformance(tables, gpq_read_spec(dictionary), layers = 4)
+  found <- opened(results, "pk_duplicate")
+  expect_equal(placed_at(found), paste("k k_id", c(2L, 3L, 5L)))
+  expect_equal(found$value, rep("11", 3L))
+  expect_true(all(found$pk_positional))
+})
+
 # ---- task 11 ----
 
 test_that("key_incoherent compares each pair's sides, the failing pairs labelled (D18.1, D18.40)", {
