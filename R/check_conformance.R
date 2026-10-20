@@ -768,13 +768,19 @@ record_count <- function(outcome, rule, severity, input, context, state, run_id)
 #' @noRd
 cascade_masks <- function(state, table, attribute, layer, row_group, masked_by = character()) {
   key <- paste(table, attribute, sep = "\r")
-  pieces <- state$failed[[key]]
-  columns <- state$column_failed[[key]]
-  if (is.null(pieces) && is.null(columns)) {
+  # Only a failure of an earlier one of Layers 1 to 3, or of a rule of this layer that
+  # masked_by names, can mask: the others are never bound or sorted (m47).
+  can_mask <- function(piece) {
+    any(piece$layer < layer & piece$layer %in% 1:3) ||
+      any(piece$layer == layer & piece$rule_id %chin% masked_by)
+  }
+  pieces <- Filter(can_mask, state$failed[[key]])
+  columns <- Filter(can_mask, state$column_failed[[key]])
+  if (length(pieces) == 0L && length(columns) == 0L) {
     return(NULL)
   }
   masks <- list(data.table(row_number = integer(), root_issue_id = integer()))
-  if (!is.null(pieces)) {
+  if (length(pieces) > 0L) {
     cells <- rbindlist(pieces)
     masks[[2L]] <- mark_not_evaluated(failed_cells(cells, layers = 1:3), table, attribute, layer)
     # Worked out before the brackets: `layer` is also a column of `cells`.
@@ -783,7 +789,7 @@ cascade_masks <- function(state, table, attribute, layer, row_group, masked_by =
       row_number = cells$row_number[named], root_issue_id = cells$issue_id[named]
     )
   }
-  if (!is.null(columns)) {
+  if (length(columns) > 0L) {
     whole <- rbindlist(columns)
     # Worked out before the brackets: `layer` is also a column of `whole`.
     earlier <- (whole$layer < layer & whole$layer %in% 1:3) |
@@ -845,9 +851,10 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   if (in_key) {
     failures <- list(failed = list(), column_failed = list())
     for (slot in c("failed", "column_failed")) {
+      # A piece holding no Layer 3 failure is read as it is, not copied (m87).
       pieces <- lapply(state[[slot]][[key]], function(piece) {
         others <- piece$layer != 3L
-        piece[others]
+        if (all(others)) piece else piece[others]
       })
       pieces <- pieces[vapply(pieces, nrow, integer(1)) > 0L]
       if (length(pieces) > 0L) {

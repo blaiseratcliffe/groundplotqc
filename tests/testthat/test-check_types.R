@@ -244,6 +244,27 @@ test_that("missing_like() reads text marked as bytes as no blank, sentinel or co
   )
 })
 
+# the finish's minors pass (m56)
+test_that("missing_like() sends only the values that may be blank to space_padding() (16.2)", {
+  # As key_rows() does: blank, of ASCII spaces only, or holding text that isn't plain ASCII.
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(), 1L)
+  columns <- conformance_input(fx_fish_clean(), spec)$columns
+  key <- modifyList(as.list(columns[columns$attribute_name == "fish_count"]), list(key_type = "FK"))
+  nbsp <- intToUtf8(0xA0)
+  text <- c("abc", "", "  ", nbsp, paste0("x", nbsp), "12", NA)
+  real <- space_padding
+  received <- character()
+  testthat::local_mocked_bindings(space_padding = function(text) {
+    received <<- c(received, text)
+    real(text)
+  })
+  expect_equal(
+    missing_like(text, key, context), c(FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE)
+  )
+  expect_identical(received, c("", "  ", nbsp, paste0("x", nbsp)))
+})
+
 test_that("an unknown code of the attribute is Layer 2's, in a number or date column (m25)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)

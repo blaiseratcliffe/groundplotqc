@@ -85,7 +85,7 @@ key_rows <- function(x, row, sentinels, allowed) {
 #' Each row of a table's first row holding the same primary key value (D18.14)
 #'
 #' A child joined to its parent reaches the parent's first holder of its key (chain_rows());
-#' the holders let it reach every holder of a repeated key. NA for a row whose key is NA,
+#' the holders let it reach every holder of a repeated key. NA for a row whose key is NA, NaN,
 #' blank (as space_padding() reads it) or a sentinel of its type, which no child can name
 #' (D16.26, D18.31), masked after a plain match() with %in% in the key's own type (16.2), as
 #' match()'s `incomparables` isn't always honoured when it holds more than one value (D18.73);
@@ -114,7 +114,18 @@ pk_holders <- function(input, table) {
       blanks <- unique(value[maybe][space_padding(value[maybe])$blank])
     }
     holders <- match(value, value)
-    holders[value %in% c(NA, found$open, blanks)] <- NA_integer_
+    # NaN, which match() keeps apart from NA, holds no key either, as key_rows() reads it (m85).
+    masked <- c(NA, found$open, blanks)
+    if (is.double(value)) {
+      masked <- c(masked, NaN)
+    }
+    # An integer key is read against integer codes, so %in% copies no key to doubles (16.2):
+    # only a whole code an integer holds can equal one; -99.5 isn't -99 (m86).
+    if (is.integer(value)) {
+      whole <- is.na(masked) | (masked == trunc(masked) & abs(masked) <= .Machine$integer.max)
+      masked <- as.integer(masked[whole])
+    }
+    holders[value %in% masked] <- NA_integer_
   }
   assign(name, holders, envir = input$cache)
   holders
@@ -181,12 +192,14 @@ reach_rows <- function(input, reach) {
   usable <- which(between & child_column & parent_column)
   # The followed links a second walk starts from or follows loosely: from a table not given
   # into one given (D18.66), or between tables given with a key column not given (D18.68).
+  # record_unreachable finds the same links to decide whether a second walk runs; the two are
+  # kept in step (m83).
   from_absent <- followed & fifelse(
     links$how == "from_parent", child_given & !parent_given, parent_given & !child_given
   )
   broken <- between & !(child_column & parent_column)
-  # A link's join, kept in the input's cache when such a link makes a second walk follow;
-  # made afresh otherwise, as nothing reads it again.
+  # A link's join, kept in the input's cache when such a link makes a second walk follow,
+  # where it stays until the run ends; made afresh otherwise, as nothing reads it again.
   keep <- any(from_absent | broken)
   joined <- function(edge) {
     name <- paste("reach_rows", edge$table_name, edge$attribute_name, sep = "\r")
@@ -242,7 +255,12 @@ reach_rows <- function(input, reach) {
       maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", value, useBytes = TRUE))
       blanks <- unique(value[maybe][space_padding(value[maybe])$blank])
     }
-    !value %in% c(NA, found$open, codes_as(parent_family[[k]], value), blanks)
+    # NaN, which match() keeps apart from NA, is no key either, as key_rows() reads it (m85).
+    masked <- c(NA, found$open, codes_as(parent_family[[k]], value), blanks)
+    if (is.double(value)) {
+      masked <- c(masked, NaN)
+    }
+    !value %in% masked
   }
   parent_keys <- function(k) {
     parent <- link_edges$reference_table[[k]]
@@ -397,7 +415,8 @@ disagreeing_rows <- function(groups, value) {
 #' (D2.28, D18.10 (1), D18.15).
 #' `fk_sentinel_unverified` per foreign key of a number type: each record holding a sentinel
 #' `allowed_in_fk` allows, never looked up (D12.31, D16.2, D18.33). `fk_not_applicable_mismatch`
-#' per foreign key: not_run, no_matrix, until a matrix says where "Z" belongs (D7.3).
+#' per foreign key: not_run, no_matrix, until a matrix says where the type's not-applicable
+#' code belongs (D7.3).
 #' `src_id_duplicate` per ID-marked attribute outside the keys: every record whose value
 #' another record of its table and report unit (the first group column) holds; NA, blanks,
 #' sentinels and the records of a contributor `one_to_many` documents for the attribute are
@@ -433,6 +452,11 @@ disagreeing_rows <- function(groups, value) {
 #' (D18.82). A record whose grouping value is NA, blank or a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
+  # data.table's ranks and repeats read doubles exactly here, whatever setNumericRounding()
+  # the session has set, so two values that differ only in their last digits stay two; the
+  # session's setting is put back on exit (m67).
+  rounding <- setNumericRounding(0L)
+  on.exit(setNumericRounding(rounding), add = TRUE)
   spec <- context$spec
   keys <- spec$keys
   columns <- input$columns
@@ -786,7 +810,8 @@ check_keys <- function(input, context) {
         scope <- rows_of(firsts$table_name, firsts$attribute_name)
         # The tables not given that a followed link leads from into a table given (D18.66), and
         # the key columns not given of a followed link between tables given (D18.68): only then
-        # a second walk, each taken as a root, finds the rows only they could reach.
+        # a second walk, each taken as a root, finds the rows only they could reach. reach_rows()
+        # finds the same links to follow them; the two are kept in step (m83).
         at <- match(
           paste(reach$table_name, reach$attribute_name, sep = "\r"),
           paste(edges$table_name, edges$attribute_name, sep = "\r")

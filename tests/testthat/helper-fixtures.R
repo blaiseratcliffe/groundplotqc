@@ -102,8 +102,9 @@ fx_clean_tables <- function(spec, n = 2L) {
   # Whole numbers for a number column, inside the dictionary's bounds where it gives them, the
   # inclusive flags read (R14, R16): `index` where it fits, otherwise cycling over the whole
   # numbers that fit, so today's values stay wherever they already did. A double is the whole
-  # number plus 0.5, so its bounds are read half a unit in. A bound the column can't fit
-  # stops the base.
+  # number plus 0.5, so its bounds are read half a unit in. Without a minimum the numbers start
+  # at 1, so a maximum below 1 stops the base though a smaller whole number would fit (m18); a
+  # bound the column can't fit stops it too.
   within_bounds <- function(index, attribute, r_class) {
     half <- if (r_class == "double") 0.5 else 0
     low <- attribute$min_value

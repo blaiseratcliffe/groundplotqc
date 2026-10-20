@@ -52,7 +52,11 @@ missing_like <- function(text, row, context) {
   }
   unknown <- context$unknown_codes
   unknown <- unname(unknown[names(unknown) == row$attribute_name])
-  blank <- space_padding(text)$blank
+  # Only the values that may be blank are read by space_padding(), as key_rows() reads them
+  # (16.2; m56).
+  blank <- logical(length(text))
+  maybe <- which(grepl("^[ \t\r\n]*$|[^\001-\177]", text, useBytes = TRUE))
+  blank[maybe] <- space_padding(text[maybe])$blank
   id <- key || isTRUE(row$id_marked)
   layer_two <- blank | text %chin% other | text %chin% rogue | text %chin% unknown
   plain & (layer_two | (id & text %chin% "NA"))
@@ -63,7 +67,8 @@ missing_like <- function(text, row, context) {
 #' `class_mismatch` per attribute: integer and double storage stand in for each other,
 #' which `integer_stored_as_double` reports instead. On a table read from CSV, every column
 #' text, neither runs: not_run with reason text_input (D9.23). `coercion_loss` per attribute: the
-#' values coerce_column() loses, Layer 2's left out. `date_unparseable` per date attribute:
+#' values coerce_column() loses, those a later layer reports left out (missing_like(): Layer
+#' 2's, and a key's blank, Layer 4's). `date_unparseable` per date attribute:
 #' a value that isn't a sentinel and doesn't read back as written in the type's date format.
 #' `integer_stored_as_double` per numeric attribute. `value_not_finite` per numeric
 #' attribute: NaN, Inf or -Inf, as stored or as text, the rows `coercion_loss`'s coercion

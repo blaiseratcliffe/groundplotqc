@@ -1,6 +1,6 @@
 # Chains of foreign keys in D18.1's " > " notation (D18.1, D18.2, D18.27): from a table, each
 # foreign key followed in turn and the attribute read where the keys end, such as
-# "magp_dataset_id > magp_contributor_id" from magp_sites. One parser and one resolver serve
+# "dataset_id > contributor_id" from a table of sites. One parser and one resolver serve
 # id_bands' key (site_id_out_of_range) and, from Layer 4, key_pairs' sides; reach_column()
 # follows its shortest path with the same resolver.
 
@@ -50,9 +50,9 @@ parse_chain <- function(chain, table, keys, attributes) {
 #' `steps` are FK rows in order (parse_chain()'s `steps`, or fk_path()'s path). Each hop is
 #' one match() of the column as given against its parent's PK (key_values()): a column stored
 #' as plain numbers joins as stored, and against text only the numeric side is written as
-#' text, its sentinels with it (D16.42, m9); NA, every sentinel of the child's and the
+#' text, its sentinels with it (D16.42, m9); NA, NaN, every sentinel of the child's and the
 #' parent's types, and a blank key as space_padding() reads it (Unicode spaces included) match
-#' nothing, whatever the parent's key holds (D16.26; D16.42, m8; D18.31). They are masked after
+#' nothing, whatever the parent's key holds (D16.26; D16.42, m8; D18.31; m85). They are masked after
 #' a plain match(), read with %in% in the key's own type rather than in a copy of the column
 #' (16.2), as match()'s `incomparables` isn't always honoured when it holds more than one value
 #' (D18.73). A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or a
@@ -89,10 +89,17 @@ chain_rows <- function(input, table, steps) {
     rows <- match(from, to)
     # The keys that match nothing, NA where the child's key is one: a parent's key equal to one
     # is one too. Held in the child's type, so %in% writes no number key as text (16.2): a
-    # parent's column not given has no codes, which c() would otherwise make text.
+    # parent's column not given has no codes, which c() would otherwise make text. NaN, which
+    # match() keeps apart from NA, is missing too, as key_rows() reads it (m85).
     masked <- c(NA, from_open, to_open, blanks(from))
     if (is.numeric(from)) {
-      masked <- suppressWarnings(as.numeric(masked))
+      masked <- c(suppressWarnings(as.numeric(masked)), NaN)
+    }
+    # An integer key is read against integer codes, so %in% copies no key to doubles (16.2):
+    # only a whole code an integer holds can equal one; -99.5 isn't -99 (m86).
+    if (is.integer(from)) {
+      whole <- is.na(masked) | (masked == trunc(masked) & abs(masked) <= .Machine$integer.max)
+      masked <- as.integer(masked[whole])
     }
     rows[from %in% masked] <- NA_integer_
     current <- parent

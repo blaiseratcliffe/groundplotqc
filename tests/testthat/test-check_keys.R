@@ -224,7 +224,8 @@ test_that("a number foreign key warns once per record holding its allowed code, 
   data.table::set(attributes, i = is_haul, j = "r_class", value = "integer")
   spec$attributes <- attributes
   fish <- fx_clean_tables(spec)
-  as_text <- function(fish, ids) {
+  # Named apart from the package's as_text(), which it would hide (m56).
+  with_ids <- function(fish, ids) {
     catches <- data.table::copy(fish$catches)
     data.table::set(catches, j = "haul_id", value = ids)
     fish$catches <- catches
@@ -232,7 +233,7 @@ test_that("a number foreign key warns once per record holding its allowed code, 
   }
   ids <- as.character(fish$catches$haul_id)
   ids[1:3] <- c("-88.0", "-88", "-99.0")
-  results <- fish_run(as_text(fish, ids), layers = 4, spec = spec)
+  results <- fish_run(with_ids(fish, ids), layers = 4, spec = spec)
   found <- opened(results, "fk_sentinel_unverified")
   expect_equal(placed_at(found), paste("catches haul_id", 1:2))
   expect_equal(found$value, c("-88.0", "-88"))
@@ -245,7 +246,7 @@ test_that("a number foreign key warns once per record holding its allowed code, 
   # A column full of them collapses by column_level_min_n, as usual (D18.33).
   every <- rep("-88", nrow(fish$catches))
   full <- fish_run(
-    as_text(fish, every),
+    with_ids(fish, every),
     settings = list(column_level_min_n = 5L), layers = 4, spec = spec
   )
   collapsed <- opened(full, "fk_sentinel_unverified")
@@ -298,6 +299,13 @@ test_that("key_rows() writes stored numbers as text only near a code, its rows u
   expect_equal(found$missing, sort(c(which(is.na(x)), which(text %in% "00000000"))))
   expect_equal(found$open, which(text %in% c("99999999", "X")))
   expect_equal(written, list(0, c(99999999, 99999999.00001, 99999999)))
+  # Stored as integers, the same (the finish's minors pass, m56).
+  integers <- c(0L, 99999999L, 20200101L, NA, 99999999L)
+  written <- list()
+  expect_equal(
+    key_rows(integers, row, sentinels, "allowed_in_fk"), list(missing = 4L, open = c(2L, 5L))
+  )
+  expect_equal(written, list(0L, c(99999999L, 99999999L)))
 })
 
 # the finish's minors pass (m55, D18.64)
@@ -525,6 +533,75 @@ test_that("key_incoherent compares mixed storage as text, each distinct value wr
   )
 })
 
+# the finish's minors pass (m67)
+test_that("doubles differing in their last digits stay apart, whatever the session's rounding", {
+  # data.table's setNumericRounding() above 0 makes its ranks take such doubles as one; Layer 4
+  # reads them exactly, and leaves the session's setting as it was.
+  rounding <- data.table::setNumericRounding(2L)
+  withr::defer(data.table::setNumericRounding(rounding))
+  near <- c(123456789012.345, 123456789012.346)
+  dictionary <- data.frame(
+    table_name = c("parent", "parent", "child", "child", "child"),
+    attribute_name = c("p_id", "x", "c_id", "p_id", "x"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "parent", NA),
+    data_type = c("character", "numeric", "character", "character", "numeric")
+  )
+  spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "child", left = "x", right = "p_id > x", note = NA
+  ))
+  # key_incoherent: each child's copy, read as text, is its parent's.
+  tables <- list(
+    parent = data.table::data.table(p_id = c("a", "b"), x = near),
+    child = data.table::data.table(
+      c_id = c("c1", "c2"), p_id = c("a", "b"), x = c("123456789012.345", "123456789012.346")
+    )
+  )
+  expect_equal(nrow(opened(gpq_check_conformance(tables, spec, layers = 4))), 0L)
+  expect_identical(data.table::getNumericRounding(), 2L)
+  # design_geometry_inconsistent: two groups whose values differ in their last digits.
+  tables$parent$x <- near
+  tables$child <- data.table::data.table(c_id = c("c1", "c2"), p_id = c("a", "a"), x = near)
+  settings <- list(
+    design_geometry_table = "child", design_geometry_by = "x", design_geometry_columns = "c_id"
+  )
+  results <- gpq_check_conformance(tables, spec, layers = 4, settings = settings)
+  expect_equal(nrow(opened(results, "design_geometry_inconsistent")), 0L)
+})
+
+# the finish's minors pass (m68)
+test_that("key_incoherent compares an integer64 or POSIXct side, or one attribute, as text", {
+  testthat::skip_if_not_installed("bit64")
+  # Copies read as text against a parent's integer64 and POSIXct columns, and an integer64
+  # column against a text one of its own table (a right side of one attribute).
+  dictionary <- data.frame(
+    table_name = c(rep("parent", 3L), rep("child", 5L)),
+    attribute_name = c("p_id", "n", "t", "c_id", "p_id", "n", "t", "m"),
+    key_type = c("PK", NA, NA, "PK", "FK", NA, NA, NA),
+    reference_table = c(NA, NA, NA, NA, "parent", NA, NA, NA),
+    data_type = c(
+      "character", "integer", "date", "character", "character", "integer", "date", "integer"
+    )
+  )
+  spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "child", left = c("n", "t", "m"), right = c("p_id > n", "p_id > t", "n"),
+    note = NA
+  ))
+  tables <- list(
+    parent = data.table::data.table(
+      p_id = c("a", "b"), n = bit64::as.integer64(c(5, 6)),
+      t = as.POSIXct(c("2020-06-01", "2020-06-02"), tz = "UTC")
+    ),
+    child = data.table::data.table(
+      c_id = c("c1", "c2", "c3"), p_id = c("a", "b", "a"), n = c("5", "7", "5"),
+      t = c("2020-06-01", "2020-06-02", "2020-06-09"), m = bit64::as.integer64(c(5, 7, 6))
+    )
+  )
+  found <- opened(gpq_check_conformance(tables, spec, layers = 4), "key_incoherent")
+  expect_equal(placed_at(found), c("child n 2", "child t 3", "child m 3"))
+  expect_equal(found$value, c("n=7", "t=2020-06-09", "m=6"))
+  expect_equal(found$expected, c("n=6", "t=2020-06-01", "m=5"))
+})
+
 # ---- task 12 ----
 
 test_that("src_id_duplicate fails every holder of a repeated ID within its report unit (D18.3)", {
@@ -661,6 +738,28 @@ test_that("each table's labels are found once, through the key's own table (D18.
   expect_equal(record_labels(input, "sites"), c("ON", "ON", "AB", "AB"))
   expect_equal(record_labels(input, "datasets"), c("ON", "AB"))
   expect_equal(record_labels(input, "notes"), NA_character_)
+  # The home key stored as numbers, a factor or integer64 reads as its text does; a key NA or
+  # blank, and a site whose dataset names no row, reach no label (the finish's minors pass,
+  # m72).
+  labels_of <- function(contributor_id) {
+    stored <- list(
+      datasets = data.table::data.table(
+        dataset_id = c("d1", "d2", "d3", "d4"), contributor_id = contributor_id
+      ),
+      sites = data.table::data.table(
+        site_id = 1:5, dataset_id = c("d1", "d2", "d3", "d4", "d9"), src_site_id = "s",
+        src_plot_id = "p"
+      )
+    )
+    record_labels(conformance_input(stored, spec), "sites")
+  }
+  reached <- c("ON", "AB", NA, NA, NA)
+  expect_equal(labels_of(c("130", "100", NA, " ")), reached)
+  expect_equal(labels_of(c(130, 100, NA, NA)), reached)
+  expect_equal(labels_of(factor(c("130", "100", NA, " "))), reached)
+  if (requireNamespace("bit64", quietly = TRUE)) {
+    expect_equal(labels_of(bit64::as.integer64(c(130, 100, NA, NA))), reached)
+  }
   real_labels <- record_labels
   calls <- character()
   testthat::local_mocked_bindings(record_labels = function(input, table) {
@@ -825,6 +924,40 @@ test_that("record_unreachable walks the fish toy from its root: a station no hau
   expect_equal(rows$n_checked, c(2L, 4L, 7L))
   expect_equal(rows$n_fail, c(1L, 0L, 0L))
   expect_equal(placed_at(opened(results, "fk_orphan")), "catches haul_id 1")
+})
+
+# the finish's minors pass (m80)
+test_that("pre-flight's walk and record_unreachable check the same tables (D18.65)", {
+  # read_reach() and check_keys() each say which tables the walk checks. Without its root
+  # rows, a walk reaches none of them, so reach_invalid names each table it still checks: each
+  # of those record_unreachable checks with the roots, and all of them but the roots.
+  walks <- list(
+    from_above = data.frame(
+      table_name = c("stations", "hauls", "catches"),
+      attribute_name = c(NA, "station_id", "haul_id"), how = c("root", "from_parent", "from_parent")
+    ),
+    # The hauls and the stations are checked as from_child targets, with no row of their own.
+    from_below = data.frame(
+      table_name = c("catches", "catches"), attribute_name = c(NA, "haul_id"),
+      how = c("root", "from_child")
+    ),
+    with_exempt = data.frame(
+      table_name = c("stations", "hauls", "catches"), attribute_name = c(NA, "station_id", NA),
+      how = c("root", "from_parent", "exempt")
+    )
+  )
+  for (name in names(walks)) {
+    reach <- walks[[name]]
+    roots <- reach$table_name[reach$how == "root"]
+    rows <- fish_run(fx_fish_clean(), layers = 4, spec = fx_fish_spec(reach = reach))$results
+    checked <- unique(rows$table_name[rows$rule_id == "record_unreachable"])
+    findings <- fx_fish_spec(reach = reach[reach$how != "root", ])$read_findings
+    details <- findings$detail[findings$rule_id == "reach_invalid"]
+    expected <- report_text("preflight_detail_reach_invalid_unreachable", table_name = checked)
+    expect_true(all(details %in% expected), info = name)
+    expect_true(all(expected[!checked %in% roots] %in% details), info = name)
+    expect_true(all(roots %in% checked), info = name)
+  }
 })
 
 # task 13's fix round (the fixture review's Minor 4)
@@ -1016,6 +1149,49 @@ test_that("a root not given reaches no child row whose key is NA, blank or a sen
   expect_equal(reach_rows(input, reach)$catches, rep(c(FALSE, TRUE), each = 4L))
 })
 
+# the finish's minors pass (m85)
+test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as missing", {
+  # match() keeps NaN apart from NA, so a NaN child key would join a NaN parent key.
+  dictionary <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "numeric"
+  )
+  spec <- gpq_read_spec(dictionary)
+  tables <- list(
+    p = data.table::data.table(p_id = c(1, NaN)),
+    k = data.table::data.table(k_id = c(1, 2, 3), p_id = c(1, NaN, 5))
+  )
+  input <- conformance_input(tables, spec)
+  chain <- parse_chain("p_id > p_id", "k", spec$keys, spec$attributes)
+  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, NA))
+  expect_equal(pk_holders(input, "p"), c(1L, NA))
+  # The parents not given, taken as a root: a child holding NaN holds no key.
+  reach <- data.table::data.table(
+    table_name = c("p", "k"), attribute_name = c(NA, "p_id"), how = c("root", "from_parent")
+  )
+  expect_equal(reach_rows(conformance_input(tables["k"], spec), reach)$k, c(TRUE, FALSE, TRUE))
+})
+
+# the finish's minors pass (m86)
+test_that("an integer key is masked by its whole codes only: -99.5 isn't -99", {
+  dictionary <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "integer"
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    sentinels = gpq_sentinels(numeric = c(missing = -99.5, not_applicable = -88))
+  )
+  tables <- list(
+    p = data.table::data.table(p_id = c(-99L, -88L, 3L)),
+    k = data.table::data.table(k_id = 1:3, p_id = c(-99L, -88L, 3L))
+  )
+  input <- conformance_input(tables, spec)
+  chain <- parse_chain("p_id > p_id", "k", spec$keys, spec$attributes)
+  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, 3L))
+  expect_equal(pk_holders(input, "p"), c(1L, NA, 3L))
+})
+
 # task 13's fix round 4 (the datatable re-review's F2): a link from a table not given whose own
 # key column isn't given either
 test_that("MAGPlot without its plot measurements or their key's column: tree 2 alone fails", {
@@ -1200,6 +1376,22 @@ test_that("a key that fails Layer 3 is still a key to Layer 4; Layers 1 and 2 st
   expect_equal(placed_at(opened(results, "fk_orphan")), "hauls station_id 3")
   row <- results$results[results$results$rule_id == "fk_orphan"]
   expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(3L, 1L, 0L))
+  # A column-level failure of Layer 2 in a key still masks Layer 4: every haul's key padded
+  # (the finish's minors pass, m89).
+  hauls <- data.table::data.table(
+    haul_id = c("h1", "h2", "h3"), station_id = c("s1 ", "s2 ", "s1 "), water_body = "RV"
+  )
+  results <- gpq_check_conformance(
+    list(stations = stations, hauls = hauls), spec,
+    layers = 0:4, settings = list(column_level_min_n = 2L)
+  )
+  padding <- opened(results, "whitespace_padding")
+  expect_equal(c(padding$level, padding$column_name), c("column", "station_id"))
+  masked <- results$issues[results$issues$rule_id == "fk_orphan"]
+  expect_equal(c(masked$level, masked$status), c("column", "not_evaluated"))
+  expect_equal(masked$root_issue_id, padding$issue_id)
+  row <- results$results[results$results$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(0L, 0L, 3L))
 })
 
 # task 13's fix round 4 (D18.76): the band rule on MAGPlot's site IDs
@@ -1303,6 +1495,64 @@ test_that("design_duplicate_signature fails keys of one report unit sharing rows
     group_cols = "station_id", settings = settings, layers = 4
   )
   expect_equal(nrow(opened(by_station, "design_duplicate_signature")), 0L)
+})
+
+# the finish's minors pass (m100)
+test_that("a design candidate without its table or a column is not_run; a \"*\" unit unchecked", {
+  geometry <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = c("weight", "fish_count")
+  )
+  signature <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species"
+  )
+  reasons <- function(tables, settings, rule) {
+    rows <- fish_run(tables, settings)$results
+    rows <- rows[rows$rule_id == rule]
+    paste(rows$table_name, rows$column_name, rows$not_run_reason)
+  }
+  fish <- fx_fish_clean()
+  no_catches <- fish[c("stations", "hauls")]
+  expect_equal(
+    reasons(no_catches, geometry, "design_geometry_inconsistent"),
+    c("catches weight no_table", "catches fish_count no_table")
+  )
+  expect_equal(
+    reasons(no_catches, signature, "design_duplicate_signature"), "hauls haul_id no_table"
+  )
+  # A grouping column, or a column signed, not given.
+  without <- function(column) {
+    tables <- fish
+    tables$catches <- data.table::copy(fish$catches)
+    data.table::set(tables$catches, j = column, value = NULL)
+    tables
+  }
+  expect_equal(
+    reasons(without("species"), geometry, "design_geometry_inconsistent"),
+    c("catches weight no_column", "catches fish_count no_column")
+  )
+  expect_equal(
+    reasons(without("species"), signature, "design_duplicate_signature"), "hauls haul_id no_column"
+  )
+  expect_equal(
+    reasons(without("haul_id"), signature, "design_duplicate_signature"), "hauls haul_id no_column"
+  )
+  # A haul whose report unit is "*" (its station not named) isn't checked: haul 3, its twin,
+  # then has none, and hauls 2 and 4 still fail (K10).
+  water <- fish$stations$water_body[[1L]]
+  units <- edited("stations", "water_body", 1:2, c(water, water), fish)
+  units <- edited("hauls", "station_id", 1L, NA_character_, units)
+  results <- gpq_check_conformance(
+    units, fx_fish_spec(),
+    group_cols = "water_body", settings = signature, layers = 4
+  )
+  found <- opened(results, "design_duplicate_signature")
+  expect_equal(placed_at(found), paste("hauls haul_id", c(2L, 4L)))
+  rows <- results$results[results$results$rule_id == "design_duplicate_signature"]
+  star <- rows[rows$water_body == "*"]
+  expect_equal(c(star$status, star$not_run_reason), c("not_run", "none_checked"))
+  expect_equal(star$n_not_evaluated, 1L)
 })
 
 # ---- task 14's fix round 1 ----
@@ -1478,7 +1728,7 @@ test_that("a blank value reads as the blank text in expected, capped or not (D18
   # disagree on it, station 2's on EF and GN. Values sort as given (C order), so an empty or
   # ASCII-space value comes first and a no-break space after the letters.
   nbsp <- intToUtf8(0xA0)
-  for (none in c("", "  ", nbsp)) {
+  for (none in c("", "  ", "\t", nbsp)) {
     first <- if (none == nbsp) {
       c("TN; (blank)", "TN (and 1 more)")
     } else {
@@ -1496,8 +1746,26 @@ test_that("a blank value reads as the blank text in expected, capped or not (D18
       capped$expected, rep(c(first[[2L]], "EF (and 1 more)"), each = 2L),
       info = none
     )
+    # At example_cap 0 no value is shown, a blank one neither (D18.82; the finish's minors
+    # pass, m101).
+    none_shown <- opened(
+      fish_run(fish, c(settings, list(example_cap = 0L)), layers = 4),
+      "design_geometry_inconsistent"
+    )
+    expect_equal(none_shown$expected, rep(NA_character_, 4L), info = none)
   }
   expect_equal(report_text("preflight_blank_value"), "(blank)")
+  # Two distinct blanks in one group each show as the blank text, every value listed and
+  # counted (R133; m101): all four hauls at station 1.
+  fish <- edited("hauls", "station_id", 3:4, "stations_1")
+  fish <- edited("hauls", "gear", 1:2, c("", "  "), fish = fish)
+  full <- opened(fish_run(fish, settings, layers = 4), "design_geometry_inconsistent")
+  expect_equal(full$expected, rep("(blank); (blank); EF; GN", 4L))
+  capped <- opened(
+    fish_run(fish, c(settings, list(example_cap = 1L)), layers = 4),
+    "design_geometry_inconsistent"
+  )
+  expect_equal(capped$expected, rep("(blank) (and 3 more)", 4L))
 })
 
 test_that("design_duplicate_signature writes a column of another type as text (D18.39)", {

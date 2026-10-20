@@ -741,6 +741,78 @@ test_that("a rule masks the records an earlier rule of its layer failed, rooted 
   }
 })
 
+# the finish's minors pass (m48)
+test_that("a rule masks the records of a column-level failure of an earlier rule of its layer", {
+  registry <- rbind(rule_registry(), data.table::data.table(
+    rule_id = c("test_root", "test_masked"), stage = "conformance", layer = 4L,
+    check_type = "test", default_severity = "error", default_class = "harmonization",
+    inputs = "attributes", strategy = "none", message_id = "preflight_title", rule_version = 1L,
+    unit = FALSE
+  ))
+  testthat::local_mocked_bindings(rule_registry = function() registry)
+  # Every record fails test_root, so its failures are one column-level issue (6.3), which
+  # masks every record of test_masked, which names it, as one column-level issue (D16.10).
+  ids <- fx_fish_clean()$catches$catch_id
+  n <- length(ids)
+  settings <- list(column_level_min_n = 3L)
+  run <- assembly(settings = settings)
+  run$context <- conformance_context(fx_fish_spec(), NULL, settings, 4L)
+  record_layer(list(
+    test_root = list(record_outcome("test_root", "catches", "catch_id", seq_len(n), ids)),
+    test_masked = list(record_outcome(
+      "test_masked", "catches", "catch_id", 1L, ids[[1L]],
+      masked_by = "test_root"
+    ))
+  ), 4L, run$input, run$context, run$state, run_id)
+  done <- recorded(run$state)
+  root <- done$issues[done$issues$rule_id == "test_root"]
+  expect_equal(c(root$level, root$status), c("column", "open"))
+  masked <- done$issues[done$issues$rule_id == "test_masked"]
+  expect_equal(c(masked$level, masked$status), c("column", "not_evaluated"))
+  expect_equal(c(masked$n_records, masked$root_issue_id), c(n, root$issue_id))
+  counts <- done$results[done$results$rule_id == "test_masked"]
+  expect_equal(c(counts$n_checked, counts$n_fail, counts$n_not_evaluated), c(0L, 0L, n))
+})
+
+# the finish's minors pass (m47, m87)
+test_that("the cascade binds no failure that can't mask, and copies none it reads whole", {
+  # A Layer 4 failure masks no later Layer 4 rule that doesn't name it: nothing is bound, and
+  # no table is built (D16.18).
+  state <- new_run_state()
+  key <- paste("catches", "catch_id", sep = "\r")
+  state$failed[[key]] <- list(data.table::data.table(
+    table_name = "catches", column_name = "catch_id", row_number = 2L, layer = 4L,
+    issue_id = 1L, level = "record", status = "open", rule_id = "pk_missing"
+  ))
+  state$column_failed[[key]] <- list(data.table::data.table(
+    group = 1L, layer = 4L, issue_id = 2L, rule_id = "pk_missing"
+  ))
+  expect_null(cascade_masks(state, "catches", "catch_id", 4L, rep(1L, 8L)))
+  expect_equal(
+    cascade_masks(state, "catches", "catch_id", 4L, rep(1L, 3L), "pk_missing")$row_number, 1:3
+  )
+  # A Layer 4 check of a key column reads the column's Layers 1 and 2 failures as they are
+  # when none is Layer 3's, not a copy (D18.76).
+  local_stand_in_rules()
+  run <- assembly(settings = list(column_level_min_n = 100L))
+  run$context <- conformance_context(fx_fish_spec(), NULL, list(column_level_min_n = 100L), 0:4)
+  record_layer(list(test_spell = list(record_outcome(
+    "test_spell", "catches", "catch_id", 1L, "x"
+  ))), 2L, run$input, run$context, run$state, run_id)
+  read <- list()
+  real <- cascade_masks
+  testthat::local_mocked_bindings(cascade_masks = function(state, ...) {
+    read[[length(read) + 1L]] <<- state$failed[[key]]
+    real(state, ...)
+  })
+  record_layer(list(pk_missing = list(record_outcome(
+    "pk_missing", "catches", "catch_id", integer(), character()
+  ))), 4L, run$input, run$context, run$state, run_id)
+  expect_identical(
+    data.table::address(read[[1L]][[1L]]), data.table::address(run$state$failed[[key]][[1L]])
+  )
+})
+
 test_that("a count writes results rows in the counted table's groups, no issue (D18.32)", {
   local_stand_in_rules()
   run <- assembly(group_cols = "gear")
