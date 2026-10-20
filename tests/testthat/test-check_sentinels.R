@@ -313,6 +313,66 @@ test_that("stored as numbers, a column whose type isn't numeric takes text codes
   )
 })
 
+# the finish's minors pass (m55, D18.64)
+test_that("a column stored as integer64 holds the codes plain stored numbers hold", {
+  testthat::skip_if_not_installed("bit64")
+  # The forest spec with "-1" as its character not-applicable code, as above (D16.42, m37).
+  # Each column is given as plain numbers and as integer64, as a DBI query of a BIGINT column
+  # returns it; the same issues open but class_mismatch.
+  spec <- fx_forest_spec()
+  sentinels <- data.table::copy(spec$sentinels)
+  at <- which(sentinels$data_type == "character" & sentinels$role == "not_applicable")
+  data.table::set(sentinels, i = at, j = "value", value = "-1")
+  spec$sentinels <- sentinels
+  found <- function(table, column, rows, codes, settings = list(), stored = identity) {
+    forest <- fx_clean_tables(spec)
+    values <- as.numeric(seq_len(nrow(forest[[table]])) + 20200100)
+    values[rows] <- codes
+    forest <- edited(table, column, NULL, stored(values), forest)
+    open <- opened(fish_run(forest, settings, spec = spec))
+    open <- open[open$rule_id != "class_mismatch"]
+    paste(open$rule_id, placed_at(open), open$value, open$expected)
+  }
+  both <- function(...) {
+    wide <- found(..., stored = bit64::as.integer64)
+    expect_identical(wide, found(...))
+    wide
+  }
+  # A date column: -1 is the character code, 99999999 the column's own, which passes though
+  # listed as a rogue code (m39); a real 0 isn't the date code "00000000".
+  codes <- c("-1", "99999999")
+  expect_equal(
+    both("PLOTS", "ESTABLISHED", 1:2, c(-1, 99999999), list(rogue_codes = codes)),
+    "sentinel_wrong_type PLOTS ESTABLISHED 1 -1 99999999"
+  )
+  expect_equal(
+    both("PLOTS", "ESTABLISHED", 1L, 0, list(rogue_codes = "0")),
+    "sentinel_rogue_code PLOTS ESTABLISHED 1 0 00000000; 99999999"
+  )
+  # A text key: another type's code where the value's text is the code.
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1:2, c(99999999, 0)),
+    "sentinel_wrong_type TREE_MEAS MEAS_ID 1 99999999 -1"
+  )
+  # A number column: a rogue code and an unknown code, its own missing-value code passing.
+  expect_equal(
+    both(
+      "TREE_MEAS", "DBH", 1:3, c(99999999, 555, -7),
+      list(rogue_codes = "99999999", unknown_codes = c(DBH = "555", DBH = "-7"))
+    ),
+    c(
+      "sentinel_rogue_code TREE_MEAS DBH 1 99999999 -7; -8",
+      "species_unknown_code TREE_MEAS DBH 2 555 -7"
+    )
+  )
+})
+
+test_that("the rules integer64 changed are at rule_version 2 (D15.6, D18.64, m55)", {
+  registry <- rule_registry()
+  rules <- c("sentinel_wrong_type", "sentinel_rogue_code", "species_unknown_code")
+  expect_equal(registry$rule_version[match(rules, registry$rule_id)], c(2L, 2L, 2L))
+})
+
 test_that("in a column whose type has no sentinels, another type's is a rogue code (m36)", {
   # sentinel_wrong_type doesn't run there, so a rogue code isn't left to it.
   spec <- fx_fish_spec()

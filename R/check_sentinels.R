@@ -6,13 +6,16 @@
 # ASCII any Unicode space counts as a space (D16.42, m35). The engine fixes no code: the
 # sentinels, rogue codes and unknown codes are inputs (CLAUDE.md "Code").
 
-#' The values of `x` among `codes`, compared as numbers when `x` is stored as numbers (a code
-#' that isn't a number then matches nothing) and as text otherwise; returns their rows
+#' The values of `x` among `codes`, compared as numbers when `x` is stored as numbers, plain
+#' or integer64 (a code that isn't a number then matches nothing), and as text otherwise;
+#' returns their rows
 #'
-#' Text marked as bytes has no encoding to compare it in, and %chin% stops on it: it is
-#' compared as NA, which no code is, so it matches no code (D16.36; a run refuses such text
-#' first, D16.38, so for it this is a second line). Other text that isn't valid UTF-8 is
-#' compared as it is, and matches no code.
+#' integer64, as a DBI query of a BIGINT column returns it, holds whole numbers: each value
+#' is compared with each whole code its range holds by integer64's own `==`, since `%in%`
+#' would write every value as text (16.2; D18.64, m55). Text marked as bytes has no encoding
+#' to compare it in, and %chin% stops on it: it is compared as NA, which no code is, so it
+#' matches no code (D16.36; a run refuses such text first, D16.38, so for it this is a second
+#' line). Other text that isn't valid UTF-8 is compared as it is, and matches no code.
 #' @noRd
 rows_holding <- function(x, codes) {
   if (length(codes) == 0L) {
@@ -21,6 +24,16 @@ rows_holding <- function(x, codes) {
   if (is.numeric(x) && !is.object(x)) {
     numbers <- suppressWarnings(as.numeric(codes))
     return(which(x %in% numbers[!is.na(numbers)]))
+  }
+  if (inherits(x, "integer64")) {
+    numbers <- suppressWarnings(as.numeric(codes))
+    # A code beyond integer64's range would overflow, and one with a fraction equals no value.
+    whole <- !is.na(numbers) & abs(numbers) < 2^63 & numbers == trunc(numbers)
+    hit <- logical(length(x))
+    for (number in unique(numbers[whole])) {
+      hit <- hit | x == number
+    }
+    return(which(hit))
   }
   text <- stored_text(x)
   if (is.null(text)) {
@@ -39,8 +52,9 @@ rows_holding <- function(x, codes) {
 #' attribute; "when_sentinels" records not_run (no_sentinels) where the attribute's type
 #' has none. `blank_string` per attribute outside the keys, on text. `sentinel_wrong_type`
 #' per attribute: a sentinel of another type that isn't one of its own, not_run
-#' (no_sentinels) where its type has none. In a column stored as numbers the numeric
-#' family's codes match as numbers; where the column's type isn't numeric, the character and
+#' (no_sentinels) where its type has none. In a column stored as numbers, plain or integer64
+#' (D18.64, m55), the numeric family's codes match as numbers; where the column's type isn't
+#' numeric, the character and
 #' date families' codes match too, where the value's text is the code, so a real 0 isn't the
 #' date code "00000000" (R68; D16.42, m37); an unknown code of the attribute is left to
 #' `species_unknown_code` (D16.45, m51). `sentinel_rogue_code` per attribute outside the
@@ -67,12 +81,16 @@ check_sentinels <- function(input, context) {
   policy <- context$raw_na_policy
   unknown <- context$unknown_codes
   unknown_of <- function(attribute) unname(unknown[names(unknown) == attribute])
+  # Whether a column is stored as numbers: plain, or integer64, which a DBI query of a BIGINT
+  # column returns (D18.64, m55).
+  stored_numbers <- function(x) is.numeric(x) && (!is.object(x) || inherits(x, "integer64"))
   # The rows of `x` holding one of the column's own sentinels, which pass (D7.3): compared as
   # rows_holding() compares them and, in a column stored as numbers whose type isn't numeric,
-  # where the value's text is one, so a real 0 isn't the date code "00000000" (m39).
+  # where the value's text is one, so a real 0 isn't the date code "00000000" (m39). `x` is
+  # the failing rows only, so only they are written as text.
   own_rows <- function(x, row) {
     mine <- own(row)$value
-    if (is.numeric(x) && !is.object(x) && row$family != "numeric") {
+    if (stored_numbers(x) && row$family != "numeric") {
       which(value_text(x) %chin% mine)
     } else {
       rows_holding(x, mine)
@@ -82,9 +100,9 @@ check_sentinels <- function(input, context) {
   # with its sentinel's role, and the column's own sentinels; NULL where the column's type has
   # none. Stored as text, a value is compared as text. Stored as numbers, it is compared with
   # the numeric family's codes as numbers, and where the column's type isn't numeric, with
-  # the other families' codes as numbers where its text is the code (R68; D16.42, m37). An
-  # unknown code of the attribute is left to species_unknown_code, compared as that rule
-  # compares it (D16.45, m51).
+  # the other families' codes as numbers where its text is the code (R68; D16.42, m37); so is
+  # integer64 (D18.64, m55). An unknown code of the attribute is left to species_unknown_code,
+  # compared as that rule compares it (D16.45, m51).
   wrong_type <- function(x, row) {
     right <- own(row)
     if (nrow(right) == 0L) {
@@ -93,13 +111,19 @@ check_sentinels <- function(input, context) {
     is_wrong <- sentinels$data_type != row$family & !sentinels$value %chin% right$value
     codes <- sentinels$value[is_wrong]
     roles <- sentinels$role[is_wrong]
-    if (!(is.numeric(x) && !is.object(x))) {
+    if (!stored_numbers(x)) {
       fail <- rows_holding(x, codes)
       role <- roles[match(value_text(x[fail]), codes)]
     } else {
       by_number <- sentinels$data_type[is_wrong] == "numeric"
       fail <- rows_holding(x, codes[by_number])
-      role <- roles[by_number][match(x[fail], suppressWarnings(as.numeric(codes[by_number])))]
+      # The failing integer64 values as doubles, each a whole code's number, which match()
+      # would otherwise compare as text.
+      held <- x[fail]
+      if (is.object(held)) {
+        held <- suppressWarnings(as.double(held))
+      }
+      role <- roles[by_number][match(held, suppressWarnings(as.numeric(codes[by_number])))]
       if (row$family != "numeric") {
         written <- setdiff(rows_holding(x, codes[!by_number]), fail)
         text <- value_text(x[written])

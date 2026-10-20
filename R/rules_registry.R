@@ -164,21 +164,26 @@ build_rule_registry <- function() {
       "blank_string", 2L, "error", "harmonization",
       "attributes; keys; type_map; sentinels; settings:column_level_min_n", "sentinel_fix"
     ),
+    # Version 2 (M5), these three: a column stored as integer64 holds the codes plain stored
+    # numbers hold (D18.64, m55).
     conformance(
       "sentinel_wrong_type", 2L, "error", "harmonization",
       "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes",
-      "sentinel_fix"
+      "sentinel_fix",
+      rule_version = 2L
     ),
     conformance(
       "sentinel_rogue_code", 2L, "error", "depends",
       paste(
         "attributes; keys; type_map; sentinels; codes; settings:column_level_min_n;",
         "settings:rogue_codes; settings:unknown_codes"
-      )
+      ),
+      rule_version = 2L
     ),
     conformance(
       "species_unknown_code", 2L, "error", "harmonization",
-      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes"
+      "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes",
+      rule_version = 2L
     ),
     conformance(
       "whitespace_padding", 2L, "warning", "harmonization",

@@ -28,12 +28,13 @@
 #' rows_holding() matches it, and in a number-typed key stored as text also as a number, so
 #' "-9.0" is -9 (R29); in a key stored as numbers whose type isn't a number type, where the
 #' value's text is the code, so a real 0 isn't the date code "00000000" (m39), only the values
-#' near a code that reads as a number written as text (16.2).
+#' near a code that reads as a number written as text (16.2). A key stored as integer64, as a
+#' DBI query of a BIGINT column returns it, is read as stored numbers are (D18.64, m55).
 #' @noRd
 key_rows <- function(x, row, sentinels, allowed) {
   own <- sentinels[sentinels$data_type == row$family]
   allows <- own[[allowed]] %in% TRUE
-  stored_numbers <- is.numeric(x) && !is.object(x)
+  stored_numbers <- is.numeric(x) && (!is.object(x) || inherits(x, "integer64"))
   number <- if (row$family == "numeric" && !stored_numbers && nrow(own) > 0L) {
     coerce_column(x, "double")$value
   }
@@ -45,12 +46,17 @@ key_rows <- function(x, row, sentinels, allowed) {
       # Plain numbers aren't all written as text (16.2): only NaN and the values whose
       # 15-digit text may be a code are, as domain_skipped() does (R84). A value written as a
       # number's code lies within 1e-14 of it, relative, so the wider margin only narrows what
-      # is written; the text decides.
+      # is written; the text decides. integer64 is compared by its own methods, within its
+      # range only, so no value overflows; it holds no NaN.
       numbers <- suppressWarnings(as.numeric(codes))
       near <- is.nan(x)
       for (code in numbers[!is.na(numbers)]) {
         margin <- if (is.finite(code)) abs(code) * 1e-12 else 0
-        near <- near | x == code | abs(x - code) <= margin
+        if (!is.object(x)) {
+          near <- near | x == code | abs(x - code) <= margin
+        } else if (abs(code) + margin < 2^63) {
+          near <- near | (x >= code - margin & x <= code + margin)
+        }
       }
       maybe <- which(near)
       maybe[value_text(x[maybe]) %chin% codes]

@@ -300,6 +300,81 @@ test_that("key_rows() writes stored numbers as text only near a code, its rows u
   expect_equal(written, list(0, c(99999999, 99999999.00001, 99999999)))
 })
 
+# the finish's minors pass (m55, D18.64)
+test_that("key_rows() reads integer64 as plain stored numbers, as text only near a code", {
+  testthat::skip_if_not_installed("bit64")
+  # A date-typed key stored as integer64, as a DBI query of a BIGINT column returns it: a code
+  # holds where the value's text is the code, so a real 0 isn't "00000000" (m39), and only the
+  # values near a code that reads as a number are written as text (16.2).
+  row <- data.table::data.table(family = "date")
+  sentinels <- data.table::data.table(
+    data_type = "date", value = c("00000000", "99999999", "X"),
+    allowed_in_pk = FALSE, allowed_in_fk = c(FALSE, TRUE, TRUE)
+  )
+  x <- bit64::as.integer64(c(0, 99999999, 20200101, NA, 99999999))
+  real_text <- value_text
+  written <- list()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    written[[length(written) + 1L]] <<- as.character(x)
+    real_text(x)
+  })
+  found <- key_rows(x, row, sentinels, "allowed_in_fk")
+  expect_equal(found, list(missing = 4L, open = c(2L, 5L)))
+  expect_equal(written, list("0", c("99999999", "99999999")))
+  # A number-typed key compares its codes as numbers, as stored numbers do.
+  numbers <- data.table::data.table(
+    data_type = "numeric", value = c("-9", "-1.0"), allowed_in_pk = FALSE,
+    allowed_in_fk = c(FALSE, TRUE)
+  )
+  wide <- bit64::as.integer64(c(-9, 4, -1, NA))
+  expect_equal(
+    key_rows(wide, data.table::data.table(family = "numeric"), numbers, "allowed_in_fk"),
+    key_rows(c(-9, 4, -1, NA), data.table::data.table(family = "numeric"), numbers, "allowed_in_fk")
+  )
+  expect_equal(
+    key_rows(wide, data.table::data.table(family = "numeric"), numbers, "allowed_in_fk"),
+    list(missing = c(1L, 4L), open = 3L)
+  )
+})
+
+test_that("an integer64 key's codes are pk_missing's, fk_unassigned's or waiting (m55, D18.64)", {
+  testthat::skip_if_not_installed("bit64")
+  # A text-typed key stored as integer64 whose codes read as numbers: "-2" is refused, and
+  # "99999999" allowed in a foreign key (3.5). Each is read as stored plain numbers read it.
+  dictionary <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "character"
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    sentinels = gpq_sentinels(character = c(missing = "-2", not_applicable = "99999999"))
+  )
+  run <- function(stored) {
+    tables <- list(
+      p = data.table::data.table(p_id = stored(c(1, 2))),
+      k = data.table::data.table(
+        k_id = stored(c(10, 11, 12, 13, -2, -2)), p_id = stored(c(1, -2, 99999999, 7, 1, 2))
+      )
+    )
+    gpq_check_conformance(tables, spec, layers = 4)
+  }
+  results <- run(bit64::as.integer64)
+  found <- opened(results)
+  # Two keys of -2 repeat nothing: they are pk_missing's; 99999999 is never looked up.
+  expect_equal(paste(found$rule_id, placed_at(found), found$value), c(
+    "pk_missing k k_id 5 -2", "pk_missing k k_id 6 -2", "fk_orphan k p_id 4 7",
+    "fk_unassigned k p_id 2 -2"
+  ))
+  rows <- results$results
+  row <- rows[rows$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(5L, 1L, 1L))
+  plain <- opened(run(identity))
+  expect_equal(
+    paste(plain$rule_id, placed_at(plain), plain$value),
+    paste(found$rule_id, placed_at(found), found$value)
+  )
+})
+
 # ---- task 11 ----
 
 test_that("key_incoherent compares each pair's sides, the failing pairs labelled (D18.1, D18.40)", {
