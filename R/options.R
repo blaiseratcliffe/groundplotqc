@@ -29,7 +29,10 @@
 #'   (`rule_id_unknown`, `rule_set_override_invalid`); a pre-flight check's own
 #'   outcome can't be changed.
 #' - `groundplotqc.example_cap`: how many distinct failing values a results row
-#'   shows in its `examples` column. Built-in: `5`.
+#'   shows in its `examples` column. Built-in: `5`. It also caps how many values
+#'   `design_geometry_inconsistent` and `design_duplicate_signature` list in an
+#'   issue's `expected`, which then ends with a count of the rest; at 0,
+#'   `expected` is NA, as `examples` is.
 #' - `groundplotqc.column_level_min_n`: the fewest records a column must have in
 #'   a group before a rule that fails on all of them is recorded as one
 #'   column-level issue. Built-in: `10`.

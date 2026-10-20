@@ -39,7 +39,10 @@ rows' \code{severity} column gives this tier. Pre-flight checks each entry
 (\code{rule_id_unknown}, \code{rule_set_override_invalid}); a pre-flight check's own
 outcome can't be changed.
 \item \code{groundplotqc.example_cap}: how many distinct failing values a results row
-shows in its \code{examples} column. Built-in: \code{5}.
+shows in its \code{examples} column. Built-in: \code{5}. It also caps how many values
+\code{design_geometry_inconsistent} and \code{design_duplicate_signature} list in an
+issue's \code{expected}, which then ends with a count of the rest; at 0,
+\code{expected} is NA, as \code{examples} is.
 \item \code{groundplotqc.column_level_min_n}: the fewest records a column must have in
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: \code{10}.

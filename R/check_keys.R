@@ -422,7 +422,8 @@ disagreeing_rows <- function(groups, value) {
 #' frames, sorted, another row of its report unit has too, expected the others' keys
 #' (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed column stored as text is
 #' compared by its numbers, text that doesn't coerce as written (D18.80); an `expected` list
-#' shows its first example_cap values in C order and the count of the rest (D18.81). A record
+#' shows its first example_cap values in C order and the count of the rest (D18.81), and is NA
+#' at example_cap 0 (D18.82). A record
 #' whose grouping value is NA, blank or a sentinel isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
@@ -511,11 +512,14 @@ check_keys <- function(input, context) {
       ties.method = "dense", na.last = TRUE
     )
   }
-  # The most values an `expected` list shows (D18.81): example_cap, or every value where it is
-  # 0, which leaves no value to show before the count.
-  most <- if (context$example_cap == 0L) .Machine$integer.max else context$example_cap
-  # An `expected` list ending, where `rest` values are left out, with their count (D18.81).
+  # The most values an `expected` list shows: example_cap (D18.81).
+  most <- context$example_cap
+  # An `expected` list ending, where `rest` values are left out, with their count (D18.81); at
+  # example_cap 0 no value is shown and `expected` is NA, as `examples` is (D18.82).
   with_rest <- function(shown, rest) {
+    if (most == 0L) {
+      return(rep(NA_character_, length(shown)))
+    }
     capped <- which(rest > 0L)
     if (length(capped) > 0L) {
       shown[capped] <- report_text("expected_capped", values = shown[capped], n = rest[capped])

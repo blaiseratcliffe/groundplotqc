@@ -1291,6 +1291,28 @@ test_that("expected lists example_cap values, then the count of the rest (D18.81
   expect_equal(full$expected, found$expected)
 })
 
+test_that("at example_cap 0 expected is NA, as examples is (D18.82)", {
+  geometry <- list(
+    design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
+    design_geometry_columns = "weight", example_cap = 0L
+  )
+  found <- opened(
+    fish_run(edited("catches", "species", 2L, "WAE"), geometry), "design_geometry_inconsistent"
+  )
+  expect_equal(placed_at(found), c("catches weight 1", "catches weight 2"))
+  expect_equal(found$expected, c(NA_character_, NA_character_))
+  signature <- list(
+    design_signature_table = "catches", design_signature_by = "haul_id",
+    design_signature_columns = "species", example_cap = 0L
+  )
+  found <- opened(
+    fish_run(edited("catches", "species", 3:4, c("WAE", "NOP")), signature),
+    "design_duplicate_signature"
+  )
+  expect_equal(placed_at(found), paste("hauls haul_id", 1:3))
+  expect_equal(found$expected, rep(NA_character_, 3L))
+})
+
 test_that("design_geometry_inconsistent sorts expected in C order, whatever the locale", {
   settings <- list(
     design_geometry_table = "catches", design_geometry_by = "haul_id",
