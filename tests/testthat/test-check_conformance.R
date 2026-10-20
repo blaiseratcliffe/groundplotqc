@@ -376,18 +376,32 @@ test_that("a table holding integer64 has bit64 loaded for it, or the run stops w
     ),
     fixed = TRUE
   )
-  expect_gte(asked$n, 1L)
-  # A run with no integer64 column asks for nothing.
+  expect_identical(asked$n, 1L)
+  # The first table in the given order holding one is named (the minors pass's fix round 2,
+  # fixtures N2).
+  both <- tables_of(bits_of)
+  both$p <- data.table::data.table(p_id = bits_of(c(1, 2)))
+  expect_error(
+    gpq_check_conformance(both, spec, layers = 4),
+    "Table p: the column p_id is stored as integer64",
+    fixed = TRUE
+  )
+  # A run with no integer64 column asks for nothing, its keys stored as text, doubles or
+  # integers (fixtures N1).
   asked$absent <- FALSE
   asked$n <- 0L
   plain <- gpq_check_conformance(tables_of(as.character), spec, layers = 4)
   expect_identical(asked$n, 0L)
+  for (stored in list(as.numeric, as.integer)) {
+    gpq_check_conformance(tables_of(stored), spec, layers = 1)
+    expect_identical(asked$n, 0L)
+  }
   # With bit64, the run loads it and reads the column as the same keys stored as text. Found
   # installed without loading it, so where no earlier test has, the run is what loads it.
   testthat::skip_if(!nzchar(system.file(package = "bit64")), "bit64 isn't installed.")
   asked$n <- 0L
   wide <- gpq_check_conformance(tables_of(bits_of), spec, layers = 4)
-  expect_gte(asked$n, 1L)
+  expect_identical(asked$n, 1L)
   expect_true(isNamespaceLoaded("bit64"))
   placed <- function(results) {
     open <- results$issues[results$issues$status == "open"]

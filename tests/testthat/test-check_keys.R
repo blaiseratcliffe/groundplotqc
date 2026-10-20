@@ -1189,6 +1189,16 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
   )
   chain <- parse_chain("p_id > p_id", "k", text_spec$keys, text_spec$attributes)
   expect_equal(chain_rows(conformance_input(mixed, text_spec), "k", chain$steps), c(1L, NA))
+  # The other way round, a child's text "NaN" against a parent's NaN stored as doubles,
+  # reaches nothing too, so fk_orphan reports it as given (the minors pass's fix round 2,
+  # D18.87).
+  back <- list(
+    p = data.table::data.table(p_id = c(1, NaN)),
+    k = data.table::data.table(k_id = c("a", "b"), p_id = c("1", "NaN"))
+  )
+  expect_equal(chain_rows(conformance_input(back, text_spec), "k", chain$steps), c(1L, NA))
+  orphan <- opened(gpq_check_conformance(back, text_spec, layers = 4), "fk_orphan")
+  expect_equal(paste(placed_at(orphan), orphan$value), "k p_id 2 NaN")
 })
 
 # the finish's minors pass (m86)

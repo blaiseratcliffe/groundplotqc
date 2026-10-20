@@ -88,6 +88,11 @@ chain_rows <- function(input, table, steps) {
       from <- value_text(from)
       from_open <- value_text(from_open)
     } else if (is.character(from) && is.numeric(to)) {
+      # A parent's NaN key, written "NaN" here, is missing still: a child's text "NaN" joins no
+      # row through it (the minors pass's fix round 2, D18.87).
+      if (is.double(to)) {
+        to_open <- c(to_open, NaN)
+      }
       to <- value_text(to)
       to_open <- value_text(to_open)
     }
