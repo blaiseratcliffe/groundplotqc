@@ -591,6 +591,53 @@ test_that("site_id_out_of_range writes as text no banded ID but a failing one (1
   expect_equal(found$unchecked, c(5L, 6L))
 })
 
+# The band comparison in CRAN mode, on a small spec made here (D18.107)
+test_that("a site's ID passes inside its own band or on either bound, and fails outside it", {
+  # Sites reach their contributor through their dataset: ON's band 1 to 99, AB's 100 to 199.
+  dictionary <- data.frame(
+    table_name = c("datasets", "datasets", "sites", "sites"),
+    attribute_name = c("dataset_id", "contributor_id", "site_id", "dataset_id"),
+    key_type = c("PK", NA, "PK", "FK"), reference_table = c(NA, NA, NA, "datasets"),
+    data_type = c("character", "character", "integer", "character")
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    code_lists = list(
+      ranges = data.frame(
+        contributor = c("ON", "AB"), v2_start = c("1", "100"), v2_end = c("99", "199")
+      ),
+      contributor = data.frame(
+        abbreviated_name = c("ON", "AB"), contributor_id = c("130", "100")
+      )
+    ),
+    non_code_sheets = c("ranges", "contributor"),
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = NULL, table = "sites", attribute = "site_id",
+      key = "dataset_id > contributor_id"
+    )
+  )
+  # ON's sites on its lower bound, inside and on its upper bound; AB's 98 (below its band,
+  # though inside ON's), 150 (inside), 200 (above) and its two bounds.
+  tables <- list(
+    datasets = data.table::data.table(dataset_id = c("d1", "d2"), contributor_id = c("130", "100")),
+    sites = data.table::data.table(
+      site_id = c(1L, 50L, 99L, 98L, 150L, 200L, 100L, 199L),
+      dataset_id = rep(c("d1", "d2"), c(3L, 5L))
+    )
+  )
+  results <- gpq_check_conformance(tables, spec, layers = 3)
+  expect_equal(nrow(opened(results)), 2L)
+  found <- opened(results, "site_id_out_of_range")
+  expect_equal(placed_at(found), c("sites site_id 4", "sites site_id 6"))
+  expect_equal(found$value, c("98", "200"))
+  expect_equal(found$expected, c("100 to 199", "100 to 199"))
+  rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
+  expect_equal(c(rows$table_name, rows$column_name, rows$status), c("sites", "site_id", "fail"))
+  expect_equal(c(rows$n_checked, rows$n_fail), c(8L, 2L))
+})
+
 # task 6's fix round (the datatable review's #1)
 test_that("domain_skipped() reads plain numbers as numbers, as it reads their text (16.2)", {
   spec <- fx_fish_spec()
