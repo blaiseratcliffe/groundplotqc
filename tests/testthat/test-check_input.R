@@ -944,8 +944,8 @@ test_that("an integer64 value whose double is beyond its range is lost on every 
 test_that("an integer64 value of 19 digits that a double holds exactly isn't lost", {
   testthat::skip_if_not_installed("bit64")
   # Each value is a multiple of 1024 in [2^62, 2^63), which a double holds exactly. Its double
-  # comes from its text: where R parses it in a long double no wider than a double, as may be
-  # so on macOS arm64, a value read a step off would be lost, and the count below says how many.
+  # is bit64's cast, rounded the same way on every platform, so none is lost, the macOS job
+  # included; were one lost, the count below would say how many.
   x <- bit64::as.integer64(2^62) + bit64::as.integer64(0:999) * 1024L
   expect_identical(sum(coerce_column(x, "double")$lost), 0L)
   # key_values() reads none of them as NA, so each joins as its number.
