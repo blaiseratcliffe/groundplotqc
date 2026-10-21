@@ -396,11 +396,15 @@ test_that("a column stored as integer64 holds the codes plain stored numbers hol
 test_that("integer64 is compared with whole codes within its range only, with no warning", {
   testthat::skip_if_not_installed("bit64")
   # bit64's == truncates a fraction, and a code beyond its range overflows with a warning
-  # (the minors pass's fix round, fixtures F2).
-  x <- bit64::as.integer64(c(-99, 5, NA))
+  # (the minors pass's fix round, fixtures F2). bit64 reads such a code's text as integer64's
+  # largest value, with no warning, so the range guard alone keeps it from the row holding
+  # 2^63 - 1 (the Codex round's fix round 1, fixtures F1).
+  x <- bit64::as.integer64(c("-99", "5", NA, "9223372036854775807"))
   expect_identical(rows_holding(x, "-99.5"), integer())
   wide_code <- "12345678901234567890"
   expect_no_warning(beyond <- rows_holding(x, wide_code))
+  expect_identical(beyond, integer())
+  expect_no_warning(beyond <- rows_holding(x, "9223372036854775808"))
   expect_identical(beyond, integer())
   sentinels <- data.table::data.table(
     data_type = "date", value = wide_code, allowed_in_pk = FALSE, allowed_in_fk = FALSE
@@ -448,6 +452,21 @@ test_that("integer64 is compared with a whole code exactly, as bit64 reads the c
   expect_equal(paste(found$rule_id, placed_at(found), found$value, found$expected), c(
     "sentinel_wrong_type t x 1 9007199254740993 ?", "sentinel_wrong_type t x 2 9007199254740992 ~"
   ))
+  # A value holding two codes of one number takes the first one's role, as match() gave it
+  # (R157): -9 is the missing code "-9" before the not-applicable "-9.0", stored as integer64
+  # or as plain numbers (the Codex round's fix round 1, fixtures F3).
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = "-9", not_applicable = "-9.0"),
+    character = c(missing = "?", not_applicable = "~")
+  ))
+  for (stored in list(bit64::as.integer64, as.numeric)) {
+    tables <- list(t = data.table::data.table(t_id = c("a", "b"), x = stored(c(-9, 5))))
+    found <- opened(gpq_check_conformance(tables, spec, layers = 2))
+    expect_equal(
+      paste(found$rule_id, placed_at(found), found$value, found$expected),
+      "sentinel_wrong_type t x 1 -9 ?"
+    )
+  }
 })
 
 test_that("the rules integer64 changed are at rule_version 2 (D15.6, D18.64, m55)", {

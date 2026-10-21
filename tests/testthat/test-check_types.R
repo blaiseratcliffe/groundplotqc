@@ -87,6 +87,32 @@ test_that("a fraction or a number beyond an integer's range, stored as double, i
   expect_equal(loss$expected, c("integer", "integer"))
 })
 
+# the Codex round's fix round 1 (the fixture review's F4): a control outside the keys
+test_that("a number-typed integer64 value a double can't hold is lost outside the keys too", {
+  testthat::skip_if_not_installed("bit64")
+  # D18.111 holds for any number-typed column, not only a key: 2^53 + 1 fails coercion_loss,
+  # and Layer 2 leaves it not evaluated, rooted there.
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "x"), key_type = c("PK", NA),
+    data_type = c("character", "numeric")
+  )
+  tables <- list(t = data.table::data.table(
+    t_id = c("a", "b", "c"),
+    x = bit64::as.integer64(c("9007199254740993", "9007199254740992", "5"))
+  ))
+  issues <- gpq_check_conformance(tables, gpq_read_spec(dictionary), layers = 0:4)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, open$column_name, open$row_number, open$value, open$expected),
+    "coercion_loss x 1 9007199254740993 double"
+  )
+  masked <- issues[issues$status == "not_evaluated"]
+  expect_equal(
+    paste(masked$rule_id, masked$row_number), c("blank_string 1", "sentinel_rogue_code 1")
+  )
+  expect_equal(unique(masked$root_issue_id), open$issue_id)
+})
+
 test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8.8, D7.9)", {
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)

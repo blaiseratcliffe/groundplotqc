@@ -18,7 +18,8 @@
 #'
 #' `x` holds the values as given, `row` is the attribute's row of the input's columns table,
 #' and `number`, when given, the values read as numbers: a sentinel or unknown code is then
-#' matched as a number too, so "-1.0" read from text is the numeric family's -1 (D18.9).
+#' matched as a number too, so "-1.0" read from text is the numeric family's -1 (D18.9); in
+#' `x` stored as integer64 as rows_holding() matches it, exactly (D18.117).
 #' With `number` given, `x` stored as plain numbers isn't written as text (16.2). Returns one
 #' logical per value.
 #' @noRd
@@ -56,8 +57,15 @@ domain_skipped <- function(x, row, context, number = NULL) {
     }
   }
   if (!is.null(number)) {
-    numbers <- suppressWarnings(as.numeric(codes))
-    skipped <- skipped | number %in% numbers[!is.na(numbers)]
+    if (inherits(x, "integer64")) {
+      # integer64's codes are found as rows_holding() finds them, each code read from its text
+      # by bit64, exact to 64 bits, not through the nearest doubles `number` holds (D18.112,
+      # D18.117).
+      skipped[rows_holding(x, codes)] <- TRUE
+    } else {
+      numbers <- suppressWarnings(as.numeric(codes))
+      skipped <- skipped | number %in% numbers[!is.na(numbers)]
+    }
   }
   skipped
 }

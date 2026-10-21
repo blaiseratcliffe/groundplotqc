@@ -895,8 +895,11 @@ test_that("an integer64 value a double can't hold exactly is lost, and joins as 
   ))
   coerced <- coerce_column(x, "double")
   expect_identical(coerced$lost, c(FALSE, TRUE, TRUE, FALSE, TRUE, FALSE))
-  # Its number is still the nearest double, as Layer 3 reads it.
-  expect_identical(coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, 2^63, NA))
+  # Its number is still the nearest double, as Layer 3 reads it; 2^63 - 1's as R reads its
+  # text, which a platform without a wide long double may read a little apart from 2^63.
+  expect_identical(
+    coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, as.numeric("9223372036854775807"), NA)
+  )
   # Where an integer is wanted, every value beyond the integer range is lost, as before; text
   # is written exactly.
   expect_identical(coerce_column(x, "integer")$lost, c(rep(TRUE, 5L), FALSE))
@@ -913,4 +916,28 @@ test_that("an integer64 value a double can't hold exactly is lost, and joins as 
   )
   input <- conformance_input(list(k = data.table::data.table(k_id = x)), gpq_read_spec(dictionary))
   expect_identical(key_values(input, "k", "k_id")$value, c(2^53, NA, NA, 2^53 + 2, NA, NA))
+})
+
+# the Codex round's fix round 1 (the datatable review's F1)
+test_that("an integer64 value whose double is beyond its range is lost on every platform", {
+  testthat::skip_if_not_installed("bit64")
+  # From 2^63 - 512 up, and from -(2^63 - 512) down, a value's double is beyond integer64's
+  # range, where C leaves the cast back undefined: NA on Windows x86-64, integer64's largest
+  # value where it saturates, as on arm64. Such a value is lost without being read back.
+  x <- bit64::as.integer64(c(
+    "9223372036854775807", "9223372036854775296", "-9223372036854775807", "9007199254740992"
+  ))
+  expected <- c(TRUE, TRUE, TRUE, FALSE)
+  expect_identical(coerce_column(x, "double")$lost, expected)
+  # The same where the cast saturates: bit64's cast of a double made to give 2^63 - 1 for 2^63.
+  real_cast <- utils::getFromNamespace("as.integer64.double", "bit64")
+  testthat::local_mocked_bindings(
+    as.integer64.double = function(x, ...) {
+      out <- real_cast(x, ...)
+      out[!is.na(x) & x >= 2^63] <- bit64::as.integer64("9223372036854775807")
+      out
+    },
+    .package = "bit64"
+  )
+  expect_identical(coerce_column(x, "double")$lost, expected)
 })

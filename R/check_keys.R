@@ -87,10 +87,11 @@ key_rows <- function(x, row, sentinels, allowed) {
 #' A child joined to its parent reaches the parent's first holder of its key (chain_rows());
 #' the holders let it reach every holder of a repeated key. NA for a row whose key is NA, NaN,
 #' blank (as space_padding() reads it) or a sentinel of its type, which no child can name
-#' (D16.26, D18.31), masked after a plain match() with %in% in the key's own type (16.2), as
-#' match()'s `incomparables` isn't always honoured when it holds more than one value (D18.73);
-#' and for every row of a table not given or whose key isn't one column, which no foreign key
-#' follows (D18.42). Kept in the input's cache, by table.
+#' (D16.26, D18.31), or an integer64 value a double can't hold exactly in a number-typed key,
+#' which key_values() reads as NA (D18.111), masked after a plain match() with %in% in the
+#' key's own type (16.2), as match()'s `incomparables` isn't always honoured when it holds
+#' more than one value (D18.73); and for every row of a table not given or whose key isn't
+#' one column, which no foreign key follows (D18.42). Kept in the input's cache, by table.
 #' @noRd
 pk_holders <- function(input, table) {
   name <- paste("pk_holders", table, sep = "\r")

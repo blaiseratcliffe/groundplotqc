@@ -530,6 +530,35 @@ test_that("integer64 parent keys 2^53 and 2^53 + 1 don't collide in the joins (D
   expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
 })
 
+# the Codex round's fix round 1 (the fixture review's F4): a control
+test_that("a text-typed integer64 key above 2^53 joins exactly, and nothing is lost", {
+  testthat::skip_if_not_installed("bit64")
+  # Written as text, 2^53 and 2^53 + 1 stay two keys: each child joins its own parent.
+  dictionary <- data.frame(
+    table_name = c("p", "k", "k"), attribute_name = c("p_id", "k_id", "p_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary)
+  tables <- list(
+    p = data.table::data.table(
+      p_id = bit64::as.integer64(c("9007199254740992", "9007199254740993"))
+    ),
+    k = data.table::data.table(
+      k_id = bit64::as.integer64(1:2),
+      p_id = bit64::as.integer64(c("9007199254740993", "9007199254740992"))
+    )
+  )
+  keys <- spec$keys
+  edge <- keys[keys$table_name == "k" & keys$key_type == "FK"]
+  expect_identical(chain_rows(conformance_input(tables, spec), "k", edge), c(2L, 1L))
+  results <- gpq_check_conformance(tables, spec, layers = 0:4)
+  expect_equal(unique(opened(results)$rule_id), "class_mismatch")
+  rows <- results$results
+  for (rule in c("coercion_loss", "fk_orphan", "parent_without_children")) {
+    expect_equal(sum(rows$n_fail[rows$rule_id == rule]), 0L, info = rule)
+  }
+})
+
 # ---- task 11 ----
 
 test_that("key_incoherent compares each pair's sides, the failing pairs labelled (D18.1, D18.40)", {

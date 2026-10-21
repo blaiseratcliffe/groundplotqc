@@ -674,6 +674,34 @@ test_that("domain_skipped() reads plain numbers as numbers, as it reads their te
   expect_identical(written, list(c(-99, -88)))
 })
 
+# the Codex round's fix round 1 (D18.117)
+test_that("domain_skipped() finds an integer64 column's codes exactly, as bit64 reads them", {
+  testthat::skip_if_not_installed("bit64")
+  # A number-typed column stored as integer64, at most 100, its missing-value code 2^53 + 1:
+  # read as doubles, 2^53 is the code too and was skipped (the spec review's S11 and S11c).
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "x"), key_type = c("PK", NA),
+    data_type = c("character", "numeric"), max_value = c(NA, "100")
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    sentinels = gpq_sentinels(numeric = c(missing = "9007199254740993"))
+  )
+  x <- bit64::as.integer64(c("9007199254740992", "50", "9007199254740993", "9007199254740994"))
+  tables <- list(t = data.table::data.table(t_id = c("a", "b", "c", "d"), x = x))
+  input <- conformance_input(tables, spec)
+  row <- input$columns[input$columns$attribute_name == "x"]
+  context <- conformance_context(spec, NULL, list(), 3L)
+  expect_identical(
+    domain_skipped(x, row, context, coerce_column(x, "double")$value),
+    c(FALSE, FALSE, TRUE, FALSE)
+  )
+  found <- opened(gpq_check_conformance(tables, spec, layers = 3))
+  expect_equal(paste(found$rule_id, placed_at(found), found$value), c(
+    "value_above_max t x 1 9007199254740992", "value_above_max t x 4 9007199254740994"
+  ))
+})
+
 # ---- task 7 ----
 
 test_that("undeclared_code_set warns on a text column of a few distinct values (D18.20)", {

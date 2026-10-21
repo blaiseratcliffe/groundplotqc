@@ -237,11 +237,15 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
   }
   if (r_class == "double" && inherits(x, "integer64")) {
     # integer64 holds whole numbers to 64 bits, a double exactly only to 2^53: a value is lost
-    # where its double, read back as integer64 by integer64's own ==, isn't the value, or is
-    # beyond integer64's range, which reads back as NA (D18.111). Its number stays the nearest
-    # double.
-    exact <- suppressWarnings(distinct == number)
-    out$lost <- out$lost | (!is.na(number) & !exact %in% TRUE)
+    # where its double, read back as integer64 by integer64's own ==, isn't the value (D18.111).
+    # A double beyond integer64's range, 2^63 for the values from 2^63 - 512 up, is lost
+    # without being read back, since C leaves that cast undefined: NA on x86-64, integer64's
+    # largest value where it saturates, as on arm64 (the Codex round's review, dt F1). Its
+    # number stays the nearest double.
+    held <- which(!is.na(number) & abs(number) < 2^63)
+    exact <- logical(length(number))
+    exact[held] <- (distinct[held] == number[held]) %in% TRUE
+    out$lost <- out$lost | (!is.na(number) & !exact)
   }
   not_finite <- is.nan(number) | is.infinite(number)
   if (is.null(at)) {
@@ -428,10 +432,13 @@ key_values <- function(input, table, attribute) {
   } else {
     coerced <- coerce_column(x, row$r_class, row$date_format)
     # An integer64 value a double can't hold exactly, which coercion_loss reports, is NA, so it
-    # joins no record, as parent or child (D18.111); every other lost value is NA already.
-    lost <- which(coerced$lost)
-    if (inherits(x, "integer64") && length(lost) > 0L) {
-      coerced$value[lost] <- NA
+    # joins no record, as parent or child (D18.111); every other lost value is NA already, so
+    # no other key is scanned for one.
+    if (inherits(x, "integer64")) {
+      lost <- which(coerced$lost)
+      if (length(lost) > 0L) {
+        coerced$value[lost] <- NA
+      }
     }
     coerced$value
   }
