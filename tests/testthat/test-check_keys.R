@@ -1967,6 +1967,36 @@ test_that("pk_duplicate compares a number-typed key by its number, as the joins 
   expect_equal(nrow(opened(results)), 0L)
 })
 
+# the final fix wave's follow-up
+test_that("subplot_label_ambiguous compares a number-typed key as pk_duplicate does (D18.104)", {
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "t.csv")
+  writeLines(c("k,label", "1,L", "01,L", "2,M"), path)
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("k", "label"), key_type = c("PK", "."),
+    data_type = c("integer", "character")
+  )
+  settings <- list(subplot_label_table = "t", subplot_label_columns = "label")
+  # "1" and "01" are one key: only pk_duplicate reports the two records.
+  results <- gpq_check_conformance(
+    c(t = path), gpq_read_spec(dictionary),
+    layers = 0:4, settings = settings
+  )
+  found <- opened(results)
+  expect_equal(paste(found$rule_id, placed_at(found)), paste("pk_duplicate", c("t k 1", "t k 2")))
+  # A text-typed key is compared as given: two keys sharing a label.
+  dictionary$data_type <- "character"
+  results <- gpq_check_conformance(
+    c(t = path), gpq_read_spec(dictionary),
+    layers = 0:4, settings = settings
+  )
+  found <- opened(results)
+  expect_equal(
+    paste(found$rule_id, placed_at(found)),
+    paste("subplot_label_ambiguous", c("t label 1", "t label 2"))
+  )
+})
+
 test_that("key_incoherent compares differing plain numbers again as text (D18.101)", {
   dictionary <- data.frame(
     table_name = c("parent", "parent", "child", "child", "child"),

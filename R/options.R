@@ -92,7 +92,9 @@
 #' attribute an option names that a specification doesn't have is reported by
 #' pre-flight as a warning (`option_unknown_name`) and otherwise ignored; given
 #' as an argument or in a rule set, such a name stops pre-flight
-#' (`setting_unknown_name`).
+#' (`setting_unknown_name`). In `groundplotqc.design_geometry_by`,
+#' `groundplotqc.subplot_label_columns` and `groundplotqc.design_signature_columns`, one such
+#' name drops the whole option, so its check doesn't run.
 #'
 #' More options are added by the versions that bring the settings they control.
 #'

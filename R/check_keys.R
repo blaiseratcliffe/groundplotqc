@@ -445,8 +445,9 @@ disagreeing_rows <- function(groups, value) {
 #' compared column, every record of a `design_geometry_by` group holding more than one
 #' distinct value, expected the group's values as given; `subplot_label_ambiguous` on the last
 #' of `subplot_label_columns`, every record whose values there a record of another PK holds,
-#' the key compared by its parts as given, a record whose key is NA, blank or a missing-value
-#' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
+#' the key compared by its parts as pk_duplicate compares them (D18.104), a record whose key
+#' is NA, blank or a missing-value code a key can't hold not grouped (R45), not_run
+#' (no_column) without a column of the key;
 #' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
 #' rows in the table, written as text and sorted, another row of its report unit has too,
 #' expected the others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed
@@ -533,10 +534,11 @@ check_keys <- function(input, context) {
     }
     groups
   }
-  # A column's values as the design candidates and pk_duplicate compare them (D18.80,
-  # D18.100): a number-typed column stored as text, or as a factor, by its numbers, as Layer 1
-  # coerces them, and text that doesn't coerce as written, each distinct pair one dense rank,
-  # NA a value of its own; any other column as given.
+  # A column's values as the design candidates and the keys of pk_duplicate and
+  # subplot_label_ambiguous are compared (D18.80, D18.100, D18.104): a number-typed column
+  # stored as text, or as a factor, by its numbers, as Layer 1 coerces them, and text that
+  # doesn't coerce as written, each distinct pair one dense rank, NA a value of its own; any
+  # other column as given.
   as_compared <- function(x, row) {
     if (row$family != "numeric" || !(is.character(x) || is.factor(x))) {
       return(x)
@@ -977,10 +979,12 @@ check_keys <- function(input, context) {
             for (k in seq_along(keyed)) {
               part_row <- rows_of(table, parts$attribute_name[[k]])
               groups[key_rows(keyed[[k]], part_row, sentinels, "allowed_in_pk")$missing] <- NA
+              keyed[[k]] <- as_compared(keyed[[k]], part_row)
             }
-            # Each record's key by its parts' values as given (D18.42): one dense rank, the
-            # columns read where they are and a subset taken only where some record isn't
-            # grouped, so no key is written as text (16.2).
+            # Each record's key by its parts' values as pk_duplicate compares them, a
+            # number-typed part by its number (as_compared(); D18.42, D18.100, D18.104): one
+            # dense rank, the columns read where they are and a subset taken only where some
+            # record isn't grouped, so no key is written as text (16.2).
             grouped <- which(!is.na(groups))
             key <- rep(NA_integer_, length(x))
             if (length(grouped) > 0L && length(grouped) == length(x)) {
