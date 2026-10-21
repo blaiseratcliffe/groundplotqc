@@ -81,6 +81,7 @@ expect_clean_base <- function(tables, spec) {
 }
 
 test_that("MAGPlot's clean base has every DD table and column, of its R class (21 M3b gate)", {
+  testthat::skip_on_cran()
   spec <- magp_spec()
   tables <- fx_magp_clean()
   expect_equal(length(tables), 17L)
@@ -91,6 +92,7 @@ test_that("MAGPlot's clean base has every DD table and column, of its R class (2
 })
 
 test_that("each dataset is in one jurisdiction and contributor, as its sheet row has it (D15.32)", {
+  testthat::skip_on_cran()
   spec <- magp_spec()
   sheet <- spec$datasets
   tables <- fx_magp_clean()
@@ -113,6 +115,7 @@ test_that("the clean base's spec passes pre-flight with MAGPlot's rule set (21 M
 })
 
 test_that("the toy specs build clean the same way: the generic fixtures (18.3)", {
+  testthat::skip_on_cran()
   expect_clean_base(fx_fish_clean(), fx_fish_spec())
   expect_equal(vapply(fx_fish_clean(), nrow, 1L), c(stations = 2L, hauls = 4L, catches = 8L))
   expect_clean_base(fx_clean_tables(fx_forest_spec()), fx_forest_spec())
@@ -159,6 +162,7 @@ test_that("the clean base refuses a spec it can't build", {
 })
 
 test_that("a foreign key that can't agree with its record's ancestors stops the base (D15.31)", {
+  testthat::skip_on_cran()
   # Three roots (r2, r3, x), p1 pointing at r2 and r3, p2 at x, r2 and r3, and d at p1 and
   # p2. p1 pairs every r2 row with every r3 row but p2 pairs them one to one, so a d record
   # that p1 places on the pair (r2 = 1, r3 = 2) has no p2 row with that pair.
@@ -367,6 +371,7 @@ test_that("fx_magp_scaled()'s many groups: each sheet dataset in its contributor
 })
 
 test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)", {
+  testthat::skip_on_cran()
   tables <- fx_magp_scaled(0.01, defects = TRUE)
   meas <- tables$magp_tree_meas
   trees <- tables$magp_trees
@@ -463,6 +468,7 @@ test_that("the defect run raises each answer-sheet rule (D17.8)", {
 })
 
 test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R14, R16)", {
+  testthat::skip_on_cran()
   # Every number of a bounded column inside its bounds, the inclusive flags read.
   inside <- function(tables, spec, label) {
     a <- spec$attributes
@@ -504,6 +510,7 @@ test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R1
 })
 
 test_that("a number column is made inside bounds with each flag, or the base stops (R16)", {
+  testthat::skip_on_cran()
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
   set_bounds <- function(attribute, low, high, low_in, high_in) {

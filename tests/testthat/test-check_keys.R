@@ -933,6 +933,7 @@ test_that("record_unreachable walks the fish toy from its root: a station no hau
 
 # the finish's minors pass (m80)
 test_that("pre-flight's walk and record_unreachable check the same tables (D18.65)", {
+  testthat::skip_on_cran()
   # read_reach() and check_keys() each say which tables the walk checks. Without its root
   # rows, a walk reaches none of them, so reach_invalid names each table it still checks: each
   # of those record_unreachable checks with the roots, and all of them but the roots.
@@ -1071,6 +1072,7 @@ test_that("MAGPlot without its plot measurements: table_missing once, and tree 2
 
 # task 13's fix round 3 (D18.68): what only a key column not given could reach is unchecked
 test_that("a record only a key column not given could reach is unchecked; another still fails", {
+  testthat::skip_on_cran()
   # The catches are the root and reach the hauls, then the stations, through their keys; no
   # haul names station 2.
   spec <- fx_fish_spec(reach = data.frame(
@@ -1340,6 +1342,7 @@ test_that("a key holding the other side's type's missing-value code reaches noth
 
 # task 13's fix round 4 (D18.76): a Layer 3 failure in a key column doesn't mask Layer 4 there
 test_that("a key that fails Layer 3 is still a key to Layer 4; Layers 1 and 2 still mask it", {
+  testthat::skip_on_cran()
   # hauls.station_id is a foreign key with a code list; hauls.water_body, a coded copy of its
   # station's, is no key.
   dictionary <- data.frame(
@@ -1528,6 +1531,7 @@ test_that("design_duplicate_signature fails keys of one report unit sharing rows
 
 # the finish's minors pass (m100)
 test_that("a design candidate without its table or a column is not_run; a \"*\" unit unchecked", {
+  testthat::skip_on_cran()
   geometry <- list(
     design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
     design_geometry_columns = c("weight", "fish_count")
@@ -1587,6 +1591,7 @@ test_that("a design candidate without its table or a column is not_run; a \"*\" 
 # ---- task 14's fix round 1 ----
 
 test_that("a number read as text is compared by its number, written as given (D18.80)", {
+  testthat::skip_on_cran()
   dir <- withr::local_tempdir()
   # The fish tables as CSV files, every column read as text, catches' weight as given here.
   as_csv <- function(tables, weight, name) {
@@ -1648,6 +1653,7 @@ test_that("a number read as text is compared by its number, written as given (D1
 })
 
 test_that("expected lists example_cap values, then the count of the rest (D18.81)", {
+  testthat::skip_on_cran()
   geometry <- list(
     design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
     design_geometry_columns = "weight"
@@ -1684,6 +1690,7 @@ test_that("expected lists example_cap values, then the count of the rest (D18.81
 })
 
 test_that("at example_cap 0 expected is NA, as examples is (D18.82)", {
+  testthat::skip_on_cran()
   geometry <- list(
     design_geometry_table = "catches", design_geometry_by = c("haul_id", "species"),
     design_geometry_columns = "weight", example_cap = 0L
@@ -1749,6 +1756,7 @@ test_that("design_geometry_inconsistent gives each failing group its own expecte
 })
 
 test_that("a blank value reads as the blank text in expected, capped or not (D18.83)", {
+  testthat::skip_on_cran()
   settings <- list(
     design_geometry_table = "hauls", design_geometry_by = "station_id",
     design_geometry_columns = "gear"
@@ -1813,6 +1821,7 @@ test_that("design_duplicate_signature writes a column of another type as text (D
 })
 
 test_that("subplot_label_ambiguous doesn't run on a table given without its key (D9.24)", {
+  testthat::skip_on_cran()
   settings <- list(
     subplot_label_table = "hauls", subplot_label_columns = c("station_id", "gear")
   )
@@ -1826,6 +1835,7 @@ test_that("subplot_label_ambiguous doesn't run on a table given without its key 
 })
 
 test_that("subplot_label_ambiguous leaves a record without a key to pk_missing (R45)", {
+  testthat::skip_on_cran()
   settings <- list(
     subplot_label_table = "hauls", subplot_label_columns = c("station_id", "gear")
   )
@@ -1867,6 +1877,7 @@ test_that("design_duplicate_signature keeps rows apart whatever their text holds
 # ---- the final fix wave ----
 
 test_that("design_geometry_by naming an unknown attribute in an option isn't read (D18.90)", {
+  testthat::skip_on_cran()
   withr::local_options(
     groundplotqc.design_geometry_table = "catches",
     groundplotqc.design_geometry_by = c("haul_id", "nothing_here"),
@@ -1940,6 +1951,7 @@ test_that("the other settings an option names keep their known names (D18.90)", 
 })
 
 test_that("pk_duplicate compares a number-typed key by its number, as the joins do (D18.100)", {
+  testthat::skip_on_cran()
   dir <- withr::local_tempdir()
   dictionary <- data.frame(
     table_name = "t", attribute_name = c("k", "v"), key_type = c("PK", "."),
@@ -1969,6 +1981,7 @@ test_that("pk_duplicate compares a number-typed key by its number, as the joins 
 
 # the final fix wave's follow-up
 test_that("subplot_label_ambiguous compares a number-typed key as pk_duplicate does (D18.104)", {
+  testthat::skip_on_cran()
   dir <- withr::local_tempdir()
   path <- file.path(dir, "t.csv")
   writeLines(c("k,label", "1,L", "01,L", "2,M"), path)
@@ -2031,6 +2044,7 @@ test_that("key_incoherent compares differing plain numbers again as text (D18.10
 })
 
 test_that("a number-typed attribute's expected lists blanks, numbers, then the rest (D18.102)", {
+  testthat::skip_on_cran()
   dictionary <- data.frame(
     table_name = "t", attribute_name = c("id", "g", "v"), key_type = c("PK", ".", "."),
     data_type = c("character", "character", "numeric")

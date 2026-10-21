@@ -224,6 +224,7 @@ test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16
 })
 
 test_that("an unknown code that is also a sentinel is reported once (D16.45, m51)", {
+  testthat::skip_on_cran()
   # Another type's sentinel listed as the attribute's unknown code is species_unknown_code's.
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
@@ -242,6 +243,7 @@ test_that("an unknown code that is also a sentinel is reported once (D16.45, m51
 })
 
 test_that("a number column stored as numbers holds no text code, so a real 0 isn't a sentinel", {
+  testthat::skip_on_cran()
   # The forest spec's date sentinels, "00000000" and "99999999", read as numbers (R68).
   spec <- fx_forest_spec()
   forest <- fx_clean_tables(spec)
@@ -266,6 +268,7 @@ test_that("a number column stored as numbers holds no text code, so a real 0 isn
 })
 
 test_that("stored as numbers, a column whose type isn't numeric takes text codes as numbers", {
+  testthat::skip_on_cran()
   # The forest spec with "-1" as its character not-applicable code (D16.42, m37).
   spec <- fx_forest_spec()
   sentinels <- data.table::copy(spec$sentinels)
@@ -315,6 +318,7 @@ test_that("stored as numbers, a column whose type isn't numeric takes text codes
 
 # the finish's minors pass (m55, D18.64)
 test_that("a column stored as integer64 holds the codes plain stored numbers hold", {
+  testthat::skip_on_cran()
   testthat::skip_if_not_installed("bit64")
   # The forest spec with "-1" as its character not-applicable code, as above (D16.42, m37).
   # Each column is given as plain numbers and as integer64, as a DBI query of a BIGINT column

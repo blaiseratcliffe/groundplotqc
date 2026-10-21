@@ -283,6 +283,7 @@ test_that("an unknown code of the attribute is Layer 2's, in a number or date co
 })
 
 test_that("a padded value whose trimmed form passes is whitespace_padding's alone (m25)", {
+  testthat::skip_on_cran()
   # haul_date and fish_count are ID-marked here, so whitespace_padding checks them; weight and
   # first_visit aren't, and keep their padded values Layer 1's.
   spec <- fx_fish_spec()

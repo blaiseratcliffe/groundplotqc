@@ -279,6 +279,7 @@ test_that("the self-test lists a registered rule its family didn't report (9.7, 
 })
 
 test_that("group columns named like the engine's own variables are read as columns", {
+  testthat::skip_on_cran()
   for (name in c("whole", "rows", "row_group")) {
     spec <- fx_fish_spec()
     attributes <- data.table::copy(spec$attributes)

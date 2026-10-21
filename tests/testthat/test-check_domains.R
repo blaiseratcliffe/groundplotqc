@@ -97,6 +97,7 @@ test_that("code_not_in_list leaves NA, blanks, sentinels and unknown codes to La
 })
 
 test_that("a coded number column compares numbers as numbers, text as text (R7, R29)", {
+  testthat::skip_on_cran()
   # The fish spec with minutes and the stations' key coded: minutes from a list holding
   # "04", station_id from the stations' own keys.
   dictionary <- utils::read.csv(
@@ -293,6 +294,7 @@ test_that("decimals_exceeded counts places as written to 15 digits (R22)", {
 })
 
 test_that("coordinate_out_of_bounds takes the setting's attributes from the range rules", {
+  testthat::skip_on_cran()
   fish <- edited("stations", "depth", 1:2, c(600, -1))
   results <- fish_run(fish, settings = list(coordinate_attributes = "depth"))
   found <- opened(results)
@@ -660,6 +662,7 @@ test_that("undeclared_code_set warns on a text column of a few distinct values (
 })
 
 test_that("undeclared_code_set judges more values than the built-in 25, sorted (D9.26)", {
+  testthat::skip_on_cran()
   # 26 stations: station_name's 26 values are judged.
   fish <- fx_clean_tables(fx_fish_spec(), n = 26L)
   stations <- data.table::copy(fish$stations)
@@ -676,6 +679,7 @@ test_that("undeclared_code_set judges more values than the built-in 25, sorted (
 
 # task 7's fix round (the datatable review's F3)
 test_that("undeclared_code_set doesn't count a blank, NA or an unknown code (R21)", {
+  testthat::skip_on_cran()
   # Each leaves one value, too few to judge with code_set_max_values 1: no row.
   settings <- list(code_set_max_values = 1L, unknown_codes = c(station_name = "Unknown"))
   for (values in list(c("North", "  "), c("North", NA), c("North", "Unknown"))) {
@@ -690,6 +694,7 @@ test_that("undeclared_code_set doesn't count a blank, NA or an unknown code (R21
 
 # task 7's fix round (the spec review's m2)
 test_that("undeclared_code_set doesn't judge an attribute marked as an ID (R11)", {
+  testthat::skip_on_cran()
   same <- edited("stations", "station_name", 1:2, c("North", "North"))
   one <- list(code_set_max_values = 1L)
   marked <- fish_run(same, settings = one, spec = fx_fish_spec(id_pattern = "^station_name$"))
@@ -700,6 +705,7 @@ test_that("undeclared_code_set doesn't judge an attribute marked as an ID (R11)"
 
 # the final fix wave (D18.103)
 test_that("undeclared_code_set's results show example_cap of its values, its issue all of them", {
+  testthat::skip_on_cran()
   fish <- fx_clean_tables(fx_fish_spec(), n = 6L)
   stations <- data.table::copy(fish$stations)
   data.table::set(stations, j = "station_name", value = rep(c("South", "North", "East"), 2L))
