@@ -129,7 +129,9 @@ stored_text <- function(x) {
 #' read as a number, is NaN, Inf or -Inf, which value_not_finite reports (D17.22); `lost` is
 #' TRUE where a value that isn't NA can't be held:
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
-#' integer is wanted. Text is a number only when written as a decimal number: a sign, digits,
+#' integer is wanted, and an integer64 value a double can't hold exactly (beyond 2^53) where a
+#' double is wanted, its `value` then the nearest double (D18.111). Text is a number only when
+#' written as a decimal number: a sign, digits,
 #' one point and an exponent, with spaces, tabs and line breaks around, or as one of the
 #' spellings of Inf and NaN that as.numeric() reads; hexadecimal is lost (D16.42, m26). A
 #' value that isn't finite (NaN, Inf) is never lost but becomes NA where an integer is wanted:
@@ -232,6 +234,14 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number))
   } else {
     as_whole(number, !is.na(text))
+  }
+  if (r_class == "double" && inherits(x, "integer64")) {
+    # integer64 holds whole numbers to 64 bits, a double exactly only to 2^53: a value is lost
+    # where its double, read back as integer64 by integer64's own ==, isn't the value, or is
+    # beyond integer64's range, which reads back as NA (D18.111). Its number stays the nearest
+    # double.
+    exact <- suppressWarnings(distinct == number)
+    out$lost <- out$lost | (!is.na(number) & !exact %in% TRUE)
   }
   not_finite <- is.nan(number) | is.infinite(number)
   if (is.null(at)) {
@@ -395,7 +405,9 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
 #'
 #' `value` is the caller's column itself where it is stored as plain numbers, whatever its
 #' type, or else the column coerced to its expected class, the caller's column itself where
-#' its class is right: never masked or kept for the run (16.2; D16.42, m9). `open` holds every
+#' its class is right: never masked or kept for the run (16.2; D16.42, m9). An integer64 value
+#' a double can't hold exactly, where a double is wanted, is NA there, so it joins no record,
+#' as parent or child (D18.111). `open` holds every
 #' sentinel of the key's type, which reach_column() makes incomparable on both sides of a
 #' join, so no record reaches a parent through one (D16.26; D16.42, m8). Where `value` is
 #' numbers, `open` is numbers too: another type's text code only where the number is written
@@ -414,7 +426,14 @@ key_values <- function(input, table, attribute) {
   value <- if (is.numeric(x) && !is.object(x)) {
     x
   } else {
-    coerce_column(x, row$r_class, row$date_format)$value
+    coerced <- coerce_column(x, row$r_class, row$date_format)
+    # An integer64 value a double can't hold exactly, which coercion_loss reports, is NA, so it
+    # joins no record, as parent or child (D18.111); every other lost value is NA already.
+    lost <- which(coerced$lost)
+    if (inherits(x, "integer64") && length(lost) > 0L) {
+      coerced$value[lost] <- NA
+    }
+    coerced$value
   }
   sentinels <- input$spec$sentinels
   open <- sentinels$value[sentinels$data_type == row$family]

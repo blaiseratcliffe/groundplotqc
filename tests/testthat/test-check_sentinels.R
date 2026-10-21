@@ -411,6 +411,45 @@ test_that("integer64 is compared with whole codes within its range only, with no
   expect_equal(found, list(missing = 3L, open = integer()))
 })
 
+# the Codex fix round (D18.112)
+test_that("integer64 is compared with a whole code exactly, as bit64 reads the code's text", {
+  testthat::skip_if_not_installed("bit64")
+  # As a double the code 2^53 + 1 is 2^53, which the second row holds; read from its text, it
+  # is found on the first row only.
+  x <- bit64::as.integer64(c("9007199254740993", "9007199254740992"))
+  expect_identical(rows_holding(x, "9007199254740993"), 1L)
+  expect_identical(rows_holding(x, "9007199254740992"), 2L)
+  # key_rows() finds a number-typed key's codes through rows_holding(), so the same.
+  sentinels <- data.table::data.table(
+    data_type = "numeric", value = "9007199254740993", allowed_in_pk = FALSE,
+    allowed_in_fk = TRUE
+  )
+  expect_equal(
+    key_rows(x, data.table::data.table(family = "numeric"), sentinels, "allowed_in_fk"),
+    list(missing = integer(), open = 1L)
+  )
+  # A whole code whose text bit64 doesn't read, as "-9.0", is compared as its number, as plain
+  # numbers compare it.
+  expect_identical(rows_holding(bit64::as.integer64(c(-9, 9)), c("-9.0", "1e3")), 1L)
+  # sentinel_wrong_type gives each value the role of the code it holds, read so too: in a text
+  # column stored as integer64, 2^53 + 1 is the missing code, 2^53 the not-applicable one.
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "x"), key_type = c("PK", NA),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = "9007199254740993", not_applicable = "9007199254740992"),
+    character = c(missing = "?", not_applicable = "~")
+  ))
+  tables <- list(t = data.table::data.table(
+    t_id = c("a", "b", "c"), x = bit64::as.integer64(c("9007199254740993", "9007199254740992", "5"))
+  ))
+  found <- opened(gpq_check_conformance(tables, spec, layers = 2))
+  expect_equal(paste(found$rule_id, placed_at(found), found$value, found$expected), c(
+    "sentinel_wrong_type t x 1 9007199254740993 ?", "sentinel_wrong_type t x 2 9007199254740992 ~"
+  ))
+})
+
 test_that("the rules integer64 changed are at rule_version 2 (D15.6, D18.64, m55)", {
   registry <- rule_registry()
   rules <- c("sentinel_wrong_type", "sentinel_rogue_code", "species_unknown_code")

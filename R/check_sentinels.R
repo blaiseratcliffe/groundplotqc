@@ -12,10 +12,12 @@
 #'
 #' integer64, as a DBI query of a BIGINT column returns it, holds whole numbers: each value
 #' is compared with each whole code its range holds by integer64's own `==`, since `%in%`
-#' would write every value as text (16.2; D18.64, m55). Text marked as bytes has no encoding
-#' to compare it in, and %chin% stops on it: it is compared as NA, which no code is, so it
-#' matches no code (D16.36; a run refuses such text first, D16.38, so for it this is a second
-#' line). Other text that isn't valid UTF-8 is compared as it is, and matches no code.
+#' would write every value as text (16.2; D18.64, m55), the code read from its text by bit64,
+#' exact to 64 bits, or as its number where bit64 doesn't read the text (D18.112). Text marked
+#' as bytes has no encoding to compare it in, and %chin% stops on it: it is compared as NA,
+#' which no code is, so it matches no code (D16.36; a run refuses such text first, D16.38, so
+#' for it this is a second line). Other text that isn't valid UTF-8 is compared as it is, and
+#' matches no code.
 #' @noRd
 rows_holding <- function(x, codes) {
   if (length(codes) == 0L) {
@@ -29,9 +31,16 @@ rows_holding <- function(x, codes) {
     numbers <- suppressWarnings(as.numeric(codes))
     # A code beyond integer64's range would overflow, and one with a fraction equals no value.
     whole <- !is.na(numbers) & abs(numbers) < 2^63 & numbers == trunc(numbers)
+    keep <- whole & !duplicated(codes)
+    # Each whole code as bit64 reads its text, exact to 64 bits, where its double is exact only
+    # to 2^53 (D18.112); a code whose text bit64 doesn't read, as "-9.0" or "1e3", as its
+    # number, as plain numbers compare it.
+    exact <- suppressWarnings(bit64::as.integer64(codes[keep]))
+    numbers <- numbers[keep]
     hit <- logical(length(x))
-    for (number in unique(numbers[whole])) {
-      hit <- hit | x == number
+    for (k in seq_along(numbers)) {
+      code <- if (is.na(exact[k])) numbers[[k]] else exact[k]
+      hit <- hit | x == code
     }
     return(which(hit))
   }
@@ -117,13 +126,13 @@ check_sentinels <- function(input, context) {
     } else {
       by_number <- sentinels$data_type[is_wrong] == "numeric"
       fail <- rows_holding(x, codes[by_number])
-      # The failing integer64 values as doubles, each a whole code's number, which match()
-      # would otherwise compare as text.
+      # Each failing value takes the role of the first code it holds, found as rows_holding()
+      # finds it, so integer64 is compared with each code exactly, never as a double (D18.112).
       held <- x[fail]
-      if (is.object(held)) {
-        held <- suppressWarnings(as.double(held))
+      role <- rep(NA_character_, length(fail))
+      for (k in rev(which(by_number))) {
+        role[rows_holding(held, codes[[k]])] <- roles[[k]]
       }
-      role <- roles[by_number][match(held, suppressWarnings(as.numeric(codes[by_number])))]
       if (row$family != "numeric") {
         written <- setdiff(rows_holding(x, codes[!by_number]), fail)
         text <- value_text(x[written])

@@ -883,3 +883,34 @@ test_that("coerce_column() gives the rows whose number isn't finite (D17.22)", {
   expect_identical(coerce_column(1:3, "double")$not_finite, integer())
   expect_null(coerce_column(text, "character")$not_finite)
 })
+
+# the Codex fix round (D18.111)
+test_that("an integer64 value a double can't hold exactly is lost, and joins as NA", {
+  testthat::skip_if_not_installed("bit64")
+  # A double holds whole numbers exactly only to 2^53: a value whose double, read back as
+  # integer64, isn't the value is lost, as is one whose double is beyond integer64's range.
+  x <- bit64::as.integer64(c(
+    "9007199254740992", "9007199254740993", "-9007199254740993", "9007199254740994",
+    "9223372036854775807", NA
+  ))
+  coerced <- coerce_column(x, "double")
+  expect_identical(coerced$lost, c(FALSE, TRUE, TRUE, FALSE, TRUE, FALSE))
+  # Its number is still the nearest double, as Layer 3 reads it.
+  expect_identical(coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, 2^63, NA))
+  # Where an integer is wanted, every value beyond the integer range is lost, as before; text
+  # is written exactly.
+  expect_identical(coerce_column(x, "integer")$lost, c(rep(TRUE, 5L), FALSE))
+  expect_identical(
+    coerce_column(x, "character")$value,
+    c(
+      "9007199254740992", "9007199254740993", "-9007199254740993", "9007199254740994",
+      "9223372036854775807", NA
+    )
+  )
+  # key_values() reads a lost value as NA, which joins no record.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = "k_id", key_type = "PK", data_type = "numeric"
+  )
+  input <- conformance_input(list(k = data.table::data.table(k_id = x)), gpq_read_spec(dictionary))
+  expect_identical(key_values(input, "k", "k_id")$value, c(2^53, NA, NA, 2^53 + 2, NA, NA))
+})
