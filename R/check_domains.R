@@ -60,9 +60,9 @@ domain_skipped <- function(x, row, context, number = NULL) {
   }
   if (!is.null(number)) {
     if (inherits(x, "integer64")) {
-      # integer64's codes are found as rows_holding() finds them, each code read from its text
-      # by bit64, exact to 64 bits, not through the nearest doubles `number` holds (D18.112,
-      # D18.117).
+      # integer64's codes are found as rows_holding() finds them, not through the nearest
+      # doubles `number` holds (D18.112, D18.117, D18.119): exact where bit64 reads a code's
+      # text, its nearest double where it doesn't (R156, m129), none in the top band (m128).
       skipped[rows_holding(x, codes)] <- TRUE
     } else {
       numbers <- suppressWarnings(as.numeric(codes))
