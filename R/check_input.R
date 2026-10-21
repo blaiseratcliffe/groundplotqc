@@ -130,15 +130,18 @@ stored_text <- function(x) {
 #' TRUE where a value that isn't NA can't be held:
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
 #' integer is wanted, and an integer64 value a double can't hold exactly (beyond 2^53) where a
-#' double is wanted, its `value` then the nearest double (D18.111). Text is a number only when
-#' written as a decimal number: a sign, digits,
-#' one point and an exponent, with spaces, tabs and line breaks around, or as one of the
+#' double is wanted, its `value` then the nearest double (D18.111). There an integer64 column's
+#' double is bit64's own cast of each distinct value, rounded to the nearest double on every
+#' platform, not its text parsed, which may come back a step off where long double is no wider
+#' than a double (D18.121). Text is a number only when written as a decimal number: a sign,
+#' digits, one point and an exponent, with spaces, tabs and line breaks around, or as one of the
 #' spellings of Inf and NaN that as.numeric() reads; hexadecimal is lost (D16.42, m26). A
 #' value that isn't finite (NaN, Inf) is never lost but becomes NA where an integer is wanted:
 #' value_not_finite reports it. A date column stored as a date is written in the type's date
 #' format; text is never lost. A column that isn't text, where text is wanted, and one that
 #' is neither text nor plain numbers (a factor, a date, a logical), where numbers are wanted,
-#' is written as text once for each distinct value (16.2). Text that isn't
+#' is written as text once for each distinct value and read from it (16.2), but for an integer64
+#' column's double, as above. Text that isn't
 #' valid UTF-8 is read as UTF-8 where it converts to it (marked latin1, or native in a locale
 #' that isn't UTF-8); text marked as bytes, or that isn't valid UTF-8 even so, is no number,
 #' so it is lost without being read: as.numeric() stops on it in a UTF-8 locale (D16.33,
@@ -220,7 +223,7 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     return(c(as_whole(x, !is.na(x)), list(not_finite = not_finite)))
   }
   # Text is read as it is. Any other column is written as text once for each distinct value,
-  # each row taking its value's result (16.2).
+  # each row taking its value's result (16.2); an integer64 column's double is cast, below.
   at <- NULL
   if (is.character(x)) {
     text <- x
@@ -229,7 +232,20 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     at <- distinct_at(distinct)
     text <- value_text(distinct)
   }
-  number <- as_number(text)
+  number <- if (r_class == "double" && inherits(x, "integer64")) {
+    # An integer64 value's double is bit64's own cast, rounded to the nearest double on every
+    # platform, not its text parsed, which R may read a step off where long double is no wider
+    # than a double, as on macOS arm64 (D18.121). bit64 4.6 warns that precision is lost for
+    # every value from 2^53 up, even one a double holds exactly; only that warning, known by
+    # its message, is muffled, since the exactness test below finds the values a double loses.
+    withCallingHandlers(as.double(distinct), warning = function(w) {
+      if (identical(conditionMessage(w), "integer precision lost while converting to double")) {
+        invokeRestart("muffleWarning")
+      }
+    })
+  } else {
+    as_number(text)
+  }
   out <- if (r_class == "double") {
     list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number))
   } else {

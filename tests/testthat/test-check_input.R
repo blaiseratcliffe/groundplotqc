@@ -895,11 +895,9 @@ test_that("an integer64 value a double can't hold exactly is lost, and joins as 
   ))
   coerced <- coerce_column(x, "double")
   expect_identical(coerced$lost, c(FALSE, TRUE, TRUE, FALSE, TRUE, FALSE))
-  # Its number is still the nearest double, as Layer 3 reads it; 2^63 - 1's as R reads its
-  # text, which a platform without a wide long double may read a little apart from 2^63.
-  expect_identical(
-    coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, as.numeric("9223372036854775807"), NA)
-  )
+  # Its number is still the nearest double, as Layer 3 reads it, bit64's cast on every
+  # platform: 2^63 for 2^63 - 1 (D18.121).
+  expect_identical(coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, 2^63, NA))
   # Where an integer is wanted, every value beyond the integer range is lost, as before; text
   # is written exactly.
   expect_identical(coerce_column(x, "integer")$lost, c(rep(TRUE, 5L), FALSE))
@@ -956,4 +954,35 @@ test_that("an integer64 value of 19 digits that a double holds exactly isn't los
   )
   input <- conformance_input(list(k = data.table::data.table(k_id = x)), gpq_read_spec(dictionary))
   expect_identical(sum(is.na(key_values(input, "k", "k_id")$value)), 0L)
+})
+
+# the Codex round's fix round 4 (D18.121)
+test_that("an integer64 value's double is bit64's cast, whatever its text parses to", {
+  testthat::skip_if_not_installed("bit64")
+  # Multiples of 1024 in [2^62, 2^63), which a double holds exactly, 2^53 + 1, which it
+  # doesn't, and NA.
+  x <- c(
+    bit64::as.integer64(2^62) + bit64::as.integer64(0:9) * 1024L,
+    bit64::as.integer64(c("9007199254740993", NA))
+  )
+  lost <- c(rep(FALSE, 10L), TRUE, FALSE)
+  value <- c(2^62 + (0:9) * 1024, 2^53, NA)
+  # Values from 2^53 up give no warning: bit64's precision warning is kept out.
+  expect_no_warning(coerced <- coerce_column(x, "double"))
+  expect_identical(coerced$lost, lost)
+  expect_identical(coerced$value, value)
+  # Where R parses 19 digits in a long double no wider than a double, as on macOS arm64, a
+  # value may be read a step off. Each 19-digit value's text is made a step (1024) up here, as
+  # such a parse may read it, and neither `lost` nor `value` changes.
+  real_text <- value_text
+  testthat::local_mocked_bindings(value_text = function(x) {
+    if (inherits(x, "integer64")) {
+      up <- which(x >= bit64::as.integer64(2^62))
+      x[up] <- x[up] + 1024L
+    }
+    real_text(x)
+  })
+  coerced <- coerce_column(x, "double")
+  expect_identical(coerced$lost, lost)
+  expect_identical(coerced$value, value)
 })
