@@ -236,8 +236,9 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     # An integer64 value's double is bit64's own cast, rounded to the nearest double on every
     # platform, not its text parsed, which R may read a step off where long double is no wider
     # than a double, as on macOS arm64 (D18.121). bit64 4.6 warns that precision is lost for
-    # every value from 2^53 up, even one a double holds exactly; only that warning, known by
-    # its message, is muffled, since the exactness test below finds the values a double loses.
+    # every value from 2^53 up or -2^53 down, even one a double holds exactly; only that
+    # warning, known by its message, is muffled, since the exactness test below finds the
+    # values a double loses.
     withCallingHandlers(as.double(distinct), warning = function(w) {
       if (identical(conditionMessage(w), "integer precision lost while converting to double")) {
         invokeRestart("muffleWarning")
@@ -256,8 +257,8 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     # where its double, read back as integer64 by integer64's own ==, isn't the value (D18.111).
     # A double beyond integer64's range, 2^63 for the values from 2^63 - 512 up, is lost
     # without being read back, since C leaves that cast undefined: NA on x86-64, integer64's
-    # largest value where it saturates, as on arm64 (the Codex round's review, dt F1). Its
-    # number stays the nearest double.
+    # largest value where it saturates, as on arm64 before bit64 4.8.0, which gives NA on every
+    # platform (the Codex round's review, dt F1). Its number stays the nearest double.
     held <- which(!is.na(number) & abs(number) < 2^63)
     exact <- logical(length(number))
     exact[held] <- (distinct[held] == number[held]) %in% TRUE

@@ -921,7 +921,8 @@ test_that("an integer64 value whose double is beyond its range is lost on every 
   testthat::skip_if_not_installed("bit64")
   # From 2^63 - 512 up, and from -(2^63 - 512) down, a value's double is beyond integer64's
   # range, where C leaves the cast back undefined: NA on Windows x86-64, integer64's largest
-  # value where it saturates, as on arm64. Such a value is lost without being read back.
+  # value where it saturates, as on arm64 before bit64 4.8.0, which gives NA on every platform.
+  # Such a value is lost without being read back.
   x <- bit64::as.integer64(c(
     "9223372036854775807", "9223372036854775296", "-9223372036854775807", "9007199254740992"
   ))
