@@ -405,6 +405,7 @@ test_that("tables that aren't data.frames or paths, or files that aren't there, 
 })
 
 test_that("the tables are read after the argument checks and pre-flight (D17.32)", {
+  testthat::skip_on_cran()
   dir <- withr::local_tempdir()
   fish <- fx_fish_clean()
   spec <- fx_fish_spec()
@@ -655,6 +656,7 @@ test_that("a wrong stored type is caught through a connection as it is in a data
 })
 
 test_that("a spec table the database lacks is missing; table_map's faults are refused (D17.6)", {
+  testthat::skip_on_cran()
   testthat::skip_if_not_installed("DBI")
   testthat::skip_if_not_installed("RSQLite")
   connection <- fish_database()

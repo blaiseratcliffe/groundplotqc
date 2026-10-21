@@ -37,6 +37,7 @@ recorded <- function(state) {
 run_id <- "20261012T120000Z_abc123"
 
 test_that("gpq_check_conformance refuses arguments it can't run on", {
+  testthat::skip_on_cran()
   fish <- fx_fish_clean()
   spec <- fx_fish_spec()
   expect_error(gpq_check_conformance(fish, list()), "must be a specification")
@@ -66,6 +67,7 @@ test_that("gpq_check_conformance refuses arguments it can't run on", {
 })
 
 test_that("pre-flight runs first: a stop stops the run, a warning reaches the caller (D16.3)", {
+  testthat::skip_on_cran()
   fish <- fx_fish_clean()
   expect_error(
     gpq_check_conformance(fish, fx_planted_spec()),
@@ -229,6 +231,7 @@ test_that("a family's outcomes are checked when made and when recorded", {
 })
 
 test_that("rule-set rows give severity and enabled, the most specific winning (D16.6, D16.7)", {
+  testthat::skip_on_cran()
   withr::local_options(groundplotqc.severity = NULL)
   fish <- fx_fish_clean()
   fish$hauls$colour <- "red"
@@ -311,6 +314,7 @@ test_that("a layer with no registered rule runs nothing", {
 })
 
 test_that("a given run ID is kept, and the run changes none of its tables (16.2)", {
+  testthat::skip_on_cran()
   fish <- fx_fish_clean()
   before <- lapply(fish, data.table::copy)
   results <- gpq_check_conformance(fish, fx_fish_spec(), run_id = run_id)
@@ -444,6 +448,7 @@ test_that("a unit rule's results examples are its value unless it gives its own"
 })
 
 test_that("failures are record issues, or one column-level issue when every record fails (6.3)", {
+  testthat::skip_on_cran()
   local_stand_in_rules()
   catches <- fx_fish_clean()$catches
   run <- assembly(settings = list(column_level_min_n = 3L))
@@ -803,6 +808,7 @@ test_that("rows not evaluated count in n_not_evaluated, with no issue and no roo
 })
 
 test_that("a rule masks the records an earlier rule of its layer failed, rooted there (D18.32)", {
+  testthat::skip_on_cran()
   registry <- rbind(rule_registry(), data.table::data.table(
     rule_id = c("test_root", "test_masked"), stage = "conformance", layer = 4L,
     check_type = "test", default_severity = "error", default_class = "harmonization",

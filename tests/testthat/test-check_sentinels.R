@@ -188,6 +188,7 @@ test_that("sentinel_rogue_code finds rogue codes that aren't codes of the column
 })
 
 test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16.40, D16.41)", {
+  testthat::skip_on_cran()
   # The column's own sentinels pass, though listed as rogue codes (D7.3).
   fish <- edited("stations", "station_name", 1L, "?")
   fish <- edited("catches", "weight", 1L, -99, fish)
@@ -590,6 +591,7 @@ test_that("latin1 text is read as UTF-8; text marked as bytes matches no code (D
 })
 
 test_that("a whole column failing an open Layer 2 rule is one column-level issue per group (6.3)", {
+  testthat::skip_on_cran()
   fish <- edited("hauls", "gear", 1:4, paste0(" ", fx_fish_clean()$hauls$gear))
   # Ungrouped: all 4 records fail, and at least column_level_min_n were checked.
   whole <- opened(fish_run(fish, list(column_level_min_n = 3L)), "whitespace_padding")

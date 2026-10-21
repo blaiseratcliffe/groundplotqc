@@ -281,6 +281,7 @@ test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
 })
 
 test_that("every defect block stops on tables that aren't fixtures (18.3)", {
+  testthat::skip_on_cran()
   # lapply() returns a plain list, which lacks the marker the guard reads.
   unmarked <- lapply(fx_magp_clean(), data.table::copy)
   blocks <- fx_defect_blocks()

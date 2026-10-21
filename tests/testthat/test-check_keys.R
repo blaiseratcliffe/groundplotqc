@@ -129,6 +129,7 @@ test_that("fk_orphan and fk_unassigned split a key's failures, its open sentinel
 })
 
 test_that("a padded foreign key is Layer 2's, so fk_orphan doesn't evaluate it (D2.10)", {
+  testthat::skip_on_cran()
   fish <- edited("catches", "haul_id", 1L, "hauls_1 ")
   results <- fish_run(fish)
   expect_equal(opened(results)$rule_id, "whitespace_padding")
@@ -170,6 +171,7 @@ test_that("fk_not_applicable_mismatch is not_run, no_matrix, per foreign key and
 
 # task 10's fix round (the spec review's I2)
 test_that("a sentinel a primary key may hold repeats nothing: pk_duplicate leaves it alone", {
+  testthat::skip_on_cran()
   # With allowed_in_pk TRUE, "~" is neither pk_missing's nor a key to compare (D18.10 (2)).
   spec <- fx_fish_spec()
   sentinels <- data.table::copy(spec$sentinels)
@@ -469,6 +471,7 @@ test_that("key_incoherent compares each pair's sides, the failing pairs labelled
 })
 
 test_that("key_incoherent without key_pairs is one not_run row, no_input", {
+  testthat::skip_on_cran()
   results <- fish_run(fx_fish_clean())
   row <- results$results[results$results$rule_id == "key_incoherent"]
   expect_equal(c(row$table_name, row$status, row$not_run_reason), c("*", "not_run", "no_input"))
@@ -982,6 +985,7 @@ test_that("a design no plot measurement names is one record_unreachable warning 
 
 # task 13's fix round 2 (D18.66): what only a table not given could reach is left unchecked
 test_that("a record only a table not given could reach is unchecked, by a second walk", {
+  testthat::skip_on_cran()
   # The catches are the root and reach the stations through the hauls, which aren't given.
   spec <- fx_fish_spec(reach = data.frame(
     table_name = c("catches", "catches", "hauls"),
@@ -1007,6 +1011,7 @@ test_that("a record only a table not given could reach is unchecked, by a second
 
 # task 13's fix round 2 (D18.66)
 test_that("a record no walk could reach fails though a table isn't given; joins made once", {
+  testthat::skip_on_cran()
   # The hauls are the root; the catches, linked both ways, aren't given, so a second walk
   # takes them as a root; no haul names station 2, so even that walk doesn't reach it.
   spec <- fx_fish_spec(reach = data.frame(
@@ -1279,6 +1284,7 @@ test_that("pk_holders() gives no holder to a missing-value code, whatever comes 
 
 # task 13's fix round 4 (D18.75): the second walk masks both sides' types' missing-value codes
 test_that("a key holding the other side's type's missing-value code reaches nothing", {
+  testthat::skip_on_cran()
   # trips (the root) > hauls (a whole-number key) > catches (a text haul_id); the catches name
   # the stations. Catch 3's haul_id is "-88", the numbers' not-applicable code.
   dictionary <- data.frame(
@@ -1905,6 +1911,7 @@ test_that("design_geometry_by naming an unknown attribute in an option isn't rea
 })
 
 test_that("subplot_label_columns naming an unknown attribute in an option isn't read (D18.90)", {
+  testthat::skip_on_cran()
   withr::local_options(
     groundplotqc.subplot_label_table = "hauls",
     groundplotqc.subplot_label_columns = c("nothing_here", "gear")
