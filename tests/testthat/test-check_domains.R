@@ -619,23 +619,25 @@ test_that("a site's ID passes inside its own band or on either bound, and fails 
     )
   )
   # ON's sites on its lower bound, inside and on its upper bound; AB's 98 (below its band,
-  # though inside ON's), 150 (inside), 200 (above) and its two bounds.
+  # though inside ON's), 150 (inside), 200 (above), its two bounds and 1000, above as a number
+  # but between "100" and "199" as text (the fixture review's M1).
   tables <- list(
     datasets = data.table::data.table(dataset_id = c("d1", "d2"), contributor_id = c("130", "100")),
     sites = data.table::data.table(
-      site_id = c(1L, 50L, 99L, 98L, 150L, 200L, 100L, 199L),
-      dataset_id = rep(c("d1", "d2"), c(3L, 5L))
+      site_id = c(1L, 50L, 99L, 98L, 150L, 200L, 100L, 199L, 1000L),
+      dataset_id = rep(c("d1", "d2"), c(3L, 6L))
     )
   )
   results <- gpq_check_conformance(tables, spec, layers = 3)
-  expect_equal(nrow(opened(results)), 2L)
+  expect_equal(nrow(opened(results)), 3L)
   found <- opened(results, "site_id_out_of_range")
-  expect_equal(placed_at(found), c("sites site_id 4", "sites site_id 6"))
-  expect_equal(found$value, c("98", "200"))
-  expect_equal(found$expected, c("100 to 199", "100 to 199"))
+  expect_equal(placed_at(found), c("sites site_id 4", "sites site_id 6", "sites site_id 9"))
+  expect_equal(found$value, c("98", "200", "1000"))
+  expect_equal(found$expected, rep("100 to 199", 3L))
+  expect_equal(found$expected[found$value == "1000"], "100 to 199")
   rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
   expect_equal(c(rows$table_name, rows$column_name, rows$status), c("sites", "site_id", "fail"))
-  expect_equal(c(rows$n_checked, rows$n_fail), c(8L, 2L))
+  expect_equal(c(rows$n_checked, rows$n_fail), c(9L, 3L))
 })
 
 # task 6's fix round (the datatable review's #1)
