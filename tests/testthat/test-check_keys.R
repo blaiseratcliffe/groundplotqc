@@ -452,35 +452,45 @@ test_that("an integer64 parent key a double can't hold takes no child (D18.111)"
     key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "p"), data_type = "numeric"
   )
   spec <- gpq_read_spec(dictionary)
-  # The first parent holds 2^53 + 1, the first child names 2^53, which no parent holds.
+  # The first parent holds 2^53 + 1. The first child names 2^53, which no parent holds; the
+  # third names 2^53 + 1, the first parent's own key (the Codex round's spec review, 5).
   tables <- list(
     p = data.table::data.table(p_id = bit64::as.integer64(c("9007199254740993", "5"))),
     k = data.table::data.table(
-      k_id = bit64::as.integer64(1:2), p_id = bit64::as.integer64(c("9007199254740992", "5"))
+      k_id = bit64::as.integer64(1:3),
+      p_id = bit64::as.integer64(c("9007199254740992", "5", "9007199254740993"))
     )
   )
-  # Layer 4 alone: the child is an orphan, and the first parent has no child.
+  # Layer 4 alone: the first and third children are orphans, though the third names the first
+  # parent's own key, and the first parent has no child (D18.111's cost until m113).
   results <- gpq_check_conformance(tables, spec, layers = 4)
   found <- opened(results)
-  expect_equal(
-    paste(found$rule_id, placed_at(found), found$value), "fk_orphan k p_id 1 9007199254740992"
-  )
+  expect_equal(paste(found$rule_id, placed_at(found), found$value), c(
+    "fk_orphan k p_id 1 9007199254740992", "fk_orphan k p_id 3 9007199254740993"
+  ))
+  row <- results$results[results$results$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail), c(3L, 2L))
   row <- results$results[results$results$rule_id == "parent_without_children"]
   expect_equal(c(row$n_checked, row$n_fail), c(2L, 1L))
-  # Layers 0 to 4: coercion_loss reports the parent's key, which Layer 4 leaves not evaluated;
-  # the child's own key is still an orphan (D18.91).
+  # Layers 0 to 4: coercion_loss reports the parent's key and the third child's, which Layer 4
+  # leaves not evaluated, each rooted at its own; the first child's key is still an orphan
+  # (D18.91).
   results <- gpq_check_conformance(tables, spec, layers = 0:4)
   found <- opened(results)
   found <- found[found$rule_id != "class_mismatch"]
   expect_equal(paste(found$rule_id, placed_at(found), found$value, found$expected), c(
-    "coercion_loss p p_id 1 9007199254740993 double", "fk_orphan k p_id 1 9007199254740992 p"
+    "coercion_loss p p_id 1 9007199254740993 double",
+    "coercion_loss k p_id 3 9007199254740993 double", "fk_orphan k p_id 1 9007199254740992 p"
   ))
   issues <- results$issues
   masked <- issues[issues$status == "not_evaluated" & issues$layer == 4L]
-  expect_equal(
-    paste(masked$rule_id, placed_at(masked)), c("pk_duplicate p p_id 1", "pk_missing p p_id 1")
-  )
-  expect_equal(unique(masked$root_issue_id), found$issue_id[[1L]])
+  expect_equal(paste(masked$rule_id, placed_at(masked)), c(
+    "pk_duplicate p p_id 1", "pk_missing p p_id 1",
+    paste(c("fk_orphan", "fk_unassigned", "fk_sentinel_unverified"), "k p_id 3")
+  ))
+  expect_equal(masked$root_issue_id, found$issue_id[c(1L, 1L, 2L, 2L, 2L)])
+  row <- results$results[results$results$rule_id == "fk_orphan"]
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(2L, 1L, 1L))
 })
 
 test_that("integer64 parent keys 2^53 and 2^53 + 1 don't collide in the joins (D18.111)", {
