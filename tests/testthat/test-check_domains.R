@@ -700,6 +700,19 @@ test_that("domain_skipped() finds an integer64 column's codes exactly, as bit64 
   expect_equal(paste(found$rule_id, placed_at(found), found$value), c(
     "value_above_max t x 1 9007199254740992", "value_above_max t x 4 9007199254740994"
   ))
+  # The code written "+9007199254740993" isn't the value's text, so only bit64's exact reading
+  # skips 2^53 + 1, and 2^53 is left to the rule (the scoped re-review's RR-2).
+  plus <- gpq_read_spec(
+    dictionary,
+    sentinels = gpq_sentinels(numeric = c(missing = "+9007199254740993"))
+  )
+  near <- bit64::as.integer64(c("9007199254740993", "9007199254740992"))
+  expect_identical(
+    domain_skipped(
+      near, row, conformance_context(plus, NULL, list(), 3L), coerce_column(near, "double")$value
+    ),
+    c(TRUE, FALSE)
+  )
 })
 
 # ---- task 7 ----

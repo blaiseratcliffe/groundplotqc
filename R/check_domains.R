@@ -19,7 +19,9 @@
 #' `x` holds the values as given, `row` is the attribute's row of the input's columns table,
 #' and `number`, when given, the values read as numbers: a sentinel or unknown code is then
 #' matched as a number too, so "-1.0" read from text is the numeric family's -1 (D18.9); in
-#' `x` stored as integer64 as rows_holding() matches it, exactly (D18.117).
+#' `x` stored as integer64 as rows_holding() matches it (D18.117, D18.119): exactly where bit64
+#' reads the code's text, as the code's nearest double where it doesn't (R156, m129), and not at
+#' all in integer64's top band, from 2^63 - 512 up or its negative down (m128).
 #' With `number` given, `x` stored as plain numbers isn't written as text (16.2). Returns one
 #' logical per value.
 #' @noRd
