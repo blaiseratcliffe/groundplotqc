@@ -87,6 +87,32 @@ test_that("a fraction or a number beyond an integer's range, stored as double, i
   expect_equal(loss$expected, c("integer", "integer"))
 })
 
+# the Codex round's fix round 1 (the fixture review's F4): a control outside the keys
+test_that("a number-typed integer64 value a double can't hold is lost outside the keys too", {
+  testthat::skip_if_not_installed("bit64")
+  # D18.111 holds for any number-typed column, not only a key: 2^53 + 1 fails coercion_loss,
+  # and Layer 2 leaves it not evaluated, rooted there.
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "x"), key_type = c("PK", NA),
+    data_type = c("character", "numeric")
+  )
+  tables <- list(t = data.table::data.table(
+    t_id = c("a", "b", "c"),
+    x = bit64::as.integer64(c("9007199254740993", "9007199254740992", "5"))
+  ))
+  issues <- gpq_check_conformance(tables, gpq_read_spec(dictionary), layers = 0:4)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  expect_equal(
+    paste(open$rule_id, open$column_name, open$row_number, open$value, open$expected),
+    "coercion_loss x 1 9007199254740993 double"
+  )
+  masked <- issues[issues$status == "not_evaluated"]
+  expect_equal(
+    paste(masked$rule_id, masked$row_number), c("blank_string 1", "sentinel_rogue_code 1")
+  )
+  expect_equal(unique(masked$root_issue_id), open$issue_id)
+})
+
 test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8.8, D7.9)", {
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
@@ -105,10 +131,10 @@ test_that("a key's rogue code is coercion_loss's and its \"NA\" is Layer 2's (D8
   expect_equal(loss$value, c("UNK", "abc"))
 })
 
-test_that("a key of only Unicode spaces, as M4a leaves it until M5 decides (D16.45, m53)", {
-  # A key's blank is Layer 4's as is_blank() reads it (R74), and a no-break space is none: in
-  # a number-typed key stored as text it is coercion_loss's, and in a text-typed key no rule
-  # of Layers 0 to 2 reports it (whitespace_padding skips blanks, blank_string keys).
+test_that("a key of only Unicode spaces is blank to Layer 4 (D18.15, m53)", {
+  # A key of only Unicode spaces is blank, as D16.42 reads it, to Layer 1 too: in a
+  # number-typed key stored as text coercion_loss leaves it to pk_missing, and in a text-typed
+  # key fk_unassigned reports it (D18.62, D18.63).
   spec <- fx_fish_spec()
   attributes <- data.table::copy(spec$attributes)
   key <- which(attributes$attribute_name == "catch_id")
@@ -121,12 +147,58 @@ test_that("a key of only Unicode spaces, as M4a leaves it until M5 decides (D16.
   catches$catch_id <- c(nbsp, as.character(seq_len(nrow(catches))[-1L]))
   catches$haul_id[[2L]] <- nbsp
   fish$catches <- catches
-  issues <- gpq_check_conformance(fish, spec, layers = 0:2)$issues
+  issues <- gpq_check_conformance(fish, spec, layers = 0:4)$issues
   open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
   expect_equal(
     paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value),
-    paste("coercion_loss catches catch_id 1", nbsp)
+    paste(c("pk_missing catches catch_id 1", "fk_unassigned catches haul_id 2"), nbsp)
   )
+  expect_false(any(issues$rule_id == "coercion_loss"))
+})
+
+test_that("a date-typed key of only Unicode spaces is blank to Layer 1 too (D18.62, D18.63)", {
+  # date_unparseable leaves it to Layer 4, as coercion_loss does in a number-typed key: a
+  # haul's key is pk_missing's and a catch's fk_unassigned's (D7.9, D18.15).
+  dictionary <- utils::read.csv(
+    example_file("fish_dictionary.csv"),
+    colClasses = "character", na.strings = ""
+  )
+  dictionary$kind[dictionary$field == "haul_id"] <- "day"
+  spec <- gpq_read_spec(
+    dictionary = dictionary, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(),
+    type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  nbsp <- intToUtf8(0xA0)
+  fish <- fx_fish_clean()
+  hauls <- data.table::copy(fish$hauls)
+  catches <- data.table::copy(fish$catches)
+  dates <- format(as.Date("2020-01-01") + seq_len(nrow(hauls)) - 1L)
+  catches$haul_id <- dates[match(catches$haul_id, hauls$haul_id)]
+  hauls$haul_id <- dates
+  hauls$haul_id[[1L]] <- nbsp
+  catches$haul_id[[2L]] <- nbsp
+  fish$hauls <- hauls
+  fish$catches <- catches
+  issues <- gpq_check_conformance(fish, spec, layers = 0:4)$issues
+  open <- issues[issues$status == "open"]
+  # Catch 1 names the haul whose key is now blank, so its key names no haul.
+  expect_equal(paste(open$rule_id, open$table_name, open$row_number, open$value), c(
+    paste("pk_missing hauls 1", nbsp), paste("fk_orphan catches 1", dates[[1L]]),
+    paste("fk_unassigned catches 2", nbsp)
+  ))
+  expect_false(any(issues$rule_id == "date_unparseable"))
+})
+
+test_that("coercion_loss and date_unparseable are at rule_version 2 (D15.6, D18.62, D18.63)", {
+  registry <- rule_registry()
+  at <- match(c("coercion_loss", "date_unparseable"), registry$rule_id)
+  expect_equal(registry$rule_version[at], c(2L, 2L))
 })
 
 test_that("an ID column's \"NA\" is Layer 2's and a plain column's is coercion_loss's (D8.8)", {
@@ -198,6 +270,27 @@ test_that("missing_like() reads text marked as bytes as no blank, sentinel or co
   )
 })
 
+# the finish's minors pass (m56)
+test_that("missing_like() sends only the values that may be blank to space_padding() (16.2)", {
+  # As key_rows() does: blank, of ASCII spaces only, or holding text that isn't plain ASCII.
+  spec <- fx_fish_spec()
+  context <- conformance_context(spec, NULL, list(), 1L)
+  columns <- conformance_input(fx_fish_clean(), spec)$columns
+  key <- modifyList(as.list(columns[columns$attribute_name == "fish_count"]), list(key_type = "FK"))
+  nbsp <- intToUtf8(0xA0)
+  text <- c("abc", "", "  ", nbsp, paste0("x", nbsp), "12", NA)
+  real <- space_padding
+  received <- character()
+  testthat::local_mocked_bindings(space_padding = function(text) {
+    received <<- c(received, text)
+    real(text)
+  })
+  expect_equal(
+    missing_like(text, key, context), c(FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE)
+  )
+  expect_identical(received, c("", "  ", nbsp, paste0("x", nbsp)))
+})
+
 test_that("an unknown code of the attribute is Layer 2's, in a number or date column (m25)", {
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
@@ -216,6 +309,7 @@ test_that("an unknown code of the attribute is Layer 2's, in a number or date co
 })
 
 test_that("a padded value whose trimmed form passes is whitespace_padding's alone (m25)", {
+  testthat::skip_on_cran()
   # haul_date and fish_count are ID-marked here, so whitespace_padding checks them; weight and
   # first_visit aren't, and keep their padded values Layer 1's.
   spec <- fx_fish_spec()

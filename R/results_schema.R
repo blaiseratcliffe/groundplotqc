@@ -218,7 +218,8 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
     severity = c("error", "warning", "flag", "info"), level = c("record", "column"),
     not_run_reason = c(
       "no_matrix", "offline", "no_companion_data", "text_input", "no_sentinels",
-      "no_dd_column", "no_thresholds", "no_table", "no_column", "no_input"
+      "no_dd_column", "no_thresholds", "no_table", "no_column", "no_input", "no_dd_values",
+      "none_checked", "no_records"
     ),
     issue_class = c("source", "harmonization", "unclassified", "none"),
     provider_key_status = c("decoded", "partial", "raw", "fallback_pk", "no_lineage_spec"),

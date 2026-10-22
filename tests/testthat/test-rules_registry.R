@@ -1,5 +1,5 @@
 # Tests for the rule registry (plan 9.7; D7.25, D9.21, D14.5, D14.10, D15.6, D15.11, D15.13,
-# D15.20, D15.21).
+# D15.20, D15.21, D18.49).
 
 test_that("the registry has its columns and one row per rule", {
   registry <- rule_registry()
@@ -13,11 +13,22 @@ test_that("the registry has its columns and one row per rule", {
   expect_false(anyNA(registry[, !"layer"], recursive = TRUE))
 })
 
-test_that("the unit rules are Layer 0's and the two storage-class rules (D16.8, D17.15)", {
+test_that("the registry is built once per session and shared (D18.49)", {
+  # A run and a pre-flight first, whatever the order the test files run in, so a change either
+  # made to the shared table in place would show (m44).
+  gpq_check_conformance(fx_fish_clean(), fx_fish_spec(), layers = 0:4)
+  gpq_preflight(fx_fish_spec())
+  first <- rule_registry()
+  expect_identical(build_rule_registry(), first)
+  testthat::local_mocked_bindings(build_rule_registry = function() stop("built again"))
+  expect_identical(rule_registry(), first)
+})
+
+test_that("the unit rules: Layer 0's, the storage-class two and undeclared_code_set (D18.20)", {
   registry <- rule_registry()
   expect_setequal(registry$rule_id[registry$unit], c(
     "table_missing", "table_unexpected", "column_missing", "column_unexpected",
-    "column_name_mismatch", "class_mismatch", "integer_stored_as_double"
+    "column_name_mismatch", "class_mismatch", "integer_stored_as_double", "undeclared_code_set"
   ))
   expect_false(anyNA(registry$unit))
 })
@@ -109,31 +120,72 @@ test_that("the rules that read unknown codes or code lists name them in their in
   for (rule in c("sentinel_wrong_type", "sentinel_rogue_code", "species_unknown_code")) {
     expect_true("settings:unknown_codes" %in% inputs[[rule]], info = rule)
   }
+  # Every Layer 3 rule leaves the unknown codes to Layer 2 (D18.9); code_not_in_list and
+  # undeclared_code_set read the code lists' map, and src_id_duplicate the labels sheet among
+  # the code lists (the finish's minors pass, m23).
+  for (rule in registry$rule_id[registry$layer %in% 3L]) {
+    expect_true("settings:unknown_codes" %in% inputs[[rule]], info = rule)
+  }
+  for (rule in c("code_not_in_list", "undeclared_code_set")) {
+    expect_true("code_list_map" %in% inputs[[rule]], info = rule)
+  }
+  expect_true("code_lists" %in% inputs[["src_id_duplicate"]])
 })
 
 test_that("the record rules name column_level_min_n in their inputs (D16.47, m60)", {
   # column_level_min_n decides whether a record rule's failures are record issues or one
   # column-level issue (6.3), so the fingerprint of every rule with record outcomes covers it
   # (9.6, D4.7); a unit rule's outcomes are never collapsed. The record rules are found by
-  # their outcomes on the fish survey, with an unknown code so species_unknown_code runs.
+  # their outcomes on the fish survey, with an unknown code so species_unknown_code runs and
+  # depth a coordinate so coordinate_out_of_bounds does. Layers 3 and 4 too (the finish's
+  # minors pass, m23, m27): a rule whose every outcome is not_run there, for want of its input,
+  # tells nothing and is left out.
   spec <- fx_fish_spec()
-  context <- conformance_context(spec, NULL, list(unknown_codes = c(species = "UNK")), 0:2)
+  settings <- list(unknown_codes = c(species = "UNK"), coordinate_attributes = "depth")
+  context <- conformance_context(spec, NULL, settings, 0:4)
   input <- conformance_input(fx_fish_clean(), spec)
-  found <- c(
+  early <- c(
     check_structure(input, context), check_types(input, context), check_sentinels(input, context)
   )
-  records <- vapply(found, function(outcomes) {
-    any(vapply(outcomes, function(outcome) identical(outcome$kind, "record"), logical(1)))
-  }, logical(1))
-  expect_identical(sum(records), 10L)
+  later <- c(check_domains(input, context), check_keys(input, context))
+  found <- c(early, later)
+  kinds <- lapply(found, function(outcomes) {
+    vapply(outcomes, function(outcome) outcome$kind, "")
+  })
+  records <- vapply(kinds, function(kind) any(kind == "record"), logical(1))
+  told <- vapply(kinds, function(kind) any(kind != "not_run"), logical(1))
+  expect_identical(sum(records[names(early)]), 10L)
+  expect_identical(sum(records[names(later)]), 11L)
   registry <- rule_registry()
   inputs <- strsplit(registry$inputs, "; ", fixed = TRUE)
   names(inputs) <- registry$rule_id
-  for (rule in names(found)) {
+  for (rule in names(found)[told]) {
     expect_identical(
       "settings:column_level_min_n" %in% inputs[[rule]], records[[rule]],
       info = rule
     )
+  }
+  # The rules the fish survey leaves out, for want of their inputs, pinned; the unit rule and
+  # fk_not_applicable_mismatch aside, they are record rules, and on MAGPlot's clean base, whose
+  # spec and rule set give every input, each has record outcomes and names the setting (the
+  # minors pass's fix round, fixtures F3).
+  wanting <- c(
+    "site_id_out_of_range", "fk_sentinel_unverified", "src_id_duplicate", "key_incoherent",
+    "record_unreachable", "design_geometry_inconsistent", "subplot_label_ambiguous",
+    "design_duplicate_signature"
+  )
+  expect_setequal(
+    names(found)[!told], c(wanting, "undeclared_code_set", "fk_not_applicable_mismatch")
+  )
+  testthat::skip_on_cran()
+  magp <- magp_spec()
+  context <- conformance_context(magp, validate_rule_set(magp_rules()), list(), 3:4)
+  input <- conformance_input(fx_magp_clean(), magp)
+  found <- c(check_domains(input, context), check_keys(input, context))
+  for (rule in wanting) {
+    kind <- vapply(found[[rule]], function(outcome) outcome$kind, "")
+    expect_true(any(kind == "record"), info = rule)
+    expect_true("settings:column_level_min_n" %in% inputs[[rule]], info = rule)
   }
 })
 

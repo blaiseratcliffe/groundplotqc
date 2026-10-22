@@ -286,6 +286,7 @@
 "magp_site_dist","disturbance_type","ODR","crosswalk","treatment_disturbance",95
 "magp_site_dist","disturbance_type","ODT","crosswalk","treatment_disturbance",96
 "magp_site_dist","disturbance_type","ODA","crosswalk","treatment_disturbance",97
+"magp_site_dist","disturbance_type","ND","crosswalk","treatment_disturbance",103
 "magp_site_dist","disturbance_type","A","crosswalk","treatment_disturbance",104
 "magp_site_dist","disturbance_type","AS","crosswalk","treatment_disturbance",105
 "magp_site_dist","disturbance_type","ASR","crosswalk","treatment_disturbance",106
@@ -416,6 +417,7 @@
 "magp_site_treat","treatment_type","OP","crosswalk","treatment_disturbance",99
 "magp_site_treat","treatment_type","OS","crosswalk","treatment_disturbance",100
 "magp_site_treat","treatment_type","OG","crosswalk","treatment_disturbance",101
+"magp_site_treat","treatment_type","NO","crosswalk","treatment_disturbance",102
 "magp_site_treat","treatment_type","U","crosswalk","treatment_disturbance",134
 "magp_site_visits","sample_type","F","sheet","sample_type",2
 "magp_site_visits","sample_type","V","sheet","sample_type",3

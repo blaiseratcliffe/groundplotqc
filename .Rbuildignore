@@ -18,6 +18,7 @@
 ^plans$
 ^prompts$
 ^temp pipeline scripts for development$
+^temp data$
 ^4_magpv2_final_tables\.Rdata$
 ^\.git$
 ^tests/testthat/fixtures/make_.*\.R$

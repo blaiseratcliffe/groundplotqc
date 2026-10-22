@@ -81,6 +81,7 @@ expect_clean_base <- function(tables, spec) {
 }
 
 test_that("MAGPlot's clean base has every DD table and column, of its R class (21 M3b gate)", {
+  testthat::skip_on_cran()
   spec <- magp_spec()
   tables <- fx_magp_clean()
   expect_equal(length(tables), 17L)
@@ -91,6 +92,7 @@ test_that("MAGPlot's clean base has every DD table and column, of its R class (2
 })
 
 test_that("each dataset is in one jurisdiction and contributor, as its sheet row has it (D15.32)", {
+  testthat::skip_on_cran()
   spec <- magp_spec()
   sheet <- spec$datasets
   tables <- fx_magp_clean()
@@ -113,6 +115,7 @@ test_that("the clean base's spec passes pre-flight with MAGPlot's rule set (21 M
 })
 
 test_that("the toy specs build clean the same way: the generic fixtures (18.3)", {
+  testthat::skip_on_cran()
   expect_clean_base(fx_fish_clean(), fx_fish_spec())
   expect_equal(vapply(fx_fish_clean(), nrow, 1L), c(stations = 2L, hauls = 4L, catches = 8L))
   expect_clean_base(fx_clean_tables(fx_forest_spec()), fx_forest_spec())
@@ -159,6 +162,7 @@ test_that("the clean base refuses a spec it can't build", {
 })
 
 test_that("a foreign key that can't agree with its record's ancestors stops the base (D15.31)", {
+  testthat::skip_on_cran()
   # Three roots (r2, r3, x), p1 pointing at r2 and r3, p2 at x, r2 and r3, and d at p1 and
   # p2. p1 pairs every r2 row with every r3 row but p2 pairs them one to one, so a d record
   # that p1 places on the pair (r2 = 1, r3 = 2) has no p2 row with that pair.
@@ -242,8 +246,13 @@ test_that("the answer sheet and the defect blocks match, every rule covered (18.
   registry <- rule_registry()
   data_rules <- registry$rule_id[registry$check_type != "preflight"]
   expect_true(all(sheet$rule_id %in% data_rules))
-  # Every data rule has a defect block; pre-flight checks have their planted spec.
-  expect_equal(setdiff(data_rules, sheet$rule_id), character())
+  # Every data rule has a defect block, but the three MAGPlot's DD gives no values for, which
+  # are tested on the fish toy (21 M5, R15), and two that raise no issue at M5:
+  # fk_not_applicable_mismatch, not_run until a matrix (M10a), and parent_without_children,
+  # an information rule (D9.21). Pre-flight checks have their planted spec.
+  fish_only <- c("string_too_long", "decimals_exceeded", "coordinate_out_of_bounds")
+  no_issue <- c("fk_not_applicable_mismatch", "parent_without_children")
+  expect_equal(setdiff(data_rules, c(sheet$rule_id, fish_only, no_issue)), character())
   # No row lists its own rule as a cascade, which would let the rule's other issues pass.
   own_cascade <- mapply(function(rule, cascade) rule %in% split_joined(cascade),
     sheet$rule_id, sheet$cascade_rule_ids,
@@ -261,7 +270,7 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
   }, logical(1))))
 })
 
-test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
+test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
   # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
   results <- fx_caught(fx_magp_clean())
@@ -272,6 +281,7 @@ test_that("the clean base raises nothing in Layers 0 to 2 (18.3)", {
 })
 
 test_that("every defect block stops on tables that aren't fixtures (18.3)", {
+  testthat::skip_on_cran()
   # lapply() returns a plain list, which lacks the marker the guard reads.
   unmarked <- lapply(fx_magp_clean(), data.table::copy)
   blocks <- fx_defect_blocks()
@@ -290,11 +300,17 @@ test_that("planted vs caught: each block caught by its rule with its witness, it
     row <- sheet[i]
     results <- fx_caught(blocks[[row$defect_id]](base))
     caught <- results$issues[results$issues$status == "open"]
+    # A row lists every record its block makes fail, one hit each: two holders of one value
+    # where every holder fails (D18.10 (2), D18.3, D18.39). The witness is the first one's.
+    pks <- if (is.na(row$record_pk)) NA_character_ else split_joined(row$record_pk)
     is_hit <- caught$rule_id == row$rule_id & caught$table_name == row$table_name &
-      caught$column_name == row$column_name & caught$record_pk %in% row$record_pk
+      caught$column_name == row$column_name & caught$record_pk %in% pks
     hit <- caught[is_hit]
-    expect_equal(nrow(hit), 1L, info = row$defect_id)
-    expect_identical(hit$value, row$witness, info = row$defect_id)
+    expect_equal(nrow(hit), length(pks), info = row$defect_id)
+    expect_identical(
+      hit$value[match(pks[[1L]], hit$record_pk)], row$witness,
+      info = row$defect_id
+    )
     cascade <- split_joined(row$cascade_rule_ids)
     allowed <- c(row$rule_id, cascade)
     expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)
@@ -321,12 +337,12 @@ test_that("fx_magp_scaled() builds the AB file's shape, its keys agreeing, marke
   # R6's other 14 tables at 0.01x: 4,000 sites, 12,485 visits (three or four a site, rounded),
   # one plot of four subplots per site, one plot measurement per visit with four subplot
   # measurements, a site disturbance and a site treatment per site, 10,000 tree ages, 8,000
-  # tally trees, and two designs per contributor with two frames per design. A change to the
-  # ratios fails here.
+  # tally trees, and two designs per contributor with four frames per design (D18.41). A change
+  # to the ratios fails here.
   other <- c(
     magp_contributors = 1L, magp_datasets = 2L, magp_sites = 40L, magp_site_dist = 40L,
     magp_site_treat = 40L, magp_site_visits = 125L, magp_plots = 40L, magp_subplots = 160L,
-    magp_designs = 2L, magp_design_frames = 4L, magp_plot_meas = 125L,
+    magp_designs = 2L, magp_design_frames = 8L, magp_plot_meas = 125L,
     magp_subplot_meas = 500L, magp_tree_age = 100L, magp_tally_trees = 80L
   )
   expect_equal(vapply(tables[names(other)], nrow, integer(1)), other)
@@ -349,14 +365,21 @@ test_that("fx_magp_scaled()'s many groups: each sheet dataset in its contributor
   expect_setequal(sites$magp_dataset_id, sheet$magp_dataset_id)
   expect_equal(nrow(tables$magp_trees), 5175L)
   expect_clean_base(tables, spec)
+  # Each dataset holds its sheet row's own src_dataset_id, so the base raises nothing (R46).
+  expect_equal(datasets$src_dataset_id, sheet$src_dataset_id[at])
+  results <- fx_caught(tables)
+  expect_equal(nrow(results$issues[results$issues$status == "open"]), 0L)
 })
 
 test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)", {
+  testthat::skip_on_cran()
   tables <- fx_magp_scaled(0.01, defects = TRUE)
   meas <- tables$magp_tree_meas
   trees <- tables$magp_trees
   # D17.8's rate: 0.1% of a table's rows, rounded up (at this size every defect's first row,
-  # 1, 2 or 3, gives the same count).
+  # 1 to 5, gives the same count). record_unreachable's plant is the exception, slightly
+  # fewer: a tree whose next tree is in another subplot is skipped (5 of 6 here); and the
+  # design candidates, planted once each.
   rate <- function(n) ceiling(0.001 * n)
   expect_equal(sum(meas$height == "tall"), rate(nrow(meas)))
   expect_equal(sum(is.infinite(meas$DBH)), rate(nrow(meas)))
@@ -369,6 +392,44 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
   expect_equal(sum(trees$tree_origin == "-9"), rate(nrow(trees)))
   expect_equal(sum(trees$tree_origin == "AP "), rate(nrow(trees)))
   expect_equal(sum(trees$src_tree_id == "NA"), rate(nrow(trees)))
+  expect_equal(sum(trees$tree_origin == "QQ"), rate(nrow(trees)))
+  expect_equal(sum(meas$DBH == 0), rate(nrow(meas)))
+  expect_equal(sum(meas$height == "200"), rate(nrow(meas)))
+  expect_equal(sum(tables$magp_sites$ec_zone == "1A"), rate(nrow(tables$magp_sites)))
+  expect_equal(sum(tables$magp_sites$magp_site_id < 50001L), rate(nrow(tables$magp_sites)))
+  # The moved IDs moved in every table holding them, so each still names a site; the -9s
+  # planted in magp_site_dist (fk_sentinel_unverified) name none and are counted below.
+  dd <- magp_spec()$attributes
+  holders <- dd$table_name[dd$attribute_name == "magp_site_id"]
+  for (table in setdiff(holders, "magp_sites")) {
+    ids <- tables[[table]]$magp_site_id
+    if (table == "magp_site_dist") {
+      ids <- ids[ids != -9L]
+    }
+    expect_true(all(ids %in% tables$magp_sites$magp_site_id), label = table)
+  }
+  expect_true(all(tables$magp_tally_trees$ht_class == "B"))
+  cond <- tables$magp_tree_cond
+  expect_equal(sum(cond$magp_cond_id == "magp_tree_cond_1", na.rm = TRUE), rate(nrow(cond)) + 1L)
+  expect_equal(sum(is.na(cond$magp_cond_id)), rate(nrow(cond)))
+  expect_equal(sum(cond$magp_treemeas_id == "magp_tree_meas_0", na.rm = TRUE), rate(nrow(cond)))
+  expect_equal(sum(is.na(cond$magp_treemeas_id)), rate(nrow(cond)))
+  # Each src_*_id is a column of its own, so the keys planted in place leave it as built (R46).
+  expect_equal(cond$src_cond_id, paste0("magp_tree_cond_", seq_len(nrow(cond))))
+  sites <- tables$magp_site_dist$magp_site_id
+  expect_equal(sum(sites == -9L), rate(length(sites)))
+  expect_equal(sum(meas$visit_num == 99), rate(nrow(meas)))
+  expect_equal(sum(trees$src_tree_id == "dup"), rate(nrow(trees)))
+  # The unmeasured trees are exactly record_unreachable's plant: every 1000th from row 7 whose
+  # next tree is of its subplot (the IDs are row numbers, m9).
+  lost <- seq.int(7L, nrow(trees) - 1L, by = 1000L)
+  lost <- lost[trees$magp_subplot_id[lost] == trees$magp_subplot_id[lost + 1L]]
+  expect_gt(length(lost), 0L)
+  expect_equal(trees$magp_tree_id[!trees$magp_tree_id %in% meas$magp_tree_id], lost)
+  # The design candidates, once each: two designs of four frames and 160 subplots here, two
+  # frames and one subplot copied under new keys.
+  expect_equal(nrow(tables$magp_design_frames), 10L)
+  expect_equal(nrow(tables$magp_subplots), 161L)
   expect_true(is.double(meas$visit_num))
   expect_false("magp_tree_age" %in% names(tables))
   expect_true("magp_notes" %in% names(tables))
@@ -384,7 +445,211 @@ test_that("fx_magp_scaled()'s defect run plants each defect at its rate (D17.8)"
 test_that("the defect run raises each answer-sheet rule (D17.8)", {
   # A full MAGPlot run (D16.50).
   testthat::skip_on_cran()
-  results <- fx_caught(fx_magp_scaled(0.01, defects = TRUE))
+  tables <- fx_magp_scaled(0.01, defects = TRUE)
+  results <- fx_caught(tables)
   open <- results$issues[results$issues$status == "open"]
   expect_equal(setdiff(fx_answer_sheet()$rule_id, open$rule_id), character())
+  # src_id_duplicate's issues are the "dup" plant's, one for each planted row.
+  dup <- open[open$rule_id == "src_id_duplicate"]
+  placed <- paste(dup$table_name, dup$column_name, dup$value)
+  expect_equal(unique(placed), "magp_trees src_tree_id dup")
+  expect_equal(nrow(dup), sum(tables$magp_trees$src_tree_id == "dup"))
+  # record_unreachable's issues are the unmeasured trees', one each, warnings (D18.13), and the
+  # subplot copied for subplot_label_ambiguous, which no subplot measurement names, an error.
+  lost <- open[open$rule_id == "record_unreachable"]
+  trees <- tables$magp_trees$magp_tree_id
+  unmeasured <- trees[!trees %in% tables$magp_tree_meas$magp_tree_id]
+  subplots <- tables$magp_subplots$magp_subplot_id
+  expect_setequal(
+    unique(paste(lost$table_name, lost$severity)), c("magp_subplots error", "magp_trees warning")
+  )
+  expect_equal(
+    sort(lost$record_pk), sort(c(as.character(unmeasured), subplots[[length(subplots)]]))
+  )
+})
+
+test_that("the clean bases keep their numbers inside the DD's bounds (D18.26, R14, R16)", {
+  testthat::skip_on_cran()
+  # Every number of a bounded column inside its bounds, the inclusive flags read.
+  inside <- function(tables, spec, label) {
+    a <- spec$attributes
+    bounded <- which(!is.na(a$min_value) | !is.na(a$max_value))
+    expect_true(length(bounded) > 0L, label = label)
+    for (k in bounded) {
+      table <- tables[[a$table_name[[k]]]]
+      if (is.null(table)) {
+        next
+      }
+      number <- as.numeric(table[[a$attribute_name[[k]]]])
+      where <- paste0(label, ": ", a$table_name[[k]], ".", a$attribute_name[[k]])
+      low <- a$min_value[[k]]
+      high <- a$max_value[[k]]
+      if (!is.na(low)) {
+        above <- if (isFALSE(a$min_inclusive[[k]])) number > low else number >= low
+        expect_true(all(above), label = where)
+      }
+      if (!is.na(high)) {
+        below <- if (isFALSE(a$max_inclusive[[k]])) number < high else number <= high
+        expect_true(all(below), label = where)
+      }
+    }
+  }
+  spec <- magp_spec()
+  inside(fx_magp_clean(), spec, "MAGPlot")
+  inside(fx_fish_clean(), fx_fish_spec(), "fish")
+  inside(fx_clean_tables(fx_forest_spec()), fx_forest_spec(), "forest")
+  # Only magp_tree_meas.height's rows past its maximum moved (R16): rows 110 to 128 now hold
+  # 0.5 to 18.5, every other value as before.
+  height <- fx_magp_clean()$magp_tree_meas$height
+  expect_equal(height[1:109], seq_len(109L) + 0.5)
+  expect_equal(height[110:128], 0:18 + 0.5)
+  # The fish base is as it was.
+  fish <- fx_fish_clean()
+  expect_equal(fish$stations$depth, c(1.5, 2.5))
+  expect_equal(fish$hauls$minutes, 1:4)
+  expect_equal(fish$catches$weight, seq_len(8L) + 0.5)
+})
+
+test_that("a number column is made inside bounds with each flag, or the base stops (R16)", {
+  testthat::skip_on_cran()
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  set_bounds <- function(attribute, low, high, low_in, high_in) {
+    k <- which(attributes$attribute_name == attribute)
+    data.table::set(attributes, i = k, j = "min_value", value = low)
+    data.table::set(attributes, i = k, j = "max_value", value = high)
+    data.table::set(attributes, i = k, j = "min_inclusive", value = low_in)
+    data.table::set(attributes, i = k, j = "max_inclusive", value = high_in)
+  }
+  # minutes (integer, 4 rows) between 2 and 3, both allowed; fish_count (integer, 8 rows)
+  # above 5 and below 8, neither allowed; weight (double, 8 rows) above 1 and up to 3.5.
+  set_bounds("minutes", 2, 3, TRUE, TRUE)
+  set_bounds("fish_count", 5, 8, FALSE, FALSE)
+  set_bounds("weight", 1, 3.5, FALSE, TRUE)
+  bounded <- spec
+  bounded$attributes <- attributes
+  tables <- fx_clean_tables(bounded)
+  # Wherever `index` fits it stays; otherwise the values cycle over the whole numbers that fit.
+  expect_equal(tables$hauls$minutes, c(3L, 2L, 3L, 2L))
+  expect_equal(tables$catches$fish_count, c(7L, 6L, 7L, 6L, 7L, 6L, 7L, 6L))
+  expect_equal(tables$catches$weight, c(1.5, 2.5, 3.5, 1.5, 2.5, 3.5, 1.5, 2.5))
+  expect_clean_base(tables, bounded)
+  # A minimum above 1 with no maximum: the values start at the minimum (the finish's minors
+  # pass, m20); minutes from 3, weight above 2.
+  set_bounds("minutes", 3, NA_real_, TRUE, NA)
+  set_bounds("weight", 2, NA_real_, FALSE, NA)
+  bounded$attributes <- attributes
+  tables <- fx_clean_tables(bounded)
+  expect_equal(tables$hauls$minutes, 3:6)
+  expect_equal(tables$catches$weight, seq_len(8L) + 1.5)
+  expect_clean_base(tables, bounded)
+  # A bound no whole number (plus 0.5 for a double) fits stops the base.
+  set_bounds("weight", 1.6, 2.4, TRUE, TRUE)
+  bounded$attributes <- attributes
+  expect_error(fx_clean_tables(bounded), "can't make catches.weight inside its bounds")
+})
+
+test_that("each site's ID is in its contributor's band; ec_* follow their patterns (D18.26)", {
+  spec <- magp_spec()
+  # Each site's band, by its contributor's label on the contributor sheet.
+  in_band <- function(tables, label) {
+    sites <- tables$magp_sites
+    contributor <- tables$magp_datasets$magp_contributor_id[
+      match(sites$magp_dataset_id, tables$magp_datasets$magp_dataset_id)
+    ]
+    lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+    ids <- lists[lists$sheet_column == "magp_contributor_id"]
+    names_at <- lists[lists$sheet_column == "abbreviated_name"]
+    band_label <- names_at$value[match(
+      ids$source_row[match(as.character(contributor), ids$value)], names_at$source_row
+    )]
+    band <- match(band_label, spec$id_bands$label)
+    expect_false(anyNA(band), label = label)
+    id <- as.numeric(sites$magp_site_id)
+    expect_true(
+      all(id >= spec$id_bands$band_start[band] & id <= spec$id_bands$band_end[band]),
+      label = label
+    )
+    # Every table holding the ID holds only the sites' IDs.
+    holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
+    for (table in holders) {
+      expect_true(all(tables[[table]]$magp_site_id %in% sites$magp_site_id), label = table)
+    }
+  }
+  base <- fx_magp_clean()
+  in_band(base, "clean base")
+  # Sites 1 to 4 are AB's (band from 350001), 5 to 8 BC's (from 450001): the start plus the
+  # old ID.
+  expect_equal(base$magp_sites$magp_site_id, c(350002:350005, 450006:450009))
+  patterned <- c("ec_zone", "ec_province", "ec_region", "ec_district")
+  a <- spec$attributes
+  on_pattern <- function(tables, label) {
+    for (column in patterned) {
+      pattern <- a$pattern[a$table_name == "magp_sites" & a$attribute_name == column]
+      expect_true(all(grepl(pattern, tables$magp_sites[[column]])), label = paste(label, column))
+    }
+  }
+  on_pattern(base, "clean base")
+  expect_equal(
+    unlist(base$magp_sites[1L, patterned, with = FALSE], use.names = FALSE),
+    c("1", "1.1", "01.1.001", "01.1.001.0001")
+  )
+  # The scaled base numbers each site within its contributor's band (R26), its ec_* on their
+  # patterns too (the finish's minors pass, m20).
+  testthat::skip_on_cran()
+  for (many_groups in c(FALSE, TRUE)) {
+    scaled <- fx_magp_scaled(0.01, many_groups = many_groups)
+    label <- if (many_groups) "0.01x, many groups" else "0.01x"
+    in_band(scaled, label)
+    on_pattern(scaled, label)
+  }
+})
+
+# task 11's fix round (the fixture review's M3)
+test_that("the clean bases label frames and subplots as the DD forms a label (D18.41)", {
+  # About 0.5 s; skipped on CRAN, as the other tests of the scaled base are.
+  testthat::skip_on_cran()
+  spec <- magp_spec()
+  # The frame_type codes both lists hold, the sentinels left out, in the lists' order.
+  held <- function(table) {
+    codes <- spec$codes[spec$codes$table_name == table & spec$codes$attribute_name == "frame_type"]
+    setdiff(codes$code, spec$sentinels$value)
+  }
+  types <- intersect(held("magp_design_frames"), held("magp_subplots"))
+  # Each design's k-th frame and each plot's k-th subplot: frame_type the k-th code,
+  # frame_num k, and subplot the two joined with no separator.
+  expect_labels <- function(frames, parent, label) {
+    k <- data.table::rowid(frames[[parent]])
+    expect_equal(frames$frame_num, k, label = label)
+    expect_equal(frames$frame_type, types[k], label = label)
+    expect_equal(frames$subplot, paste0(frames$frame_type, frames$frame_num), label = label)
+  }
+  clean <- fx_magp_clean()
+  expect_labels(clean$magp_design_frames, "magp_design_id", "clean frames")
+  expect_labels(clean$magp_subplots, "magp_plot_id", "clean subplots")
+  scaled <- fx_magp_scaled(0.01)
+  expect_labels(scaled$magp_design_frames, "magp_design_id", "scaled frames")
+  expect_labels(scaled$magp_subplots, "magp_plot_id", "scaled subplots")
+  # Four labelled frames per design in the scaled base, and each plot's subplots the same four.
+  expect_equal(as.vector(table(scaled$magp_design_frames$magp_design_id)), c(4L, 4L))
+  expect_equal(scaled$magp_design_frames$subplot, rep(c("M1", "S2", "R3", "O4"), 2L))
+  expect_equal(unique(scaled$magp_subplots$subplot), c("M1", "S2", "R3", "O4"))
+})
+
+# task 11's fix round (the datatable review's F2 and the fixture review's M1)
+test_that("fx_copy_key_pairs() copies parents' tables first, whatever the pairs' order", {
+  # About 0.2 s; skipped on CRAN with the label test above.
+  testthat::skip_on_cran()
+  # visit_num is copied from the visit down to the tree measurement, three copies in turn:
+  # with the pairs reversed, a table's depth alone must order them.
+  spec <- magp_spec()
+  spec$key_pairs <- spec$key_pairs[rev(seq_len(nrow(spec$key_pairs)))]
+  tables <- fx_clean_tables(spec)
+  copied <- function(child, key, parent) {
+    from <- tables[[parent]]
+    tables[[child]]$visit_num == from$visit_num[match(tables[[child]][[key]], from[[key]])]
+  }
+  expect_true(all(copied("magp_plot_meas", "magp_visit_id", "magp_site_visits")))
+  expect_true(all(copied("magp_subplot_meas", "magp_plotmeas_id", "magp_plot_meas")))
+  expect_true(all(copied("magp_tree_meas", "magp_subpmeas_id", "magp_subplot_meas")))
 })

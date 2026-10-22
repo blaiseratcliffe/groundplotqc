@@ -11,11 +11,13 @@
 # (D12.35).
 # The ID marker: the 13 src_*_id attributes (D9.18, D12.13).
 id_pattern <- "^src_.*_id$"
-# The site-ID bands, v2 only (D12.9, D12.10, D12.13).
+# The site-ID bands, v2 only (D12.9, D12.10, D12.13), and the column they band: a site
+# reaches its contributor's ID through its dataset (D18.2).
 id_bands <- list(
   sheet = "magp_site_id_range", label_col = "contributor", start_col = "v2_start",
   end_col = "v2_end", labels_from = c(sheet = "contributor", column = "abbreviated_name"),
-  reserved_pattern = "^reserved_[0-9]+$"
+  reserved_pattern = "^reserved_[0-9]+$", table = "magp_sites", attribute = "magp_site_id",
+  key = "magp_dataset_id > magp_contributor_id"
 )
 # The DD column and value flagging A2 attributes (D12.13).
 lineage_flag <- c(column = "appendix", value = "A2")
@@ -105,6 +107,33 @@ build_lineage_input <- function(raw, sheet = "A2") {
   }))
 }
 
+# MAGPlot's documented one-to-many IDs are A2's sheet one_to_many, once the workbook has one
+# (D18.3, D18.36): its columns contributor, table_name, attribute_name and reason become the
+# engine's contributor_label, table_name, attribute_name and note. NULL without the sheet;
+# else list(data, origin), the origin placing each row on its sheet row and column.
+build_one_to_many_input <- function(path, sheet = "one_to_many") {
+  if (!sheet %in% workbook_sheets(path)) {
+    return(NULL)
+  }
+  raw <- raw_to_table(read_xlsx_raw(path, sheet))
+  taken <- c(
+    contributor = "contributor_label", table_name = "table_name",
+    attribute_name = "attribute_name", reason = "note"
+  )
+  absent <- setdiff(names(taken), names(raw))
+  if (length(absent) > 0L) {
+    stop(
+      "A2's sheet ", sheet, " has no column named ", paste(absent, collapse = " or "), ".",
+      call. = FALSE
+    )
+  }
+  columns <- match(names(taken), names(raw))
+  names(columns) <- unname(taken)
+  data <- raw[, names(taken), with = FALSE]
+  data.table::setnames(data, unname(taken))
+  list(data = data, origin = list(path = path, sheet = sheet, rows = 2L, columns = columns))
+}
+
 crosswalk_element <- function(path, columns) {
   if (nrow(columns) == 0L) {
     return(path)
@@ -151,9 +180,9 @@ crosswalk_element <- function(path, columns) {
 }
 
 # The manifest names a hand-kept file by its repo path, a bare name meaning spec/
-# (D12.33): precedence.csv's row, which its origin gives, and a row for
-# spec_exceptions.csv, input dictionary:exceptions, since the build applies it to the DD
-# before the read and the engine doesn't know.
+# (D12.33): the rows of precedence.csv, key_pairs.csv and reach.csv, which their origins give,
+# and a row for spec_exceptions.csv, input dictionary:exceptions, since the build applies it
+# to the DD before the read and the engine doesn't know.
 record_hand_kept <- function(spec, config_dir) {
   repo_path <- function(name) paste0("data-raw/magp/", name)
   exceptions <- manifest_row(
@@ -162,8 +191,10 @@ record_hand_kept <- function(spec, config_dir) {
   data.table::set(exceptions, j = "file", value = repo_path("spec_exceptions.csv"))
   # rbindlist() makes a new table, set here, so the caller's spec keeps its manifest.
   manifest <- data.table::rbindlist(list(spec$manifest, exceptions))
-  row <- match("precedence", manifest$input)
-  data.table::set(manifest, i = row, j = "file", value = repo_path("precedence.csv"))
+  for (input in intersect(c("precedence", "key_pairs", "reach"), manifest$input)) {
+    row <- match(input, manifest$input)
+    data.table::set(manifest, i = row, j = "file", value = repo_path(paste0(input, ".csv")))
+  }
   spec$manifest <- manifest
   new_gpq_spec(spec)
 }
@@ -208,7 +239,7 @@ read_hand_kept <- function(path) {
 
 build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw", "magp")) {
   files <- spec_files(spec_dir)
-  # The five hand-kept files read through config() are all read before any spec file is
+  # The seven hand-kept files read through config() are all read before any spec file is
   # opened; type_map.csv is read last, through gpq_type_map(path), which carries its findings
   # on to pre-flight.
   config <- function(name) read_hand_kept(file.path(config_dir, name))
@@ -216,6 +247,8 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   non_code_sheets <- config("non_code_sheets.csv")$data$sheet
   columns <- config("crosswalk_columns.csv")$data
   precedence <- config("precedence.csv")
+  key_pairs <- config("key_pairs.csv")
+  reach <- config("reach.csv")
   sentinels <- validate_sentinels(config("sentinels.csv")$data)
   dd_sheet <- workbook_sheets(files[["DD"]])[[1L]]
   dictionary <- raw_to_table(read_xlsx_raw(files[["DD"]], dd_sheet))
@@ -232,14 +265,17 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   names(precedence_columns) <- taken
   # One sheet name for A2's read and for the cells its rows carry.
   sheet <- "A2"
+  # A2's documented one-to-many IDs, NULL until A2 has the sheet (D18.3).
+  one_to_many <- build_one_to_many_input(files[["A2"]])
   spec <- gpq_read_spec(
     dictionary = dictionary, code_lists = files[["Lookup_Tables"]],
     non_code_sheets = non_code_sheets, datasets = files[["datasets"]],
     lineage_spec = build_lineage_input(read_xlsx_raw(files[["A2"]], sheet), sheet),
     crosswalks = if (length(crosswalks) > 0L) crosswalks,
     id_pattern = id_pattern, id_bands = id_bands,
-    precedence = precedence$data[, taken, with = FALSE],
-    origins = list(
+    precedence = precedence$data[, taken, with = FALSE], key_pairs = key_pairs$data,
+    one_to_many = one_to_many$data, reach = reach$data,
+    origins = c(list(
       # The DD's data rows are its workbook's from row 2, the header above: no exception
       # adds or removes a row. One that did would need one file row per data row.
       dictionary = list(path = files[["DD"]], sheet = dd_sheet, rows = 2L),
@@ -251,8 +287,17 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
         path = file.path(config_dir, "precedence.csv"),
         rows = if (length(precedence$lines) > 0L) precedence$lines else 2L,
         columns = precedence_columns
+      ),
+      # Each key pair is located by the line it starts on, as the precedence rows are.
+      key_pairs = list(
+        path = file.path(config_dir, "key_pairs.csv"),
+        rows = if (length(key_pairs$lines) > 0L) key_pairs$lines else 2L
+      ),
+      reach = list(
+        path = file.path(config_dir, "reach.csv"),
+        rows = if (length(reach$lines) > 0L) reach$lines else 2L
       )
-    ),
+    ), if (!is.null(one_to_many)) list(one_to_many = one_to_many$origin)),
     column_map = gpq_column_map(lineage_flag = lineage_flag),
     type_map = gpq_type_map(file.path(config_dir, "type_map.csv")),
     sentinels = sentinels

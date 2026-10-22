@@ -53,7 +53,14 @@ test_that("the generic fixtures pass every layer, so the engine assumes no MAGPl
     results <- fish_run(fx_clean_tables(spec), layers = 0:5, spec = spec)
     expect_equal(nrow(opened(results)), 0L, info = name)
     expect_equal(nrow(results$metadata$self_test), 0L, info = name)
-    expect_setequal(unique(results$results$rule_id), data_rules)
+    # Neither toy has a text column holding more values than code_set_max_values, so
+    # undeclared_code_set judges none, nor a foreign key of a number type, which
+    # fk_sentinel_unverified reads, nor an ID outside its keys, which src_id_duplicate reads;
+    # none writes a row (R21, D16.17).
+    expect_setequal(
+      unique(results$results$rule_id),
+      setdiff(data_rules, c("undeclared_code_set", "fk_sentinel_unverified", "src_id_duplicate"))
+    )
     # Neither spec gives unknown codes, so that rule's one row says why it didn't run.
     expect_equal(
       results$results$not_run_reason[results$results$rule_id == "species_unknown_code"],
@@ -181,6 +188,7 @@ test_that("sentinel_rogue_code finds rogue codes that aren't codes of the column
 })
 
 test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16.40, D16.41)", {
+  testthat::skip_on_cran()
   # The column's own sentinels pass, though listed as rogue codes (D7.3).
   fish <- edited("stations", "station_name", 1L, "?")
   fish <- edited("catches", "weight", 1L, -99, fish)
@@ -217,6 +225,7 @@ test_that("a value another Layer 2 rule owns is not also a rogue code (D7.3, D16
 })
 
 test_that("an unknown code that is also a sentinel is reported once (D16.45, m51)", {
+  testthat::skip_on_cran()
   # Another type's sentinel listed as the attribute's unknown code is species_unknown_code's.
   fish <- fx_fish_clean()
   catches <- data.table::copy(fish$catches)
@@ -235,6 +244,7 @@ test_that("an unknown code that is also a sentinel is reported once (D16.45, m51
 })
 
 test_that("a number column stored as numbers holds no text code, so a real 0 isn't a sentinel", {
+  testthat::skip_on_cran()
   # The forest spec's date sentinels, "00000000" and "99999999", read as numbers (R68).
   spec <- fx_forest_spec()
   forest <- fx_clean_tables(spec)
@@ -259,6 +269,7 @@ test_that("a number column stored as numbers holds no text code, so a real 0 isn
 })
 
 test_that("stored as numbers, a column whose type isn't numeric takes text codes as numbers", {
+  testthat::skip_on_cran()
   # The forest spec with "-1" as its character not-applicable code (D16.42, m37).
   spec <- fx_forest_spec()
   sentinels <- data.table::copy(spec$sentinels)
@@ -306,6 +317,164 @@ test_that("stored as numbers, a column whose type isn't numeric takes text codes
   )
 })
 
+# the finish's minors pass (m55, D18.64)
+test_that("a column stored as integer64 holds the codes plain stored numbers hold", {
+  testthat::skip_on_cran()
+  testthat::skip_if_not_installed("bit64")
+  # The forest spec with "-1" as its character not-applicable code, as above (D16.42, m37).
+  # Each column is given as plain numbers and as integer64, as a DBI query of a BIGINT column
+  # returns it; the same issues open but class_mismatch.
+  spec <- fx_forest_spec()
+  sentinels <- data.table::copy(spec$sentinels)
+  at <- which(sentinels$data_type == "character" & sentinels$role == "not_applicable")
+  data.table::set(sentinels, i = at, j = "value", value = "-1")
+  spec$sentinels <- sentinels
+  found <- function(table, column, rows, codes, settings = list(), stored = identity,
+                    with = spec) {
+    forest <- fx_clean_tables(with)
+    values <- as.numeric(seq_len(nrow(forest[[table]])) + 20200100)
+    values[rows] <- codes
+    forest <- edited(table, column, NULL, stored(values), forest)
+    open <- opened(fish_run(forest, settings, spec = with))
+    open <- open[open$rule_id != "class_mismatch"]
+    paste(open$rule_id, placed_at(open), open$value, open$expected)
+  }
+  both <- function(...) {
+    wide <- found(..., stored = bit64::as.integer64)
+    expect_identical(wide, found(...))
+    wide
+  }
+  # A date column: -1 is the character code, 99999999 the column's own, which passes though
+  # listed as a rogue code (m39); a real 0 isn't the date code "00000000".
+  codes <- c("-1", "99999999")
+  expect_equal(
+    both("PLOTS", "ESTABLISHED", 1:2, c(-1, 99999999), list(rogue_codes = codes)),
+    "sentinel_wrong_type PLOTS ESTABLISHED 1 -1 99999999"
+  )
+  expect_equal(
+    both("PLOTS", "ESTABLISHED", 1L, 0, list(rogue_codes = "0")),
+    "sentinel_rogue_code PLOTS ESTABLISHED 1 0 00000000; 99999999"
+  )
+  # A text key: another type's code where the value's text is the code.
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1:2, c(99999999, 0)),
+    "sentinel_wrong_type TREE_MEAS MEAS_ID 1 99999999 -1"
+  )
+  # A number column: a rogue code and an unknown code, its own missing-value code passing.
+  expect_equal(
+    both(
+      "TREE_MEAS", "DBH", 1:3, c(99999999, 555, -7),
+      list(rogue_codes = "99999999", unknown_codes = c(DBH = "555", DBH = "-7"))
+    ),
+    c(
+      "sentinel_rogue_code TREE_MEAS DBH 1 99999999 -7; -8",
+      "species_unknown_code TREE_MEAS DBH 2 555 -7"
+    )
+  )
+  # The spec's numeric missing-value code set to `code` (the minors pass's fix round, fixtures
+  # F1, F2).
+  numeric_missing <- function(code) {
+    changed <- spec
+    sentinels <- data.table::copy(spec$sentinels)
+    at <- which(sentinels$data_type == "numeric" & sentinels$role == "missing")
+    data.table::set(sentinels, i = at, j = "value", value = code)
+    changed$sentinels <- sentinels
+    changed
+  }
+  # A number code in a text key takes its role by its number, written in full, not as R
+  # writes 1e+05: the missing code's own, ".".
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1L, 100000, with = numeric_missing("100000")),
+    "sentinel_wrong_type TREE_MEAS MEAS_ID 1 100000 ."
+  )
+  # A code with a fraction equals no whole value: -99.5 isn't -99.
+  expect_equal(
+    both("TREE_MEAS", "MEAS_ID", 1L, -99, with = numeric_missing("-99.5")), character()
+  )
+})
+
+test_that("integer64 is compared with whole codes within its range only, with no warning", {
+  testthat::skip_if_not_installed("bit64")
+  # bit64's == truncates a fraction, and a code beyond its range overflows with a warning
+  # (the minors pass's fix round, fixtures F2). bit64 reads such a code's text as integer64's
+  # largest value, with no warning, so the range guard alone keeps it from the row holding
+  # 2^63 - 1 (the Codex round's fix round 1, fixtures F1).
+  x <- bit64::as.integer64(c("-99", "5", NA, "9223372036854775807"))
+  expect_identical(rows_holding(x, "-99.5"), integer())
+  wide_code <- "12345678901234567890"
+  expect_no_warning(beyond <- rows_holding(x, wide_code))
+  expect_identical(beyond, integer())
+  expect_no_warning(beyond <- rows_holding(x, "9223372036854775808"))
+  expect_identical(beyond, integer())
+  sentinels <- data.table::data.table(
+    data_type = "date", value = wide_code, allowed_in_pk = FALSE, allowed_in_fk = FALSE
+  )
+  expect_no_warning(
+    found <- key_rows(x, data.table::data.table(family = "date"), sentinels, "allowed_in_fk")
+  )
+  expect_equal(found, list(missing = 3L, open = integer()))
+})
+
+# the Codex fix round (D18.112)
+test_that("integer64 is compared with a whole code exactly, as bit64 reads the code's text", {
+  testthat::skip_if_not_installed("bit64")
+  # As a double the code 2^53 + 1 is 2^53, which the second row holds; read from its text, it
+  # is found on the first row only.
+  x <- bit64::as.integer64(c("9007199254740993", "9007199254740992"))
+  expect_identical(rows_holding(x, "9007199254740993"), 1L)
+  expect_identical(rows_holding(x, "9007199254740992"), 2L)
+  # key_rows() finds a number-typed key's codes through rows_holding(), so the same.
+  sentinels <- data.table::data.table(
+    data_type = "numeric", value = "9007199254740993", allowed_in_pk = FALSE,
+    allowed_in_fk = TRUE
+  )
+  expect_equal(
+    key_rows(x, data.table::data.table(family = "numeric"), sentinels, "allowed_in_fk"),
+    list(missing = integer(), open = 1L)
+  )
+  # A whole code whose text bit64 doesn't read, as "-9.0", is compared as its number, as plain
+  # numbers compare it.
+  expect_identical(rows_holding(bit64::as.integer64(c(-9, 9)), c("-9.0", "1e3")), 1L)
+  # sentinel_wrong_type gives each value the role of the code it holds, read so too: in a text
+  # column stored as integer64, 2^53 + 1 is the missing code, 2^53 the not-applicable one.
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("t_id", "x"), key_type = c("PK", NA),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = "9007199254740993", not_applicable = "9007199254740992"),
+    character = c(missing = "?", not_applicable = "~")
+  ))
+  tables <- list(t = data.table::data.table(
+    t_id = c("a", "b", "c"), x = bit64::as.integer64(c("9007199254740993", "9007199254740992", "5"))
+  ))
+  found <- opened(gpq_check_conformance(tables, spec, layers = 2))
+  expect_equal(paste(found$rule_id, placed_at(found), found$value, found$expected), c(
+    "sentinel_wrong_type t x 1 9007199254740993 ?", "sentinel_wrong_type t x 2 9007199254740992 ~"
+  ))
+  # A value holding two codes of one number takes the first one's role, as match() gave it
+  # (R157): -9 is the missing code "-9" before the not-applicable "-9.0", stored as integer64
+  # or as plain numbers (the Codex round's fix round 1, fixtures F3).
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = "-9", not_applicable = "-9.0"),
+    character = c(missing = "?", not_applicable = "~")
+  ))
+  for (stored in list(bit64::as.integer64, as.numeric)) {
+    tables <- list(t = data.table::data.table(t_id = c("a", "b"), x = stored(c(-9, 5))))
+    found <- opened(gpq_check_conformance(tables, spec, layers = 2))
+    expect_equal(
+      paste(found$rule_id, placed_at(found), found$value, found$expected),
+      "sentinel_wrong_type t x 1 -9 ?"
+    )
+  }
+})
+
+test_that("the rules integer64 changed are at rule_version 2 (D15.6, D18.64, m55)", {
+  registry <- rule_registry()
+  rules <- c("sentinel_wrong_type", "sentinel_rogue_code", "species_unknown_code")
+  expect_equal(registry$rule_version[match(rules, registry$rule_id)], c(2L, 2L, 2L))
+})
+
 test_that("in a column whose type has no sentinels, another type's is a rogue code (m36)", {
   # sentinel_wrong_type doesn't run there, so a rogue code isn't left to it.
   spec <- fx_fish_spec()
@@ -334,10 +503,16 @@ test_that("species_unknown_code finds the unknown codes; without any it doesn't 
     ),
     c("*", "*", "not_run", "no_input")
   )
-  # A name no attribute has: nothing to check, so no row and nothing expected (D16.17).
-  elsewhere <- fish_run(fish, list(unknown_codes = c(colour = "red")))
-  expect_false("species_unknown_code" %in% elsewhere$results$rule_id)
-  expect_false("species_unknown_code" %in% elsewhere$metadata$self_test$rule_id)
+  # A name no attribute has stops pre-flight given as an argument (D18.45); set as an option
+  # it warns and is ignored, so the rule has no code to look for (D18.47).
+  expect_error(
+    fish_run(fish, list(unknown_codes = c(colour = "red"))),
+    class = "gpq_preflight_error"
+  )
+  withr::local_options(groundplotqc.unknown_codes = c(colour = "red"))
+  expect_warning(elsewhere <- fish_run(fish), class = "gpq_preflight_warning")
+  unknown <- elsewhere$results[elsewhere$results$rule_id == "species_unknown_code"]
+  expect_equal(c(unknown$status, unknown$not_run_reason), c("not_run", "no_input"))
 })
 
 test_that("whitespace_padding finds padded codes and IDs, keys included", {
@@ -474,6 +649,7 @@ test_that("latin1 text is read as UTF-8; text marked as bytes matches no code (D
 })
 
 test_that("a whole column failing an open Layer 2 rule is one column-level issue per group (6.3)", {
+  testthat::skip_on_cran()
   fish <- edited("hauls", "gear", 1:4, paste0(" ", fx_fish_clean()$hauls$gear))
   # Ungrouped: all 4 records fail, and at least column_level_min_n were checked.
   whole <- opened(fish_run(fish, list(column_level_min_n = 3L)), "whitespace_padding")

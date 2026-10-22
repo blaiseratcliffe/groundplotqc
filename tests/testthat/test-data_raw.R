@@ -171,18 +171,28 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   config <- withr::local_tempdir()
   writeLines("exception_id", file.path(config, "spec_exceptions.csv"))
   writeLines("sheet", file.path(config, "precedence.csv"))
+  writeLines("table_name", file.path(config, "key_pairs.csv"))
+  writeLines("table_name", file.path(config, "reach.csv"))
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
     precedence = data.frame(
       sheet = "s", key_col = "k", attribute_name = "c", winner = "datasets", blank_rule = "wins"
     ),
-    origins = list(precedence = list(path = file.path(config, "precedence.csv"), rows = 2L))
+    key_pairs = data.frame(table_name = "t", left = "a", right = "a", note = NA),
+    reach = data.frame(table_name = "t", attribute_name = NA, how = "root"),
+    origins = list(
+      precedence = list(path = file.path(config, "precedence.csv"), rows = 2L),
+      key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L),
+      reach = list(path = file.path(config, "reach.csv"), rows = 2L)
+    )
   )
   given <- data.table::copy(spec$manifest)
   manifest <- build$record_hand_kept(spec, config)$manifest
   # The caller's spec keeps its manifest as it was.
   expect_identical(spec$manifest, given)
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
+  expect_equal(manifest$file[manifest$input == "key_pairs"], "data-raw/magp/key_pairs.csv")
+  expect_equal(manifest$file[manifest$input == "reach"], "data-raw/magp/reach.csv")
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
   expect_equal(
@@ -253,6 +263,37 @@ test_that("build_lineage_input stops naming what A2 lacks", {
   expect_error(
     build$build_lineage_input(raw[, c("V1", "V2", "V4"), with = FALSE]),
     "A2 has no column named attribute.",
+    fixed = TRUE
+  )
+})
+
+test_that("build_one_to_many_input reads A2's one_to_many sheet once A2 has one (D18.36)", {
+  build <- load_data_raw("build_magp_config.R")
+  sheets <- "A2"
+  raw <- data.table::data.table(
+    V1 = c("reason", "a note"), V2 = c("table_name", "magp_trees"),
+    V3 = c("attribute_name", "src_tree_id"), V4 = c("contributor", "BC")
+  )
+  local_mocked_bindings(
+    workbook_sheets = function(path) sheets,
+    read_xlsx_raw = function(path, sheet) raw,
+    .package = "groundplotqc"
+  )
+  expect_null(build$build_one_to_many_input("A2.xlsx"))
+  sheets <- c("A2", "one_to_many")
+  built <- build$build_one_to_many_input("A2.xlsx")
+  expect_equal(as.list(built$data), list(
+    contributor_label = "BC", table_name = "magp_trees", attribute_name = "src_tree_id",
+    note = "a note"
+  ))
+  expect_equal(built$origin, list(
+    path = "A2.xlsx", sheet = "one_to_many", rows = 2L,
+    columns = c(contributor_label = 4L, table_name = 2L, attribute_name = 3L, note = 1L)
+  ))
+  raw <- raw[, c("V1", "V2"), with = FALSE]
+  expect_error(
+    build$build_one_to_many_input("A2.xlsx"),
+    "A2's sheet one_to_many has no column named contributor or attribute_name.",
     fixed = TRUE
   )
 })
@@ -387,6 +428,8 @@ test_that("the hand-kept files have their columns", {
     c("data_type", "role", "value", "allowed_in_pk", "allowed_in_fk")
   )
   expect_named(hand_kept("precedence.csv"), c(spec_input_schema()$precedence, "decision"))
+  expect_named(hand_kept("key_pairs.csv"), spec_input_schema()$key_pairs)
+  expect_named(hand_kept("reach.csv"), spec_input_schema()$reach)
   expect_true(all(hand_kept("non_code_sheets.csv")$reason %in% c("reference", "superseded")))
 })
 
@@ -396,6 +439,8 @@ test_that("the hand-kept rows are valid where the build takes them", {
   precedence <- hand_kept("precedence.csv")
   # The reader's own checks: winner and blank_rule from their lists, one row per key.
   expect_no_error(read_precedence(precedence[, spec_input_schema()$precedence, with = FALSE]))
+  found <- magp_spec()$read_findings$rule_id
+  expect_false(any(c("key_pair_invalid", "reach_invalid") %in% found))
 })
 
 test_that("the reader reads the DD workbook in spec/ from its first sheet", {
@@ -440,6 +485,14 @@ test_that("CLR is in both the disturbance and the treatment lists (D12.73 (5a), 
   }
 })
 
+test_that("NO is in the treatment list and ND in the disturbance list (D18.11, plan 24.1 #3)", {
+  # A re-copy of the treatment table from its master leaves both blank, which no filter list
+  # holds, so each drops from its list, until the master says T and D.
+  codes <- tree_spec()$codes
+  expect_true("NO" %in% codes$code[codes$attribute_name == "treatment_type"])
+  expect_true("ND" %in% codes$code[codes$attribute_name == "disturbance_type"])
+})
+
 test_that("the species copy keeps its fold notes on their rows only (D12.72 (13), (21))", {
   notes <- c(
     BETU.GLA = "Folded code: BETU.GLA covers Betula glandulifera and Betula glandulosa.",
@@ -453,7 +506,7 @@ test_that("the species copy keeps its fold notes on their rows only (D12.72 (13)
   expect_identical(species_table$comments, unname(notes[species_table$NFI]))
 })
 
-test_that("every treat_vs_dist value is in a filter list, blank only on NO and ND (#39)", {
+test_that("every treat_vs_dist value is in a filter list, none blank (#39, D18.11)", {
   columns <- hand_kept("crosswalk_columns.csv")
   filters <- columns$filter_values[columns$crosswalk == "treatment_disturbance"]
   listed <- unique(unlist(strsplit(filters, "; ", fixed = TRUE)))
@@ -463,7 +516,7 @@ test_that("every treat_vs_dist value is in a filter list, blank only on NO and N
   expect_gt(nrow(walk), 0L)
   # A value in neither list would drop its code from both silently.
   expect_equal(setdiff(walk$treat_vs_dist[!is.na(walk$treat_vs_dist)], listed), character())
-  expect_equal(setdiff(walk$magp_codes[is.na(walk$treat_vs_dist)], c("NO", "ND")), character())
+  expect_equal(walk$magp_codes[is.na(walk$treat_vs_dist)], character())
 })
 
 test_that("the datasets copy and the lookup agree on every src_dataset_id (D12.74)", {

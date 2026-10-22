@@ -1,9 +1,11 @@
 # The cascade (plan 6.2; D2.10, D7.3, D7.9): a value that failed a check of Layer 1, 2 or 3
 # is masked for the later checks that read it, which record the record as not_evaluated
-# with root_issue_id set to the earlier issue. failed_cells() lists the failed cells once,
-# each with its root; mark_not_evaluated() gives, for a check about to run, the records it
-# mustn't evaluate. Cells are placed by row number, which every record-level issue
-# carries. Column-level issues are made after the cascade, from record-level ones (6.3, M4).
+# with root_issue_id set to the earlier issue; a Layer 3 failure in a key column isn't, for
+# Layer 4's checks of that column, which record_records() hands no Layer 3 failure (D18.76).
+# failed_cells() lists the failed cells once, each with its root; mark_not_evaluated() gives,
+# for a check about to run, the records it mustn't evaluate. Cells are placed by row number,
+# which every record-level issue carries. Column-level issues are made after the cascade, from
+# record-level ones (6.3, M4).
 
 #' The cells that failed a check of the given layers, one row each with its root
 #'

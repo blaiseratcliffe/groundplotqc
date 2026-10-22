@@ -141,9 +141,54 @@ attribute_rows <- function(spec, tables, attributes) {
   a$source_row[match(paste(tables, attributes), paste(a$table_name, a$attribute_name))]
 }
 
+#' Why each one_to_many row can't apply: its one_to_many_invalid detail, NA for a row that
+#' applies (D18.3, D18.6, D18.36, D18.44)
+#'
+#' One problem per row, the first of: `no_label` (id_band_columns has no row, so no record
+#' has an A2 label); `attribute` (the table and attribute aren't an ID-marked attribute of the
+#' dictionary); `contributor` (not a label the lineage spec uses); `no_id` (the lineage spec
+#' gives that label, table and attribute no ID: no row, or only rows whose ID is blank, no_id
+#' or not_applicable). Read by one_to_many_invalid and by src_id_duplicate, which applies only
+#' the rows with none.
+#' @noRd
+one_to_many_problems <- function(spec) {
+  rows <- spec$one_to_many
+  a <- spec$attributes
+  lineage <- spec$lineage_spec
+  named <- paste(rows$table_name, rows$attribute_name, sep = "\r")
+  marked <- paste(a$table_name, a$attribute_name, sep = "\r")[a$id_marked %in% TRUE]
+  # Worked out before the brackets: id_status is a column of the lineage spec.
+  with_id <- !lineage$id_status %chin% c("blank", "no_id", "not_applicable")
+  identified <- paste(
+    lineage$contributor_label, lineage$table_name, lineage$attribute_name,
+    sep = "\r"
+  )[with_id]
+  # Each row keeps its first problem, in this order.
+  case <- rep(NA_character_, nrow(rows))
+  first <- function(case, at, name) replace(case, is.na(case) & at, name)
+  case <- first(case, rep(nrow(spec$id_band_columns) == 0L, nrow(rows)), "no_label")
+  case <- first(case, !named %chin% marked, "attribute")
+  case <- first(case, !rows$contributor_label %chin% lineage$contributor_label, "contributor")
+  case <- first(
+    case, !paste(rows$contributor_label, named, sep = "\r") %chin% identified, "no_id"
+  )
+  detail <- rep(NA_character_, nrow(rows))
+  for (name in unique(case[!is.na(case)])) {
+    at <- which(case == name)
+    detail[at] <- report_text(
+      paste0("preflight_detail_one_to_many_invalid_", name),
+      contributor_label = rows$contributor_label[at], table_name = rows$table_name[at],
+      attribute_name = rows$attribute_name[at]
+    )
+  }
+  detail
+}
+
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22 here, then the rule set's and the text's from R/preflight_config.R.
+#' M2's 22, M5's `dd_format_invalid`, `key_pair_invalid`, `reach_invalid` and
+#' `one_to_many_invalid` here, then the rule set's (M5's `setting_unknown_name` and
+#' `option_unknown_name` last among them) and the text's from R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.
@@ -538,6 +583,35 @@ preflight_check_functions <- function() {
         return("no_input")
       }
       read_findings_of(spec, "crosswalk_unreadable")
+    },
+    dd_format_invalid = function(spec, context) {
+      # The reader makes every finding of this check, at its cell; a dictionary without the
+      # columns has none (R4).
+      read_findings_of(spec, "dd_format_invalid")
+    },
+    key_pair_invalid = function(spec, context) {
+      if (!given(spec, "key_pairs")) {
+        return("no_input")
+      }
+      # The reader makes every finding of this check, at its cell (D18.36).
+      read_findings_of(spec, "key_pair_invalid")
+    },
+    reach_invalid = function(spec, context) {
+      if (!given(spec, "reach")) {
+        return("no_input")
+      }
+      # The reader makes every finding of this check, at its cell (D18.36).
+      read_findings_of(spec, "reach_invalid")
+    },
+    one_to_many_invalid = function(spec, context) {
+      if (!given(spec, "one_to_many")) {
+        return("no_input")
+      }
+      # A row that can't apply is left unapplied: src_id_duplicate compares its records as any
+      # other's (D18.36).
+      problem <- one_to_many_problems(spec)
+      bad <- which(!is.na(problem))
+      findings_of(input_file(spec, "one_to_many"), problem[bad], spec$one_to_many$source_cell[bad])
     }
   ), preflight_rule_set_checks(), preflight_text_checks())
 }
@@ -556,8 +630,13 @@ preflight_check_functions <- function() {
 #'   registered rules, and its `settings` rows give settings.
 #' @param settings A named list of settings, which come before the rule set's, the
 #'   options' and the built-in values (see [groundplotqc_options]). Pre-flight reads `lang`,
-#'   the run language, whose text `text_id_fallback` checks, and `severity`, severities by
-#'   rule ID; it accepts the other settings by name and doesn't read them.
+#'   the run language, whose text `text_id_fallback` checks; `severity`, severities by rule
+#'   ID; and the settings that name tables and attributes (`unknown_codes`,
+#'   `coordinate_attributes`, `code_set_skip_attributes` and the eight settings of
+#'   `design_geometry_inconsistent`, `subplot_label_ambiguous` and
+#'   `design_duplicate_signature`), whose names `setting_unknown_name` and
+#'   `option_unknown_name` check against the specification. It accepts the other settings by
+#'   name and doesn't read them.
 #' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
 #'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`
 #'   when pre-flight checks the registered rules' text; pre-flight's own page and table use
@@ -590,9 +669,12 @@ preflight_check_functions <- function() {
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
 #' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
-#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`; with a rule
-#' set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a severity
-#' setting, `rule_id_unknown` and `rule_set_override_invalid`; and `text_id_missing`,
+#' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
+#' `dd_format_invalid`, `key_pair_invalid`, `reach_invalid`, `one_to_many_invalid`; with a
+#' rule set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a
+#' severity setting, `rule_id_unknown` and `rule_set_override_invalid`; with a setting that
+#' names tables or attributes, `setting_unknown_name` (given as an argument or in the rule
+#' set) and `option_unknown_name` (set as an option); and `text_id_missing`,
 #' `text_id_fallback` and `text_slot_unknown`, on the report text of the registered rules in
 #' English and in the run language and on a caller's text table. No rule set or setting
 #' changes what a check stops or warns on.
@@ -605,7 +687,10 @@ preflight_check_functions <- function() {
 #'   ),
 #'   column_map = gpq_column_map(
 #'     table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-#'     reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+#'     reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION",
+#'     min_value = "MIN_VALUE", max_value = "MAX_VALUE", min_inclusive = "MIN_INCLUSIVE",
+#'     max_inclusive = "MAX_INCLUSIVE", pattern = "PATTERN", max_length = "MAX_LENGTH",
+#'     decimals = "DECIMALS", units = "UNITS"
 #'   ),
 #'   type_map = gpq_type_map(example("forest_types.csv"))
 #' )

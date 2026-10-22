@@ -682,6 +682,41 @@ test_that("a record's PK is text, NA when missing, positional when missing or re
   expect_identical(gone$positional, c(TRUE, TRUE))
 })
 
+# the finish's minors pass
+test_that("every holder of a repeated integer64 PK is positional, the first too", {
+  # bit64's duplicated() ignores fromLast, so the first holder was missed.
+  testthat::skip_if_not_installed("bit64")
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("k_id", "v"), key_type = c("PK", "."),
+    data_type = c("integer", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    k_id = bit64::as.integer64(c(10, 11, 11, 12)), v = c("a", "b", "c", "d")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  pk <- record_pk_text(input, "k", 1:4)
+  expect_identical(pk$record_pk, c("10", "11", "11", "12"))
+  expect_identical(pk$positional, c(FALSE, TRUE, TRUE, FALSE))
+})
+
+# the minors pass's fix round (dt M2)
+test_that("composite PK doubles differing in their last digits stay apart, whatever the rounding", {
+  # data.table's setNumericRounding() above 0 would take them as one key; the session's
+  # setting is left as it was.
+  rounding <- data.table::setNumericRounding(2L)
+  withr::defer(data.table::setNumericRounding(rounding))
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = c("character", "numeric", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    a = c("x", "x", "y"), b = c(123456789012.345, 123456789012.346, 1), v = c("p", "q", "r")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  expect_identical(record_pk_text(input, "k", 1:3)$positional, c(FALSE, FALSE, FALSE))
+  expect_identical(data.table::getNumericRounding(), 2L)
+})
+
 test_that("a composite PK's parts are joined with \"|\"", {
   spec <- fx_fish_spec()
   keys <- data.table::copy(spec$keys)
@@ -847,4 +882,108 @@ test_that("coerce_column() gives the rows whose number isn't finite (D17.22)", {
   expect_identical(coerce_column(c(1, Inf), "double")$not_finite, 2L)
   expect_identical(coerce_column(1:3, "double")$not_finite, integer())
   expect_null(coerce_column(text, "character")$not_finite)
+})
+
+# the Codex fix round (D18.111)
+test_that("an integer64 value a double can't hold exactly is lost, and joins as NA", {
+  testthat::skip_if_not_installed("bit64")
+  # A double holds whole numbers exactly only to 2^53: a value whose double, read back as
+  # integer64, isn't the value is lost, as is one whose double is beyond integer64's range.
+  x <- bit64::as.integer64(c(
+    "9007199254740992", "9007199254740993", "-9007199254740993", "9007199254740994",
+    "9223372036854775807", NA
+  ))
+  coerced <- coerce_column(x, "double")
+  expect_identical(coerced$lost, c(FALSE, TRUE, TRUE, FALSE, TRUE, FALSE))
+  # Its number is still the nearest double, as Layer 3 reads it, bit64's cast on every
+  # platform: 2^63 for 2^63 - 1 (D18.121).
+  expect_identical(coerced$value, c(2^53, 2^53, -2^53, 2^53 + 2, 2^63, NA))
+  # Where an integer is wanted, every value beyond the integer range is lost, as before; text
+  # is written exactly.
+  expect_identical(coerce_column(x, "integer")$lost, c(rep(TRUE, 5L), FALSE))
+  expect_identical(
+    coerce_column(x, "character")$value,
+    c(
+      "9007199254740992", "9007199254740993", "-9007199254740993", "9007199254740994",
+      "9223372036854775807", NA
+    )
+  )
+  # key_values() reads a lost value as NA, which joins no record.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = "k_id", key_type = "PK", data_type = "numeric"
+  )
+  input <- conformance_input(list(k = data.table::data.table(k_id = x)), gpq_read_spec(dictionary))
+  expect_identical(key_values(input, "k", "k_id")$value, c(2^53, NA, NA, 2^53 + 2, NA, NA))
+})
+
+# the Codex round's fix round 1 (the datatable review's F1)
+test_that("an integer64 value whose double is beyond its range is lost on every platform", {
+  testthat::skip_if_not_installed("bit64")
+  # From 2^63 - 512 up, and from -(2^63 - 512) down, a value's double is beyond integer64's
+  # range, where C leaves the cast back undefined: NA on Windows x86-64, integer64's largest
+  # value where it saturates, as on arm64 before bit64 4.8.0, which gives NA on every platform.
+  # Such a value is lost without being read back.
+  x <- bit64::as.integer64(c(
+    "9223372036854775807", "9223372036854775296", "-9223372036854775807", "9007199254740992"
+  ))
+  expected <- c(TRUE, TRUE, TRUE, FALSE)
+  expect_identical(coerce_column(x, "double")$lost, expected)
+  # The same where the cast saturates: bit64's cast of a double made to give 2^63 - 1 for 2^63.
+  real_cast <- utils::getFromNamespace("as.integer64.double", "bit64")
+  testthat::local_mocked_bindings(
+    as.integer64.double = function(x, ...) {
+      out <- real_cast(x, ...)
+      out[!is.na(x) & x >= 2^63] <- bit64::as.integer64("9223372036854775807")
+      out
+    },
+    .package = "bit64"
+  )
+  expect_identical(coerce_column(x, "double")$lost, expected)
+})
+
+# the Codex round's fix round 3 (D18.121)
+test_that("an integer64 value of 19 digits that a double holds exactly isn't lost", {
+  testthat::skip_if_not_installed("bit64")
+  # Each value is a multiple of 1024 in [2^62, 2^63), which a double holds exactly. Its double
+  # is bit64's cast, rounded the same way on every platform, so none is lost, the macOS job
+  # included; were one lost, the count below would say how many.
+  x <- bit64::as.integer64(2^62) + bit64::as.integer64(0:999) * 1024L
+  expect_identical(sum(coerce_column(x, "double")$lost), 0L)
+  # key_values() reads none of them as NA, so each joins as its number.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = "k_id", key_type = "PK", data_type = "numeric"
+  )
+  input <- conformance_input(list(k = data.table::data.table(k_id = x)), gpq_read_spec(dictionary))
+  expect_identical(sum(is.na(key_values(input, "k", "k_id")$value)), 0L)
+})
+
+# the Codex round's fix round 4 (D18.121)
+test_that("an integer64 value's double is bit64's cast, whatever its text parses to", {
+  testthat::skip_if_not_installed("bit64")
+  # Multiples of 1024 in [2^62, 2^63), which a double holds exactly, 2^53 + 1, which it
+  # doesn't, and NA.
+  x <- c(
+    bit64::as.integer64(2^62) + bit64::as.integer64(0:9) * 1024L,
+    bit64::as.integer64(c("9007199254740993", NA))
+  )
+  lost <- c(rep(FALSE, 10L), TRUE, FALSE)
+  value <- c(2^62 + (0:9) * 1024, 2^53, NA)
+  # Values from 2^53 up give no warning: bit64's precision warning is kept out.
+  expect_no_warning(coerced <- coerce_column(x, "double"))
+  expect_identical(coerced$lost, lost)
+  expect_identical(coerced$value, value)
+  # Where R parses 19 digits in a long double no wider than a double, as on macOS arm64, a
+  # value may be read a step off. Each 19-digit value's text is made a step (1024) up here, as
+  # such a parse may read it, and neither `lost` nor `value` changes.
+  real_text <- value_text
+  testthat::local_mocked_bindings(value_text = function(x) {
+    if (inherits(x, "integer64")) {
+      up <- which(x >= bit64::as.integer64(2^62))
+      x[up] <- x[up] + 1024L
+    }
+    real_text(x)
+  })
+  coerced <- coerce_column(x, "double")
+  expect_identical(coerced$lost, lost)
+  expect_identical(coerced$value, value)
 })

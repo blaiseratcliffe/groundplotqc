@@ -12,9 +12,12 @@
 # parent row that agrees with the record's own ancestors, so two key paths to one ancestor
 # reach the same row; where the record and that parent share an ancestor and no parent row
 # agrees, the build stops. Keys are unique and point to a parent's row; a coded column holds
-# codes of its list, never a sentinel; a date column dates in its format; other columns
-# made-up numbers and text with no blanks and no spaces. Single-column primary keys only,
-# foreign keys to their parent's PK, and no table that points at itself.
+# codes of its list, never a sentinel; a date column dates in its format; a number column
+# made-up numbers inside the dictionary's bounds where it gives them, the build stopping where
+# none fits (within_bounds()); other columns made-up text with no blanks and no spaces.
+# Single-column primary keys only, foreign keys to their parent's PK, and no table that
+# points at itself. Last, each key_pairs copy is taken from the record's parent
+# (fx_copy_key_pairs()).
 fx_clean_tables <- function(spec, n = 2L) {
   attributes <- spec$attributes
   keys <- spec$keys
@@ -98,6 +101,41 @@ fx_clean_tables <- function(spec, n = 2L) {
     }
     picked
   }
+  # Whole numbers for a number column, inside the dictionary's bounds where it gives them, the
+  # inclusive flags read (R14, R16): `index` where it fits, otherwise cycling over the whole
+  # numbers that fit, so today's values stay wherever they already did. A double is the whole
+  # number plus 0.5, so its bounds are read half a unit in. Without a minimum the numbers start
+  # at 1, so a maximum below 1 stops the base though a smaller whole number would fit (m18); a
+  # bound the column can't fit stops it too.
+  within_bounds <- function(index, attribute, r_class) {
+    half <- if (r_class == "double") 0.5 else 0
+    low <- attribute$min_value
+    high <- attribute$max_value
+    lower <- if (is.null(low) || is.na(low)) {
+      1
+    } else if (isFALSE(attribute$min_inclusive)) {
+      floor(low - half) + 1
+    } else {
+      ceiling(low - half)
+    }
+    upper <- if (is.null(high) || is.na(high)) {
+      Inf
+    } else if (isFALSE(attribute$max_inclusive)) {
+      ceiling(high - half) - 1
+    } else {
+      floor(high - half)
+    }
+    if (upper < lower) {
+      stop(
+        "fx_clean_tables() can't make ", attribute$table_name, ".", attribute$attribute_name,
+        " inside its bounds."
+      )
+    }
+    if (is.infinite(upper)) {
+      return(index + max(0, lower - 1))
+    }
+    lower + ((index - lower) %% (upper - lower + 1))
+  }
   lineage <- list()
   built <- list()
   for (table in build_order) {
@@ -155,10 +193,8 @@ fx_clean_tables <- function(spec, n = 2L) {
         codes[((index - 1L) %% length(codes)) + 1L]
       } else if (!is.na(date_formats[[i]])) {
         format(as.Date("2020-06-01") + index - 1L, date_formats[[i]])
-      } else if (r_class == "integer") {
-        index
-      } else if (r_class == "double") {
-        index + 0.5
+      } else if (r_class %in% c("integer", "double")) {
+        within_bounds(index, attributes[i], r_class) + if (r_class == "double") 0.5 else 0L
       } else if (isTRUE(attributes$id_marked[[i]])) {
         paste0("s", index)
       } else {
@@ -169,13 +205,77 @@ fx_clean_tables <- function(spec, n = 2L) {
     names(values) <- attributes$attribute_name[columns]
     built[[table]] <- data.table::as.data.table(values)
   }
-  fx_mark_fixture(built[table_names])
+  fx_copy_key_pairs(fx_mark_fixture(built[table_names]), spec)
+}
+
+# Each key_pairs row whose left side is one attribute set from its right side, the value its
+# chain reaches, so the copy agrees with the record's parent (D18.26, D18.30): parents'
+# tables before their children's, as a right side may read a column another row sets. A
+# chained left side isn't set here (D18.41). Sets the fixture's own tables by reference;
+# returns them.
+fx_copy_key_pairs <- function(tables, spec) {
+  fx_require_fixture(tables)
+  pairs <- spec$key_pairs
+  pairs <- pairs[!grepl(" > ", pairs$left, fixed = TRUE) & pairs$table_name %chin% names(tables)]
+  # A spec built without the component, as a test's hand-made one, has no pairs.
+  if (is.null(pairs) || nrow(pairs) == 0L) {
+    return(tables)
+  }
+  # Each table's depth: its longest path of foreign keys to a table that points nowhere, each
+  # pass taking the deepest of its parents.
+  keys <- spec$keys
+  links <- keys[keys$key_type == "FK" & !is.na(keys$reference_table)]
+  table_names <- unique(spec$attributes$table_name)
+  depth <- stats::setNames(integer(length(table_names)), table_names)
+  for (pass in seq_along(table_names)) {
+    step <- tapply(depth[links$reference_table] + 1L, links$table_name, max)
+    depth[names(step)] <- pmax(depth[names(step)], step)
+  }
+  pairs <- pairs[order(depth[pairs$table_name])]
+  input <- conformance_input(tables, spec)
+  for (k in seq_len(nrow(pairs))) {
+    table <- pairs$table_name[[k]]
+    chain <- parse_chain(pairs$right[[k]], table, keys, spec$attributes)
+    data.table::set(
+      tables[[table]],
+      j = pairs$left[[k]], value = chain_values(input, table, chain)
+    )
+  }
+  tables
+}
+
+# MAGPlot's frames and subplots labelled alike (D18.41): each design's k-th frame and each
+# plot's k-th subplot take frame_type the k-th code both lists hold, frame_num k and subplot
+# the two joined, as the DD builds a label. The builds measure a plot's k-th subplot with its
+# design's k-th frame, so a subplot measurement's subplot and frame agree (key_pairs).
+# Sets the fixture's own tables by reference; returns them.
+fx_label_frames <- function(tables, spec) {
+  fx_require_fixture(tables)
+  codes <- function(table) {
+    lists <- spec$codes
+    held <- lists$code[lists$table_name == table & lists$attribute_name == "frame_type"]
+    setdiff(held, spec$sentinels$value)
+  }
+  types <- intersect(codes("magp_design_frames"), codes("magp_subplots"))
+  label <- function(table, parent) {
+    k <- data.table::rowid(tables[[table]][[parent]])
+    type <- types[(k - 1L) %% length(types) + 1L]
+    data.table::set(tables[[table]], j = "frame_type", value = type)
+    data.table::set(tables[[table]], j = "frame_num", value = k)
+    data.table::set(tables[[table]], j = "subplot", value = paste0(type, k))
+  }
+  label("magp_design_frames", "magp_design_id")
+  label("magp_subplots", "magp_plot_id")
+  tables
 }
 
 # MAGPlot 2.0's clean base: every DD table and column, built from magp_spec() (21 M3b),
 # each dataset in one jurisdiction and one contributor, as its row in the spec's datasets
 # sheet has them (D15.32): MAGPlot's grouping columns are the contributor, the jurisdiction
-# and the dataset. Nothing else of the generic build changes.
+# and the dataset. Each site's ID is moved into its contributor's band of site IDs (the
+# band's start plus the old ID, in every table holding the ID), and the ec_* columns follow
+# their DD patterns (D18.26). Then the frames and subplots are labelled alike and the
+# key_pairs copies taken from their parents (D18.41).
 fx_magp_clean <- function() {
   spec <- magp_spec()
   tables <- fx_clean_tables(spec)
@@ -189,7 +289,39 @@ fx_magp_clean <- function() {
     datasets,
     j = "magp_contributor_id", value = sheet$magp_contributor_id[of_dataset]
   )
-  tables
+  # The band of each site's contributor: the contributor sheet gives its label.
+  lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+  ids <- lists[lists$sheet_column == "magp_contributor_id"]
+  names_at <- lists[lists$sheet_column == "abbreviated_name"]
+  contributor <- datasets$magp_contributor_id[
+    match(sites$magp_dataset_id, datasets$magp_dataset_id)
+  ]
+  row_of <- ids$source_row[match(contributor, ids$value)]
+  label <- names_at$value[match(row_of, names_at$source_row)]
+  start <- spec$id_bands$band_start[match(label, spec$id_bands$label)]
+  old <- sites$magp_site_id
+  moved <- as.integer(start + old)
+  holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
+  for (table in holders) {
+    data.table::set(
+      tables[[table]],
+      j = "magp_site_id", value = moved[match(tables[[table]]$magp_site_id, old)]
+    )
+  }
+  # The ec_* columns by their DD patterns, a value per site (D18.26).
+  i <- seq_len(nrow(sites))
+  zone <- (i - 1L) %% 99L + 1L
+  data.table::set(sites, j = "ec_zone", value = sprintf("%d", zone))
+  data.table::set(sites, j = "ec_province", value = sprintf("%d.1", zone))
+  region <- (i - 1L) %% 999L + 1L
+  data.table::set(sites, j = "ec_region", value = sprintf("%02d.1.%03d", zone, region))
+  data.table::set(
+    sites,
+    j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
+  )
+  # The frames and subplots labelled alike, then the copies taken again from their parents
+  # (D18.41).
+  fx_copy_key_pairs(fx_label_frames(tables, spec), spec)
 }
 
 # The generic clean fixture: the fish survey toy spec's three tables (18.3).
@@ -226,9 +358,10 @@ fx_require_fixture <- function(x) {
   invisible(x)
 }
 
-# One answer-sheet row: the defect, where it is (record "*" for a table or column), the edit,
-# the rule that must catch it, the other rules allowed open issues with it ("; "-joined) and
-# the witness value the rule must report (NA where its issue has none).
+# One answer-sheet row: the defect, where it is (record "*" for a table or column, NA where
+# the record has no key, as pk_missing's), the edit, the rule that must catch it, the other
+# rules allowed open issues with it ("; "-joined) and the witness value the rule must report
+# (NA where its issue has none).
 fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_id,
                       cascade_rule_ids = NA_character_, witness = NA_character_) {
   data.table::data.table(
@@ -240,6 +373,9 @@ fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_
 
 # The answer sheet (18.3): one row per defect block, each a single edit to MAGPlot's clean
 # base (fx_magp_clean()), caught by gpq_check_conformance() with magp_rules() (fx_caught()).
+# A row's record_pk lists every record the block makes fail, "; "-joined: two holders of one
+# value where every holder fails (pk_duplicate, src_id_duplicate, the design candidates); the
+# witness is the first one's value.
 fx_answer_sheet <- function() {
   data.table::rbindlist(list(
     fx_defect(character(), character(), character(), character(), character(), character()),
@@ -323,6 +459,97 @@ fx_answer_sheet <- function() {
       "na_text_in_id", "magp_trees", "src_tree_id", "magp_trees_1",
       "magp_trees$src_tree_id row 1 \"NA\"", "na_text_in_id",
       witness = "NA"
+    ),
+    # ---- Layer 3 (M5) ----
+    fx_defect(
+      "code_not_in_list", "magp_trees", "tree_origin", "magp_trees_1",
+      "magp_trees$tree_origin row 1 \"QQ\"", "code_not_in_list",
+      witness = "QQ"
+    ),
+    fx_defect(
+      "value_below_min", "magp_tree_meas", "dbh", "magp_tree_meas_1",
+      "magp_tree_meas$dbh row 1 0", "value_below_min",
+      witness = "0"
+    ),
+    fx_defect(
+      "value_above_max", "magp_tree_meas", "height", "magp_tree_meas_1",
+      "magp_tree_meas$height row 1 200", "value_above_max",
+      witness = "200"
+    ),
+    fx_defect(
+      "pattern_mismatch", "magp_sites", "ec_zone", "350002",
+      "magp_sites$ec_zone row 1 \"1A\"", "pattern_mismatch",
+      witness = "1A"
+    ),
+    fx_defect(
+      "site_id_out_of_range", "magp_sites", "magp_site_id", "1",
+      "magp_sites$magp_site_id row 1 1, in every table holding it", "site_id_out_of_range",
+      witness = "1"
+    ),
+    fx_defect(
+      "undeclared_code_set", "magp_tree_age", "bore_ht", "*",
+      "magp_tree_age$bore_ht all \"B\"", "undeclared_code_set",
+      witness = "B"
+    ),
+    # ---- Layer 4 (M5) ----
+    fx_defect(
+      "pk_duplicate", "magp_tree_cond", "magp_cond_id", "magp_tree_cond_1; magp_tree_cond_1",
+      "magp_tree_cond$magp_cond_id row 2 \"magp_tree_cond_1\", row 1's", "pk_duplicate",
+      witness = "magp_tree_cond_1"
+    ),
+    fx_defect(
+      "pk_missing", "magp_tree_cond", "magp_cond_id", NA_character_,
+      "magp_tree_cond$magp_cond_id row 1 NA", "pk_missing"
+    ),
+    fx_defect(
+      "fk_orphan", "magp_tree_cond", "magp_treemeas_id", "magp_tree_cond_1",
+      "magp_tree_cond$magp_treemeas_id row 1 \"magp_tree_meas_0\"", "fk_orphan",
+      witness = "magp_tree_meas_0"
+    ),
+    fx_defect(
+      "fk_unassigned", "magp_tree_cond", "magp_treemeas_id", "magp_tree_cond_1",
+      "magp_tree_cond$magp_treemeas_id row 1 NA", "fk_unassigned"
+    ),
+    fx_defect(
+      "fk_sentinel_unverified", "magp_site_dist", "magp_site_id", "magp_site_dist_1",
+      "magp_site_dist$magp_site_id row 1 -9", "fk_sentinel_unverified",
+      witness = "-9"
+    ),
+    fx_defect(
+      "key_incoherent", "magp_tree_meas", "visit_num", "magp_tree_meas_1",
+      "magp_tree_meas$visit_num row 1 99", "key_incoherent",
+      witness = "visit_num=99"
+    ),
+    fx_defect(
+      "src_id_duplicate", "magp_trees", "src_tree_id", "magp_trees_1; magp_trees_2",
+      "magp_trees$src_tree_id row 2 \"s1\", row 1's", "src_id_duplicate",
+      witness = "s1"
+    ),
+    fx_defect(
+      "record_unreachable", "magp_trees", "magp_tree_id", "magp_trees_2",
+      "magp_tree_meas rows naming tree 2 now name tree 1, of the same subplot",
+      "record_unreachable",
+      witness = "magp_trees_2"
+    ),
+    fx_defect(
+      "design_geometry_inconsistent", "magp_design_frames", "plot_area",
+      "magp_design_frames_1; magp_design_frames_9",
+      "magp_design_frames row 9 added, frame 1's with plot_area 9.5",
+      "design_geometry_inconsistent",
+      witness = "1.5"
+    ),
+    fx_defect(
+      "subplot_label_ambiguous", "magp_subplots", "subplot", "magp_subplots_1; magp_subplots_99",
+      "magp_subplots row added, subplot 1's under the key magp_subplots_99",
+      "subplot_label_ambiguous",
+      cascade_rule_ids = "record_unreachable", witness = "M1"
+    ),
+    fx_defect(
+      "design_duplicate_signature", "magp_designs", "magp_design_id",
+      "magp_designs_1; magp_designs_2",
+      "magp_design_frames rows 3 and 4 given rows 1 and 2's frame columns",
+      "design_duplicate_signature",
+      witness = "magp_designs_1"
     )
   ))
 }
@@ -398,11 +625,86 @@ fx_defect_blocks <- function() {
     sentinel_rogue_code = fx_set_cell("magp_trees", "comments", 1L, "N/A"),
     species_unknown_code = fx_set_cell("magp_tree_meas", "species", 1L, "UNKN.SPP"),
     whitespace_padding = fx_set_cell("magp_trees", "tree_origin", 1L, "AP "),
-    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA")
+    na_text_in_id = fx_set_cell("magp_trees", "src_tree_id", 1L, "NA"),
+    # ---- Layer 3 (M5) ----
+    code_not_in_list = fx_set_cell("magp_trees", "tree_origin", 1L, "QQ"),
+    value_below_min = fx_set_cell("magp_tree_meas", "dbh", 1L, 0),
+    value_above_max = fx_set_cell("magp_tree_meas", "height", 1L, 200),
+    pattern_mismatch = fx_set_cell("magp_sites", "ec_zone", 1L, "1A"),
+    site_id_out_of_range = function(tables) {
+      fx_require_fixture(tables)
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      # Site 1's ID outside every band, in every table holding it, so its keys still agree.
+      old <- tables$magp_sites$magp_site_id[[1L]]
+      for (table in names(tables)) {
+        if ("magp_site_id" %in% names(tables[[table]])) {
+          at <- which(tables[[table]]$magp_site_id == old)
+          data.table::set(tables[[table]], i = at, j = "magp_site_id", value = 1L)
+        }
+      }
+      tables
+    },
+    undeclared_code_set = fx_set_column("magp_tree_age", "bore_ht", function(x) {
+      rep("B", length(x))
+    }),
+    # ---- Layer 4 (M5) ----
+    pk_duplicate = fx_set_cell("magp_tree_cond", "magp_cond_id", 2L, "magp_tree_cond_1"),
+    pk_missing = fx_set_cell("magp_tree_cond", "magp_cond_id", 1L, NA_character_),
+    fk_orphan = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, "magp_tree_meas_0"),
+    fk_unassigned = fx_set_cell("magp_tree_cond", "magp_treemeas_id", 1L, NA_character_),
+    fk_sentinel_unverified = fx_set_cell("magp_site_dist", "magp_site_id", 1L, -9L),
+    key_incoherent = fx_set_cell("magp_tree_meas", "visit_num", 1L, 99L),
+    src_id_duplicate = fx_set_cell("magp_trees", "src_tree_id", 2L, "s1"),
+    record_unreachable = fx_set_column("magp_tree_meas", "magp_tree_id", function(x) {
+      data.table::fifelse(x == "magp_trees_2", "magp_trees_1", x)
+    }),
+    design_geometry_inconsistent = function(tables) {
+      fx_require_fixture(tables)
+      tables <- lapply(tables, data.table::copy)
+      added <- tables$magp_design_frames[1L]
+      data.table::set(added, j = "magp_frame_id", value = "magp_design_frames_9")
+      data.table::set(added, j = "plot_area", value = 9.5)
+      spec <- magp_spec()
+      # A fresh src_* ID, so the copy repeats none (src_id_duplicate).
+      is_marked <- spec$attributes$table_name == "magp_design_frames" &
+        spec$attributes$id_marked %in% TRUE
+      for (column in spec$attributes$attribute_name[is_marked]) {
+        data.table::set(added, j = column, value = paste0(added[[column]], "_copy"))
+      }
+      tables$magp_design_frames <- rbind(tables$magp_design_frames, added)
+      fx_mark_fixture(tables)
+    },
+    subplot_label_ambiguous = function(tables) {
+      fx_require_fixture(tables)
+      tables <- lapply(tables, data.table::copy)
+      added <- tables$magp_subplots[1L]
+      data.table::set(added, j = "magp_subplot_id", value = "magp_subplots_99")
+      spec <- magp_spec()
+      is_marked <- spec$attributes$table_name == "magp_subplots" &
+        spec$attributes$id_marked %in% TRUE
+      for (column in spec$attributes$attribute_name[is_marked]) {
+        data.table::set(added, j = column, value = paste0(added[[column]], "_copy"))
+      }
+      tables$magp_subplots <- rbind(tables$magp_subplots, added)
+      fx_mark_fixture(tables)
+    },
+    design_duplicate_signature = function(tables) {
+      fx_require_fixture(tables)
+      tables <- fx_mark_fixture(lapply(tables, data.table::copy))
+      frames <- tables$magp_design_frames
+      signed <- c(
+        "frame_type", "subplot", "plot_area", "plot_shape", "min_dbh", "max_dbh", "min_ht",
+        "max_ht", "baf"
+      )
+      for (column in signed) {
+        data.table::set(frames, i = 3:4, j = column, value = frames[[column]][1:2])
+      }
+      tables
+    }
   )
 }
 
-# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 2, with MAGPlot's
+# The results gpq_check_conformance() gives on fixture tables, Layers 0 to 4, with MAGPlot's
 # spec, rule set and group columns; pre-flight's warning about the spec is muffled. What a
 # planted defect must raise are the open issues: `results$issues[status == "open"]`.
 fx_caught <- function(tables) {
@@ -411,7 +713,7 @@ fx_caught <- function(tables) {
     gpq_check_conformance(
       tables, magp_spec(),
       group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
-      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+      problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:4
     ),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )

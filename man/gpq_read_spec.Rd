@@ -14,6 +14,9 @@ gpq_read_spec(
   id_pattern = NULL,
   id_bands = NULL,
   precedence = NULL,
+  key_pairs = NULL,
+  one_to_many = NULL,
+  reach = NULL,
   origins = NULL,
   column_map = gpq_column_map(),
   type_map = gpq_type_map(),
@@ -43,7 +46,12 @@ CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}
 
 \item{id_pattern}{\code{NULL}, or one regular expression marking ID attributes by name.}
 
-\item{id_bands}{\code{NULL}, or \code{list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)} naming the code-list sheet of ID bands.}
+\item{id_bands}{\code{NULL}, or \code{list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)} naming the code-list sheet of ID bands, and
+optionally, all three or none, \code{table} and \code{attribute}, the column the bands apply to, and
+\code{key}, the foreign keys followed from that table and the attribute they reach, joined by
+" > ", such as \code{"dataset_id > contributor_id"}. \code{key} needs \code{labels_from}, and its last
+attribute must be a column of the \code{labels_from} sheet, which gives each band's value of it;
+each value can have only one band.}
 
 \item{precedence}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
 \code{sheet},
@@ -51,13 +59,42 @@ CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}
 (\code{yields} or \code{wins}), saying which input wins where the datasets table and a sheet
 overlap.}
 
+\item{key_pairs}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{table_name}, \code{left}, \code{right} and \code{note}: each row two ways to reach one value from a
+record of \code{table_name}, each side an attribute of the table or a chain of foreign keys
+joined by " > " ending in an attribute, such as \code{"haul_id > station_id"}.
+\code{key_incoherent} compares the two sides and reports a record where they differ on the
+left side's first attribute.}
+
+\item{one_to_many}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{contributor_label}, \code{table_name}, \code{attribute_name} and \code{note}: each row an ID attribute
+a contributor documents as one-to-many, whose repeats \code{src_id_duplicate} doesn't report
+among that contributor's records. A record's contributor is found through \code{id_bands}'
+\code{key} and \code{labels_from}, so the rows apply only when \code{id_bands} gives \code{table},
+\code{attribute}, \code{key} and \code{labels_from}; pre-flight warns of a row it can't apply
+(\code{one_to_many_invalid}), which is left out.}
+
+\item{reach}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{table_name}, \code{attribute_name} and \code{how}, saying how \code{record_unreachable} walks the
+tables: \code{root}, a table whose records are all reached; \code{exempt}, a table not walked or
+checked; \code{from_parent}, a record reached through this foreign key when its parent is;
+\code{from_child}, a reached record reaching its parent through this foreign key.
+\code{attribute_name} is blank for \code{root} and \code{exempt}. The tables checked are those the rows
+name, but the exempt ones, and the parents \code{from_child} links reach. In a table reached
+\code{from_parent}, a record whose parent isn't reached is left unchecked; the break is
+reported once, by the foreign-key rules or at the topmost record no walk reaches.
+Pre-flight stops if a table the walk checks can't be reached from a root. A record
+reachable only through a table or key column not given is left unchecked.}
+
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
 named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
-\verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of \code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in the manifest; a workbook's
-sheet, or \code{NULL} for a CSV file; the file row of the first data row, later rows
-following on, or the file row of every data row, or \code{NULL} to count rows as R counts
-them; and the file column, by number or letter, of every column of the data.frame,
-or \code{NULL} for the file's order. Findings in such an input then name the file's cells.}
+\code{key_pairs}, \code{one_to_many}, \code{reach}, \verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of
+\code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in
+the manifest; a workbook's sheet, or \code{NULL} for a CSV file; the file row of the first
+data row, later rows following on, or the file row of every data row, or \code{NULL} to count
+rows as R counts them; and the file column, by number or letter, of every column of the
+data.frame, or \code{NULL} for the file's order. Findings in such an input then name the
+file's cells.}
 
 \item{column_map}{The dictionary's column names, from \code{\link[=gpq_column_map]{gpq_column_map()}}.}
 
@@ -70,9 +107,10 @@ joins \code{read_findings}.}
 An object of class \code{gpq_spec}: a named list of data.tables, the components
 \code{attributes}, \code{keys}, \code{code_lists}, \code{code_list_sheets}, \code{code_list_map}, \code{codes},
 \code{non_code_sheets},
-\code{datasets}, \code{lineage_spec}, \code{crosswalks}, \code{id_bands}, \code{type_map}, \code{sentinels},
-\code{clashes}, \code{read_findings} and \code{manifest}. An input not given leaves its component
-empty, with its columns. A blank cell is \code{NA}; text is kept exactly as written.
+\code{datasets}, \code{lineage_spec}, \code{crosswalks}, \code{id_bands}, \code{id_band_columns}, \code{key_pairs},
+\code{one_to_many}, \code{reach}, \code{type_map}, \code{sentinels}, \code{clashes}, \code{read_findings} and
+\code{manifest}. An input not given leaves its component empty, with its columns. A blank cell
+is \code{NA}; text is kept exactly as written.
 }
 \description{
 Reads a data dictionary and its companion inputs into one specification object, which
@@ -83,17 +121,18 @@ and \code{\link[=gpq_preflight]{gpq_preflight()}} decides whether it stops.
 It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a \code{precedence} or \code{lineage_spec}
-table without exactly its columns; a \code{precedence} table with an unknown \code{winner} or
-\code{blank_rule}, or with two rows for one sheet, key and attribute; a name given in R
-that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-values for an attribute that uses it; or an origin that doesn't fit its input.
+dictionary without its table or attribute column; a \code{precedence}, \code{lineage_spec},
+\code{key_pairs}, \code{one_to_many} or \code{reach} table without exactly its columns; a \code{precedence}
+table with an unknown \code{winner} or \code{blank_rule}, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+column it lacks, or with no values for an attribute that uses it; or an origin that
+doesn't fit its input.
 }
 \section{Components}{
 
 Each component is a data.table with these columns:
 \itemize{
-\item \code{attributes}: \code{table_name}, \code{attribute_name}, \code{data_type}, \code{r_class}, \code{key_type}, \code{reference_table}, \code{lookup}, \code{description}, \code{lineage_flag}, \code{id_marked}, \code{source_row}
+\item \code{attributes}: \code{table_name}, \code{attribute_name}, \code{data_type}, \code{r_class}, \code{key_type}, \code{reference_table}, \code{lookup}, \code{description}, \code{lineage_flag}, \code{id_marked}, \code{source_row}, \code{min_value}, \code{max_value}, \code{min_inclusive}, \code{max_inclusive}, \code{pattern}, \code{max_length}, \code{decimals}, \code{units}
 \item \code{keys}: \code{table_name}, \code{attribute_name}, \code{key_type}, \code{key_part}, \code{reference_table}, \code{reference_attribute}
 \item \code{code_lists}: \code{sheet}, \code{source_row}, \code{sheet_column}, \code{value}, \code{source_cell}
 \item \code{code_list_sheets}: \code{sheet}
@@ -103,7 +142,11 @@ Each component is a data.table with these columns:
 \item \code{datasets}: the input's own columns, all text
 \item \code{lineage_spec}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type}, \code{alternative}, \code{part_order}, \code{part_source}, \code{part_kind}, \code{id_status}, \code{source_text}, \code{note}, \code{source_cell}
 \item \code{crosswalks}: \code{crosswalk}, \code{source_row}, \code{crosswalk_column}, \code{value}, \code{source_cell}
-\item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}
+\item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}, \code{key_value}
+\item \code{id_band_columns}: \code{table_name}, \code{attribute_name}, \code{key_attribute}, \code{labels_sheet}, \code{labels_column}
+\item \code{key_pairs}: \code{table_name}, \code{left}, \code{right}, \code{note}
+\item \code{one_to_many}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{note}, \code{source_cell}
+\item \code{reach}: \code{table_name}, \code{attribute_name}, \code{how}
 \item \code{type_map}: \code{data_type}, \code{r_class}, \code{date_format}
 \item \code{sentinels}: \code{data_type}, \code{role}, \code{value}, \code{allowed_in_pk}, \code{allowed_in_fk}
 \item \code{clashes}: \code{rule_id}, \code{kind}, \code{key_col}, \code{key_value}, \code{column_name}, \code{source_a}, \code{value_a}, \code{source_b}, \code{value_b}, \code{winner}, \code{basis}, \code{source_cell_a}, \code{source_cell_b}
@@ -128,7 +171,9 @@ fish <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv")),
   sentinels = gpq_sentinels(

@@ -9,7 +9,13 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_identical(rules, validate_rule_set(rules))
   # Each component keeps the file it was read from and each row's line (D14.19).
   expect_equal(attr(rules$rules, "source_file"), "rules_rules.csv")
-  expect_equal(attr(rules$settings, "source_lines"), 2:7)
+  expect_equal(attr(rules$rules, "source_lines"), 2:3)
+  # Designs and trees no root reaches warn (D18.4 (b), D18.13).
+  expect_equal(rules$rules$table_name, c("magp_designs", "magp_trees"))
+  expect_equal(
+    unique(paste(rules$rules$rule_id, rules$rules$severity)), "record_unreachable warning"
+  )
+  expect_equal(attr(rules$settings, "source_lines"), 2:19)
 })
 
 test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (D14.15)", {
@@ -25,10 +31,29 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
     data.frame(
       setting = c(
         "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
-        "unknown_codes"
+        "unknown_codes", "coordinate_attributes", "code_set_max_values",
+        "code_set_skip_attributes", "code_set_skip_pattern", "design_geometry_table",
+        "design_geometry_by", "design_geometry_columns", "subplot_label_table",
+        "subplot_label_columns", "design_signature_table", "design_signature_by",
+        "design_signature_columns"
       ),
-      value = c("en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP"),
-      type = c("character", "integer", "integer", "character", "character", "character")
+      value = c(
+        "en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP",
+        "latitude; longitude; utm_e; utm_n", "25",
+        "meas_plots; meas_frames; temporal_extent; meas_cycle; subplot",
+        "_id$|^comments$|name|_date$|^src_|^meas_subplots$", "magp_design_frames",
+        "magp_design_id; subplot",
+        "plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf", "magp_subplots",
+        "magp_plot_id; subplot", "magp_design_frames", "magp_design_id",
+        paste(
+          "frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht;",
+          "baf"
+        )
+      ),
+      type = c(
+        "character", "integer", "integer", "character", "character", "character", "character",
+        "integer", "character", "character", rep("character", 8L)
+      )
     ),
     ignore_attr = c("source_file", "source_lines", "source_sha256")
   )

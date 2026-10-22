@@ -21,8 +21,13 @@ registered rules, and its \code{settings} rows give settings.}
 
 \item{settings}{A named list of settings, which come before the rule set's, the
 options' and the built-in values (see \link{groundplotqc_options}). Pre-flight reads \code{lang},
-the run language, whose text \code{text_id_fallback} checks, and \code{severity}, severities by
-rule ID; it accepts the other settings by name and doesn't read them.}
+the run language, whose text \code{text_id_fallback} checks; \code{severity}, severities by rule
+ID; and the settings that name tables and attributes (\code{unknown_codes},
+\code{coordinate_attributes}, \code{code_set_skip_attributes} and the eight settings of
+\code{design_geometry_inconsistent}, \code{subplot_label_ambiguous} and
+\code{design_duplicate_signature}), whose names \code{setting_unknown_name} and
+\code{option_unknown_name} check against the specification. It accepts the other settings by
+name and doesn't read them.}
 
 \item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
 \code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}
@@ -73,9 +78,12 @@ the specification's \code{clashes} component.
 \code{code_list_empty_column}, \code{spec_clash_resolved}, \code{spec_clash_unresolved},
 \code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
 \code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
-\code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable}; with a rule
-set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a severity
-setting, \code{rule_id_unknown} and \code{rule_set_override_invalid}; and \code{text_id_missing},
+\code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable},
+\code{dd_format_invalid}, \code{key_pair_invalid}, \code{reach_invalid}, \code{one_to_many_invalid}; with a
+rule set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a
+severity setting, \code{rule_id_unknown} and \code{rule_set_override_invalid}; with a setting that
+names tables or attributes, \code{setting_unknown_name} (given as an argument or in the rule
+set) and \code{option_unknown_name} (set as an option); and \code{text_id_missing},
 \code{text_id_fallback} and \code{text_slot_unknown}, on the report text of the registered rules in
 English and in the run language and on a caller's text table. No rule set or setting
 changes what a check stops or warns on.
@@ -90,7 +98,10 @@ forest <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-    reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+    reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION",
+    min_value = "MIN_VALUE", max_value = "MAX_VALUE", min_inclusive = "MIN_INCLUSIVE",
+    max_inclusive = "MAX_INCLUSIVE", pattern = "PATTERN", max_length = "MAX_LENGTH",
+    decimals = "DECIMALS", units = "UNITS"
   ),
   type_map = gpq_type_map(example("forest_types.csv"))
 )

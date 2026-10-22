@@ -24,8 +24,10 @@ read_tables <- function(tables, spec, table_map = NULL) {
   if (!is.null(table_map)) {
     stop("`table_map` is only read when `tables` is a DBI connection.", call. = FALSE)
   }
-  if (is.character(tables) && is.null(dim(tables)) && !is.object(tables)) {
-    tables <- as.list(tables)
+  # A classed character vector, such as fs::path()'s, is read as its text: unclass() keeps
+  # the names and never dispatches a method that could change the text (D18.12, m25).
+  if (is.character(tables) && is.null(dim(tables))) {
+    tables <- as.list(unclass(tables))
   }
   # The test of validate_tables(), so a list it would refuse is left to it.
   named <- is.list(tables) && !is.data.frame(tables) && length(tables) > 0L &&
@@ -35,7 +37,7 @@ read_tables <- function(tables, spec, table_map = NULL) {
     return(list(tables = tables, inputs = none, text_tables = character()))
   }
   path <- vapply(tables, function(x) {
-    is.character(x) && is.null(dim(x)) && !is.object(x) && length(x) == 1L && !is.na(x)
+    is.character(x) && is.null(dim(x)) && length(x) == 1L && !is.na(x)
   }, logical(1))
   frame <- vapply(tables, is.data.frame, logical(1))
   if (!all(path | frame)) {
@@ -47,13 +49,14 @@ read_tables <- function(tables, spec, table_map = NULL) {
   if (!any(path)) {
     return(list(tables = tables, inputs = none, text_tables = character()))
   }
-  paths <- vapply(tables[path], unname, "")
+  paths <- vapply(tables[path], function(x) unname(unclass(x)), "")
   absent <- !file.exists(paths) | dir.exists(paths)
   if (any(absent)) {
     stop(sprintf(
       "No file at the path given for these tables: %s.",
       paste0(
-        mark_invalid_utf8(names(paths)[absent]), " (", mark_invalid_utf8(paths[absent]), ")",
+        mark_invalid_utf8(names(paths)[absent]), " (",
+        mark_invalid_utf8(enc2utf8(paths[absent])), ")",
         collapse = ", "
       )
     ), call. = FALSE)
@@ -81,14 +84,23 @@ read_tables <- function(tables, spec, table_map = NULL) {
 #' (D17.14), any error or warning of fread() (D17.5), and a header fread() took from a later
 #' line than the first, in a file of more than one column (D17.16, D17.24), stop the run,
 #' naming the table and the file, whatever the session's `warn`. A file cut exactly at a line
-#' end can't be told from a shorter one. Returns `data`, `file` (the file's name without its
-#' folder, R2), `sha256` and `detail` (the rows, the separator as a word and the values
-#' converted, D17.27).
+#' end can't be told from a shorter one. A file whose size or modification time changes
+#' between the stamp taken before its last byte is read and the one taken after its hash stops
+#' the run too (D17.32). Returns `data`, `file` (the
+#' file's name without its folder, R2), `sha256` and `detail` (the rows, the separator as a
+#' word and the values converted, D17.27).
 #' @noRd
 read_csv_table <- function(path, table) {
+  # The file's size and modification time, read again after its hash: a file that changed
+  # while it was read stops the run, its rows and hash not being one file's (D17.32, m28).
+  stamp <- function() {
+    info <- file.info(path, extra_cols = FALSE)
+    c(info$size, as.numeric(info$mtime))
+  }
+  before <- stamp()
   # A data file that doesn't end with a line break may be cut off (D17.14): its last byte is
   # read alone. An empty file is left to fread()'s own warning.
-  size <- file.size(path)
+  size <- before[[1L]]
   if (size > 0) {
     connection <- file(path, "rb")
     last <- tryCatch(
@@ -199,10 +211,17 @@ read_csv_table <- function(path, table) {
       )
     }
   )
-  list(
-    data = data, file = basename(path), sha256 = unname(tools::sha256sum(path)),
-    detail = detail
-  )
+  sha256 <- unname(tools::sha256sum(path))
+  if (!identical(stamp(), before)) {
+    stop(sprintf(
+      paste0(
+        "Table %s: the file %s changed while it was read, so nothing was checked. Run again ",
+        "once the file is complete."
+      ),
+      mark_invalid_utf8(table), mark_invalid_utf8(basename(path))
+    ), call. = FALSE)
+  }
+  list(data = data, file = basename(path), sha256 = sha256, detail = detail)
 }
 
 #' The cells of `x` that aren't valid UTF-8, converted from Windows-1252 (D17.3)
@@ -237,8 +256,12 @@ read_db_tables <- function(connection, spec, table_map) {
       call. = FALSE
     )
   }
+  # A classed character vector is read as its text, its names kept (D18.12, m25).
+  if (is.character(table_map)) {
+    table_map <- unclass(table_map)
+  }
   mapped <- is.null(table_map) || (
-    is.character(table_map) && is.null(dim(table_map)) && !is.object(table_map) &&
+    is.character(table_map) && is.null(dim(table_map)) &&
       length(table_map) > 0L && !is.null(names(table_map)) && !anyNA(names(table_map)) &&
       !any(is_blank(names(table_map))) && !anyDuplicated(names(table_map)) &&
       !anyNA(table_map) && !any(is_blank(table_map)) &&

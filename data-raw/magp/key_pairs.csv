@@ -1,0 +1,22 @@
+table_name,left,right,note
+magp_site_dist,magp_dataset_id,magp_site_id > magp_dataset_id,6.1; D18.1
+magp_site_treat,magp_dataset_id,magp_site_id > magp_dataset_id,6.1; D18.1
+magp_subplots,magp_site_id,magp_plot_id > magp_site_id,6.1; D18.1
+magp_subplots,plot,magp_plot_id > plot,D18.1 (b)
+magp_plot_meas,visit_num,magp_visit_id > visit_num,6.1 and F4; D18.1
+magp_plot_meas,magp_plot_id > magp_site_id,magp_visit_id > magp_site_id,F4; D18.1
+magp_plot_meas,magp_design_id > magp_contributor_id,magp_visit_id > magp_site_id > magp_dataset_id > magp_contributor_id,D18.5
+magp_subplot_meas,magp_subplot_id > frame_type,magp_frame_id > frame_type,6.1; D18.1
+magp_subplot_meas,visit_num,magp_plotmeas_id > visit_num,6.1 and F4; D18.1
+magp_subplot_meas,magp_subplot_id > magp_plot_id,magp_plotmeas_id > magp_plot_id,F4; D18.1
+magp_subplot_meas,magp_visit_id,magp_plotmeas_id > magp_visit_id,F4; D18.1
+magp_subplot_meas,magp_frame_id > magp_design_id,magp_plotmeas_id > magp_design_id,D18.1 (b)
+magp_subplot_meas,magp_subplot_id > frame_num,magp_frame_id > frame_num,D18.1 (b)
+magp_subplot_meas,magp_subplot_id > subplot,magp_frame_id > subplot,D18.1 (b)
+magp_trees,magp_site_id,magp_subplot_id > magp_site_id,6.1; D18.1 (a)
+magp_trees,plot,magp_subplot_id > plot,D18.1 (b)
+magp_trees,subplot,magp_subplot_id > subplot,D18.1 (b)
+magp_tree_meas,visit_num,magp_subpmeas_id > visit_num,6.1 and F4; D18.1
+magp_tree_meas,magp_frame_id,magp_subpmeas_id > magp_frame_id,F4; D18.1
+magp_tree_meas,magp_tree_id > magp_subplot_id > magp_plot_id,magp_subpmeas_id > magp_subplot_id > magp_plot_id,D18.5
+magp_tally_trees,magp_frame_id,magp_subpmeas_id > magp_frame_id,F4; D18.1

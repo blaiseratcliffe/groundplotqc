@@ -20,7 +20,7 @@
 #   run        gpq_check_conformance() on the tables, which makes the mark scan itself, so
 #              `run` includes the time of `mark_scan`, not the build;
 #   write      gpq_write_results() on the run's result.
-# Each run is Layers 0 to 2. Its call, check() below, repeats fx_caught()'s in
+# Each run is Layers 0 to 4. Its call, check() below, repeats fx_caught()'s in
 # tests/testthat/helper-fixtures.R (MAGPlot's spec and rule set, the group columns and the
 # problem unit, the pre-flight warning muffled), which takes fixtures only, not paths. A
 # stage's peak is gc()'s "max used", in Mb, from a reset at its start. One CSV per run goes
@@ -33,7 +33,11 @@ source(file.path("bench", "generate.R"))
 time_stage <- function(expr) {
   gc(reset = TRUE)
   seconds <- system.time(value <- expr)[["elapsed"]]
-  list(value = value, seconds = seconds, peak_mb = sum(gc()[, 6L]))
+  # gc()'s Mb columns all read "(Mb)", and a memory limit adds a column: the peak is the Mb
+  # column right after "max used" (m27).
+  used <- gc()
+  peak <- used[, match("max used", colnames(used)) + 1L]
+  list(value = value, seconds = seconds, peak_mb = sum(peak))
 }
 
 main <- function(args = commandArgs(trailingOnly = TRUE)) {
@@ -58,7 +62,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
         gpq_check_conformance(
           tables, spec,
           group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
-          problem_unit = list("magp_plots", "magp_plot_id"), rules = rules, layers = 0:2
+          problem_unit = list("magp_plots", "magp_plot_id"), rules = rules, layers = 0:4
         ),
         gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
       )

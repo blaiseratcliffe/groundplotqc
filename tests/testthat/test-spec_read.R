@@ -15,7 +15,8 @@ test_that("the schema lists 3.6's components in order", {
   expect_named(spec_schema(), c(
     "attributes", "keys", "code_lists", "code_list_sheets", "code_list_map", "codes",
     "non_code_sheets",
-    "datasets", "lineage_spec", "crosswalks", "id_bands", "type_map", "sentinels",
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
+    "one_to_many", "reach", "type_map", "sentinels",
     "clashes", "read_findings", "manifest"
   ))
   expect_equal(spec_schema()$manifest, c(
@@ -592,7 +593,8 @@ test_that("a dictionary without its table and attribute columns names both at on
     paste(
       "The dictionary (fish_dictionary.csv) has no column table_name (the column map's",
       "table) and no column attribute_name (the column map's attribute); its columns are",
-      "table, field, kind, key, parent, codes, notes."
+      "table, field, kind, key, parent, codes, notes, low, high, low_in, high_in, format, width,",
+      "places, unit."
     ),
     fixed = TRUE
   )
@@ -1236,7 +1238,10 @@ test_that("both toy specs read cleanly", {
 
 test_that("absent inputs give empty components with their columns", {
   fish <- fx_fish_spec()
-  for (name in c("datasets", "lineage_spec", "crosswalks", "id_bands", "clashes")) {
+  for (name in c(
+    "datasets", "lineage_spec", "crosswalks", "id_bands", "id_band_columns", "key_pairs",
+    "one_to_many", "reach", "clashes"
+  )) {
     expect_equal(nrow(fish[[name]]), 0L, info = name)
   }
   expect_named(fish$id_bands, names(spec_schema()$id_bands))
@@ -1444,4 +1449,715 @@ test_that("a caller's tables come back unchanged, sharing no column with the spe
   )
   in_spec <- unlist(lapply(spec, function(x) vapply(x, data.table::address, "")))
   expect_length(intersect(caller, in_spec), 0L)
+})
+
+test_that("the range and format columns are read typed, a blank flag TRUE by its bound (D18.9)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("n1", "n2", "s1", "s2"),
+    data_type = c("numeric", "integer", "character", "character"),
+    min_value = c("0", " -1.5e1 ", NA, NA), max_value = c("500", NA, NA, NA),
+    min_inclusive = NA_character_, max_inclusive = c("false", NA, NA, NA),
+    pattern = c(NA, NA, "^[A-Z]{2}$", NA), max_length = c(NA, NA, "8", NA),
+    decimals = c("2", "0", NA, NA), units = c("m", NA, NA, "kg")
+  )
+  table <- read_input_table(dictionary, "dictionary")
+  dd <- read_dictionary(table, gpq_column_map(), gpq_type_map())
+  a <- dd$attributes
+  expect_equal(nrow(dd$findings), 0L)
+  roles <- c(
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
+  )
+  # The eight columns follow source_row, in this order.
+  expect_equal(utils::tail(names(a), 8L), roles)
+  expect_equal(a$min_value, c(0, -15, NA, NA))
+  expect_equal(a$max_value, c(500, NA, NA, NA))
+  # A blank flag is TRUE where its bound is given, NA where it isn't; any case reads.
+  expect_equal(a$min_inclusive, c(TRUE, TRUE, NA, NA))
+  expect_equal(a$max_inclusive, c(FALSE, NA, NA, NA))
+  expect_equal(a$pattern, c(NA, NA, "^[A-Z]{2}$", NA))
+  expect_identical(a$max_length, c(NA, NA, 8L, NA))
+  expect_identical(a$decimals, c(2L, 0L, NA, NA))
+  expect_equal(a$units, c("m", NA, NA, "kg"))
+  # A dictionary without the columns reads them as NA, typed, with no finding (R4).
+  plain <- read_dictionary(
+    read_input_table(dictionary[1:3], "dictionary"), gpq_column_map(), gpq_type_map()
+  )
+  expect_equal(nrow(plain$findings), 0L)
+  expect_equal(utils::tail(names(plain$attributes), 8L), roles)
+  expect_identical(plain$attributes$min_value, rep(NA_real_, 4L))
+  expect_identical(plain$attributes$min_inclusive, rep(NA, 4L))
+  expect_identical(plain$attributes$max_length, rep(NA_integer_, 4L))
+  expect_identical(plain$attributes$units, rep(NA_character_, 4L))
+})
+
+test_that("each range or format cell that doesn't read is one finding at its cell (D18.9)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    paste0(
+      "table_name,attribute_name,data_type,min_value,max_value,min_inclusive,max_inclusive,",
+      "pattern,max_length,decimals,units"
+    ),
+    "t,n1,numeric,abc,,,,,,,",
+    "t,n2,numeric,,Inf,,,,,,",
+    "t,n3,numeric,10,5,,,,,,",
+    "t,n4,numeric,1,,yes,,,,,",
+    "t,s1,character,,,,,([,,,",
+    "t,s2,character,,,,,,0,,",
+    "t,n5,numeric,,,,,,,-1,",
+    "t,s3,character,1,,,,,,,",
+    "t,n6,numeric,,,,,^1$,,,",
+    "t,n7,integer,,,,,,4,,",
+    "t,s4,character,abc,,,,,,,",
+    "t,u1,mystery,1,,,,,,,",
+    "t,d1,date,,,,,,,1,"
+  ), path)
+  dd <- read_dictionary(read_input_table(path, "dictionary"), gpq_column_map(), gpq_type_map())
+  file <- basename(path)
+  detail <- function(case, attribute, column, value, ...) {
+    report_text(
+      paste0("preflight_detail_dd_format_invalid_", case),
+      table_name = "t", attribute_name = attribute, column = column, value = value, ...
+    )
+  }
+  expected <- data.frame(
+    detail = c(
+      detail("number", "n1", "min_value", "abc"),
+      detail("number", "n2", "max_value", "Inf"),
+      detail("order", "n3", "min_value", "10", value_a = "10", value_b = "5"),
+      detail("flag", "n4", "min_inclusive", "yes"),
+      detail("pattern", "s1", "pattern", "(["),
+      detail("whole", "s2", "max_length", "0", n = 1L),
+      detail("whole", "n5", "decimals", "-1", n = 0L),
+      detail("type_number", "s3", "min_value", "1", data_type = "character"),
+      detail("type_text", "n6", "pattern", "^1$", data_type = "numeric"),
+      detail("type_text", "n7", "max_length", "4", data_type = "integer"),
+      # A cell that doesn't read has that finding only, none for its type (R23).
+      detail("number", "s4", "min_value", "abc"),
+      detail("type_number", "d1", "decimals", "1", data_type = "date")
+    ),
+    line = c(2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L, 11L, 12L, 14L)
+  )
+  found <- dd$findings
+  expect_true(all(found$rule_id == "dd_format_invalid"))
+  expect_true(all(found$input == "dictionary"))
+  expect_true(all(found$file == file))
+  expect_setequal(found$detail, expected$detail)
+  expect_equal(nrow(found), nrow(expected))
+  expect_equal(
+    found$source_cell[match(expected$detail, found$detail)], paste0(file, ":", expected$line)
+  )
+  # Each cell found is NA; a minimum above its maximum makes both NA (R13); a type the type
+  # map lacks is left to dd_type_unknown, its bound kept.
+  a <- dd$attributes
+  at <- function(attribute, column) a[[column]][a$attribute_name == attribute]
+  expect_true(is.na(at("n1", "min_value")))
+  expect_true(is.na(at("n2", "max_value")))
+  expect_true(is.na(at("n3", "min_value")) && is.na(at("n3", "max_value")))
+  expect_equal(at("n4", "min_value"), 1)
+  expect_true(is.na(at("n4", "min_inclusive")))
+  expect_true(is.na(at("s1", "pattern")))
+  expect_true(is.na(at("s2", "max_length")))
+  expect_true(is.na(at("n5", "decimals")))
+  expect_true(is.na(at("s3", "min_value")))
+  expect_true(is.na(at("n6", "pattern")))
+  expect_true(is.na(at("n7", "max_length")))
+  expect_equal(at("u1", "min_value"), 1)
+  expect_true(is.na(at("d1", "decimals")))
+  # gpq_read_spec() carries them to pre-flight, which stops on them.
+  spec <- gpq_read_spec(dictionary = path)
+  expect_equal(sum(spec$read_findings$rule_id == "dd_format_invalid"), nrow(expected))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})
+
+test_that("a range or format finding names its cell in a workbook, none in memory (R23)", {
+  frame <- data.frame(
+    table_name = "t", attribute_name = c("n1", "n2"), data_type = "numeric",
+    min_value = c("1", "abc"), max_length = c(NA, "3")
+  )
+  memory <- read_dictionary(read_input_table(frame, "dictionary"), gpq_column_map(), gpq_type_map())
+  expect_equal(nrow(memory$findings), 2L)
+  expect_true(all(is.na(memory$findings$source_cell)))
+  workbook <- stand_in(".xlsx")
+  located <- read_input_table(frame, "dictionary", list(path = workbook, sheet = "DD", rows = 2L))
+  dd <- read_dictionary(located, gpq_column_map(), gpq_type_map())
+  # Row 2 of the data is the sheet's row 3; min_value is column D and max_length column E.
+  expect_setequal(dd$findings$source_cell, c("DD!D3", "DD!E3"))
+})
+
+test_that("MAGPlot's dictionary gives eight ranges and four patterns, no lengths or places", {
+  a <- magp_spec()$attributes
+  ranged <- c(
+    "magp_sites elevation", "magp_sites slope", "magp_sites aspect", "magp_plots plot_elevation",
+    "magp_plots plot_slope", "magp_plots plot_aspect", "magp_tree_meas dbh",
+    "magp_tree_meas height"
+  )
+  name <- paste(a$table_name, a$attribute_name)
+  expect_setequal(name[!is.na(a$min_value) | !is.na(a$max_value)], ranged)
+  at <- match(ranged, name)
+  expect_equal(a$min_value[at], c(0, 0, 0, 0, 0, 0, 0.01, 0.01))
+  expect_equal(a$max_value[at], c(5000, 1143, 360, 5000, 1143, 360, 500, 110))
+  expect_true(all(a$min_inclusive[at]) && all(a$max_inclusive[at]))
+  expect_equal(
+    a$units[at], c("m", "percent", "degrees", "m", "percent", "degrees", "cm", "m")
+  )
+  patterned <- paste("magp_sites", c("ec_zone", "ec_province", "ec_region", "ec_district"))
+  expect_setequal(name[!is.na(a$pattern)], patterned)
+  # Each pattern is the DD's own, with single backslashes, and matches its example value.
+  examples <- c("1", "1.1", "01.1.001", "01.1.001.0001")
+  for (k in seq_along(patterned)) {
+    pattern <- a$pattern[match(patterned[[k]], name)]
+    expect_true(grepl(pattern, examples[[k]]), info = patterned[[k]])
+    expect_false(grepl("\\\\", pattern, fixed = TRUE), info = patterned[[k]])
+  }
+  expect_true(all(is.na(a$max_length)))
+  expect_true(all(is.na(a$decimals)))
+  expect_false("dd_format_invalid" %in% magp_spec()$read_findings$rule_id)
+})
+
+test_that("the toys' dictionaries give ranges and formats under their own names (R24)", {
+  fish <- fx_fish_spec()$attributes
+  fish_at <- function(attribute, column) fish[[column]][fish$attribute_name == attribute]
+  expect_equal(fish_at("station_name", "pattern"), "^[A-Za-z0-9 ]+$")
+  expect_identical(fish_at("station_name", "max_length"), 40L)
+  expect_equal(c(fish_at("depth", "min_value"), fish_at("depth", "max_value")), c(0, 500))
+  expect_identical(fish_at("depth", "decimals"), 1L)
+  expect_equal(c(fish_at("minutes", "min_value"), fish_at("minutes", "max_value")), c(1, 600))
+  expect_equal(fish_at("fish_count", "max_value"), 10000)
+  expect_equal(
+    c(fish_at("weight", "min_inclusive"), fish_at("weight", "max_inclusive")), c(FALSE, TRUE)
+  )
+  expect_identical(fish_at("weight", "decimals"), 3L)
+  expect_equal(fish_at("weight", "units"), "kg")
+  forest <- fx_forest_spec()$attributes
+  forest_at <- function(attribute, column) {
+    forest[[column]][forest$attribute_name == attribute][[1L]]
+  }
+  # One pattern for the three IDs: capitals, digits, "_" and "-", a capital first (R30).
+  id_pattern <- "^[A-Z][A-Z0-9_-]*$"
+  for (id in c("PLOT_ID", "TREE_ID", "MEAS_ID")) {
+    expect_equal(forest_at(id, "pattern"), id_pattern, info = id)
+  }
+  expect_equal(c(forest_at("PLOT_AREA", "min_value"), forest_at("PLOT_AREA", "max_value")), c(0, 1))
+  expect_false(forest_at("PLOT_AREA", "min_inclusive"))
+  expect_equal(c(forest_at("TREE_NO", "min_value"), forest_at("TREE_NO", "max_value")), c(1, 999))
+  expect_identical(forest_at("SPECIES", "max_length"), 4L)
+  expect_identical(forest_at("DBH", "decimals"), 1L)
+  expect_equal(forest_at("DBH", "units"), "cm")
+  # The forest example's data files and its clean base keep every value inside them, so
+  # Layer 3 finds nothing there (R24, R30): checked here on the values as written.
+  plots <- read_csv_text(example_file("forest_plots.csv"))$data
+  trees <- read_csv_text(example_file("forest_trees.csv"))$data
+  meas <- read_csv_text(example_file("forest_tree_meas.csv"))$data
+  clean <- fx_clean_tables(fx_forest_spec())
+  expect_true(all(grepl(id_pattern, c(plots$PLOT_ID, clean$PLOTS$PLOT_ID))))
+  expect_true(all(grepl(id_pattern, c(trees$TREE_ID, clean$TREES$TREE_ID))))
+  expect_true(all(grepl(id_pattern, c(meas$MEAS_ID, clean$TREE_MEAS$MEAS_ID))))
+  area <- as.numeric(plots$PLOT_AREA)
+  expect_true(all(area > 0 & area <= 1))
+  number <- as.integer(trees$TREE_NO)
+  expect_true(all(number >= 1L & number <= 999L))
+  expect_true(all(nchar(meas$SPECIES) <= 4L))
+  dbh <- as.numeric(meas$DBH)
+  expect_true(all(dbh > 0 & dbh <= 300))
+  expect_true(all(nchar(sub("^[0-9]*[.]?", "", meas$DBH)) <= 1L))
+  # The clean base's bounded, long and decimal columns too (the finish's minors pass, m20).
+  expect_true(all(clean$PLOTS$PLOT_AREA > 0 & clean$PLOTS$PLOT_AREA <= 1))
+  expect_true(all(clean$TREES$TREE_NO >= 1L & clean$TREES$TREE_NO <= 999L))
+  expect_true(all(nchar(clean$TREE_MEAS$SPECIES) <= 4L))
+  expect_true(all(clean$TREE_MEAS$DBH > 0 & clean$TREE_MEAS$DBH <= 300))
+  expect_true(all(decimal_places(clean$TREE_MEAS$DBH) <= 1L))
+})
+
+test_that("the bands' column and key give id_band_columns and each band's key (D18.2, D18.18)", {
+  # Sites reach their contributor through their dataset; the labels sheet gives each label's
+  # contributor ID.
+  read_with <- function(changes = list()) {
+    bands <- list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "site_id",
+      key = "dataset_id > contributor_id"
+    )
+    # Assigned by `[<-`, which keeps an element set to NULL, as modifyList() wouldn't.
+    bands[names(changes)] <- changes
+    gpq_read_spec(
+      data.frame(
+        table_name = c("sites", "sites", "datasets", "datasets"),
+        attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id"),
+        key_type = c("PK", "FK", "PK", NA), reference_table = c(NA, "datasets", NA, NA),
+        data_type = c("integer", "character", "character", "character")
+      ),
+      code_lists = list(
+        ranges = data.frame(
+          contributor = c("AB", "PE", "reserved_1", "BC"),
+          v2_start = c("1", "100", "200", "300"), v2_end = c("99", "199", "299", "399")
+        ),
+        contributor = data.frame(
+          abbreviated_name = c("AB", "PE", "BC"), contributor_id = c("100", "120", "110")
+        )
+      ),
+      non_code_sheets = c("ranges", "contributor"),
+      id_bands = bands
+    )
+  }
+  spec <- read_with()
+  expect_false("site_id_range_invalid" %in% spec$read_findings$rule_id)
+  # A reserved band has no key.
+  expect_equal(spec$id_bands$key_value, c("100", "120", NA, "110"))
+  # The labels sheet and column go with it, for the A2 label one_to_many needs (D18.38).
+  expect_equal(as.list(spec$id_band_columns), list(
+    table_name = "sites", attribute_name = "site_id",
+    key_attribute = "dataset_id > contributor_id", labels_sheet = "contributor",
+    labels_column = "abbreviated_name"
+  ))
+  # Each problem is a finding of its own, and the column then has no row.
+  found <- function(spec) {
+    findings <- spec$read_findings
+    findings$detail[findings$rule_id == "site_id_range_invalid"]
+  }
+  column <- read_with(list(attribute = "plot_id"))
+  expect_equal(found(column), report_text(
+    "preflight_detail_site_id_range_invalid_column",
+    table_name = "sites", attribute_name = "plot_id"
+  ))
+  expect_equal(nrow(column$id_band_columns), 0L)
+  key <- read_with(list(key = "contributor_id"))
+  expect_equal(found(key), report_text(
+    "preflight_detail_site_id_range_invalid_key",
+    value = "contributor_id", table_name = "sites"
+  ))
+  expect_true(all(is.na(key$id_bands$key_value)))
+  sheet <- read_with(list(key = "dataset_id > dataset_id"))
+  expect_equal(found(sheet), report_text(
+    "preflight_detail_site_id_range_invalid_key_sheet",
+    attribute_name = "dataset_id", sheet = "contributor"
+  ))
+  no_labels <- read_with(list(labels_from = NULL))
+  expect_equal(found(no_labels), report_text(
+    "preflight_detail_site_id_range_invalid_key_labels",
+    value = "dataset_id > contributor_id"
+  ))
+  expect_equal(nrow(no_labels$id_band_columns), 0L)
+  expect_error(gpq_preflight(column), class = "gpq_preflight_error")
+})
+
+test_that("id_bands' column and key are optional, and come together or not at all (R8, R33)", {
+  # M2's six elements still read, with no column and no keys.
+  built <- build_id_bands(band_spec, band_lists(), "lookup.xlsx")
+  expect_equal(nrow(built$columns), 0L)
+  expect_true(all(is.na(built$bands$key_value)))
+  expect_named(built$bands, names(spec_schema()$id_bands))
+  # Two of the three is a caller's error, and so is a part that isn't one name.
+  for (changes in list(
+    list(table = "sites", attribute = "site_id"),
+    list(table = "sites", attribute = "site_id", key = c("a", "b")),
+    list(table = "sites", attribute = NA_character_, key = "a")
+  )) {
+    expect_error(
+      build_id_bands(c(band_spec, changes), band_lists(), "lookup.xlsx"),
+      "optionally table, attribute and key, all three",
+      fixed = TRUE
+    )
+  }
+})
+
+# task 6's fix round (the spec review's I1, D18.57)
+test_that("each value of the bands' key has one band; a later one names the first (D18.57)", {
+  read_with <- function(ranges, contributor) {
+    gpq_read_spec(
+      data.frame(
+        table_name = c("sites", "sites", "datasets", "datasets"),
+        attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id"),
+        key_type = c("PK", "FK", "PK", NA), reference_table = c(NA, "datasets", NA, NA),
+        data_type = c("integer", "character", "character", "character")
+      ),
+      code_lists = list(ranges = ranges, contributor = contributor),
+      non_code_sheets = c("ranges", "contributor"),
+      id_bands = list(
+        sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+        labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+        reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "site_id",
+        key = "dataset_id > contributor_id"
+      )
+    )
+  }
+  found <- function(spec) {
+    findings <- spec$read_findings
+    findings$detail[findings$rule_id == "site_id_range_invalid"]
+  }
+  contributors <- data.frame(
+    abbreviated_name = c("AB", "PE", "BC"), contributor_id = c("100", "120", "110")
+  )
+  # One label with two bands: the second names the first.
+  twice <- read_with(
+    data.frame(
+      contributor = c("AB", "PE", "AB"), v2_start = c("1", "100", "300"),
+      v2_end = c("99", "199", "399")
+    ),
+    contributors
+  )
+  expect_equal(found(twice), paste(
+    "Bands \"AB\" (row 1) and \"AB\" (row 3) both belong to contributor_id \"100\";",
+    "each contributor_id can have only one band."
+  ))
+  expect_error(gpq_preflight(twice), class = "gpq_preflight_error")
+  # Two labels with one key, and a third: each later band names the first of its key.
+  shared <- read_with(
+    data.frame(
+      contributor = c("AB", "AL", "PE", "AQ"), v2_start = c("1", "100", "200", "300"),
+      v2_end = c("99", "199", "299", "399")
+    ),
+    data.frame(
+      abbreviated_name = c("AB", "AL", "PE", "AQ"),
+      contributor_id = c("100", "100", "120", "100")
+    )
+  )
+  expect_equal(found(shared), report_text(
+    "preflight_detail_site_id_range_invalid_duplicate_key",
+    label = "AB", location = "row 1", other_label = c("AL", "AQ"),
+    other_location = c("row 2", "row 4"), attribute_name = "contributor_id", value = "100"
+  ))
+  # The bands keep their keys and the column its row; pre-flight stops on the findings.
+  expect_equal(shared$id_bands$key_value, c("100", "100", "120", "100"))
+  expect_equal(nrow(shared$id_band_columns), 1L)
+  expect_error(gpq_preflight(shared), class = "gpq_preflight_error")
+  # Reserved bands have no key, so two of them repeat none; one band per key passes.
+  reserved <- read_with(
+    data.frame(
+      contributor = c("AB", "reserved_1", "reserved_2", "BC"),
+      v2_start = c("1", "100", "200", "300"), v2_end = c("99", "199", "299", "399")
+    ),
+    contributors
+  )
+  expect_equal(found(reserved), character())
+})
+
+# ---- task 11 ----
+
+test_that("key_pairs is read, each bad table or side one finding at its cell (D18.1, D18.36)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "stand", "tree_id", "plot_id", "stand"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Rows 2 to 4 each break once: a table the dictionary lacks, a left side that isn't an
+  # attribute, a right side whose first hop isn't a foreign key.
+  data.table::fwrite(data.frame(
+    table_name = c("trees", "stands", "trees", "trees"),
+    left = c("stand", "stand", "height", "stand"),
+    right = c("plot_id > stand", "plot_id > stand", "plot_id > stand", "tree_id > stand"),
+    note = NA
+  ), path)
+  spec <- gpq_read_spec(dictionary, key_pairs = path)
+  expect_equal(spec$key_pairs$table_name, c("trees", "stands", "trees", "trees"))
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_key_pair_invalid_table", table_name = "stands"),
+    report_text("preflight_detail_key_pair_invalid_side", value = "height", table_name = "trees"),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = "tree_id > stand", table_name = "trees"
+    )
+  ))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 3:5))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # Given in memory, a finding has no cell; a table without exactly the columns is the caller's.
+  memory <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "trees", left = "height", right = "stand", note = NA
+  ))
+  expect_true(is.na(memory$read_findings$source_cell[
+    memory$read_findings$rule_id == "key_pair_invalid"
+  ]))
+  expect_error(
+    gpq_read_spec(dictionary, key_pairs = data.frame(table_name = "trees", left = "stand")),
+    "`key_pairs` must have exactly the columns table_name, left, right, note",
+    fixed = TRUE
+  )
+})
+
+# task 11's fix round (the report review's M3)
+test_that("a key pair's blank table or blank side is one finding at its cell, read (blank)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "stand", "tree_id", "plot_id", "stand"),
+    key_type = c("PK", NA, "PK", "FK", NA), reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Row 1 has no table, so its sides aren't read; rows 2 and 3 a blank left and right side.
+  data.table::fwrite(data.frame(
+    table_name = c(NA, "trees", "trees"), left = c("stand", NA, "stand"),
+    right = c("plot_id > stand", "plot_id > stand", NA), note = NA
+  ), path)
+  spec <- gpq_read_spec(dictionary, key_pairs = path)
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_key_pair_invalid_table", table_name = NA_character_),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = NA_character_, table_name = "trees"
+    ),
+    report_text(
+      "preflight_detail_key_pair_invalid_side",
+      value = NA_character_, table_name = "trees"
+    )
+  ))
+  expect_true(all(grepl("(blank)", found$detail, fixed = TRUE)))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 2:4))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})
+
+# ---- task 12 ----
+
+test_that("one_to_many is read, and each row that can't apply is one warning (D18.36)", {
+  # Sites and visits reach their contributor through their dataset; A2 gives ON's sites and
+  # visits an ID and AB's visits none.
+  read_with <- function(one_to_many, banded = TRUE) {
+    bands <- list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = NULL
+    )
+    if (banded) {
+      bands <- c(bands, list(
+        table = "sites", attribute = "site_id", key = "dataset_id > contributor_id"
+      ))
+    }
+    gpq_read_spec(
+      data.frame(
+        table_name = c(
+          "sites", "sites", "sites", "visits", "visits", "visits", "datasets", "datasets"
+        ),
+        attribute_name = c(
+          "site_id", "dataset_id", "src_site_id", "visit_id", "site_id", "src_visit_id",
+          "dataset_id", "contributor_id"
+        ),
+        key_type = c("PK", "FK", NA, "PK", "FK", NA, "PK", NA),
+        reference_table = c(NA, "datasets", NA, NA, "sites", NA, NA, NA),
+        appendix = c(NA, NA, "A2", NA, NA, "A2", NA, NA),
+        data_type = c(
+          "integer", "character", "character", "character", "integer", "character",
+          "character", "character"
+        )
+      ),
+      code_lists = list(
+        ranges = data.frame(
+          contributor = c("AB", "ON"), v2_start = c("1", "100"), v2_end = c("99", "199")
+        ),
+        contributor = data.frame(
+          abbreviated_name = c("AB", "ON"), contributor_id = c("100", "130")
+        )
+      ),
+      non_code_sheets = c("ranges", "contributor"),
+      lineage_spec = data.frame(
+        contributor_label = c("ON", "ON", "AB", "AB"),
+        table_name = c("sites", "visits", "sites", "visits"),
+        attribute_name = c("src_site_id", "src_visit_id", "src_site_id", "src_visit_id"),
+        spec_type = "id", source_text = c("site.id", "visit.id", "plot.id", NA), note = NA,
+        source_cell = c("A2!D2", "A2!D3", "A2!F2", "A2!F3")
+      ),
+      id_pattern = "^src_.*_id$", id_bands = bands, one_to_many = one_to_many,
+      column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+    )
+  }
+  path <- withr::local_tempfile(fileext = ".csv")
+  # ON's visits apply; ON's dataset_id isn't an ID; QC isn't an A2 label; AB's A2 cell is blank.
+  data.table::fwrite(data.frame(
+    contributor_label = c("ON", "ON", "QC", "AB"),
+    table_name = c("visits", "sites", "visits", "visits"),
+    attribute_name = c("src_visit_id", "dataset_id", "src_visit_id", "src_visit_id"),
+    note = NA
+  ), path)
+  spec <- read_with(path)
+  rows <- spec$one_to_many
+  expect_equal(rows$source_cell, paste0(basename(path), ":", 2:5))
+  detail <- function(case, row) {
+    report_text(
+      paste0("preflight_detail_one_to_many_invalid_", case),
+      contributor_label = rows$contributor_label[[row]], table_name = rows$table_name[[row]],
+      attribute_name = rows$attribute_name[[row]]
+    )
+  }
+  expect_equal(one_to_many_problems(spec), c(
+    NA, detail("attribute", 2L), detail("contributor", 3L), detail("no_id", 4L)
+  ))
+  results <- preflight_checks(spec)
+  found <- results[results$rule_id == "one_to_many_invalid"]
+  expect_equal(found$outcome, rep("warn", 3L))
+  expect_equal(found$source_cell, paste0(basename(path), ":", 3:5))
+  # Without the bands' column and key, no record has a label: every row no_label first.
+  unbanded <- read_with(path, banded = FALSE)
+  expect_equal(
+    one_to_many_problems(unbanded), vapply(1:4, function(row) detail("no_label", row), "")
+  )
+  expect_error(
+    read_with(data.frame(contributor_label = "ON", table_name = "visits")),
+    "`one_to_many` must have exactly the columns",
+    fixed = TRUE
+  )
+})
+
+# ---- task 13 ----
+
+test_that("reach is read, each bad row one finding at its cell (D18.4, D18.36)", {
+  dictionary <- data.frame(
+    table_name = c("plots", "trees", "trees"),
+    attribute_name = c("plot_id", "tree_id", "plot_id"),
+    key_type = c("PK", "PK", "FK"), reference_table = c(NA, NA, "plots"),
+    data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  # Two sound rows, then on lines 4 to 7 an unknown table, an unknown how, a link on a key
+  # that isn't a foreign key, and an exempt row naming an attribute.
+  data.table::fwrite(data.frame(
+    table_name = c("plots", "trees", "stands", "trees", "trees", "plots"),
+    attribute_name = c(NA, "plot_id", NA, "plot_id", "tree_id", "plot_id"),
+    how = c("root", "from_parent", "root", "sometimes", "from_child", "exempt")
+  ), path)
+  spec <- gpq_read_spec(dictionary, reach = path)
+  expect_equal(
+    spec$reach$how, c("root", "from_parent", "root", "sometimes", "from_child", "exempt")
+  )
+  found <- spec$read_findings[spec$read_findings$rule_id == "reach_invalid"]
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_reach_invalid_table", table_name = "stands"),
+    report_text("preflight_detail_reach_invalid_how", value = "sometimes", table_name = "trees"),
+    report_text(
+      "preflight_detail_reach_invalid_key",
+      table_name = "trees", attribute_name = "tree_id"
+    ),
+    report_text(
+      "preflight_detail_reach_invalid_attribute",
+      table_name = "plots", attribute_name = "plot_id", value = "exempt"
+    ),
+    # The exempt row makes plots, the root, exempt too, so no walk reaches trees, which the
+    # walk checks: one finding at its first row, line 3 (task 13's fix round, D18.65).
+    report_text("preflight_detail_reach_invalid_unreachable", table_name = "trees")
+  ))
+  expect_equal(found$source_cell, paste0(basename(path), ":", c(4:7, 3L)))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # The sound rows alone pass.
+  sound <- gpq_read_spec(dictionary, reach = data.frame(
+    table_name = c("plots", "trees"), attribute_name = c(NA, "plot_id"),
+    how = c("root", "from_parent")
+  ))
+  expect_false("reach_invalid" %in% sound$read_findings$rule_id)
+})
+
+# task 13's fix round (D18.65)
+test_that("reach_invalid finds each table the walk checks that no walk from a root reaches", {
+  # Sites, their plots and the plots' trees.
+  dictionary <- data.frame(
+    table_name = c("sites", "plots", "plots", "trees", "trees"),
+    attribute_name = c("site_id", "plot_id", "site_id", "tree_id", "plot_id"),
+    key_type = c("PK", "PK", "FK", "PK", "FK"),
+    reference_table = c(NA, NA, "sites", NA, "plots"), data_type = "character"
+  )
+  path <- withr::local_tempfile(fileext = ".csv")
+  read_from <- function(reach) {
+    data.table::fwrite(reach, path)
+    gpq_read_spec(dictionary, reach = path)
+  }
+  found_in <- function(spec) spec$read_findings[spec$read_findings$rule_id == "reach_invalid"]
+  unreached <- function(tables) {
+    vapply(tables, function(table) {
+      report_text("preflight_detail_reach_invalid_unreachable", table_name = table)
+    }, "", USE.NAMES = FALSE)
+  }
+  at <- function(lines) paste0(basename(path), ":", lines)
+  # No root: each table the walk checks, the parent a from_child row names included, one
+  # finding, at its own row or, without one, at the from_child row naming it.
+  rootless <- read_from(data.frame(
+    table_name = "trees", attribute_name = "plot_id", how = "from_child"
+  ))
+  found <- found_in(rootless)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(c(2L, 2L)))
+  expect_error(gpq_preflight(rootless), class = "gpq_preflight_error")
+  # The only root also exempt: no walk starts, so neither table below it is reached.
+  exempt_root <- read_from(data.frame(
+    table_name = c("sites", "sites", "plots", "trees"),
+    attribute_name = c(NA, NA, "site_id", "plot_id"),
+    how = c("root", "exempt", "from_parent", "from_parent")
+  ))
+  found <- found_in(exempt_root)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(4:5))
+  # A root, but trees named only by a from_child row: nothing reaches trees, nor so the plots
+  # its row names.
+  from_below <- read_from(data.frame(
+    table_name = c("sites", "trees"), attribute_name = c(NA, "plot_id"),
+    how = c("root", "from_child")
+  ))
+  found <- found_in(from_below)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, at(c(3L, 3L)))
+  # Every table reached: from the root down, and back up from the trees.
+  walked <- read_from(data.frame(
+    table_name = c("sites", "plots", "trees", "trees"),
+    attribute_name = c(NA, "site_id", "plot_id", "plot_id"),
+    how = c("root", "from_parent", "from_parent", "from_child")
+  ))
+  expect_equal(nrow(found_in(walked)), 0L)
+  checks <- preflight_checks(walked)
+  expect_equal(checks$outcome[checks$rule_id == "reach_invalid"], "pass")
+})
+
+# ---- the Copilot fix round (R170) ----
+
+test_that("a key pair's unknown side is a finding beside a dictionary row with no name", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", NA), key_type = c("PK", NA),
+    data_type = "character"
+  )
+  pairs <- data.frame(table_name = "t", left = "missing", right = "id", note = NA)
+  # The reader stopped on the row with no attribute name; now the left side is a finding.
+  spec <- gpq_read_spec(dictionary, key_pairs = pairs)
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, report_text(
+    "preflight_detail_key_pair_invalid_side",
+    value = "missing", table_name = "t"
+  ))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # Read from a file, the finding keeps its cell.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(pairs, path)
+  from_file <- gpq_read_spec(dictionary, key_pairs = path)
+  found <- from_file$read_findings[from_file$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$source_cell, paste0(basename(path), ":2"))
+})
+
+test_that("the bands' unknown column is a finding beside a dictionary row with no name", {
+  # The bands' table has a row with no attribute name; the banded column isn't in it.
+  spec <- gpq_read_spec(
+    data.frame(
+      table_name = c("sites", "sites", "datasets", "datasets", "sites"),
+      attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id", NA),
+      key_type = c("PK", "FK", "PK", NA, NA), reference_table = c(NA, "datasets", NA, NA, NA),
+      data_type = c("integer", "character", "character", "character", "character")
+    ),
+    code_lists = list(
+      ranges = data.frame(
+        contributor = c("AB", "PE"), v2_start = c("1", "100"), v2_end = c("99", "199")
+      ),
+      contributor = data.frame(abbreviated_name = c("AB", "PE"), contributor_id = c("100", "120"))
+    ),
+    non_code_sheets = c("ranges", "contributor"),
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "plot_id",
+      key = "dataset_id > contributor_id"
+    )
+  )
+  findings <- spec$read_findings
+  expect_equal(findings$detail[findings$rule_id == "site_id_range_invalid"], report_text(
+    "preflight_detail_site_id_range_invalid_column",
+    table_name = "sites", attribute_name = "plot_id"
+  ))
+  expect_equal(nrow(spec$id_band_columns), 0L)
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
 })

@@ -39,14 +39,19 @@ rows' \code{severity} column gives this tier. Pre-flight checks each entry
 (\code{rule_id_unknown}, \code{rule_set_override_invalid}); a pre-flight check's own
 outcome can't be changed.
 \item \code{groundplotqc.example_cap}: how many distinct failing values a results row
-shows in its \code{examples} column. Built-in: \code{5}.
+shows in its \code{examples} column. Built-in: \code{5}. It also caps how many values
+\code{design_geometry_inconsistent} and \code{design_duplicate_signature} list in an
+issue's \code{expected}, which then ends with a count of the rest; at 0,
+\code{expected} is NA, as \code{examples} is.
 \item \code{groundplotqc.column_level_min_n}: the fewest records a column must have in
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: \code{10}.
 \item \code{groundplotqc.raw_na_policy}: when a raw \code{NA} is an error (\code{raw_na}) in a
-column outside the primary and foreign keys, whose missing values Layer 4
-reports: \code{"when_sentinels"}, only in a column whose type has missing-value
-codes; \code{"always"}; or \code{"never"}. Built-in: \code{"when_sentinels"}.
+column outside the primary and foreign keys, whose missing values
+\code{pk_missing} and \code{fk_unassigned} report (Layer 4, see
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}}): \code{"when_sentinels"}, only in a column whose type
+has missing-value codes; \code{"always"}; or \code{"never"}. Built-in:
+\code{"when_sentinels"}.
 \item \code{groundplotqc.rogue_codes}: values that stand in for a missing value but
 aren't the agreed codes (\code{sentinel_rogue_code}), compared as numbers in a
 column stored as numbers, as text otherwise. A value is never one when it
@@ -57,13 +62,50 @@ code that \code{sentinel_wrong_type} reports. Built-in:
 \item \code{groundplotqc.unknown_codes}: codes for "unknown" by attribute, such as
 \code{c(species = "UNKN.SPP")} (\code{species_unknown_code}); an attribute may be
 named more than once. Built-in: none.
+\item \code{groundplotqc.coordinate_attributes}: attribute names, in any table, that
+\code{coordinate_out_of_bounds} checks against the dictionary's minimum and
+maximum, and that \code{value_below_min} and \code{value_above_max} then leave
+alone. Built-in: none.
+\item \code{groundplotqc.code_set_max_values}: the most distinct values a text column
+without a code list can hold and still be reported by
+\code{undeclared_code_set}, which judges only a column holding more values than
+this, not counting NA, blanks, missing-value codes and unknown codes.
+Built-in: \code{25}.
+\item \code{groundplotqc.code_set_skip_attributes}: attributes \code{undeclared_code_set}
+never judges. Built-in: none.
+\item \code{groundplotqc.code_set_skip_pattern}: one regular expression;
+\code{undeclared_code_set} doesn't judge an attribute whose name matches it.
+Built-in: none.
+\item \code{groundplotqc.design_geometry_table}, \code{groundplotqc.design_geometry_by} and
+\code{groundplotqc.design_geometry_columns}: the table
+\code{design_geometry_inconsistent} reads, the attributes that group its
+records, and the attributes that must agree within a group. Built-in: none.
+\item \code{groundplotqc.subplot_label_table} and \code{groundplotqc.subplot_label_columns}:
+the table \code{subplot_label_ambiguous} reads and the attributes that label its
+records. Built-in: none.
+\item \code{groundplotqc.design_signature_table}, \code{groundplotqc.design_signature_by}
+and \code{groundplotqc.design_signature_columns}: the table
+\code{design_duplicate_signature} reads, its foreign key to the records
+compared, and the attributes whose values, over the table's rows that name
+a record, make up that record's signature. Built-in: none.
 }
 
 In a rule set's settings rows, a whole number has type \code{integer}, a setting
 with several values gives them joined by "; ", and a named one gives
 "name=value" parts. In every tier, a code can't be empty, begin or end with
 a space, tab or line break, or hold ";". In \code{groundplotqc.unknown_codes} the
-same holds for each name, and neither a code nor a name can hold "=".
+same holds for each name, and neither a code nor a name can hold "=". The
+same holds for each table and attribute name in
+\code{groundplotqc.coordinate_attributes}, \code{groundplotqc.code_set_skip_attributes}
+and the eight options above.
+
+Options apply to every specification checked in the session. A table or
+attribute an option names that a specification doesn't have is reported by
+pre-flight as a warning (\code{option_unknown_name}) and otherwise ignored; given
+as an argument or in a rule set, such a name stops pre-flight
+(\code{setting_unknown_name}). In \code{groundplotqc.design_geometry_by},
+\code{groundplotqc.subplot_label_columns} and \code{groundplotqc.design_signature_columns}, one such
+name drops the whole option, so its check doesn't run.
 
 More options are added by the versions that bring the settings they control.
 }

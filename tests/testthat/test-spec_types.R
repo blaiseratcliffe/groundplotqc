@@ -4,7 +4,9 @@ test_that("gpq_column_map has MAGPlot's names by default and checks its argument
   map <- gpq_column_map()
   expect_s3_class(map, "gpq_column_map")
   expect_named(map, c(
-    "table", "attribute", "type", "key_type", "reference", "lookup", "description", "lineage_flag"
+    "table", "attribute", "type", "key_type", "reference", "lookup", "description", "lineage_flag",
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
   ))
   expect_equal(map$type, c("data_type", "datatype"))
   expect_null(map$lineage_flag)
@@ -155,4 +157,38 @@ test_that("the forest example's defect list names records that exist", {
   expect_equal(change("M003", "M004", "SPECIES"), c("SW", "BW"))
   expect_equal(change("M005", "M006", "DBH"), c("21.4", "19.0"))
   expect_equal(change("M007", "M008", "STATUS"), c("D", "L"))
+})
+
+test_that("gpq_column_map names the range and format columns, the DD's names by default (D18.9)", {
+  roles <- c(
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
+  )
+  map <- gpq_column_map()
+  for (role in roles) {
+    expect_equal(map[[role]], role, info = role)
+  }
+  fish <- fx_fish_column_map()
+  expect_equal(
+    unlist(fish[roles], use.names = FALSE),
+    c("low", "high", "low_in", "high_in", "format", "width", "places", "unit")
+  )
+  # Each is one column name, checked as `table` is.
+  for (role in roles) {
+    two <- stats::setNames(list(c("a", "b")), role)
+    expect_error(
+      do.call(gpq_column_map, two), sprintf("`%s` must be one column name.", role),
+      fixed = TRUE, info = role
+    )
+    blank <- stats::setNames(list("  "), role)
+    expect_error(
+      do.call(gpq_column_map, blank), sprintf("`%s` must be one column name.", role),
+      fixed = TRUE, info = role
+    )
+    missing <- stats::setNames(list(NA_character_), role)
+    expect_error(
+      do.call(gpq_column_map, missing), sprintf("`%s` must be one column name.", role),
+      fixed = TRUE, info = role
+    )
+  }
 })

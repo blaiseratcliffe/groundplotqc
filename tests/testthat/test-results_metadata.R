@@ -76,10 +76,17 @@ test_that("settings: each declared setting with its tier, then severity entries 
   plain <- settings_metadata()
   expect_equal(names(plain), c("setting", "value", "tier"))
   declared <- c(
-    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes"
+    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
+    "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
+    "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
+    "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
+    "design_signature_table", "design_signature_by", "design_signature_columns"
   )
   expect_equal(plain$setting, declared)
-  expect_equal(plain$value, c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA))
+  expect_equal(
+    plain$value,
+    c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA, NA, rep(NA, 8L))
+  )
   expect_true(all(plain$tier == "built-in"))
   rule_set <- list(
     rules = fx_empty_rule_set()$rules,
@@ -91,8 +98,9 @@ test_that("settings: each declared setting with its tier, then severity entries 
   expect_equal(rows$setting, c(
     declared, "severity:fk_orphan", "severity:fk_orphan", "severity:pk_missing"
   ))
-  expect_equal(rows$value[-(2:6)], c("en", "error", "warning", "error"))
-  expect_equal(rows$tier[-(2:6)], c("argument", "argument", "option", "option"))
+  later <- seq_along(declared)[-1L]
+  expect_equal(rows$value[-later], c("en", "error", "warning", "error"))
+  expect_equal(rows$tier[-later], c("argument", "argument", "option", "option"))
   expect_no_error(validate_schema(rows, "settings", metadata_schema()$settings))
   for (column in c("setting", "tier")) {
     blank <- data.table::copy(rows)
@@ -155,6 +163,10 @@ test_that("a run's metadata has 9.5's tables in order, checked", {
   expect_true(all(metadata$clashes$rule_id == "spec_clash_resolved"))
   expect_equal(metadata$settings$setting, c(
     "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
+    "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
+    "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
+    "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
+    "design_signature_table", "design_signature_by", "design_signature_columns",
     "severity:value_odd"
   ))
   bad_id <- data.table::copy(metadata)

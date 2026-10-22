@@ -1,1 +1,3 @@
 rule_id,table_name,attribute_name,severity,class,enabled
+record_unreachable,magp_designs,*,warning,,TRUE
+record_unreachable,magp_trees,*,warning,,TRUE

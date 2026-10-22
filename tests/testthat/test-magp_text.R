@@ -21,8 +21,32 @@ test_that("MAGPlot's texts follow the engine file's rules: ASCII, braces only fo
   expect_equal(nrow(found), 0L)
 })
 
-# The shipped file has no rows, so the three tests above assert nothing about a row until
-# one arrives; the tests below read planted files through magp_texts() instead.
+# task 12's fix round (the report review's M2)
+test_that("MAGPlot's src_id_duplicate row overrides the engine's when given as text (D14.8)", {
+  texts <- magp_texts()
+  row <- texts$text[texts$text_id == "src_id_duplicate" & texts$lang == "en"]
+  expect_length(row, 1L)
+  # The words aren't pinned: only that the table's row is the one used, and differs.
+  overridden <- report_text("src_id_duplicate", text = texts)
+  expect_equal(overridden, row)
+  expect_false(identical(overridden, report_text("src_id_duplicate")))
+})
+
+# task 14's fix round 1 (the report review's F2)
+test_that("MAGPlot's design candidate rows override the engine's when given as text (D14.8)", {
+  texts <- magp_texts()
+  for (id in c("design_geometry_inconsistent", "design_duplicate_signature")) {
+    row <- texts$text[texts$text_id == id & texts$lang == "en"]
+    expect_length(row, 1L)
+    # The words aren't pinned: only that the table's row is the one used, and differs.
+    overridden <- report_text(id, text = texts)
+    expect_equal(overridden, row, info = id)
+    expect_false(identical(overridden, report_text(id)), info = id)
+  }
+})
+
+# The four tests above check the shipped file's rows (D18.54); the tests below read planted
+# files through magp_texts().
 
 test_that("magp_texts hands on a clean file's rows, checked", {
   file <- withr::local_tempfile(fileext = ".csv")

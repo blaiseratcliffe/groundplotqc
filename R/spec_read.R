@@ -16,7 +16,9 @@ spec_schema <- function() {
     attributes = c(
       table_name = chr, attribute_name = chr, data_type = chr, r_class = chr,
       key_type = chr, reference_table = chr, lookup = chr, description = chr,
-      lineage_flag = lgl, id_marked = lgl, source_row = int
+      lineage_flag = lgl, id_marked = lgl, source_row = int, min_value = dbl, max_value = dbl,
+      min_inclusive = lgl, max_inclusive = lgl, pattern = chr, max_length = int, decimals = int,
+      units = chr
     ),
     keys = c(
       table_name = chr, attribute_name = chr, key_type = chr, key_part = int,
@@ -48,8 +50,18 @@ spec_schema <- function() {
     ),
     id_bands = c(
       label = chr, band_start = dbl, band_end = dbl, reserved = lgl, source_row = int,
+      source_cell = chr, key_value = chr
+    ),
+    id_band_columns = c(
+      table_name = chr, attribute_name = chr, key_attribute = chr, labels_sheet = chr,
+      labels_column = chr
+    ),
+    key_pairs = c(table_name = chr, left = chr, right = chr, note = chr),
+    one_to_many = c(
+      contributor_label = chr, table_name = chr, attribute_name = chr, note = chr,
       source_cell = chr
     ),
+    reach = c(table_name = chr, attribute_name = chr, how = chr),
     type_map = c(data_type = chr, r_class = chr, date_format = chr),
     sentinels = c(
       data_type = chr, role = chr, value = chr, allowed_in_pk = lgl, allowed_in_fk = lgl
@@ -66,7 +78,7 @@ spec_schema <- function() {
   )
 }
 
-#' The columns of the precedence, lineage-spec and site-ID-band inputs
+#' The columns of the precedence, lineage-spec, site-ID-band, key-pair, one-to-many and reach inputs
 #' @noRd
 spec_input_schema <- function() {
   list(
@@ -76,8 +88,12 @@ spec_input_schema <- function() {
       "note", "source_cell"
     ),
     id_bands = c(
-      "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern"
-    )
+      "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern", "table",
+      "attribute", "key"
+    ),
+    key_pairs = c("table_name", "left", "right", "note"),
+    one_to_many = c("contributor_label", "table_name", "attribute_name", "note"),
+    reach = c("table_name", "attribute_name", "how")
   )
 }
 
@@ -604,7 +620,125 @@ read_dictionary <- function(table, column_map, type_map, id_pattern = NULL) {
       file_rows(table$where, seq_len(n) + 1L)
     }
   )
-  list(attributes = attributes, findings = findings)
+  # The range and format columns, typed, and a finding per cell that doesn't read (D18.9).
+  formats <- read_dd_formats(data, column_map, attributes, table$where)
+  attributes <- cbind(attributes, formats$columns)
+  list(attributes = attributes, findings = rbindlist(list(findings, formats$findings)))
+}
+
+#' The dictionary's range and format columns typed, and their dd_format_invalid findings
+#' (D18.9, D18.19, D18.28, R4, R13)
+#'
+#' A column the dictionary lacks is NA throughout. A bound is a decimal number, finite; a
+#' flag TRUE or FALSE in any case, a blank one TRUE where its bound is given; a pattern one
+#' that grepl() compiles; `max_length` a whole number of 1 or more and `decimals` of 0 or
+#' more. A cell that doesn't read is one finding and NA. A bound or `decimals` on a type that
+#' isn't a number type (integer or numeric), or `max_length` or `pattern` on one that is, is
+#' one finding and NA; an attribute of a type the type map lacks is left to
+#' `dd_type_unknown`. A minimum above its maximum is one finding, and both are NA (R13).
+#' Each finding names its cell, through the dictionary's origin (D12.33). Returns `columns`,
+#' a data.table of the eight columns in the attributes' order, and `findings`.
+#' @noRd
+read_dd_formats <- function(data, column_map, attributes, where) {
+  n <- nrow(data)
+  present <- names(data)
+  roles <- c(
+    "min_value", "max_value", "min_inclusive", "max_inclusive", "pattern", "max_length",
+    "decimals", "units"
+  )
+  text <- lapply(roles, function(role) {
+    name <- column_map[[role]]
+    if (!is.null(name) && name %in% present) data[[name]] else rep(NA_character_, n)
+  })
+  names(text) <- roles
+  # The findings so far, held in an environment that finding() adds to.
+  found <- new.env(parent = emptyenv())
+  found$tables <- list(empty_table(spec_schema()$read_findings))
+  # One finding per cell, at its cell; `values` fills the detail's other slots.
+  finding <- function(role, rows, detail_id, values = list()) {
+    if (length(rows) == 0L) {
+      return(invisible(NULL))
+    }
+    column <- match(column_map[[role]], present)
+    detail <- do.call(report_text, c(
+      list(
+        paste0("preflight_detail_dd_format_invalid_", detail_id),
+        table_name = attributes$table_name[rows],
+        attribute_name = attributes$attribute_name[rows], column = column_map[[role]],
+        value = text[[role]][rows]
+      ),
+      values
+    ))
+    found$tables[[length(found$tables) + 1L]] <- data.table(
+      rule_id = "dd_format_invalid", input = "dictionary", file = where$file, detail = detail,
+      source_cell = cell_references(where, rows + 1L, rep(column, length(rows)))
+    )
+  }
+  number_type <- attributes$r_class %chin% c("integer", "double")
+  known_type <- !is.na(attributes$r_class)
+  # A cell of a type it doesn't fit is one finding, its value NA.
+  fits <- function(role, value, wants_number) {
+    wrong <- which(!is.na(value) & known_type & number_type != wants_number)
+    finding(
+      role, wrong, if (wants_number) "type_number" else "type_text",
+      list(data_type = attributes$data_type[wrong])
+    )
+    value[wrong] <- NA
+    value
+  }
+  as_bound <- function(role) {
+    x <- text[[role]]
+    decimal <- grepl("^ *[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)? *$", x)
+    number <- suppressWarnings(as.numeric(x))
+    readable <- decimal & is.finite(number)
+    finding(role, which(!is.na(x) & !readable), "number")
+    fits(role, fifelse(readable, number, NA_real_), TRUE)
+  }
+  as_whole <- function(role, lowest) {
+    x <- text[[role]]
+    number <- suppressWarnings(as.numeric(x))
+    whole <- grepl("^ *[0-9]+ *$", x) & !is.na(number) & number >= lowest &
+      number <= .Machine$integer.max
+    finding(role, which(!is.na(x) & !whole), "whole", list(n = lowest))
+    out <- rep(NA_integer_, n)
+    out[whole] <- as.integer(number[whole])
+    out
+  }
+  min_value <- as_bound("min_value")
+  max_value <- as_bound("max_value")
+  inverted <- which(!is.na(min_value) & !is.na(max_value) & min_value > max_value)
+  finding(
+    "min_value", inverted, "order",
+    list(value_a = text$min_value[inverted], value_b = text$max_value[inverted])
+  )
+  min_value[inverted] <- NA_real_
+  max_value[inverted] <- NA_real_
+  as_flag <- function(role, bound) {
+    x <- toupper(trimws(text[[role]]))
+    flag <- fifelse(x == "TRUE", TRUE, fifelse(x == "FALSE", FALSE, NA))
+    finding(role, which(!is.na(x) & is.na(flag)), "flag")
+    # A blank flag is TRUE where its bound is given (D18.9).
+    flag[is.na(x) & !is.na(bound)] <- TRUE
+    flag
+  }
+  pattern <- text$pattern
+  distinct <- unique(pattern[!is.na(pattern)])
+  compiles <- vapply(distinct, function(p) {
+    tryCatch(is.logical(grepl(p, "")), error = function(e) FALSE, warning = function(w) FALSE)
+  }, logical(1))
+  broken <- which(pattern %chin% distinct[!compiles])
+  finding("pattern", broken, "pattern")
+  pattern[broken] <- NA_character_
+  columns <- data.table(
+    min_value = min_value, max_value = max_value,
+    min_inclusive = as_flag("min_inclusive", min_value),
+    max_inclusive = as_flag("max_inclusive", max_value),
+    pattern = fits("pattern", pattern, FALSE),
+    max_length = fits("max_length", as_whole("max_length", 1L), FALSE),
+    decimals = fits("decimals", as_whole("decimals", 0L), TRUE),
+    units = text$units
+  )
+  list(columns = columns, findings = rbindlist(found$tables))
 }
 
 #' The keys component from the attributes: PK parts numbered, FK targets read
@@ -1022,15 +1156,26 @@ build_codes <- function(code_list_map, code_lists, crosswalks) {
   bind_component("codes", codes)
 }
 
-#' The id_bands component and its site_id_range_invalid findings
+#' The id_bands and id_band_columns components and their site_id_range_invalid findings
 #'
 #' The reader makes every finding of the check, where the bands sheet's file is known
 #' (D12.28): a missing sheet or column, a bad bound, a blank or unknown label, a band
-#' starting after it ends, and two valid bands overlapping, citing both.
+#' starting after it ends, and two valid bands overlapping, citing both. `table`,
+#' `attribute` and `key` come together or not at all (R8, R33); with them, also a banded
+#' column the dictionary lacks, a key without `labels_from`, a key that isn't a chain of
+#' foreign keys from `table` (parse_chain()), and a key whose last attribute isn't a column of
+#' the `labels_from` sheet (D18.2, D18.18). Each band's `key_value` is that column's value on
+#' the `labels_from` row of the band's label, NA for a reserved or unknown label or without a
+#' key; each band after the first of its key value is a finding naming the first (D18.57).
+#' `columns` has the one row of id_band_columns, `labels_from`'s sheet and column with it
+#' (D18.38), when the three are given and none of the column's or the key's findings is made.
 #' @noRd
-build_id_bands <- function(id_bands, code_lists, file) {
+build_id_bands <- function(id_bands, code_lists, file,
+                           attributes = empty_table(spec_schema()$attributes),
+                           keys = empty_table(spec_schema()$keys)) {
   out <- list(
     bands = empty_table(spec_schema()$id_bands),
+    columns = empty_table(spec_schema()$id_band_columns),
     findings = empty_table(spec_schema()$read_findings)
   )
   if (is.null(id_bands)) {
@@ -1051,14 +1196,22 @@ build_id_bands <- function(id_bands, code_lists, file) {
       error = function(e) FALSE, warning = function(w) FALSE
     )
   }
-  shaped <- is.list(id_bands) && setequal(names(id_bands), spec_input_schema()$id_bands) &&
-    all(vapply(id_bands[c("sheet", "label_col", "start_col", "end_col")], one_name, TRUE)) &&
-    from_ok && pattern_ok
+  # The six of M2, and the banded column's three together or not at all (R8, R33).
+  banded <- c("table", "attribute", "key")
+  required <- setdiff(spec_input_schema()$id_bands, banded)
+  given <- if (is.list(id_bands)) names(id_bands) else character()
+  with_column <- all(banded %in% given)
+  named <- c("sheet", "label_col", "start_col", "end_col", if (with_column) banded)
+  shaped <- is.list(id_bands) && all(required %in% given) &&
+    all(given %in% spec_input_schema()$id_bands) && !anyDuplicated(given) &&
+    (with_column || !any(banded %in% given)) &&
+    all(vapply(id_bands[named], one_name, TRUE)) && from_ok && pattern_ok
   if (!shaped) {
     stop(paste(
       "`id_bands` is list(sheet, label_col, start_col, end_col, labels_from,",
-      "reserved_pattern): one name each for the first four, labels_from NULL or",
-      "c(sheet = , column = ), reserved_pattern NULL or one regular expression."
+      "reserved_pattern) and optionally table, attribute and key, all three or none: one name",
+      "each for sheet, label_col, start_col, end_col, table, attribute and key; labels_from",
+      "NULL or c(sheet = , column = ); reserved_pattern NULL or one regular expression."
     ), call. = FALSE)
   }
   finding <- function(detail, cell = NA_character_) {
@@ -1209,9 +1362,85 @@ build_id_bands <- function(id_bands, code_lists, file) {
       )
     }
   }
+  # The banded column and its key (D18.2, D18.18): each problem a finding of its own, the
+  # column's row only when there is none.
+  key_value <- rep(NA_character_, nrow(bands))
+  column_findings <- NULL
+  duplicate_findings <- NULL
+  if (with_column) {
+    problems <- character()
+    # A dictionary row with no table or attribute name is passed over (R170).
+    known_column <- any(
+      attributes$table_name == id_bands$table & attributes$attribute_name == id_bands$attribute,
+      na.rm = TRUE
+    )
+    if (!known_column) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_column",
+        table_name = id_bands$table, attribute_name = id_bands$attribute
+      ))
+    }
+    chain <- parse_chain(id_bands$key, id_bands$table, keys, attributes)
+    labels_sheet <- if (!is.null(from)) code_lists[sheet == from[["sheet"]]]
+    if (is.null(from)) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key_labels",
+        value = id_bands$key
+      ))
+    } else if (is.null(chain)) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key",
+        value = id_bands$key, table_name = id_bands$table
+      ))
+    } else if (!chain$attribute %chin% labels_sheet[source_row == 1L, value]) {
+      problems <- c(problems, report_text(
+        "preflight_detail_site_id_range_invalid_key_sheet",
+        attribute_name = chain$attribute, sheet = from[["sheet"]]
+      ))
+    } else {
+      # Each band's key: the chain's last attribute's column of the labels sheet, on the row
+      # whose labels column holds the band's label; a reserved band has none.
+      body <- labels_sheet[source_row > 1L]
+      labels <- body[sheet_column == from[["column"]]]
+      values <- body[sheet_column == chain$attribute]
+      row_of <- labels$source_row[match(bands$label, labels$value)]
+      key_value <- values$value[match(row_of, values$source_row)]
+      key_value[bands$reserved] <- NA_character_
+      # One band per key value (D18.57): each band after the first of its key value is a
+      # finding naming the first, at its own cell.
+      repeated <- which(duplicated(key_value, incomparables = NA))
+      if (length(repeated) > 0L) {
+        first <- match(key_value[repeated], key_value)
+        duplicate_findings <- finding(
+          report_text(
+            "preflight_detail_site_id_range_invalid_duplicate_key",
+            label = bands$label[first],
+            location = band_location(bands$source_cell[first], bands$source_row[first]),
+            other_label = bands$label[repeated],
+            other_location = band_location(bands$source_cell[repeated], bands$source_row[repeated]),
+            attribute_name = chain$attribute, value = key_value[repeated]
+          ),
+          bands$source_cell[repeated]
+        )
+      }
+    }
+    if (length(problems) == 0L) {
+      out$columns <- data.table(
+        table_name = id_bands$table, attribute_name = id_bands$attribute,
+        key_attribute = id_bands$key, labels_sheet = from[["sheet"]],
+        labels_column = from[["column"]]
+      )
+    } else {
+      column_findings <- finding(problems)
+    }
+  }
+  set(bands, j = "key_value", value = key_value)
   out$bands <- bands
   out$findings <- bind_component("read_findings", c(
-    bound_findings, list(blank_label_findings, label_findings, order_findings, overlap_findings)
+    bound_findings, list(
+      blank_label_findings, label_findings, order_findings, overlap_findings, column_findings,
+      duplicate_findings
+    )
   ))
   out
 }
@@ -1300,6 +1529,174 @@ read_lineage_input <- function(x, origin = NULL) {
   table
 }
 
+#' The key_pairs input, read and checked (D18.1, D18.36)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). A row whose table is blank or
+#' isn't the dictionary's is a key_pair_invalid finding, and so is each side of a row with a
+#' known table that is blank, or isn't an attribute of that table or a chain of its foreign
+#' keys ending in one (parse_chain()). Each finding cites its cell, as the input's form
+#' allows.
+#' @noRd
+read_key_pairs <- function(x, attributes, keys, origin = NULL) {
+  table <- read_input_table(x, "key_pairs", origin)
+  columns <- spec_input_schema()$key_pairs
+  check_input_columns(table$data, columns, "key_pairs")
+  data <- table$data[, columns, with = FALSE]
+  # One finding per row in `rows`, at its cell in `column`; none for no row.
+  finding <- function(rows, column, text_id, ...) {
+    if (length(rows) == 0L) {
+      return(NULL)
+    }
+    data.table(
+      rule_id = "key_pair_invalid", input = "key_pairs", file = table$where$file,
+      detail = report_text(text_id, ...),
+      source_cell = cell_references(
+        table$where, rows + 1L, rep(match(column, names(table$data)), length(rows))
+      )
+    )
+  }
+  known <- data$table_name %chin% attributes$table_name
+  unknown <- which(!known)
+  findings <- list(table$findings, finding(
+    unknown, "table_name", "preflight_detail_key_pair_invalid_table",
+    table_name = data$table_name[unknown]
+  ))
+  for (side in c("left", "right")) {
+    chains <- data[[side]]
+    parsed <- vapply(seq_len(nrow(data)), function(i) {
+      !known[[i]] || !is.null(parse_chain(chains[[i]], data$table_name[[i]], keys, attributes))
+    }, logical(1))
+    bad <- which(!parsed)
+    findings[[length(findings) + 1L]] <- finding(
+      bad, side, "preflight_detail_key_pair_invalid_side",
+      value = chains[bad], table_name = data$table_name[bad]
+    )
+  }
+  list(
+    data = data, manifest = table$manifest, findings = bind_component("read_findings", findings)
+  )
+}
+
+#' The one_to_many input, read and checked (D18.3, D18.6, D18.36)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). Each row's `source_cell` is its
+#' contributor cell, as the input's form allows (NA in memory), for one_to_many_invalid's
+#' findings; what the rows say is pre-flight's to check (one_to_many_problems()).
+#' @noRd
+read_one_to_many <- function(x, origin = NULL) {
+  table <- read_input_table(x, "one_to_many", origin)
+  columns <- spec_input_schema()$one_to_many
+  check_input_columns(table$data, columns, "one_to_many")
+  data <- table$data[, columns, with = FALSE]
+  n <- nrow(data)
+  set(data, j = "source_cell", value = cell_references(
+    table$where, seq_len(n) + 1L, rep(match("contributor_label", names(table$data)), n)
+  ))
+  list(data = data, manifest = table$manifest, findings = table$findings)
+}
+
+#' The reach input, read and checked (D18.4, D18.7, D18.36)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). A row whose table is blank or
+#' isn't the dictionary's is a reach_invalid finding; so is a row of a known table whose `how`
+#' isn't root, exempt, from_parent or from_child, a from_parent or from_child row whose
+#' attribute isn't a foreign key of its table that the dictionary links to a parent's key
+#' (D18.42), and a root or exempt row that names an attribute. So is each table the walk
+#' checks that no walk from a root reaches (D18.65), the walk read as check_keys() and
+#' reach_rows() read it. Each finding cites its cell, as the input's form allows.
+#' @noRd
+read_reach <- function(x, attributes, keys, origin = NULL) {
+  table <- read_input_table(x, "reach", origin)
+  columns <- spec_input_schema()$reach
+  check_input_columns(table$data, columns, "reach")
+  data <- table$data[, columns, with = FALSE]
+  # One finding per row in `rows`, at its cell in `column` (one, or one per row); none for no
+  # row.
+  finding <- function(rows, column, text_id, ...) {
+    if (length(rows) == 0L) {
+      return(NULL)
+    }
+    data.table(
+      rule_id = "reach_invalid", input = "reach", file = table$where$file,
+      detail = report_text(text_id, ...),
+      source_cell = cell_references(
+        table$where, rows + 1L, rep_len(match(column, names(table$data)), length(rows))
+      )
+    )
+  }
+  linked <- keys$key_type == "FK" & !is.na(keys$reference_table) &
+    !is.na(keys$reference_attribute)
+  links <- paste(keys$table_name, keys$attribute_name, sep = "\r")[linked]
+  known <- data$table_name %chin% attributes$table_name
+  how_known <- data$how %chin% c("root", "exempt", "from_parent", "from_child")
+  is_link <- data$how %chin% c("from_parent", "from_child")
+  on_key <- paste(data$table_name, data$attribute_name, sep = "\r") %chin% links
+  bad_table <- which(!known)
+  bad_how <- which(known & !how_known)
+  bad_key <- which(known & is_link & !on_key)
+  bad_attribute <- which(known & how_known & !is_link & !is.na(data$attribute_name))
+  # The walk, read as check_keys() and reach_rows() read it (D18.65). The tables it checks are
+  # those a row names, but the exempt ones, and the parents a from_child row's key names, each
+  # with a primary key. The roots that aren't exempt are reached; a from_parent row's table is
+  # reached when its key's parent is, and a from_child row's parent when the row's table is;
+  # a link to or from an exempt table is followed by none.
+  parent <- keys$reference_table[linked][match(
+    paste(data$table_name, data$attribute_name, sep = "\r"), links
+  )]
+  exempt <- data$table_name[data$how %chin% "exempt"]
+  is_child_link <- data$how %chin% "from_child"
+  keyed <- keys$table_name[keys$key_type %chin% "PK" & keys$key_part %in% 1L]
+  checked <- setdiff(
+    unique(c(data$table_name[!data$how %chin% "exempt"], parent[is_child_link])), c(exempt, NA)
+  )
+  checked <- checked[checked %chin% keyed]
+  checked <- checked[order(match(checked, attributes$table_name))]
+  usable <- is_link & !is.na(parent) & !data$table_name %chin% exempt & !parent %chin% exempt
+  reached <- setdiff(data$table_name[data$how %chin% "root"], c(exempt, NA))
+  repeat {
+    up <- usable & is_child_link & data$table_name %chin% reached
+    down <- usable & data$how %chin% "from_parent" & parent %chin% reached
+    more <- setdiff(c(parent[up], data$table_name[down]), reached)
+    if (length(more) == 0L) {
+      break
+    }
+    reached <- c(reached, more)
+  }
+  # Each table no walk reaches, at its own first row's table cell or, without a row of its
+  # own, at the key cell of the first from_child row naming it.
+  unreached <- setdiff(checked, reached)
+  own <- match(unreached, data$table_name)
+  named <- match(unreached, fifelse(is_child_link, parent, NA_character_))
+  findings <- list(
+    table$findings,
+    finding(
+      bad_table, "table_name", "preflight_detail_reach_invalid_table",
+      table_name = data$table_name[bad_table]
+    ),
+    finding(
+      bad_how, "how", "preflight_detail_reach_invalid_how",
+      value = data$how[bad_how], table_name = data$table_name[bad_how]
+    ),
+    finding(
+      bad_key, "attribute_name", "preflight_detail_reach_invalid_key",
+      table_name = data$table_name[bad_key], attribute_name = data$attribute_name[bad_key]
+    ),
+    finding(
+      bad_attribute, "attribute_name", "preflight_detail_reach_invalid_attribute",
+      table_name = data$table_name[bad_attribute],
+      attribute_name = data$attribute_name[bad_attribute], value = data$how[bad_attribute]
+    ),
+    finding(
+      fifelse(is.na(own), named, own), fifelse(is.na(own), "attribute_name", "table_name"),
+      "preflight_detail_reach_invalid_unreachable",
+      table_name = unreached
+    )
+  )
+  list(
+    data = data, manifest = table$manifest, findings = bind_component("read_findings", findings)
+  )
+}
+
 #' Read a specification
 #'
 #' @description
@@ -1311,11 +1708,12 @@ read_lineage_input <- function(x, origin = NULL) {
 #' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 #' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 #' unless it is a translation table, which is then a finding; a
-#' dictionary without its table or attribute column; a `precedence` or `lineage_spec`
-#' table without exactly its columns; a `precedence` table with an unknown `winner` or
-#' `blank_rule`, or with two rows for one sheet, key and attribute; a name given in R
-#' that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-#' values for an attribute that uses it; or an origin that doesn't fit its input.
+#' dictionary without its table or attribute column; a `precedence`, `lineage_spec`,
+#' `key_pairs`, `one_to_many` or `reach` table without exactly its columns; a `precedence`
+#' table with an unknown `winner` or `blank_rule`, or with two rows for one sheet, key and
+#' attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+#' column it lacks, or with no values for an attribute that uses it; or an origin that
+#' doesn't fit its input.
 #'
 #' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
 #'   `.xlsx` workbook, read from its first sheet. One row per table and attribute.
@@ -1333,20 +1731,50 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   `filter_values` may be a list named by attribute.
 #' @param id_pattern `NULL`, or one regular expression marking ID attributes by name.
 #' @param id_bands `NULL`, or `list(sheet, label_col, start_col, end_col, labels_from =
-#'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands.
+#'   c(sheet = , column = ), reserved_pattern)` naming the code-list sheet of ID bands, and
+#'   optionally, all three or none, `table` and `attribute`, the column the bands apply to, and
+#'   `key`, the foreign keys followed from that table and the attribute they reach, joined by
+#'   " > ", such as `"dataset_id > contributor_id"`. `key` needs `labels_from`, and its last
+#'   attribute must be a column of the `labels_from` sheet, which gives each band's value of it;
+#'   each value can have only one band.
 #' @param precedence `NULL`, or a table (data.frame or CSV path) with exactly the columns
 #'   `sheet`,
 #'   `key_col`, `attribute_name`, `winner` (`datasets` or `code_lists`) and `blank_rule`
 #'   (`yields` or `wins`), saying which input wins where the datasets table and a sheet
 #'   overlap.
+#' @param key_pairs `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `table_name`, `left`, `right` and `note`: each row two ways to reach one value from a
+#'   record of `table_name`, each side an attribute of the table or a chain of foreign keys
+#'   joined by " > " ending in an attribute, such as `"haul_id > station_id"`.
+#'   `key_incoherent` compares the two sides and reports a record where they differ on the
+#'   left side's first attribute.
+#' @param one_to_many `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `contributor_label`, `table_name`, `attribute_name` and `note`: each row an ID attribute
+#'   a contributor documents as one-to-many, whose repeats `src_id_duplicate` doesn't report
+#'   among that contributor's records. A record's contributor is found through `id_bands`'
+#'   `key` and `labels_from`, so the rows apply only when `id_bands` gives `table`,
+#'   `attribute`, `key` and `labels_from`; pre-flight warns of a row it can't apply
+#'   (`one_to_many_invalid`), which is left out.
+#' @param reach `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `table_name`, `attribute_name` and `how`, saying how `record_unreachable` walks the
+#'   tables: `root`, a table whose records are all reached; `exempt`, a table not walked or
+#'   checked; `from_parent`, a record reached through this foreign key when its parent is;
+#'   `from_child`, a reached record reaching its parent through this foreign key.
+#'   `attribute_name` is blank for `root` and `exempt`. The tables checked are those the rows
+#'   name, but the exempt ones, and the parents `from_child` links reach. In a table reached
+#'   `from_parent`, a record whose parent isn't reached is left unchecked; the break is
+#'   reported once, by the foreign-key rules or at the topmost record no walk reaches.
+#'   Pre-flight stops if a table the walk checks can't be reached from a root. A record
+#'   reachable only through a table or key column not given is left unchecked.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
 #'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
-#'   `code_lists:<sheet>`, `crosswalks:<name>`) of `list(path = , sheet = , rows = ,
-#'   columns = )`: the file, named in findings and hashed in the manifest; a workbook's
-#'   sheet, or `NULL` for a CSV file; the file row of the first data row, later rows
-#'   following on, or the file row of every data row, or `NULL` to count rows as R counts
-#'   them; and the file column, by number or letter, of every column of the data.frame,
-#'   or `NULL` for the file's order. Findings in such an input then name the file's cells.
+#'   `key_pairs`, `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`) of
+#'   `list(path = , sheet = , rows = , columns = )`: the file, named in findings and hashed in
+#'   the manifest; a workbook's sheet, or `NULL` for a CSV file; the file row of the first
+#'   data row, later rows following on, or the file row of every data row, or `NULL` to count
+#'   rows as R counts them; and the file column, by number or letter, of every column of the
+#'   data.frame, or `NULL` for the file's order. Findings in such an input then name the
+#'   file's cells.
 #' @param column_map The dictionary's column names, from [gpq_column_map()].
 #' @param type_map The type map, from [gpq_type_map()]. What was found reading its file
 #'   joins `read_findings`.
@@ -1354,9 +1782,10 @@ read_lineage_input <- function(x, origin = NULL) {
 #' @return An object of class `gpq_spec`: a named list of data.tables, the components
 #'   `attributes`, `keys`, `code_lists`, `code_list_sheets`, `code_list_map`, `codes`,
 #'   `non_code_sheets`,
-#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `type_map`, `sentinels`,
-#'   `clashes`, `read_findings` and `manifest`. An input not given leaves its component
-#'   empty, with its columns. A blank cell is `NA`; text is kept exactly as written.
+#'   `datasets`, `lineage_spec`, `crosswalks`, `id_bands`, `id_band_columns`, `key_pairs`,
+#'   `one_to_many`, `reach`, `type_map`, `sentinels`, `clashes`, `read_findings` and
+#'   `manifest`. An input not given leaves its component empty, with its columns. A blank cell
+#'   is `NA`; text is kept exactly as written.
 #' @section Components:
 #' Each component is a data.table with these columns:
 #'
@@ -1377,7 +1806,9 @@ read_lineage_input <- function(x, origin = NULL) {
 #'   ),
 #'   column_map = gpq_column_map(
 #'     table = "table", attribute = "field", type = "kind", key_type = "key",
-#'     reference = "parent", lookup = "codes", description = "notes"
+#'     reference = "parent", lookup = "codes", description = "notes",
+#'     min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+#'     pattern = "format", max_length = "width", decimals = "places", units = "unit"
 #'   ),
 #'   type_map = gpq_type_map(example("fish_types.csv")),
 #'   sentinels = gpq_sentinels(
@@ -1392,7 +1823,8 @@ read_lineage_input <- function(x, origin = NULL) {
 gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
                           datasets = NULL, lineage_spec = NULL, crosswalks = NULL,
                           id_pattern = NULL, id_bands = NULL, precedence = NULL,
-                          origins = NULL, column_map = gpq_column_map(),
+                          key_pairs = NULL, one_to_many = NULL, reach = NULL, origins = NULL,
+                          column_map = gpq_column_map(),
                           type_map = gpq_type_map(), sentinels = gpq_sentinels()) {
   # data.table's automatic indexing would add index attributes as the reader subsets;
   # off here and restored on exit, so the spec reloads identical() (D12.27).
@@ -1448,7 +1880,8 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
       },
       if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
       if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
-      if (!is.null(precedence)) "precedence"
+      if (!is.null(precedence)) "precedence", if (!is.null(key_pairs)) "key_pairs",
+      if (!is.null(one_to_many)) "one_to_many", if (!is.null(reach)) "reach"
     ),
     no_origin = c(
       if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
@@ -1480,7 +1913,17 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   } else {
     NA_character_
   }
-  bands <- build_id_bands(id_bands, lists$long, bands_file)
+  keys <- build_keys(attributes)
+  bands <- build_id_bands(id_bands, lists$long, bands_file, attributes, keys)
+  pairs_in <- if (!is.null(key_pairs)) {
+    read_key_pairs(key_pairs, attributes, keys, origins[["key_pairs"]])
+  }
+  many_in <- if (!is.null(one_to_many)) {
+    read_one_to_many(one_to_many, origins[["one_to_many"]])
+  }
+  reach_in <- if (!is.null(reach)) {
+    read_reach(reach, attributes, keys, origins[["reach"]])
+  }
   datasets_data <- if (is.null(datasets_in)) data.table() else datasets_in$data
   # Each precedence sheet's own file, its CSV or the workbook, named by sheet (D12.28).
   list_files <- vapply(
@@ -1506,7 +1949,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
   )
   new_gpq_spec(list(
     attributes = attributes,
-    keys = build_keys(attributes),
+    keys = keys,
     code_lists = lists$long,
     code_list_sheets = data.table(sheet = lists$sheets),
     code_list_map = code_list_map,
@@ -1518,19 +1961,24 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     lineage_spec = lineage$component,
     crosswalks = walks$long,
     id_bands = bands$bands,
+    id_band_columns = bands$columns,
+    key_pairs = if (is.null(pairs_in)) empty_table(spec_schema()$key_pairs) else pairs_in$data,
+    one_to_many = if (is.null(many_in)) empty_table(spec_schema()$one_to_many) else many_in$data,
+    reach = if (is.null(reach_in)) empty_table(spec_schema()$reach) else reach_in$data,
     type_map = type_map,
     sentinels = sentinels,
     clashes = bind_component("clashes", list(clashes$clashes, lineage$clashes)),
     read_findings = bind_component("read_findings", list(
       dictionary_in$findings, dictionary_read$findings, type_findings, lists$findings,
       walks$findings, datasets_in$findings, lineage_in$findings, precedence_in$findings,
-      bands$findings, clashes$findings, lineage$findings
+      bands$findings, clashes$findings, lineage$findings, pairs_in$findings, many_in$findings,
+      reach_in$findings
     )),
     manifest = bind_component("manifest", list(
       dictionary_in$manifest, lists$manifest, memory_row(non_code_sheets, "non_code_sheets"),
       datasets_in$manifest, lineage_in$manifest, walks$manifest,
       memory_row(id_pattern, "id_pattern"), memory_row(id_bands, "id_bands"),
-      precedence_in$manifest
+      precedence_in$manifest, pairs_in$manifest, many_in$manifest, reach_in$manifest
     ))
   ))
 }

@@ -10,10 +10,13 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two and M4a's five (D14.9, D16.11, D16.12)", {
+test_that("the declared settings are M3a's two, M4a's five and M5's (D14.9, D16.11, D18.39)", {
   expect_named(setting_definitions(), c(
     "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
-    "unknown_codes"
+    "unknown_codes", "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
+    "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
+    "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
+    "design_signature_table", "design_signature_by", "design_signature_columns"
   ))
 })
 
@@ -108,7 +111,11 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
     check_settings(rules = severity_row),
     paste(
       "can't give there: severity. A settings row can give only lang, example_cap,",
-      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes."
+      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes, coordinate_attributes,",
+      "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern,",
+      "design_geometry_table, design_geometry_by, design_geometry_columns, subplot_label_table,",
+      "subplot_label_columns, design_signature_table, design_signature_by,",
+      "design_signature_columns."
     ),
     fixed = TRUE
   )
@@ -409,4 +416,200 @@ test_that("a rule fingerprint tells no codes from the one code \"NA\"", {
   expect_identical(
     rule_fingerprint("uses_rogue", spec, rules = rows, registry = registry), text_na
   )
+})
+
+test_that("coordinate_attributes resolves through the tiers; a bad name is refused (D18.9)", {
+  withr::local_options(groundplotqc.coordinate_attributes = NULL)
+  expect_identical(resolve_setting("coordinate_attributes")$value, character())
+  rows <- function(value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = "coordinate_attributes", value = value, type = "character")
+    ))
+  }
+  expect_equal(
+    resolve_setting("coordinate_attributes", rules = rows("latitude; longitude")),
+    list(value = c("latitude", "longitude"), tier = "rule set")
+  )
+  # A blank row gives none.
+  expect_identical(
+    resolve_setting("coordinate_attributes", rules = rows(NA_character_))$value, character()
+  )
+  wants <- paste(
+    "must be a character vector of attribute names, none of them NA, empty, padded with",
+    "spaces or holding \";\"."
+  )
+  for (bad in list(c("latitude", NA), "", " latitude", "a;b", c(x = "latitude"), 1)) {
+    expect_error(
+      resolve_setting("coordinate_attributes", list(coordinate_attributes = bad)),
+      paste("Setting coordinate_attributes (argument)", wants),
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_error(
+    resolve_setting("coordinate_attributes", rules = rows("latitude;longitude")),
+    paste("Setting coordinate_attributes (rule set)", wants),
+    fixed = TRUE
+  )
+  withr::local_options(groundplotqc.coordinate_attributes = "depth")
+  expect_equal(
+    resolve_setting("coordinate_attributes"),
+    list(value = "depth", tier = "option")
+  )
+})
+
+# ---- task 7 ----
+
+test_that("the code-set settings resolve, refuse what they can't read (D18.20, D18.25)", {
+  withr::local_options(
+    groundplotqc.code_set_max_values = NULL, groundplotqc.code_set_skip_attributes = NULL,
+    groundplotqc.code_set_skip_pattern = NULL
+  )
+  expect_equal(resolve_setting("code_set_max_values"), list(value = 25L, tier = "built-in"))
+  expect_identical(resolve_setting("code_set_skip_attributes")$value, character())
+  expect_identical(resolve_setting("code_set_skip_pattern")$value, character())
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("code_set_max_values", "code_set_skip_attributes", "code_set_skip_pattern"),
+      value = c("12", "subplot; meas_cycle", "_id$|^comments$"),
+      type = c("integer", "character", "character")
+    )
+  ))
+  expect_equal(resolve_setting("code_set_max_values", rules = rows)$value, 12)
+  expect_equal(
+    resolve_setting("code_set_skip_attributes", rules = rows)$value, c("subplot", "meas_cycle")
+  )
+  expect_equal(resolve_setting("code_set_skip_pattern", rules = rows)$value, "_id$|^comments$")
+  for (bad in list(0, 2.5, NA, "3", c(1, 2))) {
+    expect_error(
+      resolve_setting("code_set_max_values", list(code_set_max_values = bad)),
+      "Setting code_set_max_values (argument) must be one whole number, 1 or more",
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_error(
+    resolve_setting("code_set_skip_attributes", list(code_set_skip_attributes = "a;b")),
+    "Setting code_set_skip_attributes (argument) must be a character vector of attribute names",
+    fixed = TRUE
+  )
+  for (bad in list("(", c("a", "b"), NA_character_, 1)) {
+    expect_error(
+      resolve_setting("code_set_skip_pattern", list(code_set_skip_pattern = bad)),
+      "Setting code_set_skip_pattern (argument) must be one regular expression R can read, or none",
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_identical(
+    resolve_setting("code_set_skip_pattern", list(code_set_skip_pattern = character()))$value,
+    character()
+  )
+})
+
+# ---- task 14 ----
+
+test_that("the design candidates' settings resolve; a table setting takes one name (D18.39)", {
+  designs <- c(
+    "design_geometry_table", "design_geometry_by", "design_geometry_columns",
+    "subplot_label_table", "subplot_label_columns", "design_signature_table",
+    "design_signature_by", "design_signature_columns"
+  )
+  for (name in designs) {
+    expect_identical(resolve_setting(name)$value, character(), info = name)
+  }
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("design_geometry_table", "design_geometry_by"),
+      value = c("magp_design_frames", "magp_design_id; subplot"), type = "character"
+    )
+  ))
+  expect_equal(
+    resolve_setting("design_geometry_table", rules = rows),
+    list(value = "magp_design_frames", tier = "rule set")
+  )
+  expect_equal(
+    resolve_setting("design_geometry_by", rules = rows)$value, c("magp_design_id", "subplot")
+  )
+  one_table <- paste(
+    "must be one table name, not NA, empty, padded with spaces or holding \";\",",
+    "or none."
+  )
+  for (name in c("design_geometry_table", "subplot_label_table", "design_signature_table")) {
+    for (bad in list(c("a", "b"), NA_character_, " a", "a;b", 1)) {
+      given <- list(bad)
+      names(given) <- name
+      expect_error(
+        resolve_setting(name, given), paste0("Setting ", name, " (argument) ", one_table),
+        fixed = TRUE, info = paste(name, deparse(bad))
+      )
+    }
+  }
+  expect_error(
+    resolve_setting("design_signature_by", list(design_signature_by = c("a", "b"))),
+    paste(
+      "Setting design_signature_by (argument) must be one attribute name, not NA, empty,",
+      "padded with spaces or holding \";\", or none."
+    ),
+    fixed = TRUE
+  )
+  expect_error(
+    resolve_setting("design_signature_columns", list(design_signature_columns = "a;b")),
+    "Setting design_signature_columns (argument) must be a character vector of attribute names",
+    fixed = TRUE
+  )
+})
+
+# ---- the Copilot fix round ----
+
+test_that("the design candidates' attribute lists refuse a repeated name in every tier (D18.127)", {
+  wants <- paste(
+    "must be a character vector of attribute names, each given once, none of them NA, empty,",
+    "padded with spaces or holding \";\"."
+  )
+  rows <- function(name, value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = name, value = value, type = "character")
+    ))
+  }
+  lists <- c(
+    "design_geometry_by", "design_geometry_columns", "subplot_label_columns",
+    "design_signature_columns"
+  )
+  for (name in lists) {
+    given <- function(value) structure(list(value), names = name)
+    option <- paste0("groundplotqc.", name)
+    for (repeated in list(c("v", "v"), c("u", "v", "u"))) {
+      expect_error(
+        resolve_setting(name, given(repeated)), paste0("Setting ", name, " (argument) ", wants),
+        fixed = TRUE, info = paste(name, deparse(repeated))
+      )
+    }
+    expect_error(
+      resolve_setting(name, rules = rows(name, "v; v")),
+      paste0("Setting ", name, " (rule set) ", wants),
+      fixed = TRUE, info = name
+    )
+    withr::with_options(structure(list(c("v", "v")), names = option), {
+      expect_error(
+        resolve_setting(name), paste0("Setting ", name, " (option ", option, ") ", wants),
+        fixed = TRUE, info = name
+      )
+      # Only the tier that wins is checked: a valid argument or rule-set row passes over the
+      # option's repeat.
+      expect_equal(
+        resolve_setting(name, given("v")), list(value = "v", tier = "argument"),
+        info = name
+      )
+      expect_equal(
+        resolve_setting(name, rules = rows(name, "u; v")),
+        list(value = c("u", "v"), tier = "rule set"),
+        info = name
+      )
+    })
+    # No names, and names given once, are still accepted.
+    expect_identical(resolve_setting(name, given(character()))$value, character(), info = name)
+    expect_equal(resolve_setting(name, given(c("u", "v")))$value, c("u", "v"), info = name)
+  }
 })

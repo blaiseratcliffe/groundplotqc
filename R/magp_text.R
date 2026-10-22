@@ -1,7 +1,8 @@
 # MAGPlot's report text (plan 11.7; D4.19, D14.8): MAGPlot's wording where it differs from
 # the engine's, each row replacing the engine row of the same text_id and lang in a MAGPlot
-# run. The file ships header-only until a rule's wording differs; magp_run_qc() passes the
-# table to the engine as `text` from M7.
+# run. The file holds the rows whose wording differs (src_id_duplicate's and two of the
+# design candidates', D18.39, D18.54); magp_run_qc() passes the table to the engine as `text`
+# from M7.
 
 #' MAGPlot's report text table, checked
 #'

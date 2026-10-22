@@ -2,7 +2,8 @@
 % Please edit documentation in R/check_conformance.R
 \name{gpq_check_conformance}
 \alias{gpq_check_conformance}
-\title{Check tables against a specification: structure, types and missing-value codes}
+\title{Check tables against a specification: structure, types, missing-value codes, value
+domains and keys}
 \usage{
 gpq_check_conformance(
   tables,
@@ -22,11 +23,12 @@ named list whose elements are data.frames or paths of CSV files, mixed as you li
 a named character vector of paths. Every column of a CSV file is read as text, so
 \code{class_mismatch} and \code{integer_stored_as_double} don't run on its tables. In a CSV file
 an empty cell is a missing value and everything else is read as written, so write
-files with data.table::fwrite() or write.csv(na = "", row.names = FALSE). A cell that
+files with data.table::fwrite(). A cell that
 isn't valid UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252 doesn't
 define. A table holding text marked as bytes is refused. Or a DBI connection: the
 specification's tables are read from it under the names \code{table_map} gives, and its
-other tables are left alone.}
+other tables are left alone. A column stored as integer64 needs the bit64 package: the
+run loads it, and stops if it isn't installed.}
 
 \item{spec}{A specification from \code{\link[=gpq_read_spec]{gpq_read_spec()}} or \code{\link[=magp_spec]{magp_spec()}}.}
 
@@ -104,16 +106,41 @@ Layers and the rules they can raise:
 \code{integer_stored_as_double}, \code{value_not_finite}.
 \item Layer 2, missing-value codes: \code{raw_na}, \code{blank_string}, \code{sentinel_wrong_type},
 \code{sentinel_rogue_code}, \code{species_unknown_code}, \code{whitespace_padding}, \code{na_text_in_id}.
+\item Layer 3, value domains: \code{code_not_in_list}, \code{value_below_min}, \code{value_above_max},
+\code{string_too_long}, \code{pattern_mismatch}, \code{decimals_exceeded}, \code{site_id_out_of_range},
+\code{coordinate_out_of_bounds}, \code{undeclared_code_set}.
+\item Layer 4, keys and relationships: \code{pk_duplicate}, \code{pk_missing}, \code{fk_orphan},
+\code{fk_unassigned}, \code{fk_sentinel_unverified}, \code{fk_not_applicable_mismatch},
+\code{src_id_duplicate}, \code{key_incoherent}, \code{record_unreachable}, \code{parent_without_children},
+\code{design_geometry_inconsistent}, \code{subplot_label_ambiguous}, \code{design_duplicate_signature}.
 }
 
-Layers 3 to 5 have no rules yet. A column whose name differs from its dictionary
-attribute's only in letter case or spaces is reported by \code{column_name_mismatch} and
-checked as that attribute. Layer 0's rules and \code{class_mismatch} and
-\code{integer_stored_as_double} count tables or columns, not records, and their rows have \code{"*"}
-in every group column.
+Two of these write no issue at this version: \code{parent_without_children} counts, in the
+results only, the parent records that no child record names, and
+\code{fk_not_applicable_mismatch} writes only \code{not_run} rows until a version brings the
+applicability matrix. \code{record_unreachable} runs only when \code{gpq_read_spec()} was given
+\code{reach}, and the design checks only when their settings name their tables and columns;
+otherwise each writes one \code{not_run} row (\code{no_input}).
+
+Layer 5 has no rules yet. A column whose name differs from its dictionary attribute's
+only in letter case or spaces is reported by \code{column_name_mismatch} and checked as that
+attribute. \code{class_mismatch}, \code{integer_stored_as_double},
+\code{undeclared_code_set} and Layer 0's rules count tables or columns, not records, and their
+rows have \code{"*"} in every group column.
 A value that failed Layer 1 is not evaluated by Layer 2: its
-issue there has status \code{not_evaluated} and names the earlier issue as its root. When a
-rule fails on every checked record of a column in a group, and at least
+issue there has status \code{not_evaluated} and names the earlier issue as its root. A value
+that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
+value, a blank, a missing-value code and an unknown code to Layer 2. A value that failed
+Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is in
+a primary or foreign key column: such a value still joins, so Layer 4 checks it as a key.
+Masking applies only to a record's own values: \code{key_incoherent} and the design checks
+still use values they read from other records, even ones that failed an earlier layer in
+those records.
+Layer 4 leaves a key that is missing, blank or a missing-value code the key can't hold to
+\code{pk_missing} and \code{fk_unassigned}, counts a foreign key's missing-value code that it may
+hold as not evaluated in \code{fk_orphan} (and warns of it in \code{fk_sentinel_unverified} where
+the key is a number), and doesn't evaluate \code{record_unreachable} on a record \code{pk_missing}
+reports. When a rule fails on every checked record of a column in a group, and at least
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.
 
@@ -125,10 +152,14 @@ run, naming the column, the table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the built-in value, see
 \link{groundplotqc_options}): \code{raw_na_policy}, \code{rogue_codes}, \code{unknown_codes},
-\code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule set's \code{rules} rows
-give a rule's severity and turn it off (\code{enabled}) for a table and attribute: the most
-specific row that gives a value wins (table and attribute, then table and \code{"*"}, then
-\code{"*"} and attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no rows there.
+\code{coordinate_attributes}, \code{code_set_max_values}, \code{code_set_skip_attributes},
+\code{code_set_skip_pattern}, \code{design_geometry_table}, \code{design_geometry_by},
+\code{design_geometry_columns}, \code{subplot_label_table}, \code{subplot_label_columns},
+\code{design_signature_table}, \code{design_signature_by}, \code{design_signature_columns},
+\code{column_level_min_n}, \code{example_cap}, \code{lang} and \code{severity}. A rule set's \code{rules} rows give
+a rule's severity and turn it off (\code{enabled}) for a table and attribute: the most specific
+row that gives a value wins (table and attribute, then table and \code{"*"}, then \code{"*"} and
+attribute, then \code{"*"} and \code{"*"}). A rule turned off writes no rows there.
 }
 \examples{
 # magp_example with one planted defect: a missing value in a column that must hold one.

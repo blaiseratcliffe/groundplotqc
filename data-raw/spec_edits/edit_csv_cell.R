@@ -1,4 +1,6 @@
-# D12.73 (5a), D12.74 (4): applies the cell edits that csv_cell_edits (in edits_20261005.R) names
+# D12.73 (5a), D12.74 (4), D18.24: applies the cell edits that csv_cell_edits names, in the
+# edit list given as the third argument (edits_20261005.R when none is given), here those of
+# edits_20261005.R:
 # to the converted CSV copies: CLR's treat_vs_dist, T to TD, in the treatment/disturbance copy,
 # and the ten cells of the datasets copy's 110.05 and 110.06 that exchange their descriptors. Each
 # file is read from <input_dir>; every edit of it is made on the raw field of its line, the
@@ -9,23 +11,38 @@
 # stop leaves nothing there, and a failing check names the file, key and column. A blank cell is
 # NA in an entry, the empty field in the file. It never overwrites a file.
 #
-# Usage: Rscript edit_csv_cell.R <input_dir> <output_dir>
-#   input_dir   the folder holding the converted copies, as patch_workbooks.R wrote them
+# Usage: Rscript edit_csv_cell.R <input_dir> <output_dir> [edit_list]
+#   input_dir   the folder holding the copies to edit: as patch_workbooks.R wrote them, or a
+#               staging folder holding a byte-exact copy under the new file's name (D18.24)
 #   output_dir  a folder with no copy of those names in it (made if missing); it gets the edited
 #               copies, to put in place of the input ones before verify_spec_edits.R runs
+#   edit_list   the edit list's file name in this folder, edits_20261005.R when not given;
+#               edits_20261015.R makes NO a treatment and ND a disturbance (D18.11)
 # Needs data.table.
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 2L) {
-  cat("Usage: Rscript edit_csv_cell.R <input_dir> <output_dir>\n")
+if (!length(args) %in% 2:3) {
+  cat("Usage: Rscript edit_csv_cell.R <input_dir> <output_dir> [edit_list]\n")
   quit(save = "no", status = 1L)
 }
 input_dir <- args[[1L]]
 output_dir <- args[[2L]]
+edit_list <- if (length(args) == 3L) args[[3L]] else "edits_20261005.R"
 script_dir <- dirname(normalizePath(
   sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)[[1L]])
 ))
-source(file.path(script_dir, "edits_20261005.R"))
+# The edit list is a file of this folder, named without a folder.
+listed <- identical(basename(edit_list), edit_list) &&
+  file.exists(file.path(script_dir, edit_list))
+if (!listed) {
+  cat(
+    "No edit list named ", edit_list, " in ", script_dir,
+    ", this script's folder: give the file name of an edit list there.\n",
+    sep = ""
+  )
+  quit(save = "no", status = 1L)
+}
+source(file.path(script_dir, edit_list))
 
 # Splits one CSV record into its raw fields, a comma inside double quotes kept in its field.
 split_record <- function(s) {

@@ -2,9 +2,11 @@
 # argument > rule set > option (groundplotqc.<setting>) > built-in, and the tier it came from
 # is kept for the run metadata (9.5). Only the settings something reads are declared: lang
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
-# unknown_codes from M4a, read by the conformance checks. A rule-set row gives a setting as
-# text: a whole number for type "integer", several values "; "-joined, a named value as
-# "name=value" (D16.12).
+# unknown_codes from M4a, read by the conformance checks; coordinate_attributes,
+# code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
+# Layer 3 (D18.9, D18.20), and the design candidates' eight, read by Layer 4 (D18.39). A
+# rule-set row gives a setting as text: a whole number for type "integer", several values
+# "; "-joined, a named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value, what the test wants, and how a rule-set row's text becomes a value
@@ -17,7 +19,8 @@
 #' The code settings refuse, in every tier, a code that is empty, padded with spaces or holds
 #' ";" ("=" too for unknown codes), and an unknown code's name empty, padded or holding ";"
 #' or "=", so a typo in a rule-set row stops rather than giving a code no value matches; a
-#' row ending in "; " has an empty last code (D16.21, D16.23, D16.24).
+#' row ending in "; " has an empty last code (D16.21, D16.23, D16.24). The design candidates'
+#' four attribute-list settings also refuse, in every tier, a name given twice (D18.127).
 #' @noRd
 setting_definitions <- function() {
   text_ok <- function(x) {
@@ -43,6 +46,27 @@ setting_definitions <- function() {
   as_whole <- function(text) {
     if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
   }
+  # The design candidates' settings (D18.39): a table setting names one table,
+  # design_signature_by one attribute, the others any number of attributes, each once
+  # (D18.127); none built in.
+  one_name <- function(wants) {
+    list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && length(x) <= 1L && plain(x, ";"),
+      wants = wants, from_text = parts
+    )
+  }
+  attribute_names <- list(
+    type = "character", built_in = character(),
+    valid = function(x) {
+      text_ok(x) && is.null(names(x)) && plain(x, ";") && !anyDuplicated(x)
+    },
+    wants = paste(
+      "a character vector of attribute names, each given once, none of them NA, empty,",
+      "padded with spaces or holding \";\""
+    ),
+    from_text = parts
+  )
   list(
     lang = list(
       type = "character", built_in = "en",
@@ -111,7 +135,59 @@ setting_definitions <- function() {
           names = fifelse(named, sub("=.*$", "", pieces), NA_character_)
         )
       }
-    )
+    ),
+    # The attributes coordinate_out_of_bounds checks and the range rules leave (D18.9).
+    coordinate_attributes = list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+      wants = paste(
+        "a character vector of attribute names, none of them NA, empty, padded with spaces",
+        "or holding \";\""
+      ),
+      from_text = parts
+    ),
+    # undeclared_code_set's (D18.20, D18.25): the most distinct values a judged column may
+    # hold, and the attributes it never judges, by name and by one pattern.
+    code_set_max_values = list(
+      type = "integer", built_in = 25L, valid = function(x) whole(x, 1),
+      wants = "one whole number, 1 or more", from_text = as_whole
+    ),
+    code_set_skip_attributes = list(
+      type = "character", built_in = character(),
+      valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+      wants = paste(
+        "a character vector of attribute names, none of them NA, empty, padded with spaces",
+        "or holding \";\""
+      ),
+      from_text = parts
+    ),
+    code_set_skip_pattern = list(
+      type = "character", built_in = character(),
+      valid = function(x) {
+        text_ok(x) && is.null(names(x)) && length(x) <= 1L && (length(x) == 0L || tryCatch(
+          is.logical(grepl(x, "")),
+          error = function(e) FALSE, warning = function(w) FALSE
+        ))
+      },
+      wants = "one regular expression R can read, or none",
+      from_text = function(text) if (is.na(text)) character() else text
+    ),
+    design_geometry_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_geometry_by = attribute_names,
+    design_geometry_columns = attribute_names,
+    subplot_label_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    subplot_label_columns = attribute_names,
+    design_signature_table = one_name(
+      "one table name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_signature_by = one_name(
+      "one attribute name, not NA, empty, padded with spaces or holding \";\", or none"
+    ),
+    design_signature_columns = attribute_names
   )
 }
 

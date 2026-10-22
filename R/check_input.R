@@ -129,14 +129,19 @@ stored_text <- function(x) {
 #' read as a number, is NaN, Inf or -Inf, which value_not_finite reports (D17.22); `lost` is
 #' TRUE where a value that isn't NA can't be held:
 #' text that isn't a number, a number with a fraction or beyond an integer's range where an
-#' integer is wanted. Text is a number only when written as a decimal number: a sign, digits,
-#' one point and an exponent, with spaces, tabs and line breaks around, or as one of the
+#' integer is wanted, and an integer64 value a double can't hold exactly (beyond 2^53) where a
+#' double is wanted, its `value` then the nearest double (D18.111). There an integer64 column's
+#' double is bit64's own cast of each distinct value, rounded to the nearest double on every
+#' platform, not its text parsed, which may come back a step off where long double is no wider
+#' than a double (D18.121). Text is a number only when written as a decimal number: a sign,
+#' digits, one point and an exponent, with spaces, tabs and line breaks around, or as one of the
 #' spellings of Inf and NaN that as.numeric() reads; hexadecimal is lost (D16.42, m26). A
 #' value that isn't finite (NaN, Inf) is never lost but becomes NA where an integer is wanted:
 #' value_not_finite reports it. A date column stored as a date is written in the type's date
 #' format; text is never lost. A column that isn't text, where text is wanted, and one that
 #' is neither text nor plain numbers (a factor, a date, a logical), where numbers are wanted,
-#' is written as text once for each distinct value (16.2). Text that isn't
+#' is written as text once for each distinct value and read from it (16.2), but for an integer64
+#' column's double, as above. Text that isn't
 #' valid UTF-8 is read as UTF-8 where it converts to it (marked latin1, or native in a locale
 #' that isn't UTF-8); text marked as bytes, or that isn't valid UTF-8 even so, is no number,
 #' so it is lost without being read: as.numeric() stops on it in a UTF-8 locale (D16.33,
@@ -218,7 +223,7 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     return(c(as_whole(x, !is.na(x)), list(not_finite = not_finite)))
   }
   # Text is read as it is. Any other column is written as text once for each distinct value,
-  # each row taking its value's result (16.2).
+  # each row taking its value's result (16.2); an integer64 column's double is cast, below.
   at <- NULL
   if (is.character(x)) {
     text <- x
@@ -227,11 +232,37 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     at <- distinct_at(distinct)
     text <- value_text(distinct)
   }
-  number <- as_number(text)
+  number <- if (r_class == "double" && inherits(x, "integer64")) {
+    # An integer64 value's double is bit64's own cast, rounded to the nearest double on every
+    # platform, not its text parsed, which R may read a step off where long double is no wider
+    # than a double, as on macOS arm64 (D18.121). bit64 4.6 warns that precision is lost for
+    # every value from 2^53 up or -2^53 down, even one a double holds exactly; only that
+    # warning, known by its message, is muffled, since the exactness test below finds the
+    # values a double loses.
+    withCallingHandlers(as.double(distinct), warning = function(w) {
+      if (identical(conditionMessage(w), "integer precision lost while converting to double")) {
+        invokeRestart("muffleWarning")
+      }
+    })
+  } else {
+    as_number(text)
+  }
   out <- if (r_class == "double") {
     list(value = number, lost = !is.na(text) & is.na(number) & !is.nan(number))
   } else {
     as_whole(number, !is.na(text))
+  }
+  if (r_class == "double" && inherits(x, "integer64")) {
+    # integer64 holds whole numbers to 64 bits, a double exactly only to 2^53: a value is lost
+    # where its double, read back as integer64 by integer64's own ==, isn't the value (D18.111).
+    # A double beyond integer64's range, 2^63 for the values from 2^63 - 512 up, is lost
+    # without being read back, since C leaves that cast undefined: NA on x86-64, integer64's
+    # largest value where it saturates, as on arm64 before bit64 4.8.0, which gives NA on every
+    # platform (the Codex round's review, dt F1). Its number stays the nearest double.
+    held <- which(!is.na(number) & abs(number) < 2^63)
+    exact <- logical(length(number))
+    exact[held] <- (distinct[held] == number[held]) %in% TRUE
+    out$lost <- out$lost | (!is.na(number) & !exact)
   }
   not_finite <- is.nan(number) | is.infinite(number)
   if (is.null(at)) {
@@ -395,7 +426,9 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
 #'
 #' `value` is the caller's column itself where it is stored as plain numbers, whatever its
 #' type, or else the column coerced to its expected class, the caller's column itself where
-#' its class is right: never masked or kept for the run (16.2; D16.42, m9). `open` holds every
+#' its class is right: never masked or kept for the run (16.2; D16.42, m9). An integer64 value
+#' a double can't hold exactly, where a double is wanted, is NA there, so it joins no record,
+#' as parent or child (D18.111). `open` holds every
 #' sentinel of the key's type, which reach_column() makes incomparable on both sides of a
 #' join, so no record reaches a parent through one (D16.26; D16.42, m8). Where `value` is
 #' numbers, `open` is numbers too: another type's text code only where the number is written
@@ -414,7 +447,17 @@ key_values <- function(input, table, attribute) {
   value <- if (is.numeric(x) && !is.object(x)) {
     x
   } else {
-    coerce_column(x, row$r_class, row$date_format)$value
+    coerced <- coerce_column(x, row$r_class, row$date_format)
+    # An integer64 value a double can't hold exactly, which coercion_loss reports, is NA, so it
+    # joins no record, as parent or child (D18.111); every other lost value is NA already, so
+    # no other key is scanned for one.
+    if (inherits(x, "integer64")) {
+      lost <- which(coerced$lost)
+      if (length(lost) > 0L) {
+        coerced$value[lost] <- NA
+      }
+    }
+    coerced$value
   }
   sentinels <- input$spec$sentinels
   open <- sentinels$value[sentinels$data_type == row$family]
@@ -431,9 +474,9 @@ key_values <- function(input, table, attribute) {
 #' The table a record reaches a column in, and each record's row there (D16.13)
 #'
 #' A table holding the column uses its own rows; otherwise the shortest path of foreign keys
-#' to a table holding it (fk_path()). A record whose path breaks (an NA, sentinel or orphan
-#' key on the way, or a table or column on it not given) gets NA. `home` is NA when no table
-#' holding the column is reachable.
+#' to a table holding it (fk_path()). A record whose path breaks (an NA, blank, sentinel or
+#' orphan key on the way, or a table or column on it not given) gets NA. `home` is NA when no
+#' table holding the column is reachable.
 #' @noRd
 reach_column <- function(input, table, column_name) {
   n <- nrow(input$data[[table]])
@@ -446,32 +489,9 @@ reach_column <- function(input, table, column_name) {
   if (is.null(path)) {
     return(list(home = NA_character_, rows = rep(NA_integer_, n)))
   }
-  rows <- seq_len(n)
-  current <- table
-  for (k in seq_len(nrow(path))) {
-    parent <- path$reference_table[[k]]
-    child <- key_values(input, current, path$attribute_name[[k]])
-    parent_keys <- key_values(input, parent, path$reference_attribute[[k]])
-    # The first step matches the child's column itself, a later one the rows reached (16.2).
-    from <- if (k == 1L) child$value else child$value[rows]
-    to <- parent_keys$value
-    from_open <- child$open
-    to_open <- parent_keys$open
-    # Numbers join numbers as stored; where one side is text and the other numbers, only the
-    # numeric side is written as text, its sentinels with it (D16.42, m9).
-    if (is.numeric(from) && is.character(to)) {
-      from <- value_text(from)
-      from_open <- value_text(from_open)
-    } else if (is.character(from) && is.numeric(to)) {
-      to <- value_text(to)
-      to_open <- value_text(to_open)
-    }
-    # NA and every sentinel of the child's and the parent's types match nothing, masked inside
-    # the match rather than in a copy of the column (16.2; D16.26; D16.42, m8).
-    rows <- match(from, to, incomparables = c(NA, from_open, to_open))
-    current <- parent
-  }
-  list(home = current, rows = rows)
+  # The path followed one key join per hop, as a key_pairs side or the bands' key is
+  # (chain_rows(), D18.27).
+  list(home = path$reference_table[[nrow(path)]], rows = chain_rows(input, table, path))
 }
 
 #' The values of a column in its home table at the rows a record reached, as given; NA where
@@ -636,12 +656,18 @@ record_pk_text <- function(input, table, rows) {
       repeats <- logical(nrow(data))
     } else {
       # The caller's columns are read where they are: a one-column PK as it is, a composite
-      # one as a table made by reference over them, none copied (16.2).
-      keyed <- if (length(given) == 1L) {
+      # one, or one stored as integer64, whose own duplicated() ignores fromLast, as a table
+      # made by reference over them, none copied (16.2).
+      keyed <- if (length(given) == 1L && !inherits(data[[given]], "integer64")) {
         data[[given]]
       } else {
         setDT(lapply(given, function(column) data[[column]]))
       }
+      # data.table reads the table's doubles exactly, whatever setNumericRounding() the session
+      # has set, as check_keys() does; the session's setting is put back on exit (m67; the
+      # minors pass's fix round, dt M2).
+      rounding <- setNumericRounding(0L)
+      on.exit(setNumericRounding(rounding), add = TRUE)
       repeats <- duplicated(keyed) | duplicated(keyed, fromLast = TRUE)
     }
     assign(name, repeats, envir = input$cache)
