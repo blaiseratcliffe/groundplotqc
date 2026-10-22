@@ -458,8 +458,8 @@ disagreeing_rows <- function(groups, value) {
 #' `expected` list shows its first example_cap values in C order and the count of the rest
 #' (D18.81), but a number-typed attribute's blanks first, then its numbers in ascending order,
 #' then the rest in C order (D18.102), a blank value as the blank text (D18.83), and is NA at
-#' example_cap 0 (D18.82). A record whose grouping value is NA, blank or a sentinel, as given,
-#' isn't grouped.
+#' example_cap 0 (D18.82). A record whose grouping value is NA, blank or a sentinel, read by
+#' key_rows() from the values as given, isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   # data.table's ranks and repeats read doubles exactly here, whatever setNumericRounding()
@@ -511,9 +511,9 @@ check_keys <- function(input, context) {
     joined[[name]]
   }
   # Each row's group by `by`'s values in a table, NA where one of them is NA, blank or a
-  # sentinel, as given; or why the groups can't be made. Each column is grouped as
-  # as_compared() reads it, a number-typed one stored as text or as a factor by its numbers
-  # and any other as given (D18.126).
+  # sentinel, read by key_rows() from the values as given; or why the groups can't be made.
+  # Each column is grouped as as_compared() reads it, a number-typed one stored as text or as a
+  # factor by its numbers and any other as given (D18.126).
   by_groups <- function(table, by) {
     if (!table %chin% supplied) {
       return("no_table")
