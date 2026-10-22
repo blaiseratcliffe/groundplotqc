@@ -2248,3 +2248,81 @@ test_that("a number-typed attribute's expected lists blanks, numbers, then the r
   expect_equal(expected_at(stored, 10L), "2; 3; 4; 10; 25")
   expect_equal(expected_at(stored, 3L), "2; 3; 4 (and 2 more)")
 })
+
+# ---- the Copilot fix round ----
+
+test_that("a number-typed grouping column groups by its numbers, a text one as given (D18.126)", {
+  settings <- list(
+    design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = "v",
+    subplot_label_table = "t", subplot_label_columns = c("g", "label")
+  )
+  spec_of <- function(type) {
+    gpq_read_spec(data.frame(
+      table_name = "t", attribute_name = c("id", "g", "v", "label"),
+      key_type = c("PK", ".", ".", "."), data_type = c("character", type, "numeric", "character")
+    ))
+  }
+  tables <- list(t = data.table::data.table(
+    id = c("a", "b"), g = c("1", "01"), v = c(10, 20), label = "L"
+  ))
+  before <- data.table::copy(tables$t)
+  # "1" and "01" in an integer-typed column are one group, whose records differ in v; and the
+  # labels ("1", "L") and ("01", "L") are one label held by two keys.
+  number <- gpq_check_conformance(tables, spec_of("integer"), layers = 4, settings = settings)
+  found <- opened(number)
+  expect_equal(paste(found$rule_id, placed_at(found)), c(
+    "design_geometry_inconsistent t v 1", "design_geometry_inconsistent t v 2",
+    "subplot_label_ambiguous t label 1", "subplot_label_ambiguous t label 2"
+  ))
+  # The values and expected are written as given.
+  expect_equal(found$value, c("10", "20", "L", "L"))
+  expect_equal(found$expected[1:2], c("10; 20", "10; 20"))
+  # The caller's table is unchanged.
+  expect_identical(tables$t, before)
+  # A text-typed column is grouped as given: "1" and "01" are two groups.
+  text <- gpq_check_conformance(tables, spec_of("character"), layers = 4, settings = settings)
+  expect_equal(nrow(opened(text)), 0L)
+  # The same table as a CSV file, every column read as text.
+  path <- file.path(withr::local_tempdir(), "t.csv")
+  data.table::fwrite(tables$t, path)
+  read <- gpq_check_conformance(c(t = path), spec_of("integer"), layers = 4, settings = settings)
+  again <- opened(read)
+  expect_equal(paste(again$rule_id, placed_at(again)), paste(found$rule_id, placed_at(found)))
+})
+
+test_that("grouping by numbers: decimals, factors, codes and text that isn't one (D18.126)", {
+  testthat::skip_on_cran()
+  settings <- list(
+    design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = "v"
+  )
+  spec_of <- function(type) {
+    gpq_read_spec(
+      data.frame(
+        table_name = "t", attribute_name = c("id", "g", "v"), key_type = c("PK", ".", "."),
+        data_type = c("character", type, "numeric")
+      ),
+      sentinels = gpq_sentinels(numeric = c(missing = -99, not_applicable = -88))
+    )
+  }
+  failing <- function(type, g, v) {
+    tables <- list(t = data.table::data.table(id = paste0("r", seq_along(v)), g = g, v = v))
+    results <- gpq_check_conformance(tables, spec_of(type), layers = 4, settings = settings)
+    opened(results, "design_geometry_inconsistent")$row_number
+  }
+  # "1.0" and "1e0" in a numeric-typed column are one number, so one group; so are a factor's
+  # labels "1" and "01" in an integer-typed one.
+  expect_equal(failing("numeric", c("1.0", "1e0"), c(10, 20)), 1:2)
+  expect_equal(failing("integer", factor(c("1", "01")), c(10, 20)), 1:2)
+  # Records of the merged group that agree don't fail.
+  expect_equal(failing("integer", c("1", "01"), c(10, 10)), integer())
+  # Text that isn't a number is grouped as written: two such texts are two groups, not one
+  # group of NA, and one text twice is one group.
+  expect_equal(failing("integer", c("abc", "xyz"), c(10, 20)), integer())
+  expect_equal(failing("integer", c("abc", "abc"), c(10, 20)), 1:2)
+  # NA, a blank and the missing-value code, twice each with values that differ, group nothing,
+  # so the groups are ranked over the rest: "1" and "01" are still one group, "2" and "02"
+  # another that agrees.
+  g <- c("1", NA, NA, "", "", "-99", "-99", "01", "2", "02")
+  v <- c(10, 1, 2, 3, 4, 5, 6, 20, 30, 30)
+  expect_equal(failing("integer", g, v), c(1L, 8L))
+})

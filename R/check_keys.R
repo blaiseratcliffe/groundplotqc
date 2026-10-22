@@ -453,11 +453,13 @@ disagreeing_rows <- function(groups, value) {
 #' rows in the table, written as text and sorted, another row of its report unit has too,
 #' expected the others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed
 #' column is compared by its numbers, one stored as text too, text that doesn't coerce as
-#' written (D18.80); an `expected` list shows its first example_cap values in C order and the
-#' count of the rest (D18.81), but a number-typed attribute's blanks first, then its numbers in
-#' ascending order, then the rest in C order (D18.102), a blank value as the blank text
-#' (D18.83), and is NA at example_cap 0 (D18.82). A record whose grouping value is NA, blank or
-#' a sentinel isn't grouped.
+#' written (D18.80), and a number-typed column of `design_geometry_by` or
+#' `subplot_label_columns` groups the records so, a text-typed one as given (D18.126); an
+#' `expected` list shows its first example_cap values in C order and the count of the rest
+#' (D18.81), but a number-typed attribute's blanks first, then its numbers in ascending order,
+#' then the rest in C order (D18.102), a blank value as the blank text (D18.83), and is NA at
+#' example_cap 0 (D18.82). A record whose grouping value is NA, blank or a sentinel, as given,
+#' isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   # data.table's ranks and repeats read doubles exactly here, whatever setNumericRounding()
@@ -509,7 +511,9 @@ check_keys <- function(input, context) {
     joined[[name]]
   }
   # Each row's group by `by`'s values in a table, NA where one of them is NA, blank or a
-  # sentinel; or why the groups can't be made.
+  # sentinel, as given; or why the groups can't be made. Each column is grouped as
+  # as_compared() reads it, a number-typed one stored as text or as a factor by its numbers
+  # and any other as given (D18.126).
   by_groups <- function(table, by) {
     if (!table %chin% supplied) {
       return("no_table")
@@ -523,11 +527,12 @@ check_keys <- function(input, context) {
     for (k in seq_along(values)) {
       found <- key_rows(values[[k]], rows[k], sentinels, "allowed_in_fk")
       missing[c(found$missing, found$open)] <- TRUE
+      values[[k]] <- as_compared(values[[k]], rows[k])
     }
     groups <- rep(NA_integer_, length(missing))
     present <- which(!missing)
-    # The columns are read where they are, a subset taken only where some row is left out
-    # (16.2).
+    # The columns as compared are read where they are, a subset taken only where some row is
+    # left out (16.2).
     if (length(present) > 0L && length(present) == length(missing)) {
       groups <- frankv(values, ties.method = "dense")
     } else if (length(present) > 0L) {
@@ -535,11 +540,11 @@ check_keys <- function(input, context) {
     }
     groups
   }
-  # A column's values as the design candidates and the keys of pk_duplicate and
-  # subplot_label_ambiguous are compared (D18.80, D18.100, D18.104): a number-typed column
-  # stored as text, or as a factor, by its numbers, as Layer 1 coerces them, and text that
-  # doesn't coerce as written, each distinct pair one dense rank, NA a value of its own; any
-  # other column as given.
+  # A column's values as the design candidates compare and group them and the keys of
+  # pk_duplicate and subplot_label_ambiguous are compared (D18.80, D18.100, D18.104, D18.126):
+  # a number-typed column stored as text, or as a factor, by its numbers, as Layer 1 coerces
+  # them, and text that doesn't coerce as written, each distinct pair one dense rank, NA a
+  # value of its own; any other column as given.
   as_compared <- function(x, row) {
     if (row$family != "numeric" || !(is.character(x) || is.factor(x))) {
       return(x)
