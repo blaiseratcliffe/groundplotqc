@@ -1369,8 +1369,10 @@ build_id_bands <- function(id_bands, code_lists, file,
   duplicate_findings <- NULL
   if (with_column) {
     problems <- character()
+    # A dictionary row with no table or attribute name is passed over (R170).
     known_column <- any(
-      attributes$table_name == id_bands$table & attributes$attribute_name == id_bands$attribute
+      attributes$table_name == id_bands$table & attributes$attribute_name == id_bands$attribute,
+      na.rm = TRUE
     )
     if (!known_column) {
       problems <- c(problems, report_text(

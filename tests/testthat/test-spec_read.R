@@ -2105,3 +2105,59 @@ test_that("reach_invalid finds each table the walk checks that no walk from a ro
   checks <- preflight_checks(walked)
   expect_equal(checks$outcome[checks$rule_id == "reach_invalid"], "pass")
 })
+
+# ---- the Copilot fix round (R170) ----
+
+test_that("a key pair's unknown side is a finding beside a dictionary row with no name", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("id", NA), key_type = c("PK", NA),
+    data_type = "character"
+  )
+  pairs <- data.frame(table_name = "t", left = "missing", right = "id", note = NA)
+  # The reader stopped on the row with no attribute name; now the left side is a finding.
+  spec <- gpq_read_spec(dictionary, key_pairs = pairs)
+  found <- spec$read_findings[spec$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$detail, report_text(
+    "preflight_detail_key_pair_invalid_side",
+    value = "missing", table_name = "t"
+  ))
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+  # Read from a file, the finding keeps its cell.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(pairs, path)
+  from_file <- gpq_read_spec(dictionary, key_pairs = path)
+  found <- from_file$read_findings[from_file$read_findings$rule_id == "key_pair_invalid"]
+  expect_equal(found$source_cell, paste0(basename(path), ":2"))
+})
+
+test_that("the bands' unknown column is a finding beside a dictionary row with no name", {
+  # The bands' table has a row with no attribute name; the banded column isn't in it.
+  spec <- gpq_read_spec(
+    data.frame(
+      table_name = c("sites", "sites", "datasets", "datasets", "sites"),
+      attribute_name = c("site_id", "dataset_id", "dataset_id", "contributor_id", NA),
+      key_type = c("PK", "FK", "PK", NA, NA), reference_table = c(NA, "datasets", NA, NA, NA),
+      data_type = c("integer", "character", "character", "character", "character")
+    ),
+    code_lists = list(
+      ranges = data.frame(
+        contributor = c("AB", "PE"), v2_start = c("1", "100"), v2_end = c("99", "199")
+      ),
+      contributor = data.frame(abbreviated_name = c("AB", "PE"), contributor_id = c("100", "120"))
+    ),
+    non_code_sheets = c("ranges", "contributor"),
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = "^reserved_[0-9]+$", table = "sites", attribute = "plot_id",
+      key = "dataset_id > contributor_id"
+    )
+  )
+  findings <- spec$read_findings
+  expect_equal(findings$detail[findings$rule_id == "site_id_range_invalid"], report_text(
+    "preflight_detail_site_id_range_invalid_column",
+    table_name = "sites", attribute_name = "plot_id"
+  ))
+  expect_equal(nrow(spec$id_band_columns), 0L)
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})

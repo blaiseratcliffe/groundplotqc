@@ -320,7 +320,8 @@ problem_unit_key <- function(problem_unit, spec) {
   table <- problem_unit[[1L]]
   key_col <- problem_unit[[2L]]
   attributes <- spec$attributes
-  if (!any(attributes$table_name == table & attributes$attribute_name == key_col)) {
+  # A dictionary row with no table or attribute name is passed over (R170).
+  if (!any(attributes$table_name == table & attributes$attribute_name == key_col, na.rm = TRUE)) {
     stop(sprintf(
       "`problem_unit` names %s.%s, which the specification doesn't have.", table, key_col
     ), call. = FALSE)

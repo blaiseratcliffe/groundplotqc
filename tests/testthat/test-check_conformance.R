@@ -973,3 +973,21 @@ test_that("a count writes results rows in the counted table's groups, no issue (
     fixed = TRUE
   )
 })
+
+# the Copilot fix round (R170)
+test_that("problem_unit naming a column the spec lacks stops so beside a row with no name", {
+  spec <- gpq_read_spec(data.frame(
+    table_name = "t", attribute_name = c("id", NA), key_type = c("PK", NA),
+    data_type = "character"
+  ))
+  # The spec passes pre-flight (m136), so the run reaches its check of problem_unit.
+  expect_no_error(gpq_preflight(spec))
+  expect_error(
+    gpq_check_conformance(
+      list(t = data.frame(id = "a")), spec,
+      layers = 0, problem_unit = list("t", "nope")
+    ),
+    "`problem_unit` names t.nope, which the specification doesn't have.",
+    fixed = TRUE
+  )
+})

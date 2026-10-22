@@ -39,7 +39,8 @@ parse_chain <- function(chain, table, keys, attributes) {
     current <- edges$reference_table[[edge]]
   }
   last <- parts[[length(parts)]]
-  if (!any(attributes$table_name == current & attributes$attribute_name == last)) {
+  # A dictionary row with no table or attribute name is passed over (R170).
+  if (!any(attributes$table_name == current & attributes$attribute_name == last, na.rm = TRUE)) {
     return(NULL)
   }
   list(steps = edges[steps], table = current, attribute = last)

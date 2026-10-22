@@ -156,3 +156,31 @@ test_that("a missing-value code matches nothing, whatever codes the parent's key
   expect_equal(groups$values$water_body[groups$row_group], c("*", "LK", "RV", "RV"))
   expect_equal(reach_column(input, "hauls", "water_body")$rows, c(NA, 1L, 2L, 2L))
 })
+
+# the Copilot fix round (R170)
+test_that("parse_chain() passes over a dictionary row with no table or attribute name", {
+  # Grandchildren g reach their children c and through them the parents p. p and g each have a
+  # row with no attribute name, and one row has no table name but the name "missing".
+  spec <- gpq_read_spec(data.frame(
+    table_name = c("p", "p", "p", "c", "c", "g", "g", "g", NA),
+    attribute_name = c("pid", "name", NA, "cid", "pid", "gid", "cid", NA, "missing"),
+    key_type = c("PK", ".", ".", "PK", "FK", "PK", "FK", ".", "."),
+    reference_table = c(NA, NA, NA, NA, "p", NA, "c", NA, NA),
+    data_type = "character"
+  ))
+  parse <- function(chain, table) parse_chain(chain, table, spec$keys, spec$attributes)
+  # An endpoint the table lacks doesn't parse, beside the row with no attribute name, through
+  # no foreign key or two.
+  expect_no_condition(own <- parse("missing", "g"))
+  expect_null(own)
+  expect_no_condition(far <- parse("cid > pid > missing", "g"))
+  expect_null(far)
+  # Nor beside the row with no table name.
+  expect_no_condition(nameless <- parse("missing", "c"))
+  expect_null(nameless)
+  # A real endpoint still resolves.
+  expect_equal(parse("cid", "g")[c("table", "attribute")], list(table = "g", attribute = "cid"))
+  through <- parse("cid > pid > name", "g")
+  expect_equal(through$steps$table_name, c("g", "c"))
+  expect_equal(through[c("table", "attribute")], list(table = "p", attribute = "name"))
+})
