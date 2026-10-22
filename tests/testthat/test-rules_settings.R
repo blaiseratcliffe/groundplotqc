@@ -559,3 +559,57 @@ test_that("the design candidates' settings resolve; a table setting takes one na
     fixed = TRUE
   )
 })
+
+# ---- the Copilot fix round ----
+
+test_that("the design candidates' attribute lists refuse a repeated name in every tier (D18.127)", {
+  wants <- paste(
+    "must be a character vector of attribute names, each given once, none of them NA, empty,",
+    "padded with spaces or holding \";\"."
+  )
+  rows <- function(name, value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = name, value = value, type = "character")
+    ))
+  }
+  lists <- c(
+    "design_geometry_by", "design_geometry_columns", "subplot_label_columns",
+    "design_signature_columns"
+  )
+  for (name in lists) {
+    given <- function(value) structure(list(value), names = name)
+    option <- paste0("groundplotqc.", name)
+    for (repeated in list(c("v", "v"), c("u", "v", "u"))) {
+      expect_error(
+        resolve_setting(name, given(repeated)), paste0("Setting ", name, " (argument) ", wants),
+        fixed = TRUE, info = paste(name, deparse(repeated))
+      )
+    }
+    expect_error(
+      resolve_setting(name, rules = rows(name, "v; v")),
+      paste0("Setting ", name, " (rule set) ", wants),
+      fixed = TRUE, info = name
+    )
+    withr::with_options(structure(list(c("v", "v")), names = option), {
+      expect_error(
+        resolve_setting(name), paste0("Setting ", name, " (option ", option, ") ", wants),
+        fixed = TRUE, info = name
+      )
+      # Only the tier that wins is checked: a valid argument or rule-set row passes over the
+      # option's repeat.
+      expect_equal(
+        resolve_setting(name, given("v")), list(value = "v", tier = "argument"),
+        info = name
+      )
+      expect_equal(
+        resolve_setting(name, rules = rows(name, "u; v")),
+        list(value = c("u", "v"), tier = "rule set"),
+        info = name
+      )
+    })
+    # No names, and names given once, are still accepted.
+    expect_identical(resolve_setting(name, given(character()))$value, character(), info = name)
+    expect_equal(resolve_setting(name, given(c("u", "v")))$value, c("u", "v"), info = name)
+  }
+})

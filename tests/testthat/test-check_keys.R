@@ -2326,3 +2326,24 @@ test_that("grouping by numbers: decimals, factors, codes and text that isn't one
   v <- c(10, 1, 2, 3, 4, 5, 6, 20, 30, 30)
   expect_equal(failing("integer", g, v), c(1L, 8L))
 })
+
+test_that("a repeated name in design_geometry_columns stops pre-flight and the run (D18.127)", {
+  spec <- gpq_read_spec(data.frame(
+    table_name = "t", attribute_name = c("id", "g", "v"), key_type = c("PK", ".", "."),
+    data_type = c("character", "character", "numeric")
+  ))
+  tables <- list(t = data.table::data.table(id = c("a", "b"), g = "same", v = 10))
+  settings <- list(
+    design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = c("v", "v")
+  )
+  refused <- paste(
+    "Setting design_geometry_columns (argument) must be a character vector of attribute names,",
+    "each given once, none of them NA, empty, padded with spaces or holding \";\"."
+  )
+  # Before, pre-flight passed and the run stopped at the results check, on clean data.
+  expect_error(gpq_preflight(spec, settings = settings), refused, fixed = TRUE)
+  expect_error(
+    gpq_check_conformance(tables, spec, layers = 4, settings = settings), refused,
+    fixed = TRUE
+  )
+})

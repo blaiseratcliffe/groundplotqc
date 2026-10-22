@@ -19,7 +19,8 @@
 #' The code settings refuse, in every tier, a code that is empty, padded with spaces or holds
 #' ";" ("=" too for unknown codes), and an unknown code's name empty, padded or holding ";"
 #' or "=", so a typo in a rule-set row stops rather than giving a code no value matches; a
-#' row ending in "; " has an empty last code (D16.21, D16.23, D16.24).
+#' row ending in "; " has an empty last code (D16.21, D16.23, D16.24). The design candidates'
+#' four attribute-list settings also refuse, in every tier, a name given twice (D18.127).
 #' @noRd
 setting_definitions <- function() {
   text_ok <- function(x) {
@@ -46,7 +47,8 @@ setting_definitions <- function() {
     if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
   }
   # The design candidates' settings (D18.39): a table setting names one table,
-  # design_signature_by one attribute, the others any number of attributes; none built in.
+  # design_signature_by one attribute, the others any number of attributes, each once
+  # (D18.127); none built in.
   one_name <- function(wants) {
     list(
       type = "character", built_in = character(),
@@ -56,10 +58,12 @@ setting_definitions <- function() {
   }
   attribute_names <- list(
     type = "character", built_in = character(),
-    valid = function(x) text_ok(x) && is.null(names(x)) && plain(x, ";"),
+    valid = function(x) {
+      text_ok(x) && is.null(names(x)) && plain(x, ";") && !anyDuplicated(x)
+    },
     wants = paste(
-      "a character vector of attribute names, none of them NA, empty, padded with spaces",
-      "or holding \";\""
+      "a character vector of attribute names, each given once, none of them NA, empty,",
+      "padded with spaces or holding \";\""
     ),
     from_text = parts
   )
