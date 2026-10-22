@@ -46,22 +46,22 @@ names(magp_example)
 magp_example$magp_plots
 #>      magp_plot_id src_plot_id magp_site_id  plot plot_elevation plot_slope
 #>            <char>      <char>        <int> <int>          <num>      <num>
-#>  1:  magp_plots_1          s1            1     0            1.5        1.5
-#>  2:  magp_plots_2          s2            1     1            2.5        2.5
-#>  3:  magp_plots_3          s3            2     2            3.5        3.5
-#>  4:  magp_plots_4          s4            2     3            4.5        4.5
-#>  5:  magp_plots_5          s5            3     4            5.5        5.5
-#>  6:  magp_plots_6          s6            3     5            6.5        6.5
-#>  7:  magp_plots_7          s7            4     0            7.5        7.5
-#>  8:  magp_plots_8          s8            4     1            8.5        8.5
-#>  9:  magp_plots_9          s9            5     2            9.5        9.5
-#> 10: magp_plots_10         s10            5     3           10.5       10.5
-#> 11: magp_plots_11         s11            6     4           11.5       11.5
-#> 12: magp_plots_12         s12            6     5           12.5       12.5
-#> 13: magp_plots_13         s13            7     0           13.5       13.5
-#> 14: magp_plots_14         s14            7     1           14.5       14.5
-#> 15: magp_plots_15         s15            8     2           15.5       15.5
-#> 16: magp_plots_16         s16            8     3           16.5       16.5
+#>  1:  magp_plots_1          s1       350002     0            1.5        1.5
+#>  2:  magp_plots_2          s2       350002     1            2.5        2.5
+#>  3:  magp_plots_3          s3       350003     2            3.5        3.5
+#>  4:  magp_plots_4          s4       350003     3            4.5        4.5
+#>  5:  magp_plots_5          s5       350004     4            5.5        5.5
+#>  6:  magp_plots_6          s6       350004     5            6.5        6.5
+#>  7:  magp_plots_7          s7       350005     0            7.5        7.5
+#>  8:  magp_plots_8          s8       350005     1            8.5        8.5
+#>  9:  magp_plots_9          s9       450006     2            9.5        9.5
+#> 10: magp_plots_10         s10       450006     3           10.5       10.5
+#> 11: magp_plots_11         s11       450007     4           11.5       11.5
+#> 12: magp_plots_12         s12       450007     5           12.5       12.5
+#> 13: magp_plots_13         s13       450008     0           13.5       13.5
+#> 14: magp_plots_14         s14       450008     1           14.5       14.5
+#> 15: magp_plots_15         s15       450009     2           15.5       15.5
+#> 16: magp_plots_16         s16       450009     3           16.5       16.5
 #>     plot_aspect slope_class aspect_class design_change comments
 #>           <num>      <char>       <char>        <char>   <char>
 #>  1:         1.5           A            N             Y       t1

@@ -1,4 +1,4 @@
-# Check tables against a specification: structure, types and missing-value codes
+# Check tables against a specification: structure, types, missing-value codes, value domains and keys
 
 Runs the conformance stage on a set of related tables: pre-flight of the
 specification and configuration, then the checks of the layers asked
@@ -32,12 +32,13 @@ gpq_check_conformance(
   column of a CSV file is read as text, so `class_mismatch` and
   `integer_stored_as_double` don't run on its tables. In a CSV file an
   empty cell is a missing value and everything else is read as written,
-  so write files with data.table::fwrite() or write.csv(na = "",
-  row.names = FALSE). A cell that isn't valid UTF-8 is read as
-  Windows-1252, unless it holds a byte Windows-1252 doesn't define. A
-  table holding text marked as bytes is refused. Or a DBI connection:
-  the specification's tables are read from it under the names
-  `table_map` gives, and its other tables are left alone.
+  so write files with data.table::fwrite(). A cell that isn't valid
+  UTF-8 is read as Windows-1252, unless it holds a byte Windows-1252
+  doesn't define. A table holding text marked as bytes is refused. Or a
+  DBI connection: the specification's tables are read from it under the
+  names `table_map` gives, and its other tables are left alone. A column
+  stored as integer64 needs the bit64 package: the run loads it, and
+  stops if it isn't installed.
 
 - spec:
 
@@ -152,17 +153,52 @@ Layers and the rules they can raise:
   `sentinel_wrong_type`, `sentinel_rogue_code`, `species_unknown_code`,
   `whitespace_padding`, `na_text_in_id`.
 
-Layers 3 to 5 have no rules yet. A column whose name differs from its
+- Layer 3, value domains: `code_not_in_list`, `value_below_min`,
+  `value_above_max`, `string_too_long`, `pattern_mismatch`,
+  `decimals_exceeded`, `site_id_out_of_range`,
+  `coordinate_out_of_bounds`, `undeclared_code_set`.
+
+- Layer 4, keys and relationships: `pk_duplicate`, `pk_missing`,
+  `fk_orphan`, `fk_unassigned`, `fk_sentinel_unverified`,
+  `fk_not_applicable_mismatch`, `src_id_duplicate`, `key_incoherent`,
+  `record_unreachable`, `parent_without_children`,
+  `design_geometry_inconsistent`, `subplot_label_ambiguous`,
+  `design_duplicate_signature`.
+
+Two of these write no issue at this version: `parent_without_children`
+counts, in the results only, the parent records that no child record
+names, and `fk_not_applicable_mismatch` writes only `not_run` rows until
+a version brings the applicability matrix. `record_unreachable` runs
+only when
+[`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
+was given `reach`, and the design checks only when their settings name
+their tables and columns; otherwise each writes one `not_run` row
+(`no_input`).
+
+Layer 5 has no rules yet. A column whose name differs from its
 dictionary attribute's only in letter case or spaces is reported by
-`column_name_mismatch` and checked as that attribute. Layer 0's rules
-and `class_mismatch` and `integer_stored_as_double` count tables or
-columns, not records, and their rows have `"*"` in every group column. A
-value that failed Layer 1 is not evaluated by Layer 2: its issue there
-has status `not_evaluated` and names the earlier issue as its root. When
-a rule fails on every checked record of a column in a group, and at
-least `column_level_min_n` records were checked, the run records one
-column-level issue; masked records sharing one root collapse the same
-way.
+`column_name_mismatch` and checked as that attribute. `class_mismatch`,
+`integer_stored_as_double`, `undeclared_code_set` and Layer 0's rules
+count tables or columns, not records, and their rows have `"*"` in every
+group column. A value that failed Layer 1 is not evaluated by Layer 2:
+its issue there has status `not_evaluated` and names the earlier issue
+as its root. A value that failed Layer 1 or 2 is not evaluated by Layer
+3's record rules, which leave a missing value, a blank, a missing-value
+code and an unknown code to Layer 2. A value that failed Layer 1 or 2 is
+not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is
+in a primary or foreign key column: such a value still joins, so Layer 4
+checks it as a key. Masking applies only to a record's own values:
+`key_incoherent` and the design checks still use values they read from
+other records, even ones that failed an earlier layer in those records.
+Layer 4 leaves a key that is missing, blank or a missing-value code the
+key can't hold to `pk_missing` and `fk_unassigned`, counts a foreign
+key's missing-value code that it may hold as not evaluated in
+`fk_orphan` (and warns of it in `fk_sentinel_unverified` where the key
+is a number), and doesn't evaluate `record_unreachable` on a record
+`pk_missing` reports. When a rule fails on every checked record of a
+column in a group, and at least `column_level_min_n` records were
+checked, the run records one column-level issue; masked records sharing
+one root collapse the same way.
 
 A record's group values are read from its own table, or from the nearest
 table that holds the column, through the foreign keys; a record that
@@ -175,7 +211,13 @@ row.
 Settings (each from the argument, the rule set, the option, or the
 built-in value, see
 [groundplotqc_options](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)):
-`raw_na_policy`, `rogue_codes`, `unknown_codes`, `column_level_min_n`,
+`raw_na_policy`, `rogue_codes`, `unknown_codes`,
+`coordinate_attributes`, `code_set_max_values`,
+`code_set_skip_attributes`, `code_set_skip_pattern`,
+`design_geometry_table`, `design_geometry_by`,
+`design_geometry_columns`, `subplot_label_table`,
+`subplot_label_columns`, `design_signature_table`,
+`design_signature_by`, `design_signature_columns`, `column_level_min_n`,
 `example_cap`, `lang` and `severity`. A rule set's `rules` rows give a
 rule's severity and turn it off (`enabled`) for a table and attribute:
 the most specific row that gives a value wins (table and attribute, then

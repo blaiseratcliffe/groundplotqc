@@ -11,7 +11,7 @@ the rule-set place in the settings precedence (see groundplotqc_options)."></hea
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -74,16 +74,68 @@ rows; pre-flight's findings cite the lines while the rows are unchanged.</p>
 <span class="r-in"><span><span class="va">rules</span><span class="op">$</span><span class="va">meta</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    rule_set_name version       date spec_version</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>           &lt;char&gt;  &lt;char&gt;     &lt;char&gt;       &lt;char&gt;</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1:   MAGPlot 2.0       2 2026-10-13     20261005</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1:   MAGPlot 2.0       3 2026-10-19     20261005</span>
 <span class="r-in"><span><span class="va">rules</span><span class="op">$</span><span class="va">settings</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>               setting              value      type</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                &lt;char&gt;             &lt;char&gt;    &lt;char&gt;</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1:               lang                 en character</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2:        example_cap                  5   integer</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3: column_level_min_n                 10   integer</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4:      raw_na_policy             always character</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5:        rogue_codes -999; UNK; NA; N/A character</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6:      unknown_codes   species=UNKN.SPP character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                      setting</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                       &lt;char&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  1:                     lang</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  2:              example_cap</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  3:       column_level_min_n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  4:            raw_na_policy</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  5:              rogue_codes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  6:            unknown_codes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  7:    coordinate_attributes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  8:      code_set_max_values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  9: code_set_skip_attributes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10:    code_set_skip_pattern</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11:    design_geometry_table</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12:       design_geometry_by</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13:  design_geometry_columns</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14:      subplot_label_table</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15:    subplot_label_columns</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16:   design_signature_table</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17:      design_signature_by</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18: design_signature_columns</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                 value</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                                                                &lt;char&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  1:                                                                                en</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  2:                                                                                 5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  3:                                                                                10</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  4:                                                                            always</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  5:                                                                -999; UNK; NA; N/A</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  6:                                                                  species=UNKN.SPP</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  7:                                                 latitude; longitude; utm_e; utm_n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  8:                                                                                25</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  9:                     meas_plots; meas_frames; temporal_extent; meas_cycle; subplot</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10:                                 _id$|^comments$|name|_date$|^src_|^meas_subplots$</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11:                                                                magp_design_frames</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12:                                                           magp_design_id; subplot</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13:                      plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14:                                                                     magp_subplots</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15:                                                             magp_plot_id; subplot</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16:                                                                magp_design_frames</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17:                                                                    magp_design_id</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18: frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>          type</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>        &lt;char&gt;</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  1: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  2:   integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  3:   integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  4: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  5: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  6: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  7: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  8:   integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  9: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17: character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18: character</span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

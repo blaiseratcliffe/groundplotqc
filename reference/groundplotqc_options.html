@@ -9,7 +9,7 @@ set and R options. This page lists the R options."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -78,14 +78,19 @@ rows' <code>severity</code> column gives this tier. Pre-flight checks each entry
 (<code>rule_id_unknown</code>, <code>rule_set_override_invalid</code>); a pre-flight check's own
 outcome can't be changed.</p></li>
 <li><p><code>groundplotqc.example_cap</code>: how many distinct failing values a results row
-shows in its <code>examples</code> column. Built-in: <code>5</code>.</p></li>
+shows in its <code>examples</code> column. Built-in: <code>5</code>. It also caps how many values
+<code>design_geometry_inconsistent</code> and <code>design_duplicate_signature</code> list in an
+issue's <code>expected</code>, which then ends with a count of the rest; at 0,
+<code>expected</code> is NA, as <code>examples</code> is.</p></li>
 <li><p><code>groundplotqc.column_level_min_n</code>: the fewest records a column must have in
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: <code>10</code>.</p></li>
 <li><p><code>groundplotqc.raw_na_policy</code>: when a raw <code>NA</code> is an error (<code>raw_na</code>) in a
-column outside the primary and foreign keys, whose missing values Layer 4
-reports: <code>"when_sentinels"</code>, only in a column whose type has missing-value
-codes; <code>"always"</code>; or <code>"never"</code>. Built-in: <code>"when_sentinels"</code>.</p></li>
+column outside the primary and foreign keys, whose missing values
+<code>pk_missing</code> and <code>fk_unassigned</code> report (Layer 4, see
+<code><a href="gpq_check_conformance.html">gpq_check_conformance()</a></code>): <code>"when_sentinels"</code>, only in a column whose type
+has missing-value codes; <code>"always"</code>; or <code>"never"</code>. Built-in:
+<code>"when_sentinels"</code>.</p></li>
 <li><p><code>groundplotqc.rogue_codes</code>: values that stand in for a missing value but
 aren't the agreed codes (<code>sentinel_rogue_code</code>), compared as numbers in a
 column stored as numbers, as text otherwise. A value is never one when it
@@ -96,11 +101,47 @@ code that <code>sentinel_wrong_type</code> reports. Built-in:
 <li><p><code>groundplotqc.unknown_codes</code>: codes for "unknown" by attribute, such as
 <code>c(species = "UNKN.SPP")</code> (<code>species_unknown_code</code>); an attribute may be
 named more than once. Built-in: none.</p></li>
+<li><p><code>groundplotqc.coordinate_attributes</code>: attribute names, in any table, that
+<code>coordinate_out_of_bounds</code> checks against the dictionary's minimum and
+maximum, and that <code>value_below_min</code> and <code>value_above_max</code> then leave
+alone. Built-in: none.</p></li>
+<li><p><code>groundplotqc.code_set_max_values</code>: the most distinct values a text column
+without a code list can hold and still be reported by
+<code>undeclared_code_set</code>, which judges only a column holding more values than
+this, not counting NA, blanks, missing-value codes and unknown codes.
+Built-in: <code>25</code>.</p></li>
+<li><p><code>groundplotqc.code_set_skip_attributes</code>: attributes <code>undeclared_code_set</code>
+never judges. Built-in: none.</p></li>
+<li><p><code>groundplotqc.code_set_skip_pattern</code>: one regular expression;
+<code>undeclared_code_set</code> doesn't judge an attribute whose name matches it.
+Built-in: none.</p></li>
+<li><p><code>groundplotqc.design_geometry_table</code>, <code>groundplotqc.design_geometry_by</code> and
+<code>groundplotqc.design_geometry_columns</code>: the table
+<code>design_geometry_inconsistent</code> reads, the attributes that group its
+records, and the attributes that must agree within a group. Built-in: none.</p></li>
+<li><p><code>groundplotqc.subplot_label_table</code> and <code>groundplotqc.subplot_label_columns</code>:
+the table <code>subplot_label_ambiguous</code> reads and the attributes that label its
+records. Built-in: none.</p></li>
+<li><p><code>groundplotqc.design_signature_table</code>, <code>groundplotqc.design_signature_by</code>
+and <code>groundplotqc.design_signature_columns</code>: the table
+<code>design_duplicate_signature</code> reads, its foreign key to the records
+compared, and the attributes whose values, over the table's rows that name
+a record, make up that record's signature. Built-in: none.</p></li>
 </ul><p>In a rule set's settings rows, a whole number has type <code>integer</code>, a setting
 with several values gives them joined by "; ", and a named one gives
 "name=value" parts. In every tier, a code can't be empty, begin or end with
 a space, tab or line break, or hold ";". In <code>groundplotqc.unknown_codes</code> the
-same holds for each name, and neither a code nor a name can hold "=".</p>
+same holds for each name, and neither a code nor a name can hold "=". The
+same holds for each table and attribute name in
+<code>groundplotqc.coordinate_attributes</code>, <code>groundplotqc.code_set_skip_attributes</code>
+and the eight options above.</p>
+<p>Options apply to every specification checked in the session. A table or
+attribute an option names that a specification doesn't have is reported by
+pre-flight as a warning (<code>option_unknown_name</code>) and otherwise ignored; given
+as an argument or in a rule set, such a name stops pre-flight
+(<code>setting_unknown_name</code>). In <code>groundplotqc.design_geometry_by</code>,
+<code>groundplotqc.subplot_label_columns</code> and <code>groundplotqc.design_signature_columns</code>, one such
+name drops the whole option, so its check doesn't run.</p>
 <p>More options are added by the versions that bring the settings they control.</p>
     </div>
 

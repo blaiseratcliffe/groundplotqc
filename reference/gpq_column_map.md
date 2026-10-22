@@ -16,7 +16,15 @@ gpq_column_map(
   reference = "reference_table",
   lookup = "lookup_table",
   description = "description",
-  lineage_flag = NULL
+  lineage_flag = NULL,
+  min_value = "min_value",
+  max_value = "max_value",
+  min_inclusive = "min_inclusive",
+  max_inclusive = "max_inclusive",
+  pattern = "pattern",
+  max_length = "max_length",
+  decimals = "decimals",
+  units = "units"
 )
 ```
 
@@ -41,11 +49,25 @@ gpq_column_map(
   value in it, that mark the attributes needing a row in the lineage
   spec.
 
+- min_value, max_value, min_inclusive, max_inclusive, pattern,
+  max_length, decimals, units:
+
+  One column name each: the lowest and highest value an attribute
+  allows, whether each bound is itself allowed (TRUE or FALSE, in any
+  case; a blank where its bound is given counts as TRUE), the regular
+  expression its values must match, the most characters they may have,
+  the most decimal places they may have, and their units. A bound,
+  pattern, length or number of decimal places that the dictionary gives
+  no attribute, its column missing or blank in every row, leaves the
+  rules that read it unrun: each writes one `not_run` row. A missing
+  flag column counts as TRUE.
+
 ## Value
 
 A list of class `gpq_column_map`, with elements `table`, `attribute`,
-`type`, `key_type`, `reference`, `lookup`, `description` and
-`lineage_flag`.
+`type`, `key_type`, `reference`, `lookup`, `description`,
+`lineage_flag`, `min_value`, `max_value`, `min_inclusive`,
+`max_inclusive`, `pattern`, `max_length`, `decimals` and `units`.
 
 ## Examples
 
@@ -53,7 +75,10 @@ A list of class `gpq_column_map`, with elements `table`, `attribute`,
 # The fish survey example names its dictionary columns its own way.
 fish_map <- gpq_column_map(
   table = "table", attribute = "field", type = "kind", key_type = "key",
-  reference = "parent", lookup = "codes", description = "notes"
+  reference = "parent", lookup = "codes", description = "notes",
+  min_value = "low", max_value = "high", min_inclusive = "low_in",
+  max_inclusive = "high_in", pattern = "format", max_length = "width",
+  decimals = "places", units = "unit"
 )
 fish_map$attribute
 #> [1] "field"

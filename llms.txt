@@ -54,8 +54,8 @@ pak::pak("blaiseratcliffe/groundplotqc")
 ## Generic engine: checks and results
 
 - [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
-  : Check tables against a specification: structure, types and
-  missing-value codes
+  : Check tables against a specification: structure, types,
+  missing-value codes, value domains and keys
 - [`gpq_read_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_results.md)
   : Read a run's results back from its folder
 - [`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md)

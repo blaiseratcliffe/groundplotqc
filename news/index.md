@@ -1,6 +1,6 @@
 # Changelog
 
-## groundplotqc 0.0.0.9001 (development version)
+## groundplotqc 0.0.0.9010 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint
   configuration, continuous integration on Windows, macOS and Linux, and
@@ -35,8 +35,8 @@
   defect it finds for pre-flight. A blank name in `non_code_sheets` is
   dropped, as a repeated one is.
 - [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
-  checks a specification before any data is read: 22 checks that stop or
-  warn, with a pre-flight CSV and a self-contained HTML report. It also
+  checks a specification before any data is read, with checks that stop
+  or warn, a pre-flight CSV and a self-contained HTML report. It also
   takes a rule set, settings and report text (`rules`, `settings`,
   `text`): three more checks find rule-set rows that name an unknown
   table, attribute or rule, or give a rule a severity or class it can’t
@@ -62,7 +62,7 @@
   20261005_magpv2_DD.xlsx, 20261005_magpv2_Lookup_Tables.xlsx,
   20261005_magpv2_A2.xlsx, 20261005_magpv2_datasets.csv,
   20261005_magpv2_species.csv, 20261005_magpv2_condition.csv,
-  20261005_magpv2_treatment_disturbance.csv and
+  20261015_magpv2_treatment_disturbance.csv and
   20261005_magpv2_severity.csv.
 - [`magp_rules()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.md)
   returns MAGPlot 2.0’s rule set: its meta row, its rules rows and its
@@ -105,7 +105,26 @@
   again: its issue there is not evaluated and names the first issue. A
   rule that fails on every checked record of a column in a group, when
   at least `column_level_min_n` were checked, is recorded as one
-  column-level issue.
+  column-level issue. A column stored as integer64, as a DBI query
+  returns a BIGINT column, now has its missing-value, rogue and unknown
+  codes recognised as in any number column: `sentinel_wrong_type`,
+  `sentinel_rogue_code` and `species_unknown_code` report them (now rule
+  version 2), and Layer 4 reads such codes in a key as missing-value
+  codes, not as key values. When such a column is a table’s primary key
+  and a key repeats, every record holding it is now marked positional in
+  the issues (`pk_positional`), the first one included. When a table
+  holds such a column, as
+  [`readRDS()`](https://rdrr.io/r/base/readRDS.html) can return one in a
+  session where bit64 isn’t loaded, the run now loads bit64, and stops
+  if it isn’t installed. Before, such a column was read as plain numbers
+  without a warning, so its codes, keys and values could be reported
+  wrongly. A composite primary key’s repeats are now found exactly in a
+  session that has raised data.table’s `setNumericRounding()`, so every
+  record holding a repeated key is marked positional. In a number-typed
+  column stored as integer64, a value a double can’t hold exactly (above
+  2^53) now fails `coercion_loss`, and as a key it joins no other
+  record, as parent or child. Before, such a key could join the wrong
+  record.
 - [`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md)
   writes a run’s results to its folder, the tables to `tables/` and the
   run metadata to `metadata/`, and
@@ -131,3 +150,127 @@
 - A second article, “Using the engine on your own dataset”, checks the
   fish survey example as data frames, as CSV files and from a database,
   and writes its results to a run folder.
+- [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
+  accepts NO as a `treatment_type` code and ND as a `disturbance_type`
+  code: it is compiled from 20261015_magpv2_treatment_disturbance.csv,
+  which gives NO’s `treat_vs_dist` as T and ND’s as D, in place of the
+  20261005 copy.
+- [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  accepts CSV paths given as a classed character vector, such as
+  [`fs::path()`](https://fs.r-lib.org/reference/path.html) returns,
+  whether as `tables` itself or as an element of it, and `table_map`
+  given that way; each is read as its text.
+- A CSV file that changes while
+  [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  reads it stops the run before any check.
+- [`gpq_column_map()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_column_map.md)
+  names eight more dictionary columns, `min_value`, `max_value`,
+  `min_inclusive`, `max_inclusive`, `pattern`, `max_length`, `decimals`
+  and `units`, read into the specification’s `attributes`. Pre-flight’s
+  new check `dd_format_invalid` stops on a cell in them that doesn’t
+  read or doesn’t fit its attribute’s type, and on a minimum above its
+  maximum.
+- The fish survey and forest examples’ dictionaries give ranges,
+  patterns, lengths, decimal places and units, under their own column
+  names.
+- `magp_example` follows MAGPlot’s data dictionary more closely: its
+  numbers are within the dictionary’s ranges, each site’s ID is in its
+  contributor’s band of site IDs, the `ec_*` columns match their
+  patterns, each plot’s subplots are labelled as its design’s frames,
+  and each value a record repeats from its parent agrees with the
+  parent’s.
+- A results row for a group in which the rule checked no record, each
+  masked by an earlier issue or not checked by the rule, now has status
+  `not_run` with reason `none_checked`, where it read `pass`. On a table
+  with no rows, a rule that checks records writes one `not_run` row per
+  column, reason `no_records`, where it wrote `pass`. Both apply to the
+  rules of Layers 1 and 2 too.
+- Layer 3, value domains, starts: `code_not_in_list` finds a coded value
+  that isn’t in its code list, whether the list is a sheet of code lists
+  or a translation table. bit64 joins Suggests.
+- Layer 3 checks values against the data dictionary’s ranges, lengths,
+  patterns and decimal places (`value_below_min`, `value_above_max`,
+  `string_too_long`, `pattern_mismatch`, `decimals_exceeded`), and the
+  coordinates the new setting `coordinate_attributes` names against
+  their ranges (`coordinate_out_of_bounds`), set as an option too. A
+  rule whose dictionary column is blank for every attribute it checks
+  writes one `not_run` row, reason `no_dd_values`, and
+  `coordinate_out_of_bounds` without the setting one with reason
+  `no_input`. MAGPlot 2.0’s rule set names `latitude`, `longitude`,
+  `utm_e` and `utm_n`.
+- A foreign key that is empty or only spaces, Unicode spaces included,
+  no longer leads a record to a parent whose primary key is blank too,
+  so the record’s group values through it are “\*“.
+- `site_id_out_of_range` checks each site’s ID against its contributor’s
+  band of site IDs.
+  [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)’s
+  `id_bands` takes the banded column (`table`, `attribute`) and the
+  chain of foreign keys to the band’s key (`key`); the specification
+  gains the component `id_band_columns`, and `id_bands` the column
+  `key_value`. A site that reaches no band isn’t checked, and
+  pre-flight’s `site_id_range_invalid` also stops on a banded column the
+  dictionary lacks, a key it can’t follow, or more than one band for a
+  value of the key.
+- `undeclared_code_set` warns once on a text column without a code list
+  that holds more than `code_set_max_values` values (built in 25) but no
+  more than that many distinct ones, as a list of codes would; keys and
+  IDs aren’t judged, nor the attributes `code_set_skip_attributes` and
+  `code_set_skip_pattern` name. MAGPlot 2.0’s rule set skips IDs, source
+  attributes, names, dates, comments and six attributes by name.
+- Pre-flight and conformance runs start faster: the list of registered
+  rules is built once per R session, not at every call.
+- Layer 4, keys and relationships, starts: `pk_duplicate` and
+  `pk_missing` check each table’s primary key, `fk_orphan` and
+  `fk_unassigned` each foreign key, `fk_sentinel_unverified` warns of a
+  number foreign key holding a missing-value code it may hold, and
+  `fk_not_applicable_mismatch` doesn’t run until a later version brings
+  the applicability matrix. A key of only spaces, Unicode spaces
+  included, counts as blank in a number-typed or date-typed key too, so
+  `pk_missing` or `fk_unassigned` reports it, not `coercion_loss` or
+  `date_unparseable` (now rule version 2). A key that fails a Layer 3
+  check, such as a site ID outside its contributor’s band, is still
+  checked as a key by Layer 4.
+- [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
+  takes `key_pairs`: pairs of ways to reach one value from a record,
+  which pre-flight checks (`key_pair_invalid`) and `key_incoherent`
+  compares. MAGPlot’s 21 pairs are in `data-raw/magp/key_pairs.csv`.
+- `src_id_duplicate` warns of an ID outside the keys (an attribute
+  `id_pattern` marks, MAGPlot’s `src_*_id`) held by more than one record
+  of a table in one report unit.
+  [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
+  takes `one_to_many`, the IDs a contributor documents as one-to-many,
+  which `src_id_duplicate` leaves alone for that contributor’s records
+  and pre-flight checks (`one_to_many_invalid`, a warning: a row
+  pre-flight can’t apply is left out). MAGPlot’s come from A2’s sheet
+  `one_to_many` once A2 has one.
+- `record_unreachable` reports a record that no walk from the root
+  reaches through its keys, the walk given by
+  [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)’s
+  new `reach` input, which pre-flight checks (`reach_invalid`).
+  MAGPlot’s walk starts at the site visits; its unreached designs and
+  trees are warnings. `parent_without_children` counts, with no issue,
+  the parent records no child record names.
+- A key holding NA, NaN, a blank or a missing-value code never leads to
+  a parent record, whatever codes the parent’s key holds. Before, a NaN
+  key joined a parent’s NaN key, and R’s
+  [`match()`](https://rdrr.io/r/base/match.html) let some of the others
+  through, depending on the values and the R session, so a record’s
+  group values and the counts of the rules that follow keys could change
+  from run to run.
+- Pre-flight checks the tables and attributes that settings name:
+  `unknown_codes`, `coordinate_attributes`, `code_set_skip_attributes`
+  and the eight settings of the three design checks. A name the
+  specification lacks stops pre-flight when given as an argument or in a
+  rule set (`setting_unknown_name`); set as an option, which applies to
+  every specification checked in the session, it warns
+  (`option_unknown_name`) and is ignored. A value of the wrong shape for
+  one of these settings now stops
+  [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
+  as well as
+  [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md).
+- Layer 4 checks plot designs, each check reading its table and columns
+  from new settings, which MAGPlot’s rule set gives:
+  `design_geometry_inconsistent` (records of one group that disagree on
+  a value), `subplot_label_ambiguous` (records of different keys with
+  the same labels) and `design_duplicate_signature` (records of one
+  report unit with the same rows in another table, a warning).

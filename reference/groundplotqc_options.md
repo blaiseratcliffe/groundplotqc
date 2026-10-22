@@ -38,7 +38,11 @@ value:
   pre-flight check's own outcome can't be changed.
 
 - `groundplotqc.example_cap`: how many distinct failing values a results
-  row shows in its `examples` column. Built-in: `5`.
+  row shows in its `examples` column. Built-in: `5`. It also caps how
+  many values `design_geometry_inconsistent` and
+  `design_duplicate_signature` list in an issue's `expected`, which then
+  ends with a count of the rest; at 0, `expected` is NA, as `examples`
+  is.
 
 - `groundplotqc.column_level_min_n`: the fewest records a column must
   have in a group before a rule that fails on all of them is recorded as
@@ -46,9 +50,10 @@ value:
 
 - `groundplotqc.raw_na_policy`: when a raw `NA` is an error (`raw_na`)
   in a column outside the primary and foreign keys, whose missing values
-  Layer 4 reports: `"when_sentinels"`, only in a column whose type has
-  missing-value codes; `"always"`; or `"never"`. Built-in:
-  `"when_sentinels"`.
+  `pk_missing` and `fk_unassigned` report (Layer 4, see
+  [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)):
+  `"when_sentinels"`, only in a column whose type has missing-value
+  codes; `"always"`; or `"never"`. Built-in: `"when_sentinels"`.
 
 - `groundplotqc.rogue_codes`: values that stand in for a missing value
   but aren't the agreed codes (`sentinel_rogue_code`), compared as
@@ -62,12 +67,60 @@ value:
   as `c(species = "UNKN.SPP")` (`species_unknown_code`); an attribute
   may be named more than once. Built-in: none.
 
+- `groundplotqc.coordinate_attributes`: attribute names, in any table,
+  that `coordinate_out_of_bounds` checks against the dictionary's
+  minimum and maximum, and that `value_below_min` and `value_above_max`
+  then leave alone. Built-in: none.
+
+- `groundplotqc.code_set_max_values`: the most distinct values a text
+  column without a code list can hold and still be reported by
+  `undeclared_code_set`, which judges only a column holding more values
+  than this, not counting NA, blanks, missing-value codes and unknown
+  codes. Built-in: `25`.
+
+- `groundplotqc.code_set_skip_attributes`: attributes
+  `undeclared_code_set` never judges. Built-in: none.
+
+- `groundplotqc.code_set_skip_pattern`: one regular expression;
+  `undeclared_code_set` doesn't judge an attribute whose name matches
+  it. Built-in: none.
+
+- `groundplotqc.design_geometry_table`,
+  `groundplotqc.design_geometry_by` and
+  `groundplotqc.design_geometry_columns`: the table
+  `design_geometry_inconsistent` reads, the attributes that group its
+  records, and the attributes that must agree within a group. Built-in:
+  none.
+
+- `groundplotqc.subplot_label_table` and
+  `groundplotqc.subplot_label_columns`: the table
+  `subplot_label_ambiguous` reads and the attributes that label its
+  records. Built-in: none.
+
+- `groundplotqc.design_signature_table`,
+  `groundplotqc.design_signature_by` and
+  `groundplotqc.design_signature_columns`: the table
+  `design_duplicate_signature` reads, its foreign key to the records
+  compared, and the attributes whose values, over the table's rows that
+  name a record, make up that record's signature. Built-in: none.
+
 In a rule set's settings rows, a whole number has type `integer`, a
 setting with several values gives them joined by "; ", and a named one
 gives "name=value" parts. In every tier, a code can't be empty, begin or
 end with a space, tab or line break, or hold ";". In
 `groundplotqc.unknown_codes` the same holds for each name, and neither a
-code nor a name can hold "=".
+code nor a name can hold "=". The same holds for each table and
+attribute name in `groundplotqc.coordinate_attributes`,
+`groundplotqc.code_set_skip_attributes` and the eight options above.
+
+Options apply to every specification checked in the session. A table or
+attribute an option names that a specification doesn't have is reported
+by pre-flight as a warning (`option_unknown_name`) and otherwise
+ignored; given as an argument or in a rule set, such a name stops
+pre-flight (`setting_unknown_name`). In
+`groundplotqc.design_geometry_by`, `groundplotqc.subplot_label_columns`
+and `groundplotqc.design_signature_columns`, one such name drops the
+whole option, so its check doesn't run.
 
 More options are added by the versions that bring the settings they
 control.

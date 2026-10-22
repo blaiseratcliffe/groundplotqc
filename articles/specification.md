@@ -30,7 +30,9 @@ fish <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv")),
   sentinels = gpq_sentinels(
@@ -42,8 +44,9 @@ fish <- gpq_read_spec(
 names(fish)
 #>  [1] "attributes"       "keys"             "code_lists"       "code_list_sheets"
 #>  [5] "code_list_map"    "codes"            "non_code_sheets"  "datasets"        
-#>  [9] "lineage_spec"     "crosswalks"       "id_bands"         "type_map"        
-#> [13] "sentinels"        "clashes"          "read_findings"    "manifest"
+#>  [9] "lineage_spec"     "crosswalks"       "id_bands"         "id_band_columns" 
+#> [13] "key_pairs"        "one_to_many"      "reach"            "type_map"        
+#> [17] "sentinels"        "clashes"          "read_findings"    "manifest"
 fish$keys
 #>    table_name attribute_name key_type key_part reference_table
 #>        <char>         <char>   <char>    <int>          <char>
@@ -112,13 +115,19 @@ results[, c("rule_id", "outcome", "not_run_reason")]
 #> 20: lineage_spec_row_unflagged not_run       no_input
 #> 21:       lineage_id_unflagged not_run       no_input
 #> 22:       crosswalk_unreadable not_run       no_input
-#> 23:    rule_set_unknown_column not_run       no_input
-#> 24:            rule_id_unknown not_run       no_input
-#> 25:  rule_set_override_invalid not_run       no_input
-#> 26:     rule_set_duplicate_row not_run       no_input
-#> 27:            text_id_missing    pass           <NA>
-#> 28:           text_id_fallback    pass           <NA>
-#> 29:          text_slot_unknown    pass           <NA>
+#> 23:          dd_format_invalid    pass           <NA>
+#> 24:           key_pair_invalid not_run       no_input
+#> 25:              reach_invalid not_run       no_input
+#> 26:        one_to_many_invalid not_run       no_input
+#> 27:    rule_set_unknown_column not_run       no_input
+#> 28:            rule_id_unknown not_run       no_input
+#> 29:  rule_set_override_invalid not_run       no_input
+#> 30:     rule_set_duplicate_row not_run       no_input
+#> 31:       setting_unknown_name not_run       no_input
+#> 32:        option_unknown_name not_run       no_input
+#> 33:            text_id_missing    pass           <NA>
+#> 34:           text_id_fallback    pass           <NA>
+#> 35:          text_slot_unknown    pass           <NA>
 #>                        rule_id outcome not_run_reason
 #>                         <char>  <char>         <char>
 ```
@@ -141,7 +150,9 @@ repeated <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv"))
 )

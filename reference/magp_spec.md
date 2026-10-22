@@ -30,11 +30,13 @@ spec$manifest
 #>  6:             crosswalks:condition             20261005_magpv2_condition.csv
 #>  7:              crosswalks:severity              20261005_magpv2_severity.csv
 #>  8:               crosswalks:species               20261005_magpv2_species.csv
-#>  9: crosswalks:treatment_disturbance 20261005_magpv2_treatment_disturbance.csv
+#>  9: crosswalks:treatment_disturbance 20261015_magpv2_treatment_disturbance.csv
 #> 10:                       id_pattern                                 in memory
 #> 11:                         id_bands                                 in memory
 #> 12:                       precedence              data-raw/magp/precedence.csv
-#> 13:            dictionary:exceptions         data-raw/magp/spec_exceptions.csv
+#> 13:                        key_pairs               data-raw/magp/key_pairs.csv
+#> 14:                            reach                   data-raw/magp/reach.csv
+#> 15:            dictionary:exceptions         data-raw/magp/spec_exceptions.csv
 #>     file_date                                                           sha256
 #>        <char>                                                           <char>
 #>  1:  20261005 e3656b48fe7dd3b4f7dd5fdc4c2987d6b1d2dc0c53aee1999357b7bc7261f4fe
@@ -45,11 +47,13 @@ spec$manifest
 #>  6:  20261005 38ae9975a1becad2eb01122ff5497407f6ec5d22b74b4b4d4faa9e5b075cac7c
 #>  7:  20261005 c70841da3a74e8e6f5ea1a2f80734f1a3506c242dc86552ed873c5705cb17675
 #>  8:  20261005 8c87871f8d6c9e9a8233eed78879ab33228e6a46b0f2d8079793248ce246c618
-#>  9:  20261005 4e9cb223ab103d80e24e99e432347e470f06213fd797c869a2195da3b83c5afe
+#>  9:  20261015 8441ccffb76f0146354e42b6ecad61a4a97e6ac583a1ab285d4b4bbf53ab9fad
 #> 10:      <NA>                                                             <NA>
 #> 11:      <NA>                                                             <NA>
 #> 12:      <NA> f3844fe37149405cca45a4d2eb055081d2d582eb8fe705d1ff15c01de87806b3
-#> 13:      <NA> 73ba517c7d450d8bd17e0d7630e6080f6bea4ec0e5ff3e034257bd04066e5975
+#> 13:      <NA> e4c4f272e949ab913d84b0993821d3a01cc8f124f54b238a15cfe93276855610
+#> 14:      <NA> da049d9f455545ae3bab41f9036dad72db63f624a9303a4e803352be2ca79cbd
+#> 15:      <NA> 73ba517c7d450d8bd17e0d7630e6080f6bea4ec0e5ff3e034257bd04066e5975
 nrow(spec$attributes)
 #> [1] 306
 ```

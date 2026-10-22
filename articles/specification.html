@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -90,7 +90,9 @@ missing or not-applicable value.</p>
 <span>  <span class="op">)</span>,</span>
 <span>  column_map <span class="op">=</span> <span class="fu"><a href="../reference/gpq_column_map.html">gpq_column_map</a></span><span class="op">(</span></span>
 <span>    table <span class="op">=</span> <span class="st">"table"</span>, attribute <span class="op">=</span> <span class="st">"field"</span>, type <span class="op">=</span> <span class="st">"kind"</span>, key_type <span class="op">=</span> <span class="st">"key"</span>,</span>
-<span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span></span>
+<span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span>,</span>
+<span>    min_value <span class="op">=</span> <span class="st">"low"</span>, max_value <span class="op">=</span> <span class="st">"high"</span>, min_inclusive <span class="op">=</span> <span class="st">"low_in"</span>, max_inclusive <span class="op">=</span> <span class="st">"high_in"</span>,</span>
+<span>    pattern <span class="op">=</span> <span class="st">"format"</span>, max_length <span class="op">=</span> <span class="st">"width"</span>, decimals <span class="op">=</span> <span class="st">"places"</span>, units <span class="op">=</span> <span class="st">"unit"</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  type_map <span class="op">=</span> <span class="fu"><a href="../reference/gpq_type_map.html">gpq_type_map</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/example.html" class="external-link">example</a></span><span class="op">(</span><span class="st">"fish_types.csv"</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  sentinels <span class="op">=</span> <span class="fu"><a href="../reference/gpq_sentinels.html">gpq_sentinels</a></span><span class="op">(</span></span>
@@ -102,8 +104,9 @@ missing or not-applicable value.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">fish</span><span class="op">)</span></span>
 <span><span class="co">#&gt;  [1] "attributes"       "keys"             "code_lists"       "code_list_sheets"</span></span>
 <span><span class="co">#&gt;  [5] "code_list_map"    "codes"            "non_code_sheets"  "datasets"        </span></span>
-<span><span class="co">#&gt;  [9] "lineage_spec"     "crosswalks"       "id_bands"         "type_map"        </span></span>
-<span><span class="co">#&gt; [13] "sentinels"        "clashes"          "read_findings"    "manifest"</span></span>
+<span><span class="co">#&gt;  [9] "lineage_spec"     "crosswalks"       "id_bands"         "id_band_columns" </span></span>
+<span><span class="co">#&gt; [13] "key_pairs"        "one_to_many"      "reach"            "type_map"        </span></span>
+<span><span class="co">#&gt; [17] "sentinels"        "clashes"          "read_findings"    "manifest"</span></span>
 <span><span class="va">fish</span><span class="op">$</span><span class="va">keys</span></span>
 <span><span class="co">#&gt;    table_name attribute_name key_type key_part reference_table</span></span>
 <span><span class="co">#&gt;        &lt;char&gt;         &lt;char&gt;   &lt;char&gt;    &lt;int&gt;          &lt;char&gt;</span></span>
@@ -166,13 +169,19 @@ wasn’t given.</p>
 <span><span class="co">#&gt; 20: lineage_spec_row_unflagged not_run       no_input</span></span>
 <span><span class="co">#&gt; 21:       lineage_id_unflagged not_run       no_input</span></span>
 <span><span class="co">#&gt; 22:       crosswalk_unreadable not_run       no_input</span></span>
-<span><span class="co">#&gt; 23:    rule_set_unknown_column not_run       no_input</span></span>
-<span><span class="co">#&gt; 24:            rule_id_unknown not_run       no_input</span></span>
-<span><span class="co">#&gt; 25:  rule_set_override_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 26:     rule_set_duplicate_row not_run       no_input</span></span>
-<span><span class="co">#&gt; 27:            text_id_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 28:           text_id_fallback    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 29:          text_slot_unknown    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 23:          dd_format_invalid    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 24:           key_pair_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 25:              reach_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 26:        one_to_many_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 27:    rule_set_unknown_column not_run       no_input</span></span>
+<span><span class="co">#&gt; 28:            rule_id_unknown not_run       no_input</span></span>
+<span><span class="co">#&gt; 29:  rule_set_override_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 30:     rule_set_duplicate_row not_run       no_input</span></span>
+<span><span class="co">#&gt; 31:       setting_unknown_name not_run       no_input</span></span>
+<span><span class="co">#&gt; 32:        option_unknown_name not_run       no_input</span></span>
+<span><span class="co">#&gt; 33:            text_id_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 34:           text_id_fallback    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 35:          text_slot_unknown    pass           &lt;NA&gt;</span></span>
 <span><span class="co">#&gt;                        rule_id outcome not_run_reason</span></span>
 <span><span class="co">#&gt;                         &lt;char&gt;  &lt;char&gt;         &lt;char&gt;</span></span></code></pre></div>
 <p>A defect in the specification is a finding, not a failure to read.
@@ -191,7 +200,9 @@ code, which warns:</p>
 <span>  <span class="op">)</span>,</span>
 <span>  column_map <span class="op">=</span> <span class="fu"><a href="../reference/gpq_column_map.html">gpq_column_map</a></span><span class="op">(</span></span>
 <span>    table <span class="op">=</span> <span class="st">"table"</span>, attribute <span class="op">=</span> <span class="st">"field"</span>, type <span class="op">=</span> <span class="st">"kind"</span>, key_type <span class="op">=</span> <span class="st">"key"</span>,</span>
-<span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span></span>
+<span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span>,</span>
+<span>    min_value <span class="op">=</span> <span class="st">"low"</span>, max_value <span class="op">=</span> <span class="st">"high"</span>, min_inclusive <span class="op">=</span> <span class="st">"low_in"</span>, max_inclusive <span class="op">=</span> <span class="st">"high_in"</span>,</span>
+<span>    pattern <span class="op">=</span> <span class="st">"format"</span>, max_length <span class="op">=</span> <span class="st">"width"</span>, decimals <span class="op">=</span> <span class="st">"places"</span>, units <span class="op">=</span> <span class="st">"unit"</span></span>
 <span>  <span class="op">)</span>,</span>
 <span>  type_map <span class="op">=</span> <span class="fu"><a href="../reference/gpq_type_map.html">gpq_type_map</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/example.html" class="external-link">example</a></span><span class="op">(</span><span class="st">"fish_types.csv"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>

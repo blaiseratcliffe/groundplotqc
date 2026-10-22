@@ -6,22 +6,24 @@ and gpq_preflight() decides whether it stops.
 It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a precedence or lineage_spec
-table without exactly its columns; a precedence table with an unknown winner or
-blank_rule, or with two rows for one sheet, key and attribute; a name given in R
-that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-values for an attribute that uses it; or an origin that doesn't fit its input."><meta property="og:description" content="Reads a data dictionary and its companion inputs into one specification object, which
+dictionary without its table or attribute column; a precedence, lineage_spec,
+key_pairs, one_to_many or reach table without exactly its columns; a precedence
+table with an unknown winner or blank_rule, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+column it lacks, or with no values for an attribute that uses it; or an origin that
+doesn't fit its input."><meta property="og:description" content="Reads a data dictionary and its companion inputs into one specification object, which
 gpq_preflight() checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the read_findings component,
 and gpq_preflight() decides whether it stops.
 It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a precedence or lineage_spec
-table without exactly its columns; a precedence table with an unknown winner or
-blank_rule, or with two rows for one sheet, key and attribute; a name given in R
-that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-values for an attribute that uses it; or an origin that doesn't fit its input."></head><body>
+dictionary without its table or attribute column; a precedence, lineage_spec,
+key_pairs, one_to_many or reach table without exactly its columns; a precedence
+table with an unknown winner or blank_rule, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+column it lacks, or with no values for an attribute that uses it; or an origin that
+doesn't fit its input."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -29,7 +31,7 @@ values for an attribute that uses it; or an origin that doesn't fit its input.">
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9001</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -68,11 +70,12 @@ and <code><a href="gpq_preflight.html">gpq_preflight()</a></code> decides whethe
 <p>It does stop, with an error, on a mistake in the call: an argument in the wrong form;
 a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a <code>precedence</code> or <code>lineage_spec</code>
-table without exactly its columns; a <code>precedence</code> table with an unknown <code>winner</code> or
-<code>blank_rule</code>, or with two rows for one sheet, key and attribute; a name given in R
-that isn't valid UTF-8; a translation table's filter on a column it lacks, or with no
-values for an attribute that uses it; or an origin that doesn't fit its input.</p>
+dictionary without its table or attribute column; a <code>precedence</code>, <code>lineage_spec</code>,
+<code>key_pairs</code>, <code>one_to_many</code> or <code>reach</code> table without exactly its columns; a <code>precedence</code>
+table with an unknown <code>winner</code> or <code>blank_rule</code>, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
+column it lacks, or with no values for an attribute that uses it; or an origin that
+doesn't fit its input.</p>
     </div>
 
     <div class="section level2">
@@ -87,6 +90,9 @@ values for an attribute that uses it; or an origin that doesn't fit its input.</
 <span>  id_pattern <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  id_bands <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  precedence <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  key_pairs <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  one_to_many <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  reach <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  origins <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  column_map <span class="op">=</span> <span class="fu"><a href="gpq_column_map.html">gpq_column_map</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  type_map <span class="op">=</span> <span class="fu"><a href="gpq_type_map.html">gpq_type_map</a></span><span class="op">(</span><span class="op">)</span>,</span>
@@ -135,7 +141,12 @@ CSV path, or <code>list(table = , code_col = , filter_col = , filter_values = )<
 
 
 <dt id="arg-id-bands">id_bands<a class="anchor" aria-label="anchor" href="#arg-id-bands"></a></dt>
-<dd><p><code>NULL</code>, or <code>list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)</code> naming the code-list sheet of ID bands.</p></dd>
+<dd><p><code>NULL</code>, or <code>list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)</code> naming the code-list sheet of ID bands, and
+optionally, all three or none, <code>table</code> and <code>attribute</code>, the column the bands apply to, and
+<code>key</code>, the foreign keys followed from that table and the attribute they reach, joined by
+" &gt; ", such as <code>"dataset_id &gt; contributor_id"</code>. <code>key</code> needs <code>labels_from</code>, and its last
+attribute must be a column of the <code>labels_from</code> sheet, which gives each band's value of it;
+each value can have only one band.</p></dd>
 
 
 <dt id="arg-precedence">precedence<a class="anchor" aria-label="anchor" href="#arg-precedence"></a></dt>
@@ -146,14 +157,49 @@ CSV path, or <code>list(table = , code_col = , filter_col = , filter_values = )<
 overlap.</p></dd>
 
 
+<dt id="arg-key-pairs">key_pairs<a class="anchor" aria-label="anchor" href="#arg-key-pairs"></a></dt>
+<dd><p><code>NULL</code>, or a table (data.frame or CSV path) with exactly the columns
+<code>table_name</code>, <code>left</code>, <code>right</code> and <code>note</code>: each row two ways to reach one value from a
+record of <code>table_name</code>, each side an attribute of the table or a chain of foreign keys
+joined by " &gt; " ending in an attribute, such as <code>"haul_id &gt; station_id"</code>.
+<code>key_incoherent</code> compares the two sides and reports a record where they differ on the
+left side's first attribute.</p></dd>
+
+
+<dt id="arg-one-to-many">one_to_many<a class="anchor" aria-label="anchor" href="#arg-one-to-many"></a></dt>
+<dd><p><code>NULL</code>, or a table (data.frame or CSV path) with exactly the columns
+<code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code> and <code>note</code>: each row an ID attribute
+a contributor documents as one-to-many, whose repeats <code>src_id_duplicate</code> doesn't report
+among that contributor's records. A record's contributor is found through <code>id_bands</code>'
+<code>key</code> and <code>labels_from</code>, so the rows apply only when <code>id_bands</code> gives <code>table</code>,
+<code>attribute</code>, <code>key</code> and <code>labels_from</code>; pre-flight warns of a row it can't apply
+(<code>one_to_many_invalid</code>), which is left out.</p></dd>
+
+
+<dt id="arg-reach">reach<a class="anchor" aria-label="anchor" href="#arg-reach"></a></dt>
+<dd><p><code>NULL</code>, or a table (data.frame or CSV path) with exactly the columns
+<code>table_name</code>, <code>attribute_name</code> and <code>how</code>, saying how <code>record_unreachable</code> walks the
+tables: <code>root</code>, a table whose records are all reached; <code>exempt</code>, a table not walked or
+checked; <code>from_parent</code>, a record reached through this foreign key when its parent is;
+<code>from_child</code>, a reached record reaching its parent through this foreign key.
+<code>attribute_name</code> is blank for <code>root</code> and <code>exempt</code>. The tables checked are those the rows
+name, but the exempt ones, and the parents <code>from_child</code> links reach. In a table reached
+<code>from_parent</code>, a record whose parent isn't reached is left unchecked; the break is
+reported once, by the foreign-key rules or at the topmost record no walk reaches.
+Pre-flight stops if a table the walk checks can't be reached from a root. A record
+reachable only through a table or key column not given is left unchecked.</p></dd>
+
+
 <dt id="arg-origins">origins<a class="anchor" aria-label="anchor" href="#arg-origins"></a></dt>
 <dd><p><code>NULL</code>, or, for inputs given as data.frames that came from files, a list
 named by input, each once (<code>dictionary</code>, <code>datasets</code>, <code>lineage_spec</code>, <code>precedence</code>,
-<code>code_lists:&lt;sheet&gt;</code>, <code>crosswalks:&lt;name&gt;</code>) of <code>list(path = , sheet = , rows = , columns = )</code>: the file, named in findings and hashed in the manifest; a workbook's
-sheet, or <code>NULL</code> for a CSV file; the file row of the first data row, later rows
-following on, or the file row of every data row, or <code>NULL</code> to count rows as R counts
-them; and the file column, by number or letter, of every column of the data.frame,
-or <code>NULL</code> for the file's order. Findings in such an input then name the file's cells.</p></dd>
+<code>key_pairs</code>, <code>one_to_many</code>, <code>reach</code>, <code>code_lists:&lt;sheet&gt;</code>, <code>crosswalks:&lt;name&gt;</code>) of
+<code>list(path = , sheet = , rows = , columns = )</code>: the file, named in findings and hashed in
+the manifest; a workbook's sheet, or <code>NULL</code> for a CSV file; the file row of the first
+data row, later rows following on, or the file row of every data row, or <code>NULL</code> to count
+rows as R counts them; and the file column, by number or letter, of every column of the
+data.frame, or <code>NULL</code> for the file's order. Findings in such an input then name the
+file's cells.</p></dd>
 
 
 <dt id="arg-column-map">column_map<a class="anchor" aria-label="anchor" href="#arg-column-map"></a></dt>
@@ -174,15 +220,16 @@ joins <code>read_findings</code>.</p></dd>
     <p>An object of class <code>gpq_spec</code>: a named list of data.tables, the components
 <code>attributes</code>, <code>keys</code>, <code>code_lists</code>, <code>code_list_sheets</code>, <code>code_list_map</code>, <code>codes</code>,
 <code>non_code_sheets</code>,
-<code>datasets</code>, <code>lineage_spec</code>, <code>crosswalks</code>, <code>id_bands</code>, <code>type_map</code>, <code>sentinels</code>,
-<code>clashes</code>, <code>read_findings</code> and <code>manifest</code>. An input not given leaves its component
-empty, with its columns. A blank cell is <code>NA</code>; text is kept exactly as written.</p>
+<code>datasets</code>, <code>lineage_spec</code>, <code>crosswalks</code>, <code>id_bands</code>, <code>id_band_columns</code>, <code>key_pairs</code>,
+<code>one_to_many</code>, <code>reach</code>, <code>type_map</code>, <code>sentinels</code>, <code>clashes</code>, <code>read_findings</code> and
+<code>manifest</code>. An input not given leaves its component empty, with its columns. A blank cell
+is <code>NA</code>; text is kept exactly as written.</p>
     </div>
     <div class="section level2">
     <h2 id="components">Components<a class="anchor" aria-label="anchor" href="#components"></a></h2>
 
 
-<p>Each component is a data.table with these columns:</p><ul><li><p><code>attributes</code>: <code>table_name</code>, <code>attribute_name</code>, <code>data_type</code>, <code>r_class</code>, <code>key_type</code>, <code>reference_table</code>, <code>lookup</code>, <code>description</code>, <code>lineage_flag</code>, <code>id_marked</code>, <code>source_row</code></p></li>
+<p>Each component is a data.table with these columns:</p><ul><li><p><code>attributes</code>: <code>table_name</code>, <code>attribute_name</code>, <code>data_type</code>, <code>r_class</code>, <code>key_type</code>, <code>reference_table</code>, <code>lookup</code>, <code>description</code>, <code>lineage_flag</code>, <code>id_marked</code>, <code>source_row</code>, <code>min_value</code>, <code>max_value</code>, <code>min_inclusive</code>, <code>max_inclusive</code>, <code>pattern</code>, <code>max_length</code>, <code>decimals</code>, <code>units</code></p></li>
 <li><p><code>keys</code>: <code>table_name</code>, <code>attribute_name</code>, <code>key_type</code>, <code>key_part</code>, <code>reference_table</code>, <code>reference_attribute</code></p></li>
 <li><p><code>code_lists</code>: <code>sheet</code>, <code>source_row</code>, <code>sheet_column</code>, <code>value</code>, <code>source_cell</code></p></li>
 <li><p><code>code_list_sheets</code>: <code>sheet</code></p></li>
@@ -192,7 +239,11 @@ empty, with its columns. A blank cell is <code>NA</code>; text is kept exactly a
 <li><p><code>datasets</code>: the input's own columns, all text</p></li>
 <li><p><code>lineage_spec</code>: <code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>spec_type</code>, <code>alternative</code>, <code>part_order</code>, <code>part_source</code>, <code>part_kind</code>, <code>id_status</code>, <code>source_text</code>, <code>note</code>, <code>source_cell</code></p></li>
 <li><p><code>crosswalks</code>: <code>crosswalk</code>, <code>source_row</code>, <code>crosswalk_column</code>, <code>value</code>, <code>source_cell</code></p></li>
-<li><p><code>id_bands</code>: <code>label</code>, <code>band_start</code>, <code>band_end</code>, <code>reserved</code>, <code>source_row</code>, <code>source_cell</code></p></li>
+<li><p><code>id_bands</code>: <code>label</code>, <code>band_start</code>, <code>band_end</code>, <code>reserved</code>, <code>source_row</code>, <code>source_cell</code>, <code>key_value</code></p></li>
+<li><p><code>id_band_columns</code>: <code>table_name</code>, <code>attribute_name</code>, <code>key_attribute</code>, <code>labels_sheet</code>, <code>labels_column</code></p></li>
+<li><p><code>key_pairs</code>: <code>table_name</code>, <code>left</code>, <code>right</code>, <code>note</code></p></li>
+<li><p><code>one_to_many</code>: <code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>note</code>, <code>source_cell</code></p></li>
+<li><p><code>reach</code>: <code>table_name</code>, <code>attribute_name</code>, <code>how</code></p></li>
 <li><p><code>type_map</code>: <code>data_type</code>, <code>r_class</code>, <code>date_format</code></p></li>
 <li><p><code>sentinels</code>: <code>data_type</code>, <code>role</code>, <code>value</code>, <code>allowed_in_pk</code>, <code>allowed_in_fk</code></p></li>
 <li><p><code>clashes</code>: <code>rule_id</code>, <code>kind</code>, <code>key_col</code>, <code>key_value</code>, <code>column_name</code>, <code>source_a</code>, <code>value_a</code>, <code>source_b</code>, <code>value_b</code>, <code>winner</code>, <code>basis</code>, <code>source_cell_a</code>, <code>source_cell_b</code></p></li>
@@ -216,7 +267,9 @@ cells, such as every lineage-spec row behind one placement clash, lists them wit
 <span class="r-in"><span>  <span class="op">)</span>,</span></span>
 <span class="r-in"><span>  column_map <span class="op">=</span> <span class="fu"><a href="gpq_column_map.html">gpq_column_map</a></span><span class="op">(</span></span></span>
 <span class="r-in"><span>    table <span class="op">=</span> <span class="st">"table"</span>, attribute <span class="op">=</span> <span class="st">"field"</span>, type <span class="op">=</span> <span class="st">"kind"</span>, key_type <span class="op">=</span> <span class="st">"key"</span>,</span></span>
-<span class="r-in"><span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span></span></span>
+<span class="r-in"><span>    reference <span class="op">=</span> <span class="st">"parent"</span>, lookup <span class="op">=</span> <span class="st">"codes"</span>, description <span class="op">=</span> <span class="st">"notes"</span>,</span></span>
+<span class="r-in"><span>    min_value <span class="op">=</span> <span class="st">"low"</span>, max_value <span class="op">=</span> <span class="st">"high"</span>, min_inclusive <span class="op">=</span> <span class="st">"low_in"</span>, max_inclusive <span class="op">=</span> <span class="st">"high_in"</span>,</span></span>
+<span class="r-in"><span>    pattern <span class="op">=</span> <span class="st">"format"</span>, max_length <span class="op">=</span> <span class="st">"width"</span>, decimals <span class="op">=</span> <span class="st">"places"</span>, units <span class="op">=</span> <span class="st">"unit"</span></span></span>
 <span class="r-in"><span>  <span class="op">)</span>,</span></span>
 <span class="r-in"><span>  type_map <span class="op">=</span> <span class="fu"><a href="gpq_type_map.html">gpq_type_map</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/example.html" class="external-link">example</a></span><span class="op">(</span><span class="st">"fish_types.csv"</span><span class="op">)</span><span class="op">)</span>,</span></span>
 <span class="r-in"><span>  sentinels <span class="op">=</span> <span class="fu"><a href="gpq_sentinels.html">gpq_sentinels</a></span><span class="op">(</span></span></span>

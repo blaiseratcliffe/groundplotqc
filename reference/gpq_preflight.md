@@ -38,8 +38,13 @@ gpq_preflight(
   options' and the built-in values (see
   [groundplotqc_options](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)).
   Pre-flight reads `lang`, the run language, whose text
-  `text_id_fallback` checks, and `severity`, severities by rule ID; it
-  accepts the other settings by name and doesn't read them.
+  `text_id_fallback` checks; `severity`, severities by rule ID; and the
+  settings that name tables and attributes (`unknown_codes`,
+  `coordinate_attributes`, `code_set_skip_attributes` and the eight
+  settings of `design_geometry_inconsistent`, `subplot_label_ambiguous`
+  and `design_duplicate_signature`), whose names `setting_unknown_name`
+  and `option_unknown_name` check against the specification. It accepts
+  the other settings by name and doesn't read them.
 
 - text:
 
@@ -95,9 +100,13 @@ itself contain "; " or ", ", so for exact values read the
 `spec_encoding_invalid`, `spec_csv_malformed`, `site_id_range_invalid`,
 `lineage_spec_unparseable`, `lineage_name_unknown`,
 `lineage_spec_row_unflagged`, `lineage_id_unflagged`,
-`crosswalk_unreadable`; with a rule set, `rule_set_unknown_column` and
-`rule_set_duplicate_row`; with a rule set or a severity setting,
-`rule_id_unknown` and `rule_set_override_invalid`; and
+`crosswalk_unreadable`, `dd_format_invalid`, `key_pair_invalid`,
+`reach_invalid`, `one_to_many_invalid`; with a rule set,
+`rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set
+or a severity setting, `rule_id_unknown` and
+`rule_set_override_invalid`; with a setting that names tables or
+attributes, `setting_unknown_name` (given as an argument or in the rule
+set) and `option_unknown_name` (set as an option); and
 `text_id_missing`, `text_id_fallback` and `text_slot_unknown`, on the
 report text of the registered rules in English and in the run language
 and on a caller's text table. No rule set or setting changes what a
@@ -114,7 +123,10 @@ forest <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "TABLE", attribute = "COLUMN", type = "FORMAT", key_type = "KEY",
-    reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION"
+    reference = "REFERS_TO", lookup = "CODE_LIST", description = "DEFINITION",
+    min_value = "MIN_VALUE", max_value = "MAX_VALUE", min_inclusive = "MIN_INCLUSIVE",
+    max_inclusive = "MAX_INCLUSIVE", pattern = "PATTERN", max_length = "MAX_LENGTH",
+    decimals = "DECIMALS", units = "UNITS"
   ),
   type_map = gpq_type_map(example("forest_types.csv"))
 )
@@ -122,7 +134,7 @@ results <- gpq_preflight(forest)
 table(results$outcome)
 #> 
 #> not_run    pass 
-#>      13      16 
+#>      18      17 
 
 # A dictionary row written twice stops pre-flight.
 twice <- data.frame(

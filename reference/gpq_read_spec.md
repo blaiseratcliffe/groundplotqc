@@ -13,12 +13,12 @@ It does stop, with an error, on a mistake in the call: an argument in
 the wrong form; a file that doesn't exist, or a CSV file that can't be
 read, such as one in UTF-16, unless it is a translation table, which is
 then a finding; a dictionary without its table or attribute column; a
-`precedence` or `lineage_spec` table without exactly its columns; a
-`precedence` table with an unknown `winner` or `blank_rule`, or with two
-rows for one sheet, key and attribute; a name given in R that isn't
-valid UTF-8; a translation table's filter on a column it lacks, or with
-no values for an attribute that uses it; or an origin that doesn't fit
-its input.
+`precedence`, `lineage_spec`, `key_pairs`, `one_to_many` or `reach`
+table without exactly its columns; a `precedence` table with an unknown
+`winner` or `blank_rule`, or with two rows for one sheet, key and
+attribute; a name given in R that isn't valid UTF-8; a translation
+table's filter on a column it lacks, or with no values for an attribute
+that uses it; or an origin that doesn't fit its input.
 
 ## Usage
 
@@ -33,6 +33,9 @@ gpq_read_spec(
   id_pattern = NULL,
   id_bands = NULL,
   precedence = NULL,
+  key_pairs = NULL,
+  one_to_many = NULL,
+  reach = NULL,
   origins = NULL,
   column_map = gpq_column_map(),
   type_map = gpq_type_map(),
@@ -87,7 +90,13 @@ gpq_read_spec(
 
   `NULL`, or
   `list(sheet, label_col, start_col, end_col, labels_from = c(sheet = , column = ), reserved_pattern)`
-  naming the code-list sheet of ID bands.
+  naming the code-list sheet of ID bands, and optionally, all three or
+  none, `table` and `attribute`, the column the bands apply to, and
+  `key`, the foreign keys followed from that table and the attribute
+  they reach, joined by " \> ", such as `"dataset_id > contributor_id"`.
+  `key` needs `labels_from`, and its last attribute must be a column of
+  the `labels_from` sheet, which gives each band's value of it; each
+  value can have only one band.
 
 - precedence:
 
@@ -96,12 +105,50 @@ gpq_read_spec(
   `code_lists`) and `blank_rule` (`yields` or `wins`), saying which
   input wins where the datasets table and a sheet overlap.
 
+- key_pairs:
+
+  `NULL`, or a table (data.frame or CSV path) with exactly the columns
+  `table_name`, `left`, `right` and `note`: each row two ways to reach
+  one value from a record of `table_name`, each side an attribute of the
+  table or a chain of foreign keys joined by " \> " ending in an
+  attribute, such as `"haul_id > station_id"`. `key_incoherent` compares
+  the two sides and reports a record where they differ on the left
+  side's first attribute.
+
+- one_to_many:
+
+  `NULL`, or a table (data.frame or CSV path) with exactly the columns
+  `contributor_label`, `table_name`, `attribute_name` and `note`: each
+  row an ID attribute a contributor documents as one-to-many, whose
+  repeats `src_id_duplicate` doesn't report among that contributor's
+  records. A record's contributor is found through `id_bands`' `key` and
+  `labels_from`, so the rows apply only when `id_bands` gives `table`,
+  `attribute`, `key` and `labels_from`; pre-flight warns of a row it
+  can't apply (`one_to_many_invalid`), which is left out.
+
+- reach:
+
+  `NULL`, or a table (data.frame or CSV path) with exactly the columns
+  `table_name`, `attribute_name` and `how`, saying how
+  `record_unreachable` walks the tables: `root`, a table whose records
+  are all reached; `exempt`, a table not walked or checked;
+  `from_parent`, a record reached through this foreign key when its
+  parent is; `from_child`, a reached record reaching its parent through
+  this foreign key. `attribute_name` is blank for `root` and `exempt`.
+  The tables checked are those the rows name, but the exempt ones, and
+  the parents `from_child` links reach. In a table reached
+  `from_parent`, a record whose parent isn't reached is left unchecked;
+  the break is reported once, by the foreign-key rules or at the topmost
+  record no walk reaches. Pre-flight stops if a table the walk checks
+  can't be reached from a root. A record reachable only through a table
+  or key column not given is left unchecked.
+
 - origins:
 
   `NULL`, or, for inputs given as data.frames that came from files, a
   list named by input, each once (`dictionary`, `datasets`,
-  `lineage_spec`, `precedence`, `code_lists:<sheet>`,
-  `crosswalks:<name>`) of
+  `lineage_spec`, `precedence`, `key_pairs`, `one_to_many`, `reach`,
+  `code_lists:<sheet>`, `crosswalks:<name>`) of
   `list(path = , sheet = , rows = , columns = )`: the file, named in
   findings and hashed in the manifest; a workbook's sheet, or `NULL` for
   a CSV file; the file row of the first data row, later rows following
@@ -131,10 +178,10 @@ gpq_read_spec(
 An object of class `gpq_spec`: a named list of data.tables, the
 components `attributes`, `keys`, `code_lists`, `code_list_sheets`,
 `code_list_map`, `codes`, `non_code_sheets`, `datasets`, `lineage_spec`,
-`crosswalks`, `id_bands`, `type_map`, `sentinels`, `clashes`,
-`read_findings` and `manifest`. An input not given leaves its component
-empty, with its columns. A blank cell is `NA`; text is kept exactly as
-written.
+`crosswalks`, `id_bands`, `id_band_columns`, `key_pairs`, `one_to_many`,
+`reach`, `type_map`, `sentinels`, `clashes`, `read_findings` and
+`manifest`. An input not given leaves its component empty, with its
+columns. A blank cell is `NA`; text is kept exactly as written.
 
 ## Components
 
@@ -142,7 +189,9 @@ Each component is a data.table with these columns:
 
 - `attributes`: `table_name`, `attribute_name`, `data_type`, `r_class`,
   `key_type`, `reference_table`, `lookup`, `description`,
-  `lineage_flag`, `id_marked`, `source_row`
+  `lineage_flag`, `id_marked`, `source_row`, `min_value`, `max_value`,
+  `min_inclusive`, `max_inclusive`, `pattern`, `max_length`, `decimals`,
+  `units`
 
 - `keys`: `table_name`, `attribute_name`, `key_type`, `key_part`,
   `reference_table`, `reference_attribute`
@@ -171,7 +220,17 @@ Each component is a data.table with these columns:
   `source_cell`
 
 - `id_bands`: `label`, `band_start`, `band_end`, `reserved`,
-  `source_row`, `source_cell`
+  `source_row`, `source_cell`, `key_value`
+
+- `id_band_columns`: `table_name`, `attribute_name`, `key_attribute`,
+  `labels_sheet`, `labels_column`
+
+- `key_pairs`: `table_name`, `left`, `right`, `note`
+
+- `one_to_many`: `contributor_label`, `table_name`, `attribute_name`,
+  `note`, `source_cell`
+
+- `reach`: `table_name`, `attribute_name`, `how`
 
 - `type_map`: `data_type`, `r_class`, `date_format`
 
@@ -205,7 +264,9 @@ fish <- gpq_read_spec(
   ),
   column_map = gpq_column_map(
     table = "table", attribute = "field", type = "kind", key_type = "key",
-    reference = "parent", lookup = "codes", description = "notes"
+    reference = "parent", lookup = "codes", description = "notes",
+    min_value = "low", max_value = "high", min_inclusive = "low_in", max_inclusive = "high_in",
+    pattern = "format", max_length = "width", decimals = "places", units = "unit"
   ),
   type_map = gpq_type_map(example("fish_types.csv")),
   sentinels = gpq_sentinels(
