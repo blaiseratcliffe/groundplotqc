@@ -73,6 +73,31 @@ validate_tables <- function(tables) {
   invisible(tables)
 }
 
+#' bit64 loaded where a table holds an integer64 column, or a caller's error (D18.86)
+#'
+#' A column of class integer64, as a DBI query of a BIGINT column returns it, is read through
+#' bit64's methods, which a table read back with readRDS() doesn't load: they are loaded here,
+#' so every reader takes the column as stored numbers; without bit64 installed it stops,
+#' naming the first such column.
+#' @noRd
+load_bit64 <- function(tables) {
+  wide <- lapply(tables, function(table) {
+    names(table)[vapply(table, inherits, logical(1), what = "integer64")]
+  })
+  holding <- which(lengths(wide) > 0L)
+  if (length(holding) > 0L && !requireNamespace("bit64", quietly = TRUE)) {
+    first <- holding[[1L]]
+    stop(sprintf(
+      paste0(
+        "Table %s: the column %s is stored as integer64, which needs the bit64 package to be ",
+        "read correctly. Install it with install.packages(\"bit64\") and run again."
+      ),
+      mark_invalid_utf8(names(tables)[[first]]), mark_invalid_utf8(wide[[first]][[1L]])
+    ), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 #' The family a dictionary type's sentinels attach by: numeric, date or character (3.5;
 #' D12.19)
 #' @noRd

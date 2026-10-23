@@ -341,8 +341,8 @@ reach_rows <- function(input, reach) {
 #' The record reaches the last attribute of id_band_columns' key chain by D16.13's shortest
 #' path (reach_column()); that value is looked up in the key's column of the labels sheet
 #' (`labels_sheet` in the code_lists component), and the label is the same row's
-#' `labels_column`. NA where id_band_columns has no row, the record reaches no value, or the
-#' sheet holds no row of it.
+#' `labels_column`, through contributor_labels(). NA where id_band_columns has no row, the
+#' record reaches no value, or the sheet holds no row of it.
 #' @noRd
 record_labels <- function(input, table) {
   spec <- input$spec
@@ -367,18 +367,8 @@ record_labels <- function(input, table) {
   home_n <- if (reached$home %chin% names(input$data)) nrow(input$data[[reached$home]]) else 0L
   home <- list(home = reached$home, rows = seq_len(home_n))
   value <- value_text(reached_values(input, home, key))
-  lists <- spec$code_lists
-  # Worked out before the brackets, so no name inside them is taken for a column.
-  in_sheet <- lists$sheet == bands$labels_sheet[[1L]] & lists$source_row > 1L
-  sheet <- lists[in_sheet]
-  # Worked out before the brackets too: `sheet` is also a column of the code lists.
-  is_key <- sheet$sheet_column == key
-  is_label <- sheet$sheet_column == bands$labels_column[[1L]]
-  keyed <- sheet[is_key]
-  labelled <- sheet[is_label]
-  label <- labelled$value[match(keyed$source_row, labelled$source_row)]
-  home_label <- label[match(value, keyed$value, incomparables = NA)]
-  home_label[reached$rows]
+  # The labels sheet is read once, as decoding reads it (contributor_labels(), D19.49).
+  contributor_labels(spec, key, value)[reached$rows]
 }
 
 #' The rows whose group holds more than one distinct value

@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9012 (development version)
+# groundplotqc 0.0.0.9013 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -43,3 +43,4 @@
 - Layer 4 checks plot designs, each check reading its table and columns from new settings, which MAGPlot's rule set gives: `design_geometry_inconsistent` (records of one group that disagree on a value), `subplot_label_ambiguous` (records of different keys with the same labels) and `design_duplicate_signature` (records of one report unit with the same rows in another table, a warning).
 - `gpq_preflight()` stops on a dictionary row whose table or attribute name is missing, empty or only spaces (`dd_name_missing`).
 - `gpq_read_spec()` gains `lineage_when`, conditions under which a part of a source ID is read from another provider column, and `lineage_separator`, the text composite IDs join their parts with; the lineage spec gains the columns `when` and `separator`, and pre-flight checks the conditions (`lineage_when_invalid`). `magp_spec()` gives Ontario's age trees and vegetation subplots their own provider keys.
+- New `gpq_decode_lineage()` shows each record-level issue in the provider's terms: the record's source ID, read from the tables at the issue's row, split into the parts its contributor's lineage spec expects, each labelled with the provider's table and column (`provider_key`), with a status saying how far it decoded (`provider_key_status`); an issue's fingerprint is taken from the provider key where that key is unique. It stops if the tables aren't the ones the issues came from.

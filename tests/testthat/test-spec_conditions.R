@@ -132,3 +132,17 @@ test_that("condition_rows leaves the caller's tables as they were, with no index
   expect_null(data.table::indices(tables$trees))
   expect_null(data.table::indices(tables$sites))
 })
+
+# ---- task 5 (R13: appended with task 5, which brings flag_values()) ----
+
+test_that("a flag is read at the record's key; one not given is a caller's error (D19.43)", {
+  spec <- fx_lineage_spec()
+  tables <- fx_lineage_tables()
+  input <- conformance_input(tables, spec)
+  flags <- flag_values(list(trees = data.frame(tree_id = c("t2", "t1"), seen = c("N", "Y"))), input)
+  condition <- parse_condition("flag.seen == \"Y\"", "trees", spec$keys, spec$attributes)
+  expect_equal(condition_rows(input, "trees", condition, 1:3, flags), c(TRUE, FALSE, FALSE))
+  other <- parse_condition("flag.other == \"Y\"", "trees", spec$keys, spec$attributes)
+  expect_error(condition_rows(input, "trees", other, 1:3, flags), "flag.other")
+  expect_error(condition_rows(input, "sites", condition, 1:3, flags), "table sites")
+})

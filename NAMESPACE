@@ -2,6 +2,7 @@
 
 export(gpq_check_conformance)
 export(gpq_column_map)
+export(gpq_decode_lineage)
 export(gpq_preflight)
 export(gpq_read_results)
 export(gpq_read_spec)
