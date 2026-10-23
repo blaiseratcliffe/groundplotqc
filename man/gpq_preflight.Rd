@@ -72,7 +72,7 @@ the specification's \code{clashes} component.
 
 \section{Checks}{
 
-\code{dd_duplicate_attribute}, \code{dd_type_unknown}, \code{dd_type_column_ambiguous},
+\code{dd_duplicate_attribute}, \code{dd_name_missing}, \code{dd_type_unknown}, \code{dd_type_column_ambiguous},
 \code{dd_pk_missing}, \code{dd_fk_target_missing}, \code{code_list_missing}, \code{code_column_missing},
 \code{code_list_duplicate_code}, \code{code_list_blank_row}, \code{code_list_unreferenced},
 \code{code_list_empty_column}, \code{spec_clash_resolved}, \code{spec_clash_unresolved},

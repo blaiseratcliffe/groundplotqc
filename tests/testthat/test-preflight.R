@@ -13,7 +13,8 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
   on_failure <- rules$on_failure
   names(on_failure) <- rules$rule_id
   expect_equal(on_failure, c(
-    dd_duplicate_attribute = "stop", dd_type_unknown = "stop", dd_type_column_ambiguous = "stop",
+    dd_duplicate_attribute = "stop", dd_name_missing = "stop", dd_type_unknown = "stop",
+    dd_type_column_ambiguous = "stop",
     dd_pk_missing = "stop", dd_fk_target_missing = "stop", code_list_missing = "stop",
     code_column_missing = "stop", code_list_duplicate_code = "warn", code_list_blank_row = "warn",
     code_list_unreferenced = "stop", code_list_empty_column = "warn", spec_clash_resolved = "warn",
@@ -45,7 +46,7 @@ test_that("each planted defect gives its check's findings", {
   )
   expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
-    dd_duplicate_attribute = "stop 1", dd_type_unknown = "stop 1",
+    dd_duplicate_attribute = "stop 1", dd_name_missing = "stop 1", dd_type_unknown = "stop 1",
     dd_type_column_ambiguous = "stop 1", dd_pk_missing = "stop 1",
     dd_fk_target_missing = "stop 1", code_list_missing = "stop 1",
     code_column_missing = "stop 1", code_list_duplicate_code = "warn 1",
@@ -68,7 +69,8 @@ test_that("each planted defect gives its check's findings", {
   expect_true(any(grepl("ZZ", site$detail)))
   # Each check's findings carry its planted defect's witness (plan 18.3).
   witness <- c(
-    dd_duplicate_attribute = "plots.plot_id", dd_type_unknown = "trees.tree_id",
+    dd_duplicate_attribute = "plots.plot_id", dd_name_missing = "table plots",
+    dd_type_unknown = "trees.tree_id",
     dd_type_column_ambiguous = "data_type, datatype", dd_pk_missing = "Table trees",
     dd_fk_target_missing = "\"stands\"", code_list_missing = "\"soils\"",
     code_column_missing = "Code list cover", code_list_duplicate_code = "\"SQ\"",
@@ -646,4 +648,34 @@ test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a f
   expect_error(gpq_preflight(spec, output_dir = file), "output_dir")
   # A refusal leaves data.table's option as the caller had it.
   expect_identical(getOption("datatable.auto.index"), auto_index)
+})
+
+# ---- task 3 ----
+
+test_that("a dictionary row with no table or attribute name stops pre-flight (m136, D19.32)", {
+  nbsp <- strrep(intToUtf8(160L), 2L)
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", NA, "plots", "plots"),
+    attribute_name = c("plot_id", NA, "shape", nbsp, "slope"),
+    key_type = c("PK", ".", ".", ".", "."), data_type = "character"
+  )
+  results <- preflight_checks(gpq_read_spec(dictionary))
+  found <- results[results$rule_id == "dd_name_missing", ]
+  expect_equal(found$outcome, rep("stop", 3L))
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "shape"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots")
+  ))
+  # m136's case: a row whose only defect is its missing attribute name, which reached the
+  # results check before, stops a run at pre-flight, on this check alone.
+  nameless <- gpq_read_spec(dictionary[1:2, ])
+  stopped <- tryCatch(
+    gpq_check_conformance(list(plots = data.frame(plot_id = "a")), nameless),
+    gpq_preflight_error = function(e) e
+  )
+  expect_s3_class(stopped, "gpq_preflight_error")
+  expect_equal(
+    unique(stopped$preflight$rule_id[stopped$preflight$outcome == "stop"]), "dd_name_missing"
+  )
 })

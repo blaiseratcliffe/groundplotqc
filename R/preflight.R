@@ -208,6 +208,23 @@ preflight_check_functions <- function() {
         dictionary_cell(spec, dup$row)
       )
     },
+    dd_name_missing = function(spec, context) {
+      a <- spec$attributes
+      # A name that is NA, empty or only spaces, Unicode spaces included, is missing (D16.42,
+      # D19.32); a row missing both is reported once, for its table.
+      no_table <- is.na(a$table_name) | space_padding(a$table_name)$blank
+      no_attribute <- is.na(a$attribute_name) | space_padding(a$attribute_name)$blank
+      hit <- which(no_table | no_attribute)
+      detail <- fifelse(
+        no_table[hit],
+        report_text(
+          "preflight_detail_dd_name_missing_table",
+          attribute_name = a$attribute_name[hit]
+        ),
+        report_text("preflight_detail_dd_name_missing_attribute", table_name = a$table_name[hit])
+      )
+      findings_of(input_file(spec, "dictionary"), detail, dictionary_cell(spec, a$source_row[hit]))
+    },
     dd_type_unknown = function(spec, context) {
       a <- spec$attributes
       # A dictionary without a type column is dd_type_column_ambiguous's finding; a type
@@ -663,7 +680,7 @@ preflight_check_functions <- function() {
 #' "; " or ", ", so for exact values read the `source_cell_a` and `source_cell_b` columns of
 #' the specification's `clashes` component.
 #' @section Checks:
-#' `dd_duplicate_attribute`, `dd_type_unknown`, `dd_type_column_ambiguous`,
+#' `dd_duplicate_attribute`, `dd_name_missing`, `dd_type_unknown`, `dd_type_column_ambiguous`,
 #' `dd_pk_missing`, `dd_fk_target_missing`, `code_list_missing`, `code_column_missing`,
 #' `code_list_duplicate_code`, `code_list_blank_row`, `code_list_unreferenced`,
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,

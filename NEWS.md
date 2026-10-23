@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9010 (development version)
+# groundplotqc 0.0.0.9011 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -41,3 +41,4 @@
 - A key holding NA, NaN, a blank or a missing-value code never leads to a parent record, whatever codes the parent's key holds. Before, a NaN key joined a parent's NaN key, and R's `match()` let some of the others through, depending on the values and the R session, so a record's group values and the counts of the rules that follow keys could change from run to run.
 - Pre-flight checks the tables and attributes that settings name: `unknown_codes`, `coordinate_attributes`, `code_set_skip_attributes` and the eight settings of the three design checks. A name the specification lacks stops pre-flight when given as an argument or in a rule set (`setting_unknown_name`); set as an option, which applies to every specification checked in the session, it warns (`option_unknown_name`) and is ignored. A value of the wrong shape for one of these settings now stops `gpq_preflight()` as well as `gpq_check_conformance()`.
 - Layer 4 checks plot designs, each check reading its table and columns from new settings, which MAGPlot's rule set gives: `design_geometry_inconsistent` (records of one group that disagree on a value), `subplot_label_ambiguous` (records of different keys with the same labels) and `design_duplicate_signature` (records of one report unit with the same rows in another table, a warning).
+- `gpq_preflight()` stops on a dictionary row whose table or attribute name is missing, empty or only spaces (`dd_name_missing`).

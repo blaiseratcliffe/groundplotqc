@@ -65,7 +65,8 @@ fx_forest_spec <- function() {
 
 # A synthetic spec with one planted defect per pre-flight check (plan 4.2); the expected
 # findings are in test-preflight.R. Each defect triggers only its own check (D12.31):
-#   plots.plot_id twice: dd_duplicate_attribute 1; trees.tree_id typed "text":
+#   plots.plot_id twice: dd_duplicate_attribute 1; a plots row with no attribute name:
+#   dd_name_missing 1; trees.tree_id typed "text":
 #   dd_type_unknown 1; a second type column, datatype (types are read from data_type):
 #   dd_type_column_ambiguous 1; trees without a PK: dd_pk_missing 1; trees.plot_id to
 #   "stands": dd_fk_target_missing 1; soils: code_list_missing 1; cover's sheet without a cover
@@ -92,23 +93,23 @@ fx_planted_spec <- function() {
   writeLines(c("note,author", "first,ab", "second, with a comma,cd"), notes)
   dictionary <- data.frame(
     table_name = c(
-      "plots", "plots", "plots", "plots", "plots", "trees", "trees", "plots", "plots"
+      "plots", "plots", "plots", "plots", "plots", "trees", "trees", "plots", "plots", "plots"
     ),
     attribute_name = c(
       "plot_id", "plot_id", "shape", "soil", "cover", "tree_id", "plot_id", "src_plot_id",
-      "src_site_id"
+      "src_site_id", NA
     ),
-    key_type = c("PK", "PK", ".", ".", ".", ".", "FK", ".", "."),
-    reference_table = c(NA, NA, NA, NA, NA, NA, "stands", NA, NA),
-    lookup_table = c(NA, NA, "Y", "soils", "Y", NA, NA, NA, NA),
+    key_type = c("PK", "PK", ".", ".", ".", ".", "FK", ".", ".", "."),
+    reference_table = c(NA, NA, NA, NA, NA, NA, "stands", NA, NA, NA),
+    lookup_table = c(NA, NA, "Y", "soils", "Y", NA, NA, NA, NA, NA),
     description = c(
       "Plot.", "Again.", bad_text, "Soil.", "Cover.", "Tree.", "Plot.", "Source plot.",
-      "Source site."
+      "Source site.", "Nameless."
     ),
-    appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA),
-    data_type = c(rep("character", 5L), "text", rep("character", 3L)),
+    appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA, NA),
+    data_type = c(rep("character", 5L), "text", rep("character", 4L)),
     datatype = "character",
-    min_value = c(NA, NA, "abc", NA, NA, NA, NA, NA, NA)
+    min_value = c(NA, NA, "abc", NA, NA, NA, NA, NA, NA, NA)
   )
   code_lists <- list(
     shape = data.frame(

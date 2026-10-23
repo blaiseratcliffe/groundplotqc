@@ -988,8 +988,8 @@ test_that("problem_unit naming a column the spec lacks stops so beside a row wit
     table_name = "t", attribute_name = c("id", NA), key_type = c("PK", NA),
     data_type = "character"
   ))
-  # The spec passes pre-flight (m136), so the run reaches its check of problem_unit.
-  expect_no_error(gpq_preflight(spec))
+  # The spec stops pre-flight (dd_name_missing, D19.32); the run checks problem_unit first.
+  expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
   expect_error(
     gpq_check_conformance(
       list(t = data.frame(id = "a")), spec,

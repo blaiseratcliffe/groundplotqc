@@ -72,6 +72,8 @@ build_rule_registry <- function() {
   )
   rbindlist(list(
     preflight("dd_duplicate_attribute", "error", "attributes"),
+    # ---- M6: m136's check (4.2; D19.32) ----
+    preflight("dd_name_missing", "error", "attributes"),
     preflight("dd_type_unknown", "error", "attributes; type_map; read_findings"),
     preflight("dd_type_column_ambiguous", "error", "read_findings"),
     preflight("dd_pk_missing", "error", "attributes; keys"),
