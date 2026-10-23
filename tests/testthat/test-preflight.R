@@ -654,19 +654,47 @@ test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a f
 
 test_that("a dictionary row with no table or attribute name stops pre-flight (m136, D19.32)", {
   nbsp <- strrep(intToUtf8(160L), 2L)
+  # Rows 1 to 5 are the plan's. Then: a table name of Unicode spaces, a row missing both names, a
+  # primary-key row with no attribute name, an empty and an ASCII-spaces attribute name (the
+  # reader makes both NA), and a padded name and one with a space inside, which are not missing.
   dictionary <- data.frame(
-    table_name = c("plots", "plots", NA, "plots", "plots"),
-    attribute_name = c("plot_id", NA, "shape", nbsp, "slope"),
-    key_type = c("PK", ".", ".", ".", "."), data_type = "character"
+    table_name = c(
+      "plots", "plots", NA, "plots", "plots", nbsp, NA, "trees", "plots", "plots", "plots", "plots"
+    ),
+    attribute_name = c(
+      "plot_id", NA, "shape", nbsp, "slope", "tag", NA, NA, "", "  ", " padded ", "in side"
+    ),
+    key_type = c("PK", ".", ".", ".", ".", ".", ".", "PK", ".", ".", ".", "."),
+    data_type = "character"
   )
   results <- preflight_checks(gpq_read_spec(dictionary))
+  # dd_duplicate_attribute and dd_pk_missing also stop on these rows (several nameless
+  # attributes of one table, tables without a primary key); only this check's findings are asserted.
   found <- results[results$rule_id == "dd_name_missing", ]
-  expect_equal(found$outcome, rep("stop", 3L))
+  expect_equal(found$outcome, rep("stop", 8L))
   expect_equal(found$detail, c(
     report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
     report_text("preflight_detail_dd_name_missing_table", attribute_name = "shape"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "tag"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = NA_character_),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "trees"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
     report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots")
   ))
+  # A row missing both names is reported once, with the no-table text, its attribute shown as
+  # (blank) (R11).
+  expect_match(found$detail[5L], "(blank)", fixed = TRUE)
+  # Each finding points to its row of a CSV dictionary (data rows at lines 3 and 5 lack a name).
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    "table_name,attribute_name,key_type,data_type", "t,id,PK,character", "t,,.,character",
+    "u,x,.,character", ",y,.,character"
+  ), path)
+  cells <- preflight_checks(gpq_read_spec(path))
+  cells <- cells[cells$rule_id == "dd_name_missing", ]
+  expect_equal(cells$source_cell, paste0(basename(path), c(":3", ":5")))
+  expect_equal(cells$file, rep(basename(path), 2L))
   # m136's case: a row whose only defect is its missing attribute name, which reached the
   # results check before, stops a run at pre-flight, on this check alone.
   nameless <- gpq_read_spec(dictionary[1:2, ])
