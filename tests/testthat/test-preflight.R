@@ -81,8 +81,8 @@ test_that("each planted defect gives its check's findings", {
     spec_clash_unresolved = "kind for id \"2\"", datasets_row_missing = "id \"3\"",
     spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
     site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
-    lineage_when_invalid = "\"9\"", lineage_name_unknown = "\"regen\"",
-    lineage_spec_row_unflagged = "plots.src_site_id",
+    lineage_when_invalid = "part \"9\", which isn't one of its parts",
+    lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
     lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond",
     dd_format_invalid = "\"abc\"", key_pair_invalid = "\"nothing > soil\"",
     reach_invalid = "\"sometimes\"", one_to_many_invalid = "plots.src_plot_id",
@@ -723,4 +723,59 @@ test_that("lineage_when_invalid is not_run without the input, and stops on a bad
   expect_equal(clean$outcome[clean$rule_id == "lineage_when_invalid"], "pass")
   bad <- preflight_checks(fx_lineage_spec(lineage_when = fx_lineage_when("kind = \"A\"")))
   expect_equal(bad$outcome[bad$rule_id == "lineage_when_invalid"], "stop")
+})
+
+test_that("a condition row keeps A2's findings at A2's cells, its own at its input's (D12.54)", {
+  dictionary <- data.frame(
+    table_name = "plots", attribute_name = c("plot_id", "kind", "src_plot_id", "src_site_id"),
+    key_type = c("PK", ".", ".", "."), appendix = c(NA, NA, "A2", NA), data_type = "character"
+  )
+  lineage <- data.frame(
+    contributor_label = "BC", table_name = "plots",
+    attribute_name = c("src_plot_id", "src_site_id"), spec_type = "id",
+    source_text = c("tbl.key + regen", "tbl.site"), note = NA, source_cell = c("A2!D5", "A2!D6")
+  )
+  # A condition on the unflagged src_site_id's only part, and one whose provider column is a
+  # name the dictionary lacks, on the second part of src_plot_id.
+  when <- data.frame(
+    contributor_label = "BC", table_name = "plots",
+    attribute_name = c("src_site_id", "src_plot_id"), part_order = c("1", "2"),
+    part_source = c("alt.site", "nowhere"), when = "kind == \"A\"", note = NA
+  )
+  read <- function(when) {
+    gpq_read_spec(
+      dictionary,
+      lineage_spec = lineage, lineage_when = when,
+      column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+    )
+  }
+  check <- function(spec, rule) {
+    results <- preflight_checks(spec)
+    results[results$rule_id == rule, ]
+  }
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(when, path)
+  # The row of src_site_id in the lineage spec is A2's, whatever form the conditions came in.
+  for (form in list(when, path)) {
+    unflagged <- check(read(form), "lineage_spec_row_unflagged")
+    expect_equal(unflagged$detail, report_text(
+      "preflight_detail_lineage_spec_row_unflagged",
+      table_name = "plots", attribute_name = "src_site_id"
+    ))
+    expect_equal(unflagged$file, "in memory")
+    expect_equal(unflagged$source_cell, "A2!D6")
+  }
+  # A name the dictionary lacks: A2's "regen" at A2's cell, the condition's "nowhere" at its
+  # line of the lineage_when file, and that file.
+  unknown <- check(read(path), "lineage_name_unknown")
+  expect_equal(nrow(unknown), 2L)
+  condition <- grepl("nowhere", unknown$detail, fixed = TRUE)
+  expect_equal(unknown$file[condition], basename(path))
+  expect_equal(unknown$source_cell[condition], paste0(basename(path), ":3"))
+  expect_equal(unknown$file[!condition], "in memory")
+  expect_equal(unknown$source_cell[!condition], "A2!D5")
+  # Given in memory, the condition's finding has no cell and the same file as A2's.
+  in_memory <- check(read(when), "lineage_name_unknown")
+  expect_equal(in_memory$file, rep("in memory", 2L))
+  expect_equal(sort(in_memory$source_cell, na.last = TRUE), c("A2!D5", NA))
 })

@@ -551,11 +551,17 @@ preflight_check_functions <- function() {
       lineage <- spec$lineage_spec
       unknown <- lineage$spec_type == "id" & lineage$part_kind == "derived" &
         !lineage$part_source %chin% spec$attributes$attribute_name
-      names_used <- unique(lineage[which(unknown), list(
-        contributor_label, table_name, attribute_name, part_source, source_cell
+      # A condition row's cell is a line of the lineage_when input, so it is that input's
+      # finding (D12.54, D19.12).
+      used <- lineage[which(unknown)]
+      names_used <- unique(used[, list(
+        contributor_label, table_name, attribute_name, part_source, source_cell,
+        conditioned = !is.na(used$when)
       )])
       findings_of(
-        input_file(spec, "lineage_spec"),
+        fifelse(
+          names_used$conditioned, input_file(spec, "lineage_when"), input_file(spec, "lineage_spec")
+        ),
         report_text(
           "preflight_detail_lineage_name_unknown",
           contributor_label = names_used$contributor_label, table_name = names_used$table_name,
@@ -573,9 +579,11 @@ preflight_check_functions <- function() {
         return("no_dd_column")
       }
       by_attribute <- c("table_name", "attribute_name")
-      rows <- unique(spec$lineage_spec[, list(table_name, attribute_name)])
+      # A2's own rows only: a condition row's cell is another input's line (D12.54, D19.12).
+      lineage <- spec$lineage_spec[is.na(spec$lineage_spec$when)]
+      rows <- unique(lineage[, list(table_name, attribute_name)])
       extra <- rows[!a[lineage_flag == TRUE], on = by_attribute]
-      cells <- spec$lineage_spec[extra, on = by_attribute, source_cell, mult = "first"]
+      cells <- lineage[extra, on = by_attribute, source_cell, mult = "first"]
       findings_of(
         input_file(spec, "lineage_spec"),
         report_text(

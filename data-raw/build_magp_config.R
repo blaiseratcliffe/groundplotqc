@@ -183,9 +183,8 @@ crosswalk_element <- function(path, columns) {
 
 # The manifest names a hand-kept file by its repo path, a bare name meaning spec/
 # (D12.33): the rows of precedence.csv, key_pairs.csv, reach.csv and lineage_when.csv, which
-# their origins give,
-# and a row for spec_exceptions.csv, input dictionary:exceptions, since the build applies it
-# to the DD before the read and the engine doesn't know.
+# their origins give, and a row for spec_exceptions.csv, input dictionary:exceptions, since
+# the build applies it to the DD before the read and the engine doesn't know.
 record_hand_kept <- function(spec, config_dir) {
   repo_path <- function(name) paste0("data-raw/magp/", name)
   exceptions <- manifest_row(

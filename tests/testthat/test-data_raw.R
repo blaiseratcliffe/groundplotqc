@@ -173,14 +173,24 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   writeLines("sheet", file.path(config, "precedence.csv"))
   writeLines("table_name", file.path(config, "key_pairs.csv"))
   writeLines("table_name", file.path(config, "reach.csv"))
+  writeLines("contributor_label", file.path(config, "lineage_when.csv"))
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
+    lineage_spec = data.frame(
+      contributor_label = "x", table_name = "t", attribute_name = "a", spec_type = "id",
+      source_text = "p.q", note = NA, source_cell = NA
+    ),
+    lineage_when = data.frame(
+      contributor_label = "x", table_name = "t", attribute_name = "a", part_order = "1",
+      part_source = "r.s", when = "a == \"1\"", note = NA
+    ),
     precedence = data.frame(
       sheet = "s", key_col = "k", attribute_name = "c", winner = "datasets", blank_rule = "wins"
     ),
     key_pairs = data.frame(table_name = "t", left = "a", right = "a", note = NA),
     reach = data.frame(table_name = "t", attribute_name = NA, how = "root"),
     origins = list(
+      lineage_when = list(path = file.path(config, "lineage_when.csv"), rows = 2L),
       precedence = list(path = file.path(config, "precedence.csv"), rows = 2L),
       key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L),
       reach = list(path = file.path(config, "reach.csv"), rows = 2L)
@@ -193,6 +203,9 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
   expect_equal(manifest$file[manifest$input == "key_pairs"], "data-raw/magp/key_pairs.csv")
   expect_equal(manifest$file[manifest$input == "reach"], "data-raw/magp/reach.csv")
+  expect_equal(
+    manifest$file[manifest$input == "lineage_when"], "data-raw/magp/lineage_when.csv"
+  )
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
   expect_equal(
@@ -430,6 +443,7 @@ test_that("the hand-kept files have their columns", {
   expect_named(hand_kept("precedence.csv"), c(spec_input_schema()$precedence, "decision"))
   expect_named(hand_kept("key_pairs.csv"), spec_input_schema()$key_pairs)
   expect_named(hand_kept("reach.csv"), spec_input_schema()$reach)
+  expect_named(hand_kept("lineage_when.csv"), spec_input_schema()$lineage_when)
   expect_true(all(hand_kept("non_code_sheets.csv")$reason %in% c("reference", "superseded")))
 })
 
@@ -440,7 +454,7 @@ test_that("the hand-kept rows are valid where the build takes them", {
   # The reader's own checks: winner and blank_rule from their lists, one row per key.
   expect_no_error(read_precedence(precedence[, spec_input_schema()$precedence, with = FALSE]))
   found <- magp_spec()$read_findings$rule_id
-  expect_false(any(c("key_pair_invalid", "reach_invalid") %in% found))
+  expect_false(any(c("key_pair_invalid", "reach_invalid", "lineage_when_invalid") %in% found))
 })
 
 test_that("the reader reads the DD workbook in spec/ from its first sheet", {
@@ -2127,18 +2141,29 @@ test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D
   expect_equal(unique(lineage$separator), "_")
   conditioned <- lineage[!is.na(lineage$when)]
   expect_equal(conditioned$contributor_label, rep("ON", 3L))
+  # Each row's table, ID, provider column (D19.17, D19.27) and condition.
   expect_setequal(
-    paste(conditioned$table_name, conditioned$attribute_name, conditioned$when),
+    paste(
+      conditioned$table_name, conditioned$attribute_name, conditioned$part_source,
+      conditioned$when
+    ),
     c(
-      "magp_trees src_tree_id flag.age_tree == \"Y\"",
-      "magp_tree_meas src_treemeas_id tree_type == \"A\"",
-      "magp_subplot_meas src_subpmeas_id magp_subplot_id > frame_type == \"R\""
+      "magp_trees src_tree_id tblAgeTree.agetreekey flag.age_tree == \"Y\"",
+      "magp_tree_meas src_treemeas_id tblAgeTree.agetreekey tree_type == \"A\"",
+      paste(
+        "magp_subplot_meas src_subpmeas_id tblVegPlot.vegplotkey",
+        "magp_subplot_id > frame_type == \"R\""
+      )
     )
   )
+  # All three condition the first part of a one-part ID.
+  expect_equal(conditioned$part_order, rep(1L, 3L))
+  expect_equal(conditioned$id_status, rep("single", 3L))
   # Each condition sits just before its part's own A2 row.
   at <- which(!is.na(lineage$when))
   own <- lineage[at + 1L]
   expect_true(all(is.na(own$when)))
+  expect_equal(own$table_name, conditioned$table_name)
   expect_equal(own$attribute_name, conditioned$attribute_name)
   expect_equal(own$part_order, conditioned$part_order)
   manifest <- magp_spec()$manifest
