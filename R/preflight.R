@@ -186,9 +186,10 @@ one_to_many_problems <- function(spec) {
 
 #' The checks of 4.2, one function per rule ID, as a list named by it (D12.26)
 #'
-#' M2's 22, M5's `dd_format_invalid`, `key_pair_invalid`, `reach_invalid` and
-#' `one_to_many_invalid` here, then the rule set's (M5's `setting_unknown_name` and
-#' `option_unknown_name` last among them) and the text's from R/preflight_config.R.
+#' M2's 22, M6's `dd_name_missing` and `lineage_when_invalid`, M5's `dd_format_invalid`,
+#' `key_pair_invalid`, `reach_invalid` and `one_to_many_invalid` here, then the rule set's
+#' (M5's `setting_unknown_name` and `option_unknown_name` last among them) and the text's
+#' from R/preflight_config.R.
 #' preflight_checks() takes each from this list, which works in an installed package, where
 #' a lookup by name wouldn't search the namespace. Each check takes the spec and the context
 #' and returns findings_of(...), or the reason it couldn't run.
@@ -536,6 +537,13 @@ preflight_check_functions <- function() {
       )
       rbindlist(list(parse_findings, row_findings, blank_findings))
     },
+    lineage_when_invalid = function(spec, context) {
+      if (!given(spec, "lineage_when")) {
+        return("no_input")
+      }
+      # The reader makes every finding of this check, at its cell (D19.37).
+      read_findings_of(spec, "lineage_when_invalid")
+    },
     lineage_name_unknown = function(spec, context) {
       if (!given(spec, "lineage_spec")) {
         return("no_input")
@@ -685,7 +693,8 @@ preflight_check_functions <- function() {
 #' `code_list_duplicate_code`, `code_list_blank_row`, `code_list_unreferenced`,
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
 #' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
-#' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_name_unknown`,
+#' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_when_invalid`,
+#' `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
 #' `dd_format_invalid`, `key_pair_invalid`, `reach_invalid`, `one_to_many_invalid`; with a
 #' rule set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a

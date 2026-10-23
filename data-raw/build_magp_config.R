@@ -21,6 +21,8 @@ id_bands <- list(
 )
 # The DD column and value flagging A2 attributes (D12.13).
 lineage_flag <- c(column = "appendix", value = "A2")
+# What A2's composite IDs join their parts with (D2.14, D19.12).
+lineage_separator <- "_"
 
 spec_file_pattern <- "^([0-9]{8})_magpv2_(.+)[.](xlsx|csv)$"
 
@@ -180,7 +182,8 @@ crosswalk_element <- function(path, columns) {
 }
 
 # The manifest names a hand-kept file by its repo path, a bare name meaning spec/
-# (D12.33): the rows of precedence.csv, key_pairs.csv and reach.csv, which their origins give,
+# (D12.33): the rows of precedence.csv, key_pairs.csv, reach.csv and lineage_when.csv, which
+# their origins give,
 # and a row for spec_exceptions.csv, input dictionary:exceptions, since the build applies it
 # to the DD before the read and the engine doesn't know.
 record_hand_kept <- function(spec, config_dir) {
@@ -191,7 +194,7 @@ record_hand_kept <- function(spec, config_dir) {
   data.table::set(exceptions, j = "file", value = repo_path("spec_exceptions.csv"))
   # rbindlist() makes a new table, set here, so the caller's spec keeps its manifest.
   manifest <- data.table::rbindlist(list(spec$manifest, exceptions))
-  for (input in intersect(c("precedence", "key_pairs", "reach"), manifest$input)) {
+  for (input in intersect(c("precedence", "key_pairs", "reach", "lineage_when"), manifest$input)) {
     row <- match(input, manifest$input)
     data.table::set(manifest, i = row, j = "file", value = repo_path(paste0(input, ".csv")))
   }
@@ -239,7 +242,7 @@ read_hand_kept <- function(path) {
 
 build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw", "magp")) {
   files <- spec_files(spec_dir)
-  # The seven hand-kept files read through config() are all read before any spec file is
+  # The eight hand-kept files read through config() are all read before any spec file is
   # opened; type_map.csv is read last, through gpq_type_map(path), which carries its findings
   # on to pre-flight.
   config <- function(name) read_hand_kept(file.path(config_dir, name))
@@ -249,6 +252,7 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   precedence <- config("precedence.csv")
   key_pairs <- config("key_pairs.csv")
   reach <- config("reach.csv")
+  lineage_when <- config("lineage_when.csv")
   sentinels <- validate_sentinels(config("sentinels.csv")$data)
   dd_sheet <- workbook_sheets(files[["DD"]])[[1L]]
   dictionary <- raw_to_table(read_xlsx_raw(files[["DD"]], dd_sheet))
@@ -271,6 +275,7 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
     dictionary = dictionary, code_lists = files[["Lookup_Tables"]],
     non_code_sheets = non_code_sheets, datasets = files[["datasets"]],
     lineage_spec = build_lineage_input(read_xlsx_raw(files[["A2"]], sheet), sheet),
+    lineage_when = lineage_when$data, lineage_separator = lineage_separator,
     crosswalks = if (length(crosswalks) > 0L) crosswalks,
     id_pattern = id_pattern, id_bands = id_bands,
     precedence = precedence$data[, taken, with = FALSE], key_pairs = key_pairs$data,
@@ -296,6 +301,10 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
       reach = list(
         path = file.path(config_dir, "reach.csv"),
         rows = if (length(reach$lines) > 0L) reach$lines else 2L
+      ),
+      lineage_when = list(
+        path = file.path(config_dir, "lineage_when.csv"),
+        rows = if (length(lineage_when$lines) > 0L) lineage_when$lines else 2L
       )
     ), if (!is.null(one_to_many)) list(one_to_many = one_to_many$origin)),
     column_map = gpq_column_map(lineage_flag = lineage_flag),

@@ -91,6 +91,8 @@ build_rule_registry <- function() {
     preflight("spec_csv_malformed", "error", "read_findings"),
     preflight("site_id_range_invalid", "error", "read_findings"),
     preflight("lineage_spec_unparseable", "error", "attributes; lineage_spec; read_findings"),
+    # ---- M6: the lineage spec's conditions (4.2; D19.37) ----
+    preflight("lineage_when_invalid", "error", "read_findings"),
     preflight("lineage_name_unknown", "warning", "attributes; lineage_spec"),
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),

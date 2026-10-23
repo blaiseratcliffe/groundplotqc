@@ -85,7 +85,8 @@ fx_forest_spec <- function() {
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD
 # flag) and lineage_id_unflagged 1 (an ID by name, no DD flag), and "regen" in BC
-# src_plot_id lineage_name_unknown 1.
+# src_plot_id lineage_name_unknown 1. A lineage_when row naming part 9 of BC's two-part
+# src_plot_id: lineage_when_invalid 1.
 fx_planted_spec <- function() {
   bad_text <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
   Encoding(bad_text) <- "UTF-8"
@@ -136,6 +137,10 @@ fx_planted_spec <- function() {
       attribute_name = c("src_plot_id", "src_site_id", "src_plot_id"),
       spec_type = "id", source_text = c("tbl.key + regen", "a.b+", NA),
       note = NA, source_cell = c("A2!D5", "A2!D6", "A2!F5")
+    ),
+    lineage_when = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      part_order = "9", part_source = "tbl.other", when = "shape == \"SQ\"", note = NA
     ),
     crosswalks = list(cond = data.frame(code = c("A", bad_walk))),
     id_pattern = "^src_.*_id$",

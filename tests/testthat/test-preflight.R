@@ -20,7 +20,8 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
     code_list_unreferenced = "stop", code_list_empty_column = "warn", spec_clash_resolved = "warn",
     spec_clash_unresolved = "stop", datasets_row_missing = "warn", spec_encoding_invalid = "stop",
     spec_csv_malformed = "stop", site_id_range_invalid = "stop", lineage_spec_unparseable = "stop",
-    lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
+    lineage_when_invalid = "stop", lineage_name_unknown = "warn",
+    lineage_spec_row_unflagged = "warn",
     lineage_id_unflagged = "warn", crosswalk_unreadable = "stop", dd_format_invalid = "stop",
     key_pair_invalid = "stop", reach_invalid = "stop", one_to_many_invalid = "warn",
     rule_set_unknown_column = "stop", rule_id_unknown = "stop",
@@ -55,7 +56,8 @@ test_that("each planted defect gives its check's findings", {
     spec_clash_unresolved = "stop 1", datasets_row_missing = "warn 1",
     spec_encoding_invalid = "stop 1", spec_csv_malformed = "stop 1",
     site_id_range_invalid = "stop 2", lineage_spec_unparseable = "stop 2",
-    lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
+    lineage_when_invalid = "stop 1", lineage_name_unknown = "warn 1",
+    lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
     dd_format_invalid = "stop 1", key_pair_invalid = "stop 1", reach_invalid = "stop 1",
     one_to_many_invalid = "warn 1", rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
@@ -79,7 +81,8 @@ test_that("each planted defect gives its check's findings", {
     spec_clash_unresolved = "kind for id \"2\"", datasets_row_missing = "id \"3\"",
     spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
     site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
-    lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
+    lineage_when_invalid = "\"9\"", lineage_name_unknown = "\"regen\"",
+    lineage_spec_row_unflagged = "plots.src_site_id",
     lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond",
     dd_format_invalid = "\"abc\"", key_pair_invalid = "\"nothing > soil\"",
     reach_invalid = "\"sometimes\"", one_to_many_invalid = "plots.src_plot_id",
@@ -159,6 +162,11 @@ test_that("a clean spec with every input runs every check, each without a findin
       contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
       spec_type = "id", source_text = "tbl.key", note = NA, source_cell = "A2!D5"
     ),
+    lineage_when = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      part_order = "1", part_source = "alt.key", when = "kind == \"A\"", note = NA
+    ),
+    lineage_separator = "_",
     crosswalks = list(cond = data.frame(status = c("L", "D"))),
     id_pattern = "^src_.*_id$",
     id_bands = list(
@@ -706,4 +714,13 @@ test_that("a dictionary row with no table or attribute name stops pre-flight (m1
   expect_equal(
     unique(stopped$preflight$rule_id[stopped$preflight$outcome == "stop"]), "dd_name_missing"
   )
+})
+
+test_that("lineage_when_invalid is not_run without the input, and stops on a bad row (D19.37)", {
+  plain <- preflight_checks(fx_lineage_spec())
+  expect_equal(plain$not_run_reason[plain$rule_id == "lineage_when_invalid"], "no_input")
+  clean <- preflight_checks(fx_lineage_spec(lineage_when = fx_lineage_when()))
+  expect_equal(clean$outcome[clean$rule_id == "lineage_when_invalid"], "pass")
+  bad <- preflight_checks(fx_lineage_spec(lineage_when = fx_lineage_when("kind = \"A\"")))
+  expect_equal(bad$outcome[bad$rule_id == "lineage_when_invalid"], "stop")
 })

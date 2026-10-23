@@ -41,8 +41,8 @@ spec_schema <- function() {
     datasets = character(),
     lineage_spec = c(
       contributor_label = chr, table_name = chr, attribute_name = chr, spec_type = chr,
-      alternative = chr, part_order = int, part_source = chr, part_kind = chr,
-      id_status = chr, source_text = chr, note = chr, source_cell = chr
+      alternative = chr, part_order = int, part_source = chr, part_kind = chr, when = chr,
+      id_status = chr, separator = chr, source_text = chr, note = chr, source_cell = chr
     ),
     crosswalks = c(
       crosswalk = chr, source_row = int, crosswalk_column = chr, value = chr,
@@ -78,7 +78,8 @@ spec_schema <- function() {
   )
 }
 
-#' The columns of the precedence, lineage-spec, site-ID-band, key-pair, one-to-many and reach inputs
+#' The columns of the precedence, lineage-spec, lineage-condition, site-ID-band, key-pair,
+#' one-to-many and reach inputs
 #' @noRd
 spec_input_schema <- function() {
   list(
@@ -86,6 +87,10 @@ spec_input_schema <- function() {
     lineage_spec = c(
       "contributor_label", "table_name", "attribute_name", "spec_type", "source_text",
       "note", "source_cell"
+    ),
+    lineage_when = c(
+      "contributor_label", "table_name", "attribute_name", "part_order", "part_source", "when",
+      "note"
     ),
     id_bands = c(
       "sheet", "label_col", "start_col", "end_col", "labels_from", "reserved_pattern", "table",
@@ -1709,7 +1714,8 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
 #' unless it is a translation table, which is then a finding; a
 #' dictionary without its table or attribute column; a `precedence`, `lineage_spec`,
-#' `key_pairs`, `one_to_many` or `reach` table without exactly its columns; a `precedence`
+#' `lineage_when`, `key_pairs`, `one_to_many` or `reach` table without exactly its columns; a
+#' `lineage_separator` that isn't one piece of text; a `precedence`
 #' table with an unknown `winner` or `blank_rule`, or with two rows for one sheet, key and
 #' attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
 #' column it lacks, or with no values for an attribute that uses it; or an origin that
@@ -1726,6 +1732,18 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #'   path), with exactly the columns
 #'   `contributor_label`, `table_name`, `attribute_name`, `spec_type` (`id` or
 #'   `compiled`), `source_text`, `note` and `source_cell`.
+#' @param lineage_when `NULL`, or a table (data.frame or CSV path) with exactly the columns
+#'   `contributor_label`, `table_name`, `attribute_name`, `part_order`, `part_source`, `when`
+#'   and `note`: each row another provider column for one part of an ID the lineage spec
+#'   gives, used for a record where `when` holds. `when` is one condition: `column ==
+#'   "value"`, `column != "value"`, `column %in% c("a", "b")`, `is_present(column)` or
+#'   `is_sentinel(column)`, where `column` is an attribute of the table, a chain of its
+#'   foreign keys joined by " > " ending in an attribute, such as `"plot_id > shape"`, or a
+#'   flag that [gpq_decode_lineage()] is given, written `flag.<name>`. A part's rows are tried
+#'   in order before the lineage spec's own part. Pre-flight stops on a row it can't apply
+#'   (`lineage_when_invalid`).
+#' @param lineage_separator `NULL`, or the text the parts of a composite ID are joined with,
+#'   such as `"_"`. Without it, [gpq_decode_lineage()] shows composite IDs as delivered.
 #' @param crosswalks `NULL`, or a named list of translation tables: each a data.frame, a
 #'   CSV path, or `list(table = , code_col = , filter_col = , filter_values = )`, where
 #'   `filter_values` may be a list named by attribute.
@@ -1767,7 +1785,8 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #'   Pre-flight stops if a table the walk checks can't be reached from a root. A record
 #'   reachable only through a table or key column not given is left unchecked.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
-#'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `precedence`,
+#'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `lineage_when`,
+#'   `precedence`,
 #'   `key_pairs`, `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`) of
 #'   `list(path = , sheet = , rows = , columns = )`: the file, named in findings and hashed in
 #'   the manifest; a workbook's sheet, or `NULL` for a CSV file; the file row of the first
@@ -1821,7 +1840,8 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #' subset(fish$codes, attribute_name == "gear")
 #' @export
 gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
-                          datasets = NULL, lineage_spec = NULL, crosswalks = NULL,
+                          datasets = NULL, lineage_spec = NULL, lineage_when = NULL,
+                          lineage_separator = NULL, crosswalks = NULL,
                           id_pattern = NULL, id_bands = NULL, precedence = NULL,
                           key_pairs = NULL, one_to_many = NULL, reach = NULL, origins = NULL,
                           column_map = gpq_column_map(),
@@ -1856,6 +1876,13 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     # repeat, since an NA names no sheet (D12.69).
     non_code_sheets <- as_text(non_code_sheets)
   }
+  separator_ok <- is.null(lineage_separator) || is.character(lineage_separator) &&
+    length(lineage_separator) == 1L && !is.na(lineage_separator) &&
+    nzchar(lineage_separator) && validUTF8(lineage_separator)
+  if (!separator_ok) {
+    # W150
+    stop("`lineage_separator` must be NULL or one non-empty piece of text.", call. = FALSE)
+  }
   # A type map read from a file brings that file's findings (D12.55), with
   # read_findings' columns; a hand-set attribute without them is a caller's error.
   type_findings <- attr(type_map, "gpq_read_findings")
@@ -1879,12 +1906,14 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
         paste0("code_lists:", names(code_lists))
       },
       if (!is.null(datasets)) "datasets", if (!is.null(lineage_spec)) "lineage_spec",
+      if (!is.null(lineage_when)) "lineage_when",
       if (is.list(crosswalks)) paste0("crosswalks:", names(crosswalks)),
       if (!is.null(precedence)) "precedence", if (!is.null(key_pairs)) "key_pairs",
       if (!is.null(one_to_many)) "one_to_many", if (!is.null(reach)) "reach"
     ),
     no_origin = c(
       if (!is.null(non_code_sheets)) "non_code_sheets", if (!is.null(id_pattern)) "id_pattern",
+      if (!is.null(lineage_separator)) "lineage_separator",
       if (!is.null(id_bands)) "id_bands"
     ),
     code_lists_workbook = is.character(code_lists) && length(code_lists) == 1L
@@ -1947,6 +1976,14 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     lineage_in$data, attributes, lineage_in$where$file, lineage_tokens(sentinels),
     dictionary_file
   )
+  # The conditions are checked against the lineage spec as built, the dictionary's table
+  # placement applied (D1.15b, D19.37).
+  when_in <- if (!is.null(lineage_when)) {
+    read_lineage_when(
+      lineage_when, lineage$component, attributes, keys, origins[["lineage_when"]]
+    )
+  }
+  lineage_component <- merge_lineage_when(lineage$component, when_in, lineage_separator)
   new_gpq_spec(list(
     attributes = attributes,
     keys = keys,
@@ -1958,7 +1995,7 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
       sheet = unique(as.character(non_code_sheets[!is.na(non_code_sheets)]))
     ),
     datasets = datasets_data,
-    lineage_spec = lineage$component,
+    lineage_spec = lineage_component,
     crosswalks = walks$long,
     id_bands = bands$bands,
     id_band_columns = bands$columns,
@@ -1971,12 +2008,13 @@ gpq_read_spec <- function(dictionary, code_lists = NULL, non_code_sheets = NULL,
     read_findings = bind_component("read_findings", list(
       dictionary_in$findings, dictionary_read$findings, type_findings, lists$findings,
       walks$findings, datasets_in$findings, lineage_in$findings, precedence_in$findings,
-      bands$findings, clashes$findings, lineage$findings, pairs_in$findings, many_in$findings,
-      reach_in$findings
+      bands$findings, clashes$findings, lineage$findings, when_in$findings, pairs_in$findings,
+      many_in$findings, reach_in$findings
     )),
     manifest = bind_component("manifest", list(
       dictionary_in$manifest, lists$manifest, memory_row(non_code_sheets, "non_code_sheets"),
-      datasets_in$manifest, lineage_in$manifest, walks$manifest,
+      datasets_in$manifest, lineage_in$manifest, when_in$manifest,
+      memory_row(lineage_separator, "lineage_separator"), walks$manifest,
       memory_row(id_pattern, "id_pattern"), memory_row(id_bands, "id_bands"),
       precedence_in$manifest, pairs_in$manifest, many_in$manifest, reach_in$manifest
     ))
