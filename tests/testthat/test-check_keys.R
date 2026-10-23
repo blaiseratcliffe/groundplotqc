@@ -1373,6 +1373,15 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
   expect_equal(chain_rows(conformance_input(back, text_spec), "k", chain$steps), c(1L, NA))
   orphan <- opened(gpq_check_conformance(back, text_spec, layers = 4), "fk_orphan")
   expect_equal(paste(placed_at(orphan), orphan$value), "k p_id 2 NaN")
+  # So that record reaches no parent, and a group column read through its key gives it "*"
+  # (M6's cleanup, M5 m107).
+  grouped <- gpq_read_spec(rbind(typed_text, data.frame(
+    table_name = "p", attribute_name = "g", key_type = NA, reference_table = NA,
+    data_type = "character"
+  )))
+  data.table::set(back$p, j = "g", value = c("one", "two"))
+  groups <- conformance_input(back, grouped, group_cols = "g")$groups$k
+  expect_equal(groups$values$g[groups$row_group], c("one", "*"))
 })
 
 # the finish's minors pass (m86)

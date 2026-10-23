@@ -126,7 +126,8 @@ build_rule_registry <- function() {
       "class_mismatch", 1L, "error", "harmonization", "attributes; type_map",
       unit = TRUE
     ),
-    # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63).
+    # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63), and
+    # coercion_loss reports an integer64 value a double can't hold exactly (D18.111).
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
@@ -165,7 +166,8 @@ build_rule_registry <- function() {
       "attributes; keys; type_map; sentinels; settings:column_level_min_n", "sentinel_fix"
     ),
     # Version 2 (M5), these three: a column stored as integer64 holds the codes plain stored
-    # numbers hold (D18.64, m55).
+    # numbers hold (D18.64, m55), a whole code compared with it as bit64 reads the code's text
+    # (D18.112).
     conformance(
       "sentinel_wrong_type", 2L, "error", "harmonization",
       "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes",
@@ -295,12 +297,14 @@ build_rule_registry <- function() {
       "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels"
     ),
     # ---- M5: Appendix E's design candidates (K1, K8, K10; D8.24, D9.26, D18.39) ----
+    # design_geometry_inconsistent and design_duplicate_signature show the first example_cap
+    # values of an `expected` list, so they read it (D18.81, D18.82; m111).
     conformance(
       "design_geometry_inconsistent", 4L, "error", "harmonization",
       paste(
         "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
         "settings:design_geometry_by; settings:design_geometry_columns;",
-        "settings:design_geometry_table"
+        "settings:design_geometry_table; settings:example_cap"
       )
     ),
     conformance(
@@ -315,7 +319,7 @@ build_rule_registry <- function() {
       paste(
         "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
         "settings:design_signature_by; settings:design_signature_columns;",
-        "settings:design_signature_table"
+        "settings:design_signature_table; settings:example_cap"
       )
     )
   ))

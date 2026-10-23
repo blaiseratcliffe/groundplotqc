@@ -2074,3 +2074,50 @@ test_that("build_magp_example.R builds the example with the tests' clean base (D
   expect_equal(bytes[1:6], as.raw(c(0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00)))
   expect_equal(rawToChar(memDecompress(bytes, "xz")[1:4]), "RDX3")
 })
+
+# M6's cleanup (M5 m9)
+test_that("edit_csv_cell.R applies the edit list its third argument names (D18.24)", {
+  script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
+  testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  # A synthetic copy laid out as edits_20261015.R's two entries want it: whole CRLF lines, NO
+  # and ND on lines 102 and 103 with no treat_vs_dist, other codes above them.
+  name <- "20261015_magpv2_treatment_disturbance.csv"
+  lines <- c("magp_codes,treat_vs_dist", sprintf("C%03d,T", 1:100), "NO,", "ND,")
+  crlf <- function(x) charToRaw(paste0(paste(x, collapse = "\r\n"), "\r\n"))
+  input_dir <- withr::local_tempdir()
+  writeBin(crlf(lines), file.path(input_dir, name))
+  output_dir <- file.path(withr::local_tempdir(), "edited")
+  out <- suppressWarnings(system2(
+    file.path(R.home("bin"), "Rscript"),
+    shQuote(c(normalizePath(script), input_dir, output_dir, "edits_20261015.R")),
+    stdout = TRUE, stderr = TRUE
+  ))
+  expect_null(attr(out, "status"), info = paste(out, collapse = "\n"))
+  expect_match(
+    out, "line 103, magp_codes = ND, treat_vs_dist: (blank) -> D",
+    fixed = TRUE, all = FALSE
+  )
+  # The two cells edited, every other byte as it was.
+  written <- file.path(output_dir, name)
+  expect_identical(
+    readBin(written, "raw", file.size(written)), crlf(c(lines[1:101], "NO,T", "ND,D"))
+  )
+})
+
+test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)", {
+  script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
+  testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  script <- normalizePath(script)
+  # The list exists, but only a file name of the script's own folder is taken, so the run
+  # stops before it reads or writes anything.
+  input_dir <- withr::local_tempdir()
+  output_dir <- file.path(withr::local_tempdir(), "edited")
+  listed <- file.path(dirname(script), "edits_20261015.R")
+  out <- suppressWarnings(system2(
+    file.path(R.home("bin"), "Rscript"), shQuote(c(script, input_dir, output_dir, listed)),
+    stdout = TRUE, stderr = TRUE
+  ))
+  expect_equal(attr(out, "status"), 1L)
+  expect_match(out, "No edit list named ", fixed = TRUE, all = FALSE)
+  expect_false(dir.exists(output_dir))
+})

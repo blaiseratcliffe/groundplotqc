@@ -53,11 +53,12 @@ parse_chain <- function(chain, table, keys, attributes) {
 #' as plain numbers joins as stored, and against text only the numeric side is written as
 #' text, its sentinels with it (D16.42, m9); NA, NaN, every sentinel of the child's and the
 #' parent's types, and a blank key as space_padding() reads it (Unicode spaces included) match
-#' nothing, whatever the parent's key holds (D16.26; D16.42, m8; D18.31; m85). They are masked after
-#' a plain match(), read with %in% in the key's own type rather than in a copy of the column
-#' (16.2), as match()'s `incomparables` isn't always honoured when it holds more than one value
-#' (D18.73). A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or a
-#' table or column on it not given) gets NA; with no steps every row is its own.
+#' nothing, whatever the parent's key holds, and nothing matches a parent's NaN key, a child's
+#' text "NaN" included (D16.26; D16.42, m8; D18.31; m85; D18.87). They are masked after a plain
+#' match(), read with %in% in the key's own type rather than in a copy of the column (16.2), as
+#' match()'s `incomparables` isn't always honoured when it holds more than one value (D18.73).
+#' A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or a table or
+#' column on it not given) gets NA; with no steps every row is its own.
 #' @noRd
 chain_rows <- function(input, table, steps) {
   rows <- seq_len(nrow(input$data[[table]]))

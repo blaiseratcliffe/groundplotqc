@@ -634,7 +634,6 @@ test_that("a site's ID passes inside its own band or on either bound, and fails 
   expect_equal(placed_at(found), c("sites site_id 4", "sites site_id 6", "sites site_id 9"))
   expect_equal(found$value, c("98", "200", "1000"))
   expect_equal(found$expected, rep("100 to 199", 3L))
-  expect_equal(found$expected[found$value == "1000"], "100 to 199")
   rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
   expect_equal(c(rows$table_name, rows$column_name, rows$status), c("sites", "site_id", "fail"))
   expect_equal(c(rows$n_checked, rows$n_fail), c(9L, 3L))

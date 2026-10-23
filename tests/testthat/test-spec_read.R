@@ -2104,6 +2104,19 @@ test_that("reach_invalid finds each table the walk checks that no walk from a ro
   expect_equal(nrow(found_in(walked)), 0L)
   checks <- preflight_checks(walked)
   expect_equal(checks$outcome[checks$rule_id == "reach_invalid"], "pass")
+  # The rootless walk read from a data.frame placed on a workbook sheet, so each cell names its
+  # column: the plots, with no row of their own, at the from_child row's attribute_name (B),
+  # the trees at their own row's table_name (A) (R108; M6's cleanup, M5 m80).
+  workbook <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", workbook)
+  placed <- gpq_read_spec(
+    dictionary,
+    reach = data.frame(table_name = "trees", attribute_name = "plot_id", how = "from_child"),
+    origins = list(reach = list(path = workbook, sheet = "reach", rows = 2L))
+  )
+  found <- found_in(placed)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, c("reach!B2", "reach!A2"))
 })
 
 # ---- the Copilot fix round (R170) ----

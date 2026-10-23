@@ -399,9 +399,12 @@ test_that("a table holding integer64 has bit64 loaded for it, or the run stops w
   asked$n <- 0L
   plain <- gpq_check_conformance(tables_of(as.character), spec, layers = 4)
   expect_identical(asked$n, 0L)
-  for (stored in list(as.numeric, as.integer)) {
-    gpq_check_conformance(tables_of(stored), spec, layers = 1)
-    expect_identical(asked$n, 0L)
+  # Each storage counted from 0 and named if it fails (M6's cleanup, M5 m109).
+  stored_as <- list(double = as.numeric, integer = as.integer)
+  for (storage in names(stored_as)) {
+    asked$n <- 0L
+    gpq_check_conformance(tables_of(stored_as[[storage]]), spec, layers = 1)
+    expect_identical(asked$n, 0L, info = storage)
   }
   # With bit64, the run loads it and reads the column as the same keys stored as text. Found
   # installed without loading it, so where no earlier test has, the run is what loads it.
@@ -410,6 +413,11 @@ test_that("a table holding integer64 has bit64 loaded for it, or the run stops w
   wide <- gpq_check_conformance(tables_of(bits_of), spec, layers = 4)
   expect_identical(asked$n, 1L)
   expect_true(isNamespaceLoaded("bit64"))
+  # Asked once a run, however many of its tables hold an integer64 column (M6's cleanup, M5
+  # m110).
+  asked$n <- 0L
+  gpq_check_conformance(both, spec, layers = 0)
+  expect_identical(asked$n, 1L)
   placed <- function(results) {
     open <- results$issues[results$issues$status == "open"]
     paste(open$rule_id, open$table_name, open$column_name, open$row_number, open$value)

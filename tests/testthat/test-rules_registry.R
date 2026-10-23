@@ -213,6 +213,27 @@ test_that("a severity setting entry changes its conformance rule's fingerprint o
   expect_identical(option[ids[-2L]], plain[ids[-2L]])
 })
 
+# M6's cleanup (M5 m111)
+test_that("the design checks capping `expected` name example_cap in their inputs (D18.81)", {
+  # design_geometry_inconsistent and design_duplicate_signature show the first example_cap
+  # values of an `expected` list (D18.81, D18.82), so their fingerprints take the setting in
+  # (9.6, D4.7); subplot_label_ambiguous writes no `expected` and doesn't read it.
+  registry <- rule_registry()
+  inputs <- strsplit(registry$inputs, "; ", fixed = TRUE)
+  names(inputs) <- registry$rule_id
+  capped <- c("design_geometry_inconsistent", "design_duplicate_signature")
+  for (rule in capped) {
+    expect_true("settings:example_cap" %in% inputs[[rule]], info = rule)
+  }
+  expect_false("settings:example_cap" %in% inputs[["subplot_label_ambiguous"]])
+  spec <- fx_fish_spec()
+  ids <- c(capped, "subplot_label_ambiguous")
+  plain <- rule_fingerprint(ids, spec)
+  given <- rule_fingerprint(ids, spec, settings = list(example_cap = 2L))
+  expect_true(all(given[capped] != plain[capped]))
+  expect_identical(given[["subplot_label_ambiguous"]], plain[["subplot_label_ambiguous"]])
+})
+
 test_that("every rule has a rule_version, a whole number from 1 (D15.6)", {
   registry <- rule_registry()
   expect_type(registry$rule_version, "integer")
