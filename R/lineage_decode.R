@@ -190,11 +190,19 @@ decode_records <- function(input, table, rows, labels, flags) {
   codes <- sentinels$value[sentinels$data_type == columns$family[[at]]]
   usable <- !is.na(text) & !space_padding(text)$blank & !text %chin% codes
   any_code <- unique(sentinels$value)
-  for (label in unique(labels[usable])) {
-    same <- if (is.na(label)) is.na(labels) else labels %chin% label
-    here <- which(usable & same)
-    entry <- if (is.na(label)) NULL else lineage_entry(spec, label, table, attribute)
-    if (is.null(entry) || nrow(entry) == 0L || entry$id_status[[1L]] == "unparseable") {
+  # A record with no label, or whose label the lineage spec gives no id entry for this
+  # attribute, has no lineage spec: set in one step, so the loop below runs over the spec's
+  # contributors only (16.2).
+  lineage <- spec$lineage_spec
+  has_entry <- lineage$spec_type %chin% "id" & lineage$table_name %chin% table &
+    lineage$attribute_name %chin% attribute & !is.na(lineage$contributor_label)
+  entry_labels <- unique(lineage$contributor_label[has_entry])
+  no_entry <- usable & (is.na(labels) | !labels %chin% entry_labels)
+  status[no_entry] <- "no_lineage_spec"
+  for (label in unique(labels[usable & !no_entry])) {
+    here <- which(usable & labels %chin% label)
+    entry <- lineage_entry(spec, label, table, attribute)
+    if (entry$id_status[[1L]] == "unparseable") {
       status[here] <- "no_lineage_spec"
       next
     }
@@ -213,8 +221,11 @@ decode_records <- function(input, table, rows, labels, flags) {
       separator <- entry$separator[[1L]]
       pieces <- if (!is.na(separator)) split_src_id(text[here], separator)
       fits <- if (is.null(pieces)) rep(FALSE, length(here)) else lengths(pieces) == length(slots)
+      # Each kept ID has exactly length(slots) pieces, so part k is every length(slots)-th
+      # piece from the k-th: no pass over the issues' pieces for each part (16.2).
+      flat <- as.character(unlist(pieces[fits], use.names = FALSE))
       parts <- lapply(seq_along(slots), function(k) {
-        vapply(pieces[fits], `[[`, character(1), k)
+        flat[seq.int(k, by = length(slots), length.out = sum(fits))]
       })
     }
     status[here[!fits]] <- "raw"
@@ -374,12 +385,18 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     attribute <- source_id_attribute(spec, table)
     column <- columns$column[columns$table_name == table & columns$attribute_name %chin% attribute]
     x <- input$data[[table]][[column]]
-    repeats <- duplicated(x) | duplicated(x, fromLast = TRUE)
+    # A column stored as integer64 is read as a table made by reference over it: its own
+    # duplicated() ignores fromLast, so the first holder of a repeated ID would be missed
+    # (D18.10, as record_pk_text() reads a PK).
+    ids <- if (inherits(x, "integer64")) setDT(list(x)) else x
+    repeats <- duplicated(ids) | duplicated(ids, fromLast = TRUE)
     candidate <- at[repeats[issues$row_number[at]]]
     if (length(candidate) == 0L) {
       next
     }
-    holders <- which(repeats & x %in% x[issues$row_number[candidate]])
+    # Matched on the repeated rows only, so a classed column isn't written as text whole.
+    repeated <- which(repeats)
+    holders <- repeated[x[repeated] %in% x[issues$row_number[candidate]]]
     reached <- reach_column(input, table, key_col)
     key_values <- value_text(reached_values(
       input, list(home = reached$home, rows = reached$rows[holders]), key_col

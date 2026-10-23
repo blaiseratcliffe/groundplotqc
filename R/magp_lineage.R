@@ -21,8 +21,13 @@ age_tree_flags <- function(tables) {
     tree_key <- character()
   }
   keys <- unique(tree_key)
-  # A key the records can't be matched on gets no row (R1), and so no flag.
-  keys <- keys[!is.na(keys) & !is_blank(value_text(keys))]
+  # A key the records can't be matched on gets no row (R1), and so no flag. Only text can be
+  # blank, so a number-typed key isn't written as text to be tested (16.2).
+  keep <- !is.na(keys)
+  if (is.character(keys) || is.factor(keys)) {
+    keep <- keep & !is_blank(value_text(keys))
+  }
+  keys <- keys[keep]
   age_tree <- rep("N", length(keys))
   measurements <- tables[["magp_tree_meas"]]
   if (length(keys) > 0L && all(c("magp_tree_id", "tree_type") %in% names(measurements))) {

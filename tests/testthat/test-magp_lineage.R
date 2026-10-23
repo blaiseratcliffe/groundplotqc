@@ -41,3 +41,61 @@ test_that("a table or column not given flags no tree Y", {
   only_trees <- list(magp_trees = data.frame(magp_tree_id = "a"))
   expect_equal(age_tree_flags(only_trees)$magp_trees$age_tree, "N")
 })
+
+test_that("a number-typed tree key is flagged without being written as text (16.2)", {
+  tables <- list(
+    magp_trees = data.frame(magp_tree_id = c(1, NA, 2, 1)),
+    magp_tree_meas = data.frame(magp_tree_id = c(1, 2, 2), tree_type = c("A", "A", "L"))
+  )
+  flags <- age_tree_flags(tables)$magp_trees
+  expect_equal(flags$magp_tree_id, c(1, 2))
+  expect_equal(flags$age_tree, c("Y", "N"))
+})
+
+test_that("MAGPlot's spec decodes A2-shaped IDs of a BC and an ON contributor (D19.30)", {
+  spec <- magp_spec()
+  trees <- data.table::copy(magp_example$magp_trees)
+  meas <- data.table::copy(magp_example$magp_tree_meas)
+  # Three ON trees (the first an age tree: every measurement of it has tree_type "A") and three
+  # BC trees (a plot and a tree number, one with a missing plot, one with too many parts).
+  rows <- 1:6
+  data.table::set(trees, rows, "src_tree_id", c(
+    "9001", "9002", "9003", "4021_1_17", "4021_X_18", "4021_1_1_9"
+  ))
+  data.table::set(meas, which(meas$magp_tree_id == trees$magp_tree_id[[1L]]), "tree_type", "A")
+  flags <- age_tree_flags(list(magp_trees = trees, magp_tree_meas = meas))
+  age_trees <- flags$magp_trees$magp_tree_id[flags$magp_trees$age_tree == "Y"]
+  expect_equal(age_trees, trees$magp_tree_id[[1L]])
+  # One planted issue per tree, as a run's would be: the issues are made here, the run's
+  # contributor column giving each tree's contributor.
+  pk <- trees$magp_tree_id[rows]
+  issues <- data.table::data.table(
+    issue_id = rows, rule_id = "code_not_in_list", table_name = "magp_trees",
+    column_name = "tree_origin", record_pk = pk, row_number = rows, pk_positional = FALSE,
+    provider_key = NA_character_, provider_key_status = NA_character_,
+    fingerprint = NA_character_,
+    fingerprint_pk = paste0("code_not_in_list|magp_trees|tree_origin|pk:", pk),
+    magp_contributor_id = rep(c("170", "110"), each = 3L)
+  )
+  decode <- function(flags) {
+    gpq_decode_lineage(
+      issues, list(magp_trees = trees), spec,
+      key_col = "magp_contributor_id", flags = flags
+    )
+  }
+  decode(flags)
+  expect_equal(issues$provider_key, c(
+    "tblAgeTree.agetreekey=9001", "tblTree.treekey=9002", "tblTree.treekey=9003",
+    "faib_header.site_identifier=4021; faib_plot_header.plot=1; faib_tree_detail.tree_no=17",
+    "faib_header.site_identifier=4021; faib_plot_header.plot=X; faib_tree_detail.tree_no=18",
+    "4021_1_1_9"
+  ))
+  expect_equal(issues$provider_key_status, c(
+    "decoded", "decoded", "decoded", "decoded", "partial", "raw"
+  ))
+  expect_equal(
+    issues$fingerprint[[1L]], "code_not_in_list|magp_trees|tree_origin|tblAgeTree.agetreekey=9001"
+  )
+  # ON's condition reads the flag, which a caller who gives none is told of.
+  expect_error(decode(NULL), "flag.age_tree")
+})

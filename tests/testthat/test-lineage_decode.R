@@ -76,6 +76,15 @@ test_that("a flag is joined by key, a record without one holding no condition (D
   expect_equal(
     decoded_by_tree(issues)$provider_key[4:5], c("field.age_key=k100", "field.tree_key=a200")
   )
+  # A record whose key the flags don't give (t5 here) holds no condition.
+  gpq_decode_lineage(
+    issues, tables, spec,
+    key_col = "contributor",
+    flags = list(trees = data.frame(tree_id = "t4", tagged = "Y"))
+  )
+  expect_equal(
+    decoded_by_tree(issues)$provider_key[4:5], c("field.age_key=k100", "field.tree_key=a200")
+  )
   # A repeated PK: each holder gets the key's flag.
   twice <- tables
   twice$trees$tree_id[[5L]] <- "t4"
@@ -182,9 +191,17 @@ test_that("decoding changes no table and keeps the issues' other columns (16.2)"
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_identical(tables, before)
   expect_identical(issues[, kept, with = FALSE], other)
+  # Tables given as data.tables: none changed, and none left with a key or an index.
+  tables <- lapply(tables, data.table::as.data.table)
+  before <- lapply(tables, data.table::copy)
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_identical(tables, before)
+  expect_null(data.table::key(tables$trees))
+  expect_null(data.table::indices(tables$trees))
+  expect_null(data.table::indices(tables$sites))
 })
 
-test_that("the issues and key_col are checked (W166, W167)", {
+test_that("the issues and key_col are checked (W176, W177)", {
   spec <- fx_lineage_spec()
   tables <- fx_lineage_tables()
   issues <- fx_lineage_issues(spec, tables)
@@ -218,4 +235,117 @@ test_that("a label comes from the bands' labels sheet when key_col ends their ch
     value = c("*", "any", nbsp, "spaces"), source_cell = NA_character_
   ))
   expect_equal(contributor_labels(spec, "contributor", c("*", nbsp, NA)), c("any", "spaces", NA))
+})
+
+# ---- the task 5 fix round: the statuses' corners and the shared keys, issues made by hand ----
+
+test_that("a -1 part, a nested ID that can't expand, an unparseable entry (R5, R6, R8)", {
+  # The trees' issues as a run gives them, one per tree, made here: no run is needed.
+  tables <- fx_lineage_tables()
+  made <- function() {
+    pk <- tables$trees$tree_id
+    data.table::data.table(
+      issue_id = 1:8, rule_id = "value_below_min", table_name = "trees", column_name = "height",
+      record_pk = pk, row_number = 1:8, pk_positional = FALSE, provider_key = NA_character_,
+      provider_key_status = NA_character_, fingerprint = NA_character_,
+      fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
+      contributor = tables$sites$contributor[match(tables$trees$site_id, tables$sites$site_id)]
+    )
+  }
+  # R5: a part that is a missing-value code of another type is a missing part.
+  spec <- fx_lineage_spec()
+  tables$trees$src_tree_id[[1L]] <- "41_-1"
+  issues <- made()
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(issues$provider_key_status[[1L]], "partial")
+  expect_equal(issues$provider_key[[1L]], "survey.site=41; survey.tree=-1")
+  # R6: a nested ID whose inner entry has alternatives, and one nested in itself, are raw; R8:
+  # an unparseable entry, and a contributor with none, are no_lineage_spec; both as delivered.
+  lineage <- data.frame(
+    contributor_label = c("north", "north", "south", "east"),
+    table_name = c("sites", "trees", "trees", "trees"),
+    attribute_name = c("src_site_id", "src_tree_id", "src_tree_id", "src_tree_id"),
+    spec_type = "id",
+    source_text = c(
+      "PSP: a.x | other: b.y", "src_site_id + survey.tree", "src_tree_id + survey.k",
+      "not a notation"
+    ),
+    note = NA, source_cell = NA
+  )
+  spec <- fx_lineage_spec(lineage_spec = lineage)
+  tables <- fx_lineage_tables()
+  issues <- made()
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c(
+    "raw", "raw", "raw", "raw", "raw", "no_lineage_spec", "no_lineage_spec", "raw"
+  ))
+  expect_equal(issues$provider_key, tables$trees$src_tree_id)
+  # A missing ID column: no key, the pk: fingerprint.
+  spec <- fx_lineage_spec()
+  tables$trees$src_tree_id <- NULL
+  issues <- made()
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(unique(issues$provider_key_status), "fallback_pk")
+  expect_true(all(is.na(issues$provider_key)))
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+})
+
+test_that("a key is shared with a holder that has no issue, not with another contributor's (R9)", {
+  spec <- fx_lineage_spec()
+  tables <- fx_lineage_tables()
+  # t6 (east, no entry) holds t4's ID: the same text, but t6's key is the ID as delivered and
+  # t4's is south's labelled one, so neither is shared. t1 and t8 hold one key.
+  tables$trees$src_tree_id[[6L]] <- "k100"
+  rows <- c(1L, 4L, 6L)
+  pk <- tables$trees$tree_id[rows]
+  issues <- data.table::data.table(
+    issue_id = 1:3, rule_id = "value_below_min", table_name = "trees", column_name = "height",
+    record_pk = pk, row_number = rows, pk_positional = FALSE, provider_key = NA_character_,
+    provider_key_status = NA_character_, fingerprint = NA_character_,
+    fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
+    contributor = c("north", "south", "east")
+  )
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(
+    issues$provider_key, c("survey.site=41; survey.tree=7", "field.tree_key=k100", "k100")
+  )
+  # t8, the second holder of t1's key, has no issue.
+  expect_equal(issues$fingerprint[[1L]], issues$fingerprint_pk[[1L]])
+  expect_equal(issues$fingerprint[[2L]], "value_below_min|trees|height|field.tree_key=k100")
+  expect_equal(issues$fingerprint[[3L]], "value_below_min|trees|height|k100")
+})
+
+test_that("an integer64 ID's shared key takes the pk: form on each holder (D19.15, D18.10)", {
+  # bit64's duplicated() ignores fromLast, so the first holder of a repeated ID was missed.
+  testthat::skip_if_not_installed("bit64")
+  spec <- fx_lineage_spec()
+  tables <- fx_lineage_tables()
+  # South's two trees hold one ID, which one contributor's single-part entry decodes.
+  tables$trees$src_tree_id <- bit64::as.integer64(c(41, 42, 43, 100, 100, 55, NA, 44))
+  decode <- function(rows) {
+    pk <- tables$trees$tree_id[rows]
+    issues <- data.table::data.table(
+      issue_id = seq_along(rows), rule_id = "value_below_min", table_name = "trees",
+      column_name = "height", record_pk = pk, row_number = rows, pk_positional = FALSE,
+      provider_key = NA_character_, provider_key_status = NA_character_,
+      fingerprint = NA_character_,
+      fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
+      contributor = tables$sites$contributor[
+        match(tables$trees$site_id[rows], tables$sites$site_id)
+      ]
+    )
+    gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+    issues
+  }
+  both <- decode(4:5)
+  expect_equal(both$provider_key, rep("field.tree_key=100", 2L))
+  expect_equal(both$fingerprint, both$fingerprint_pk)
+  # An issue on one holder only, the first or the second: the other holder still shares it.
+  first <- decode(4L)
+  expect_equal(first$fingerprint, first$fingerprint_pk)
+  second <- decode(5L)
+  expect_equal(second$fingerprint, second$fingerprint_pk)
+  # An ID held once keeps the provider key's fingerprint.
+  alone <- decode(c(4L, 6L))
+  expect_equal(alone$fingerprint[[2L]], "value_below_min|trees|height|55")
 })
