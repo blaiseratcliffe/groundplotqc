@@ -2319,12 +2319,27 @@ test_that("grouping by numbers: decimals, factors, codes and text that isn't one
   # group of NA, and one text twice is one group.
   expect_equal(failing("integer", c("abc", "xyz"), c(10, 20)), integer())
   expect_equal(failing("integer", c("abc", "abc"), c(10, 20)), 1:2)
+})
+
+test_that("grouping by numbers ranks the groups over the values that group nothing (D18.126)", {
+  settings <- list(
+    design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = "v"
+  )
+  spec <- gpq_read_spec(
+    data.frame(
+      table_name = "t", attribute_name = c("id", "g", "v"), key_type = c("PK", ".", "."),
+      data_type = c("character", "integer", "numeric")
+    ),
+    sentinels = gpq_sentinels(numeric = c(missing = -99, not_applicable = -88))
+  )
   # NA, a blank and the missing-value code, twice each with values that differ, group nothing,
   # so the groups are ranked over the rest: "1" and "01" are still one group, "2" and "02"
   # another that agrees.
   g <- c("1", NA, NA, "", "", "-99", "-99", "01", "2", "02")
   v <- c(10, 1, 2, 3, 4, 5, 6, 20, 30, 30)
-  expect_equal(failing("integer", g, v), c(1L, 8L))
+  tables <- list(t = data.table::data.table(id = paste0("r", seq_along(v)), g = g, v = v))
+  results <- gpq_check_conformance(tables, spec, layers = 4, settings = settings)
+  expect_equal(opened(results, "design_geometry_inconsistent")$row_number, c(1L, 8L))
 })
 
 test_that("a repeated name in design_geometry_columns stops pre-flight and the run (D18.127)", {
