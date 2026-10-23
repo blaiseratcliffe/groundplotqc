@@ -700,9 +700,8 @@ preflight_check_functions <- function() {
 #' `dd_pk_missing`, `dd_fk_target_missing`, `code_list_missing`, `code_column_missing`,
 #' `code_list_duplicate_code`, `code_list_blank_row`, `code_list_unreferenced`,
 #' `code_list_empty_column`, `spec_clash_resolved`, `spec_clash_unresolved`,
-#' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`,
-#' `site_id_range_invalid`, `lineage_spec_unparseable`, `lineage_when_invalid`,
-#' `lineage_name_unknown`,
+#' `datasets_row_missing`, `spec_encoding_invalid`, `spec_csv_malformed`, `site_id_range_invalid`,
+#' `lineage_spec_unparseable`, `lineage_when_invalid`, `lineage_name_unknown`,
 #' `lineage_spec_row_unflagged`, `lineage_id_unflagged`, `crosswalk_unreadable`,
 #' `dd_format_invalid`, `key_pair_invalid`, `reach_invalid`, `one_to_many_invalid`; with a
 #' rule set, `rule_set_unknown_column` and `rule_set_duplicate_row`; with a rule set or a

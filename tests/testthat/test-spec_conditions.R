@@ -1,8 +1,11 @@
 # Tests for conditions in D8.10's grammar (plan 5.5, 10.1; D8.10, D19.43; R3). The spec and
 # tables are helper-lineage.R's.
 
+# The default spec, read once for the file's tests, none of which changes it (D19.79).
+lineage_spec_default <- fx_lineage_spec()
+
 test_that("the five forms parse, each on an attribute, a chain or a flag", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   parse <- function(text) parse_condition(text, "trees", spec$keys, spec$attributes)
   equal <- parse("kind == \"A\"")
   expect_equal(equal$operator, "==")
@@ -18,7 +21,7 @@ test_that("the five forms parse, each on an attribute, a chain or a flag", {
 })
 
 test_that("anything else doesn't parse, never guessed (R3)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   parse <- function(text) parse_condition(text, "trees", spec$keys, spec$attributes)
   for (text in c(
     "kind==\"A\"", "kind == A", "kind == \"A\" & kind == \"L\"", "!is_present(kind)",
@@ -34,7 +37,7 @@ test_that("anything else doesn't parse, never guessed (R3)", {
 })
 
 test_that("a condition holds where its value's text matches, never on NA (R3)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   tables$trees$kind[[3L]] <- NA
   tables$trees$kind[[6L]] <- "X"
@@ -60,7 +63,7 @@ test_that("a condition holds where its value's text matches, never on NA (R3)", 
 # ---- the task 4 fix round: R3's quotes, operators and codes ----
 
 test_that("a literal holds no quote of its kind, and other quotes and operators are refused (R3)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   parse <- function(text) parse_condition(text, "trees", spec$keys, spec$attributes)
   # A literal may hold the other kind of quote.
   expect_equal(parse("kind == \"it's\"")$values, "it's")
@@ -77,7 +80,7 @@ test_that("a literal holds no quote of its kind, and other quotes and operators 
 })
 
 test_that("is_present and is_sentinel read blanks and each type's own codes (R3, D16.42)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   # Text: "X" is the character missing-value code, "-1" a number's code but only text here.
   tables$trees$kind <- c("A", "", "  ", intToUtf8(160L), "X", NA, "Z", "-1")
@@ -116,7 +119,7 @@ test_that("is_present and is_sentinel read blanks and each type's own codes (R3,
 })
 
 test_that("condition_rows leaves the caller's tables as they were, with no index (16.2)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- lapply(fx_lineage_tables(), data.table::as.data.table)
   before <- lapply(tables, data.table::copy)
   input <- conformance_input(tables, spec)
@@ -136,7 +139,7 @@ test_that("condition_rows leaves the caller's tables as they were, with no index
 # ---- task 5 (R13: appended with task 5, which brings flag_values()) ----
 
 test_that("a flag is read at the record's key; one not given is a caller's error (D19.43)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   input <- conformance_input(tables, spec)
   flags <- flag_values(list(trees = data.frame(tree_id = c("t2", "t1"), seen = c("N", "Y"))), input)

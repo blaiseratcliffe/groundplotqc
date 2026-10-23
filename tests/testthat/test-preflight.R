@@ -742,22 +742,22 @@ test_that("a condition row keeps A2's findings at A2's cells, its own at its inp
     attribute_name = c("src_site_id", "src_plot_id"), part_order = c("1", "2"),
     part_source = c("alt.site", "nowhere"), when = "kind == \"A\"", note = NA
   )
-  read <- function(when) {
-    gpq_read_spec(
+  # Pre-flight once per form the conditions come in, each rule read from its results.
+  checked <- function(when) {
+    preflight_checks(gpq_read_spec(
       dictionary,
       lineage_spec = lineage, lineage_when = when,
       column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
-    )
+    ))
   }
-  check <- function(spec, rule) {
-    results <- preflight_checks(spec)
-    results[results$rule_id == rule, ]
-  }
+  check <- function(results, rule) results[results$rule_id == rule, ]
   path <- withr::local_tempfile(fileext = ".csv")
   data.table::fwrite(when, path)
+  from_memory <- checked(when)
+  from_file <- checked(path)
   # The row of src_site_id in the lineage spec is A2's, whatever form the conditions came in.
-  for (form in list(when, path)) {
-    unflagged <- check(read(form), "lineage_spec_row_unflagged")
+  for (results in list(from_memory, from_file)) {
+    unflagged <- check(results, "lineage_spec_row_unflagged")
     expect_equal(unflagged$detail, report_text(
       "preflight_detail_lineage_spec_row_unflagged",
       table_name = "plots", attribute_name = "src_site_id"
@@ -767,7 +767,7 @@ test_that("a condition row keeps A2's findings at A2's cells, its own at its inp
   }
   # A name the dictionary lacks: A2's "regen" at A2's cell, the condition's "nowhere" at its
   # line of the lineage_when file, and that file.
-  unknown <- check(read(path), "lineage_name_unknown")
+  unknown <- check(from_file, "lineage_name_unknown")
   expect_equal(nrow(unknown), 2L)
   condition <- grepl("nowhere", unknown$detail, fixed = TRUE)
   expect_equal(unknown$file[condition], basename(path))
@@ -775,7 +775,7 @@ test_that("a condition row keeps A2's findings at A2's cells, its own at its inp
   expect_equal(unknown$file[!condition], "in memory")
   expect_equal(unknown$source_cell[!condition], "A2!D5")
   # Given in memory, the condition's finding has no cell and the same file as A2's.
-  in_memory <- check(read(when), "lineage_name_unknown")
+  in_memory <- check(from_memory, "lineage_name_unknown")
   expect_equal(in_memory$file, rep("in memory", 2L))
   expect_equal(sort(in_memory$source_cell, na.last = TRUE), c("A2!D5", NA))
 })

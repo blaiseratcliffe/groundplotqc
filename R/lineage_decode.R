@@ -369,15 +369,20 @@ issues_match_tables <- function(issues, input) {
   invisible(NULL)
 }
 
-#' Which issues' provider keys another record of their table holds too (D19.15)
+#' Which issues' provider keys another record of their table holds too (D19.15, D19.76)
 #'
 #' Counted over the table's records of every contributor in `tables`: only the records whose ID
 #' an issue's record shares are decoded again, found by duplicated() on the ID column (16.2),
-#' each labelled from its own key_col value. Returns one logical per issue.
+#' each labelled as the run labelled it: an issue's record by its issue's key_col value, any
+#' other record by its key_col value in `tables`. Where `tables` reach key_col for no record of
+#' the table (a table or column on the way not given), they can't label a record with no issue:
+#' it counts as holding the key of each issue sharing its ID, so those keep the pk: form.
+#' Returns one logical per issue.
 #' @noRd
 shared_provider_keys <- function(issues, input, key_col, flags) {
   shared <- logical(nrow(issues))
   keyed <- which(!is.na(issues$provider_key) & !is.na(issues$row_number))
+  record <- which(!is.na(issues$row_number))
   spec <- input$spec
   columns <- input$columns
   for (table in unique(issues$table_name[keyed])) {
@@ -397,19 +402,41 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     # Matched on the repeated rows only, so a classed column isn't written as text whole.
     repeated <- which(repeats)
     holders <- repeated[x[repeated] %in% x[issues$row_number[candidate]]]
-    reached <- reach_column(input, table, key_col)
-    key_values <- value_text(reached_values(
-      input, list(home = reached$home, rows = reached$rows[holders]), key_col
-    ))
+    # A holder that is an issue's record takes that issue's key_col value, as the run gave it
+    # (D19.76); the table's other holders are read from `tables`.
+    on_table <- record[issues$table_name[record] == table]
+    own <- on_table[match(holders, issues$row_number[on_table])]
+    key_values <- value_text(issues[[key_col]][own])
+    other <- which(is.na(own))
+    unlabelled <- logical(length(holders))
+    if (length(other) > 0L) {
+      reached <- reach_column(input, table, key_col)
+      home <- columns$column[which(
+        columns$table_name == reached$home & columns$attribute_name == key_col
+      )]
+      if (all(is.na(home)) || all(is.na(reached$rows))) {
+        unlabelled[other] <- TRUE
+      } else {
+        key_values[other] <- value_text(reached_values(
+          input, list(home = reached$home, rows = reached$rows[holders[other]]), key_col
+        ))
+      }
+    }
     # A key "*" or blank is no key here, as in gpq_decode_lineage() (D9.24, D19.69).
     no_key <- is.na(key_values) | key_values %chin% "*" | space_padding(key_values)$blank
     key_values[no_key] <- NA_character_
+    labelled <- !unlabelled
     held <- decode_records(
-      input, table, holders, contributor_labels(spec, key_col, key_values), flags
+      input, table, holders[labelled], contributor_labels(spec, key_col, key_values[labelled]),
+      flags
     )$provider_key
     held <- held[!is.na(held)]
     twice <- unique(held[duplicated(held)])
-    shared[candidate] <- issues$provider_key[candidate] %in% twice
+    # A holder `tables` can't label holds, for all decoding can tell, the key of each issue
+    # sharing its ID (D19.76).
+    rows <- issues$row_number[candidate]
+    shared[candidate] <- issues$provider_key[candidate] %in% twice |
+      x[rows] %in% x[holders[unlabelled]]
   }
   shared
 }

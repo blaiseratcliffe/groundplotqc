@@ -76,9 +76,8 @@ the specification's \code{clashes} component.
 \code{dd_pk_missing}, \code{dd_fk_target_missing}, \code{code_list_missing}, \code{code_column_missing},
 \code{code_list_duplicate_code}, \code{code_list_blank_row}, \code{code_list_unreferenced},
 \code{code_list_empty_column}, \code{spec_clash_resolved}, \code{spec_clash_unresolved},
-\code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
-\code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_when_invalid},
-\code{lineage_name_unknown},
+\code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed}, \code{site_id_range_invalid},
+\code{lineage_spec_unparseable}, \code{lineage_when_invalid}, \code{lineage_name_unknown},
 \code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable},
 \code{dd_format_invalid}, \code{key_pair_invalid}, \code{reach_invalid}, \code{one_to_many_invalid}; with a
 rule set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a

@@ -24,25 +24,13 @@ test_that("a measurement whose tree key matches no tree adds no row (R1)", {
   expect_equal(flags$age_tree, "Y")
 })
 
-test_that("the flags decode MAGPlot's ON age trees, an orphan measurement stopping nothing", {
-  spec <- magp_spec()
-  trees <- data.table::copy(magp_example$magp_trees)
-  meas <- data.table::copy(magp_example$magp_tree_meas)
-  meas <- rbind(meas, meas[1L])
-  meas$magp_tree_id[[nrow(meas)]] <- "no such tree"
-  flags <- age_tree_flags(list(magp_trees = trees, magp_tree_meas = meas))
-  expect_true(all(flags$magp_trees$magp_tree_id %in% trees$magp_tree_id))
-  input <- conformance_input(list(magp_trees = trees, magp_tree_meas = meas), spec)
-  expect_no_error(flag_values(flags, input))
-})
-
 test_that("a table or column not given flags no tree Y", {
   expect_equal(nrow(age_tree_flags(list())$magp_trees), 0L)
   only_trees <- list(magp_trees = data.frame(magp_tree_id = "a"))
   expect_equal(age_tree_flags(only_trees)$magp_trees$age_tree, "N")
 })
 
-test_that("a number-typed tree key is flagged without being written as text (16.2)", {
+test_that("a number-typed tree key's flags are keyed by its numbers, each key once", {
   tables <- list(
     magp_trees = data.frame(magp_tree_id = c(1, NA, 2, 1)),
     magp_tree_meas = data.frame(magp_tree_id = c(1, 2, 2), tree_type = c("A", "A", "L"))
@@ -63,20 +51,18 @@ test_that("MAGPlot's spec decodes A2-shaped IDs of a BC and an ON contributor (D
     "9001", "9002", "9003", "4021_1_17", "4021_X_18", "4021_1_1_9"
   ))
   data.table::set(meas, which(meas$magp_tree_id == trees$magp_tree_id[[1L]]), "tree_type", "A")
+  # A measurement whose tree key matches no tree adds no flag, and decoding with the flags
+  # stops on nothing.
+  meas <- rbind(meas, meas[1L])
+  meas$magp_tree_id[[nrow(meas)]] <- "no such tree"
   flags <- age_tree_flags(list(magp_trees = trees, magp_tree_meas = meas))
+  expect_true(all(flags$magp_trees$magp_tree_id %in% trees$magp_tree_id))
   age_trees <- flags$magp_trees$magp_tree_id[flags$magp_trees$age_tree == "Y"]
   expect_equal(age_trees, trees$magp_tree_id[[1L]])
-  # One planted issue per tree, as a run's would be: the issues are made here, the run's
-  # contributor column giving each tree's contributor.
-  pk <- trees$magp_tree_id[rows]
-  issues <- data.table::data.table(
-    issue_id = rows, rule_id = "code_not_in_list", table_name = "magp_trees",
-    column_name = "tree_origin", record_pk = pk, row_number = rows, pk_positional = FALSE,
-    provider_key = NA_character_, provider_key_status = NA_character_,
-    fingerprint = NA_character_,
-    fingerprint_pk = paste0("code_not_in_list|magp_trees|tree_origin|pk:", pk),
-    magp_contributor_id = rep(c("170", "110"), each = 3L)
-  )
+  # One planted issue per tree, made by hand (helper-lineage.R), the run's contributor column
+  # giving each tree's contributor.
+  issues <- fx_lineage_made_issues(fx_mark_fixture(list(magp_trees = trees)), rows)
+  data.table::set(issues, j = "magp_contributor_id", value = rep(c("170", "110"), each = 3L))
   decode <- function(flags) {
     gpq_decode_lineage(
       issues, list(magp_trees = trees), spec,
@@ -94,7 +80,7 @@ test_that("MAGPlot's spec decodes A2-shaped IDs of a BC and an ON contributor (D
     "decoded", "decoded", "decoded", "decoded", "partial", "raw"
   ))
   expect_equal(
-    issues$fingerprint[[1L]], "code_not_in_list|magp_trees|tree_origin|tblAgeTree.agetreekey=9001"
+    issues$fingerprint[[1L]], "value_below_min|magp_trees|height|tblAgeTree.agetreekey=9001"
   )
   # ON's condition reads the flag, which a caller who gives none is told of.
   expect_error(decode(NULL), "flag.age_tree")

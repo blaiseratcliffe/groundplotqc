@@ -1710,16 +1710,14 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #' defect in the specification: each one is recorded in the `read_findings` component,
 #' and [gpq_preflight()] decides whether it stops.
 #'
-#' It does stop, with an error, on a mistake in the call: an argument in the wrong form;
-#' a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
-#' unless it is a translation table, which is then a finding; a
-#' dictionary without its table or attribute column; a `precedence`, `lineage_spec`,
-#' `lineage_when`, `key_pairs`, `one_to_many` or `reach` table without exactly its columns; a
-#' `lineage_separator` that isn't one piece of text; a `precedence`
-#' table with an unknown `winner` or `blank_rule`, or with two rows for one sheet, key and
-#' attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
-#' column it lacks, or with no values for an attribute that uses it; or an origin that
-#' doesn't fit its input.
+#' It does stop, with an error, on a mistake in the call: an argument in the wrong form; a file that
+#' doesn't exist, or a CSV file that can't be read, such as one in UTF-16, unless it is a
+#' translation table, which is then a finding; a dictionary without its table or attribute column; a
+#' `precedence`, `lineage_spec`, `lineage_when`, `key_pairs`, `one_to_many` or `reach` table without
+#' exactly its columns; a `lineage_separator` that isn't one piece of text; a `precedence` table
+#' with an unknown `winner` or `blank_rule`, or with two rows for one sheet, key and attribute; a
+#' name given in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or
+#' with no values for an attribute that uses it; or an origin that doesn't fit its input.
 #'
 #' @param dictionary The data dictionary: a data.frame, or the path of a CSV file or of an
 #'   `.xlsx` workbook, read from its first sheet. One row per table and attribute.
@@ -1786,9 +1784,8 @@ read_reach <- function(x, attributes, keys, origin = NULL) {
 #'   reachable only through a table or key column not given is left unchecked.
 #' @param origins `NULL`, or, for inputs given as data.frames that came from files, a list
 #'   named by input, each once (`dictionary`, `datasets`, `lineage_spec`, `lineage_when`,
-#'   `precedence`,
-#'   `key_pairs`, `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`) of
-#'   `list(path = , sheet = , rows = , columns = )`: the file, named in findings and hashed in
+#'   `precedence`, `key_pairs`, `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`)
+#'   of `list(path = , sheet = , rows = , columns = )`: the file, named in findings and hashed in
 #'   the manifest; a workbook's sheet, or `NULL` for a CSV file; the file row of the first
 #'   data row, later rows following on, or the file row of every data row, or `NULL` to count
 #'   rows as R counts them; and the file column, by number or letter, of every column of the

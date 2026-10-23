@@ -1,5 +1,6 @@
 # Tests for lineage decoding (plan 9.3, 9.6, 10.1, 10.2; D19.10 to D19.17, D19.41 to D19.48;
-# R1 to R9). The fixtures are helper-lineage.R's.
+# R1 to R9). The fixtures are helper-lineage.R's: the issues are made by hand, except in the
+# two tests that need a run's own (D19.77).
 
 # The trees' issues in their rows' order, one per tree.
 decoded_by_tree <- function(issues) {
@@ -9,8 +10,11 @@ decoded_by_tree <- function(issues) {
   )]
 }
 
+# The default spec, read once for the tests that don't change it (D19.79).
+lineage_spec_default <- fx_lineage_spec()
+
 test_that("each status, its key and the fingerprint (D19.13, D19.15, D19.16, D19.47)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   issues <- fx_lineage_issues(spec, tables)
   returned <- gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
@@ -39,7 +43,7 @@ test_that("a derived part is labelled with its bare attribute name (D19.47)", {
   )
   spec <- fx_lineage_spec(lineage_spec = lineage)
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(decoded_by_tree(issues)$provider_key[[1L]], "survey.site=41; kind=7")
 })
@@ -51,7 +55,7 @@ test_that("a part's conditions are tried in order before the entry's own part (D
   )
   spec <- fx_lineage_spec(lineage_when = when)
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   got <- decoded_by_tree(issues)
   expect_equal(got$provider_key[4:5], c("field.any_key=k100", "field.age_key=a200"))
@@ -60,7 +64,7 @@ test_that("a part's conditions are tried in order before the entry's own part (D
 test_that("a condition reads a parent's column through a chain (D19.27)", {
   spec <- fx_lineage_spec(lineage_when = fx_lineage_when("site_id > src_site_id == \"S9\""))
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(
     decoded_by_tree(issues)$provider_key[4:5], c("field.age_key=k100", "field.age_key=a200")
@@ -70,7 +74,7 @@ test_that("a condition reads a parent's column through a chain (D19.27)", {
 test_that("a flag is joined by key, a record without one holding no condition (D19.42, D19.43)", {
   spec <- fx_lineage_spec(lineage_when = fx_lineage_when("flag.tagged == \"Y\""))
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   flags <- list(trees = data.frame(tree_id = c("t5", "t4"), tagged = c("N", "Y")))
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor", flags = flags)
   expect_equal(
@@ -88,7 +92,7 @@ test_that("a flag is joined by key, a record without one holding no condition (D
   # A repeated PK: each holder gets the key's flag.
   twice <- tables
   twice$trees$tree_id[[5L]] <- "t4"
-  issues <- fx_lineage_issues(spec, twice)
+  issues <- fx_lineage_made_issues(twice, 1:8)
   gpq_decode_lineage(
     issues, twice, spec,
     key_col = "contributor",
@@ -102,7 +106,7 @@ test_that("a flag is joined by key, a record without one holding no condition (D
 test_that("flags of the wrong shape are a caller's error (D19.42; R2)", {
   spec <- fx_lineage_spec(lineage_when = fx_lineage_when("flag.tagged == \"Y\""))
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   decode <- function(flags) {
     gpq_decode_lineage(issues, tables, spec, key_col = "contributor", flags = flags)
   }
@@ -118,9 +122,9 @@ test_that("flags of the wrong shape are a caller's error (D19.42; R2)", {
 })
 
 test_that("tables that aren't the issues' own stop decoding (D19.14)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   shorter <- tables
   shorter$trees <- shorter$trees[1:3, ]
   expect_error(
@@ -134,14 +138,14 @@ test_that("tables that aren't the issues' own stop decoding (D19.14)", {
   # The PK is compared as the run writes it, so a number-typed key matches its own row.
   numbered <- tables
   numbered$trees$tree_id <- 1:8
-  numbered_issues <- fx_lineage_issues(spec, numbered)
+  numbered_issues <- fx_lineage_made_issues(numbered, 1:8)
   expect_no_error(gpq_decode_lineage(numbered_issues, numbered, spec, key_col = "contributor"))
 })
 
 test_that("without a separator a composite ID is raw and a single one decodes (R7)", {
   spec <- fx_lineage_spec(separator = NULL)
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   got <- decoded_by_tree(issues)
   expect_equal(got$provider_key_status[c(1L, 4L)], c("raw", "decoded"))
@@ -154,7 +158,7 @@ test_that("an ID with labelled alternatives is raw (D19.48)", {
   )
   spec <- fx_lineage_spec(lineage_spec = lineage)
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   got <- decoded_by_tree(issues)
   expect_equal(got$provider_key_status[4:5], c("raw", "raw"))
@@ -164,8 +168,8 @@ test_that("an ID with labelled alternatives is raw (D19.48)", {
 test_that("a value holding the separator is raw, its parts never guessed (D8.17)", {
   tables <- fx_lineage_tables()
   tables$trees$src_tree_id[[1L]] <- "41_7_"
-  spec <- fx_lineage_spec()
-  issues <- fx_lineage_issues(spec, tables)
+  spec <- lineage_spec_default
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(decoded_by_tree(issues)$provider_key_status[[1L]], "raw")
 })
@@ -173,8 +177,8 @@ test_that("a value holding the separator is raw, its parts never guessed (D8.17)
 test_that("a missing, blank or sentinel ID gives fallback_pk (D19.13)", {
   tables <- fx_lineage_tables()
   tables$trees$src_tree_id[1:3] <- c(NA, " ", "X")
-  spec <- fx_lineage_spec()
-  issues <- fx_lineage_issues(spec, tables)
+  spec <- lineage_spec_default
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   got <- decoded_by_tree(issues)
   expect_equal(got$provider_key_status[1:3], rep("fallback_pk", 3L))
@@ -182,7 +186,7 @@ test_that("a missing, blank or sentinel ID gives fallback_pk (D19.13)", {
 })
 
 test_that("decoding changes no table and keeps the issues' other columns (16.2)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   before <- data.table::copy(tables)
   issues <- fx_lineage_issues(spec, tables)
@@ -202,9 +206,9 @@ test_that("decoding changes no table and keeps the issues' other columns (16.2)"
 })
 
 test_that("the issues and key_col are checked (W176, W177)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_issues(spec, tables)
+  issues <- fx_lineage_made_issues(tables, 1:8)
   expect_error(
     gpq_decode_lineage(as.data.frame(issues), tables, spec, key_col = "contributor"),
     "data.table"
@@ -240,22 +244,11 @@ test_that("a label comes from the bands' labels sheet when key_col ends their ch
 # ---- the task 5 fix round: the statuses' corners and the shared keys, issues made by hand ----
 
 test_that("a -1 part, a nested ID that can't expand, an unparseable entry (R5, R6, R8)", {
-  # The trees' issues as a run gives them, one per tree, made here: no run is needed.
   tables <- fx_lineage_tables()
-  made <- function() {
-    pk <- tables$trees$tree_id
-    data.table::data.table(
-      issue_id = 1:8, rule_id = "value_below_min", table_name = "trees", column_name = "height",
-      record_pk = pk, row_number = 1:8, pk_positional = FALSE, provider_key = NA_character_,
-      provider_key_status = NA_character_, fingerprint = NA_character_,
-      fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
-      contributor = tables$sites$contributor[match(tables$trees$site_id, tables$sites$site_id)]
-    )
-  }
   # R5: a part that is a missing-value code of another type is a missing part.
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables$trees$src_tree_id[[1L]] <- "41_-1"
-  issues <- made()
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(issues$provider_key_status[[1L]], "partial")
   expect_equal(issues$provider_key[[1L]], "survey.site=41; survey.tree=-1")
@@ -274,16 +267,16 @@ test_that("a -1 part, a nested ID that can't expand, an unparseable entry (R5, R
   )
   spec <- fx_lineage_spec(lineage_spec = lineage)
   tables <- fx_lineage_tables()
-  issues <- made()
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(issues$provider_key_status, c(
     "raw", "raw", "raw", "raw", "raw", "no_lineage_spec", "no_lineage_spec", "raw"
   ))
   expect_equal(issues$provider_key, tables$trees$src_tree_id)
   # A missing ID column: no key, the pk: fingerprint.
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables$trees$src_tree_id <- NULL
-  issues <- made()
+  issues <- fx_lineage_made_issues(tables, 1:8)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(unique(issues$provider_key_status), "fallback_pk")
   expect_true(all(is.na(issues$provider_key)))
@@ -291,20 +284,13 @@ test_that("a -1 part, a nested ID that can't expand, an unparseable entry (R5, R
 })
 
 test_that("a key is shared with a holder that has no issue, not with another contributor's (R9)", {
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   # t6 (east, no entry) holds t4's ID: the same text, but t6's key is the ID as delivered and
   # t4's is south's labelled one, so neither is shared. t1 and t8 hold one key.
   tables$trees$src_tree_id[[6L]] <- "k100"
-  rows <- c(1L, 4L, 6L)
-  pk <- tables$trees$tree_id[rows]
-  issues <- data.table::data.table(
-    issue_id = 1:3, rule_id = "value_below_min", table_name = "trees", column_name = "height",
-    record_pk = pk, row_number = rows, pk_positional = FALSE, provider_key = NA_character_,
-    provider_key_status = NA_character_, fingerprint = NA_character_,
-    fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
-    contributor = c("north", "south", "east")
-  )
+  # Issues on t1, t4 and t6: their contributors are north, south and east.
+  issues <- fx_lineage_made_issues(tables, c(1L, 4L, 6L))
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(
     issues$provider_key, c("survey.site=41; survey.tree=7", "field.tree_key=k100", "k100")
@@ -318,22 +304,12 @@ test_that("a key is shared with a holder that has no issue, not with another con
 test_that("an integer64 ID's shared key takes the pk: form on each holder (D19.15, D18.10)", {
   # bit64's duplicated() ignores fromLast, so the first holder of a repeated ID was missed.
   testthat::skip_if_not_installed("bit64")
-  spec <- fx_lineage_spec()
+  spec <- lineage_spec_default
   tables <- fx_lineage_tables()
   # South's two trees hold one ID, which one contributor's single-part entry decodes.
   tables$trees$src_tree_id <- bit64::as.integer64(c(41, 42, 43, 100, 100, 55, NA, 44))
   decode <- function(rows) {
-    pk <- tables$trees$tree_id[rows]
-    issues <- data.table::data.table(
-      issue_id = seq_along(rows), rule_id = "value_below_min", table_name = "trees",
-      column_name = "height", record_pk = pk, row_number = rows, pk_positional = FALSE,
-      provider_key = NA_character_, provider_key_status = NA_character_,
-      fingerprint = NA_character_,
-      fingerprint_pk = paste0("value_below_min|trees|height|pk:", pk),
-      contributor = tables$sites$contributor[
-        match(tables$trees$site_id[rows], tables$sites$site_id)
-      ]
-    )
+    issues <- fx_lineage_made_issues(tables, rows)
     gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
     issues
   }
@@ -348,4 +324,24 @@ test_that("an integer64 ID's shared key takes the pk: form on each holder (D19.1
   # An ID held once keeps the provider key's fingerprint.
   alone <- decode(c(4L, 6L))
   expect_equal(alone$fingerprint[[2L]], "value_below_min|trees|height|55")
+})
+
+# ---- the checkpoint's fixes ----
+
+test_that("decoding the trees alone labels each holder of a shared ID as the run did (D19.76)", {
+  tables <- fx_lineage_tables()
+  # The trees alone, as R57's test gives MAGPlot's: no tree reaches its site's contributor.
+  trees <- list(trees = tables$trees)
+  # t1 and t8 hold one key, each labelled by its own issue's contributor: both keep the pk:
+  # form.
+  issues <- fx_lineage_made_issues(tables, 1:8)
+  gpq_decode_lineage(issues, trees, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key[c(1L, 8L)], rep("survey.site=41; survey.tree=7", 2L))
+  expect_equal(issues$fingerprint[c(1L, 8L)], issues$fingerprint_pk[c(1L, 8L)])
+  # An issue on t1 only: t8, which the trees alone can't label, counts as holding t1's key. A
+  # key held once keeps the provider key's fingerprint.
+  issues <- fx_lineage_made_issues(tables, c(1L, 4L))
+  gpq_decode_lineage(issues, trees, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint[[1L]], issues$fingerprint_pk[[1L]])
+  expect_equal(issues$fingerprint[[2L]], "value_below_min|trees|height|field.tree_key=k100")
 })

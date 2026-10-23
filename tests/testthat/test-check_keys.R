@@ -2299,7 +2299,7 @@ test_that("a number-typed grouping column groups by its numbers, a text one as g
   expect_equal(paste(again$rule_id, placed_at(again)), paste(found$rule_id, placed_at(found)))
 })
 
-test_that("grouping by numbers: decimals, factors, codes and text that isn't one (D18.126)", {
+test_that("grouping by numbers: decimals, factors and text that isn't one (D18.126)", {
   testthat::skip_on_cran()
   settings <- list(
     design_geometry_table = "t", design_geometry_by = "g", design_geometry_columns = "v"
@@ -2343,12 +2343,15 @@ test_that("grouping by numbers ranks the groups over the values that group nothi
   )
   # NA, a blank and the missing-value code, twice each with values that differ, group nothing,
   # so the groups are ranked over the rest: "1" and "01" are still one group, "2" and "02"
-  # another that agrees.
-  g <- c("1", NA, NA, "", "", "-99", "-99", "01", "2", "02")
-  v <- c(10, 1, 2, 3, 4, 5, 6, 20, 30, 30)
+  # another that agrees. Text that isn't a number is grouped as written (m137): "abc" twice is
+  # one group whose values differ, and "xyz" and "pqr" are two groups of one, not one of NA.
+  g <- c("1", NA, NA, "", "", "-99", "-99", "01", "2", "02", "abc", "abc", "xyz", "pqr")
+  v <- c(10, 1, 2, 3, 4, 5, 6, 20, 30, 30, 40, 50, 60, 70)
   tables <- list(t = data.table::data.table(id = paste0("r", seq_along(v)), g = g, v = v))
   results <- gpq_check_conformance(tables, spec, layers = 4, settings = settings)
-  expect_equal(opened(results, "design_geometry_inconsistent")$row_number, c(1L, 8L))
+  expect_equal(
+    opened(results, "design_geometry_inconsistent")$row_number, c(1L, 8L, 11L, 12L)
+  )
 })
 
 test_that("a repeated name in design_geometry_columns stops pre-flight and the run (D18.127)", {
