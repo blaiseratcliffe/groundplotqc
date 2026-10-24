@@ -102,7 +102,21 @@ test_that("the table and both conditions keep the codes after the files are writ
 
 test_that("the page escapes hostile text and lists every check", {
   spec <- hostile_spec()
-  page <- preflight_html(preflight_checks(spec), spec)
+  # Run inputs' values reach the page in three new details, all escaped: an override's class
+  # (quoted), a column it doesn't take, and a rule it names (D19.51).
+  overrides <- data.frame(
+    fingerprint = NA, rule_id = "<b>no_rule</b>", table_name = "t", column_name = "a",
+    issue_class = "<i>&Source</i>", who = "x", when = "y", why = "z", `<u>extra</u>` = "1",
+    check.names = FALSE
+  )
+  page <- preflight_html(
+    preflight_checks(spec, preflight_context(inputs = list(overrides = overrides))), spec
+  )
+  expect_match(page, "gives the class &quot;&lt;i&gt;&amp;Source&lt;/i&gt;&quot;", fixed = TRUE)
+  expect_match(page, "doesn&#39;t take: &lt;u&gt;extra&lt;/u&gt;", fixed = TRUE)
+  expect_match(page, "names rule &lt;b&gt;no_rule&lt;/b&gt;", fixed = TRUE)
+  expect_false(grepl("<b>no_rule", page, fixed = TRUE))
+  expect_false(grepl("<u>extra", page, fixed = TRUE))
   expect_false(grepl("<script>x", page, fixed = TRUE))
   expect_match(page, "&lt;script&gt;x&lt;/script&gt;", fixed = TRUE)
   # An inline handler is looked for inside tags only: escaped text may hold " onx=".

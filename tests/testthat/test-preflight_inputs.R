@@ -22,7 +22,8 @@ input_check <- function(name, inputs) {
 input_row <- function(row) report_text("input_position_memory", row = row, input = "overrides")
 
 test_that("the inputs' checks don't run without them; each input is read as text (D19.51)", {
-  for (name in c("input_unparseable", "override_scope_conflict", "override_unknown_name")) {
+  checks <- c("input_unparseable", "override_scope_conflict", "override_unknown_name")
+  for (name in checks) {
     expect_equal(input_check(name, list()), "no_input", info = name)
   }
   lineage <- data.frame(
@@ -36,8 +37,19 @@ test_that("the inputs' checks don't run without them; each input is read as text
     table_name = "hauls", record_pk = c("H1", "H2"), column_name = "minutes",
     written_value = c(-99, NA)
   )
+  before <- data.table::copy(fill)
   read <- read_run_inputs(list(pipeline_fill = fill), "inputs", names(run_input_schema()))
   expect_identical(read$pipeline_fill$data$written_value, c("-99", NA))
+  # The caller's table, its number column included, is as it was.
+  expect_identical(fill, before)
+  # Overrides with no rows, in memory or as a header-only file, give no finding and no error.
+  empty <- override_rows()[0, ]
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(empty, path)
+  for (name in checks) {
+    expect_equal(nrow(input_check(name, list(overrides = empty))), 0L, info = name)
+    expect_equal(nrow(input_check(name, list(overrides = path))), 0L, info = name)
+  }
 })
 
 test_that("a wrong inputs list or element is a caller's error (D19.51)", {
@@ -94,6 +106,22 @@ test_that("input_unparseable names missing and extra columns, an override's grou
     "preflight_detail_input_unparseable_extra",
     input = "pipeline_fill", extra = "water_body"
   ))
+  # Without a column of its own, an override's class, scope and names wait (R28): a class
+  # that isn't one, two rows of one scope with the two classes and an unknown rule give
+  # only the missing column.
+  waiting <- override_rows(
+    rule_id = c("no_such_rule", "no_such_rule", "value_above_max"),
+    issue_class = c("source", "harmonization", "Neither")
+  )
+  waiting$why <- NULL
+  found <- input_check("input_unparseable", list(overrides = waiting))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_missing",
+    input = "overrides", missing = "why"
+  ))
+  for (name in c("override_scope_conflict", "override_unknown_name")) {
+    expect_equal(nrow(input_check(name, list(overrides = waiting))), 0L, info = name)
+  }
 })
 
 test_that("input_unparseable names an override's class and one with no scope (D19.51)", {
@@ -161,6 +189,51 @@ test_that("override_scope_conflict names each row repeating a scope with the oth
   # A row input_unparseable stops on is left to it.
   stopped <- override_rows(issue_class = c("source", "neither"))
   expect_equal(nrow(input_check("override_scope_conflict", list(overrides = stopped))), 0L)
+  # So are rows with no scope cell, whatever their classes (R30).
+  blank <- override_rows(
+    rule_id = NA, table_name = NA, column_name = NA, issue_class = c("source", "harmonization")
+  )
+  expect_equal(nrow(input_check("override_scope_conflict", list(overrides = blank))), 0L)
+  # From a CSV file, the warning is at the line of the row it flags and names the first row
+  # by its line (R32).
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(override_rows(issue_class = c("source", "harmonization")), path)
+  found <- input_check("override_scope_conflict", list(overrides = path))
+  expect_equal(found$file, basename(path))
+  expect_equal(found$source_cell, paste0(basename(path), ":3"))
+  expect_match(found$detail, paste("Line 3 of", basename(path)), fixed = TRUE)
+  expect_match(found$detail, "repeats the scope of line 2 ", fixed = TRUE)
+  # A rule ID is compared as written, before the rule ID map reads it: a renamed rule and its
+  # new name are two scopes (R30).
+  testthat::local_mocked_bindings(rule_id_map = function() {
+    data.table::data.table(
+      old_rule_id = "value_too_high", new_rule_id = "value_above_max", change = "rename",
+      package_version = "0.0.0.9014"
+    )
+  })
+  renamed <- override_rows(
+    rule_id = c("value_too_high", "value_above_max"), issue_class = c("source", "harmonization")
+  )
+  expect_equal(nrow(input_check("override_scope_conflict", list(overrides = renamed))), 0L)
+})
+
+test_that("override_scope_conflict groups by scope whatever the group columns are called", {
+  # Group columns named row and group, as the grouping's own columns are (16.2): rows 1 and 2
+  # hold the same text in them but name two rules, so they are two scopes; rows 3 and 4 are
+  # one scope with the two classes.
+  stub <- list(attributes = data.table::data.table(attribute_name = c("group", "row")))
+  overrides <- override_rows(
+    rule_id = c("rule_a", "rule_b", "rule_c", "rule_c"),
+    issue_class = c("source", "harmonization", "source", "harmonization"),
+    group = c("x", "x", "z", "z"), row = c("x", "x", "z", "z")
+  )
+  read <- read_run_inputs(list(overrides = overrides), "inputs", names(run_input_schema()))
+  found <- override_conflicts(stub, read$overrides)
+  expect_equal(found$detail, report_text(
+    "preflight_detail_override_scope_conflict",
+    position = input_row(4L), first = report_text("rule_set_position_memory_short", row = 3L),
+    class = "harmonization", other_class = "source"
+  ))
 })
 
 test_that("override_unknown_name warns of each unknown name but those issues hold (D19.72)", {
@@ -173,14 +246,23 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
   # 1 names no registered rule; 2 a renamed one; 3 an unknown table, whose column isn't then
   # looked up; 4 a column its table lacks; 5 a column no table has. Issues hold the names of
   # 6 to 8, which pass: a column "*", and the delivery's own names in an override of
-  # table_unexpected or column_unexpected.
+  # table_unexpected or column_unexpected, as 12 and 13 whatever the table and column. 9 is a
+  # column the survey has, but in another table than the row's, so it is a finding (R31); 10
+  # names a real column with no table, and 11 a pre-flight check's rule ID, which pass.
   overrides <- override_rows(
     rule_id = c(
       "no_such_rule", "value_too_high", rep("value_above_max", 4L), "table_unexpected",
-      "column_unexpected"
+      "column_unexpected", "value_above_max", "value_above_max", "dd_pk_missing",
+      "column_unexpected", "table_unexpected"
     ),
-    table_name = c("hauls", "hauls", "nets", "hauls", NA, "hauls", "nets", "hauls"),
-    column_name = c("minutes", "minutes", "mesh", "mesh", "mesh", "*", "*", "mesh")
+    table_name = c(
+      "hauls", "hauls", "nets", "hauls", NA, "hauls", "nets", "hauls", "hauls", NA, "hauls",
+      "nets", "nets"
+    ),
+    column_name = c(
+      "minutes", "minutes", "mesh", "mesh", "mesh", "*", "*", "mesh", "water_body", "minutes",
+      "minutes", "mesh", "mesh"
+    )
   )
   found <- input_check("override_unknown_name", list(overrides = overrides))
   detail <- function(case, ...) {
@@ -189,9 +271,20 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
   expect_equal(found$detail, c(
     detail("rule", position = input_row(1L), rule_id = "no_such_rule"),
     detail("table", position = input_row(3L), table_name = "nets"),
-    detail("attribute", position = input_row(4L), table_name = "hauls", attribute_name = "mesh"),
+    detail(
+      "attribute",
+      position = input_row(c(4L, 9L)), table_name = "hauls",
+      attribute_name = c("mesh", "water_body")
+    ),
     detail("any", position = input_row(5L), attribute_name = "mesh")
   ))
+  # From a CSV file, a finding is at the line of its row (R32).
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(override_rows(rule_id = "no_such_rule"), path)
+  found <- input_check("override_unknown_name", list(overrides = path))
+  expect_equal(found$file, basename(path))
+  expect_equal(found$source_cell, paste0(basename(path), ":2"))
+  expect_match(found$detail, paste("Line 2 of", basename(path)), fixed = TRUE)
 })
 
 test_that("gpq_preflight warns on overrides, stops on one it can't use, and keeps them (16.2)", {

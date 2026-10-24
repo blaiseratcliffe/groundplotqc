@@ -661,7 +661,21 @@ test_that("fallback_class resolves whole by tier, each class source or harmoniza
     paste("Setting fallback_class (rule set)", wants),
     fixed = TRUE
   )
+  # A rule named twice is refused in the rule-set tier and the option tier too (D19.62).
+  expect_error(
+    resolve_setting("fallback_class", rules = rows("rule_a=source; rule_a=harmonization")),
+    paste("Setting fallback_class (rule set)", wants),
+    fixed = TRUE
+  )
   withr::local_options(groundplotqc.fallback_class = c(rule_a = "Source"))
+  expect_error(
+    resolve_setting("fallback_class"),
+    paste("Setting fallback_class (option groundplotqc.fallback_class)", wants),
+    fixed = TRUE
+  )
+  withr::local_options(
+    groundplotqc.fallback_class = c(rule_a = "source", rule_a = "harmonization")
+  )
   expect_error(
     resolve_setting("fallback_class"),
     paste("Setting fallback_class (option groundplotqc.fallback_class)", wants),
