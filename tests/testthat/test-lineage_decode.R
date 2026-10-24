@@ -140,6 +140,12 @@ test_that("tables that aren't the issues' own stop decoding (D19.14)", {
   numbered$trees$tree_id <- 1:8
   numbered_issues <- fx_lineage_made_issues(numbered, 1:8)
   expect_no_error(gpq_decode_lineage(numbered_issues, numbered, spec, key_col = "contributor"))
+  # A record whose PK is missing has a positional record_pk, which isn't compared (D19.14).
+  nameless <- tables
+  nameless$trees$tree_id[[2L]] <- NA
+  nameless_issues <- fx_lineage_made_issues(nameless, 1:8)
+  expect_true(nameless_issues$pk_positional[[2L]])
+  expect_no_error(gpq_decode_lineage(nameless_issues, nameless, spec, key_col = "contributor"))
 })
 
 test_that("without a separator a composite ID is raw and a single one decodes (R7)", {
@@ -231,14 +237,29 @@ test_that("a label comes from the bands' labels sheet when key_col ends their ch
   labels <- contributor_labels(spec, "contributor", c("south", "north", "*", NA))
   expect_equal(labels, c("north", NA, NA, NA))
   # A sheet keying a row "*" or spaces only labels that value, as record_labels() has always
-  # read it; the decoder makes such a value NA before it calls this (D19.69).
+  # read it; the decoder makes such a value NA before it calls this (D19.69). The labels are
+  # contributors the lineage spec has entries for.
   nbsp <- strrep(intToUtf8(160L), 2L)
   spec$code_lists <- rbind(spec$code_lists, data.table::data.table(
     sheet = "who", source_row = c(3L, 3L, 4L, 4L),
     sheet_column = c("contributor", "label", "contributor", "label"),
-    value = c("*", "any", nbsp, "spaces"), source_cell = NA_character_
+    value = c("*", "north", nbsp, "south"), source_cell = NA_character_
   ))
-  expect_equal(contributor_labels(spec, "contributor", c("*", nbsp, NA)), c("any", "spaces", NA))
+  expect_equal(contributor_labels(spec, "contributor", c("*", nbsp, NA)), c("north", "south", NA))
+  # So a record whose key_col value is "*" or blank has no label, and so no lineage spec, while
+  # the sheet's own key gives its label's decoding (M6's minors pass, m32). t1, t2 and t8 hold
+  # one ID, each labelled by its own issue's value: t1 and t2 as delivered, which is one key,
+  # and t8 as north's, which is another.
+  tables <- fx_lineage_tables()
+  tables$trees$src_tree_id[[2L]] <- "41_7"
+  issues <- fx_lineage_made_issues(tables, c(1L, 2L, 8L))
+  data.table::set(issues, j = "contributor", value = c("*", nbsp, "south"))
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("no_lineage_spec", "no_lineage_spec", "decoded"))
+  expect_equal(issues$provider_key, c("41_7", "41_7", "survey.site=41; survey.tree=7"))
+  expect_equal(issues$fingerprint, c(
+    issues$fingerprint_pk[1:2], "value_below_min|trees|height|survey.site=41; survey.tree=7"
+  ))
 })
 
 # ---- the task 5 fix round: the statuses' corners and the shared keys, issues made by hand ----
@@ -265,12 +286,37 @@ test_that("a -1 part, a nested ID that can't expand, an unparseable entry (R5, R
     ),
     note = NA, source_cell = NA
   )
-  spec <- fx_lineage_spec(lineage_spec = lineage)
+  # More nested IDs that can't expand, each for a contributor of its own with a tree of its own
+  # (t9 to t13): the inner entry is blank, no_id (X), not_applicable (Z) or unparseable, or the
+  # inner ID is an entry of two tables (site_id, of sites and of trees).
+  inner <- data.frame(
+    contributor_label = c("blank", "noid", "notapp", "badtext", "twotables", "twotables"),
+    table_name = c(rep("sites", 5L), "trees"),
+    attribute_name = c(rep("src_site_id", 4L), "site_id", "site_id"),
+    spec_type = "id",
+    source_text = c(NA, "X", "Z", "not a notation", "survey.site", "survey.site"),
+    note = NA, source_cell = NA
+  )
+  outer <- data.frame(
+    contributor_label = c("blank", "noid", "notapp", "badtext", "twotables"),
+    table_name = "trees", attribute_name = "src_tree_id", spec_type = "id",
+    source_text = c(rep("src_site_id + survey.tree", 4L), "site_id + survey.tree"),
+    note = NA, source_cell = NA
+  )
+  spec <- fx_lineage_spec(lineage_spec = rbind(lineage, inner, outer))
   tables <- fx_lineage_tables()
-  issues <- fx_lineage_made_issues(tables, 1:8)
+  tables$sites <- rbind(tables$sites, data.frame(
+    site_id = paste0("s", 5:9), contributor = outer$contributor_label,
+    src_site_id = paste0("N", 1:5)
+  ))
+  tables$trees <- rbind(tables$trees, data.frame(
+    tree_id = paste0("t", 9:13), site_id = paste0("s", 5:9), kind = "L",
+    src_tree_id = paste0("41_", 1:5), height = -5
+  ))
+  issues <- fx_lineage_made_issues(tables, 1:13)
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(issues$provider_key_status, c(
-    "raw", "raw", "raw", "raw", "raw", "no_lineage_spec", "no_lineage_spec", "raw"
+    "raw", "raw", "raw", "raw", "raw", "no_lineage_spec", "no_lineage_spec", "raw", rep("raw", 5L)
   ))
   expect_equal(issues$provider_key, tables$trees$src_tree_id)
   # A missing ID column: no key, the pk: fingerprint.
@@ -304,10 +350,17 @@ test_that("a key is shared with a holder that has no issue, not with another con
 test_that("an integer64 ID's shared key takes the pk: form on each holder (D19.15, D18.10)", {
   # bit64's duplicated() ignores fromLast, so the first holder of a repeated ID was missed.
   testthat::skip_if_not_installed("bit64")
+  # The session's numeric rounding is raised for the whole test: data.table reads an integer64
+  # exactly at any rounding, so the decoder resets none (R59, M6's minors pass, m25).
+  rounding <- data.table::setNumericRounding(2L)
+  withr::defer(data.table::setNumericRounding(rounding))
   spec <- lineage_spec_default
   tables <- fx_lineage_tables()
-  # South's two trees hold one ID, which one contributor's single-part entry decodes.
-  tables$trees$src_tree_id <- bit64::as.integer64(c(41, 42, 43, 100, 100, 55, NA, 44))
+  # South's two trees hold one ID, which one contributor's single-part entry decodes; t2 and t3
+  # hold IDs that differ in their lowest bit only.
+  ids <- bit64::as.integer64(c(41, 42, 43, 100, 100, 55, NA, 44))
+  ids[2:3] <- bit64::as.integer64(2^62) + 0:1
+  tables$trees$src_tree_id <- ids
   decode <- function(rows) {
     issues <- fx_lineage_made_issues(tables, rows)
     gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
@@ -324,6 +377,13 @@ test_that("an integer64 ID's shared key takes the pk: form on each holder (D19.1
   # An ID held once keeps the provider key's fingerprint.
   alone <- decode(c(4L, 6L))
   expect_equal(alone$fingerprint[[2L]], "value_below_min|trees|height|55")
+  # Two IDs that differ in the lowest bit are two IDs: each keeps the provider key's
+  # fingerprint, and decoding leaves the session's rounding as it found it.
+  pair <- decode(2:3)
+  expect_equal(pair$fingerprint, paste0(
+    "value_below_min|trees|height|", c("4611686018427387904", "4611686018427387905")
+  ))
+  expect_equal(data.table::getNumericRounding(), 2L)
 })
 
 # ---- the checkpoint's fixes ----
@@ -344,4 +404,38 @@ test_that("decoding the trees alone labels each holder of a shared ID as the run
   gpq_decode_lineage(issues, trees, lineage_spec_default, key_col = "contributor")
   expect_equal(issues$fingerprint[[1L]], issues$fingerprint_pk[[1L]])
   expect_equal(issues$fingerprint[[2L]], "value_below_min|trees|height|field.tree_key=k100")
+  # With the run's tables nothing changes (D19.76): t6 (east, no issue) holds t4's ID, but its
+  # own contributor labels it, so t4 keeps its key (M6's minors pass, m34).
+  whole <- tables
+  whole$trees$src_tree_id[[6L]] <- "k100"
+  issues <- fx_lineage_made_issues(whole, 4L)
+  gpq_decode_lineage(issues, whole, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, "value_below_min|trees|height|field.tree_key=k100")
+  # A holder is unlabelled where the column key_col is in isn't given, or no row of its home
+  # table is reached (R61): t8, no issue, then counts as holding t1's key.
+  issues <- fx_lineage_made_issues(tables, 1L)
+  no_column <- tables
+  no_column$sites$contributor <- NULL
+  gpq_decode_lineage(issues, no_column, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+  issues <- fx_lineage_made_issues(tables, 1L)
+  no_link <- tables
+  no_link$trees$site_id <- NULL
+  gpq_decode_lineage(issues, no_link, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+})
+
+test_that("a table's records are decoded by its first ID attribute that has an entry (R4)", {
+  # kind is marked an ID too, ahead of src_tree_id, but the lineage spec gives it no entry.
+  spec <- lineage_spec_default
+  spec$attributes <- data.table::copy(spec$attributes)
+  at <- which(spec$attributes$attribute_name == "kind")
+  data.table::set(spec$attributes, at, "id_marked", TRUE)
+  tables <- fx_lineage_tables()
+  issues <- fx_lineage_made_issues(tables, 1:8)
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(
+    issues$provider_key[c(1L, 4L)], c("survey.site=41; survey.tree=7", "field.tree_key=k100")
+  )
+  expect_equal(issues$provider_key_status[c(1L, 4L)], c("decoded", "decoded"))
 })

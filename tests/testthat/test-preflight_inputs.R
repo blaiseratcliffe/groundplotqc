@@ -243,25 +243,28 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
       package_version = "0.0.0.9014"
     )
   })
-  # 1 names no registered rule; 2 a renamed one; 3 an unknown table, whose column isn't then
-  # looked up; 4 a column its table lacks; 5 a column no table has. Issues hold the names of
-  # 6 to 8, which pass: a column "*", and the delivery's own names in an override of
-  # table_unexpected or column_unexpected, as 12 and 13 whatever the table and column. 9 is a
-  # column the survey has, but in another table than the row's, so it is a finding (R31); 10
-  # names a real column with no table, and 11 a pre-flight check's rule ID, which pass.
+  # The rows are numbered from 1. Rows 1, 3, 4, 5 and 9 are findings: 1 names no registered
+  # rule; 3 an unknown table, whose column isn't then looked up; 4 a column its table lacks;
+  # 5 a column no table has, the row giving no table; 9 a column the survey has, but in another
+  # table than the row's (R31). The other rows pass: 2 names a renamed rule; 6 and 7 name the
+  # column "*", which issues on a whole table hold; 7, 8, 12 and 13 are overrides of
+  # table_unexpected or column_unexpected, whose issues hold the delivery's own names, so any
+  # table and column goes with them; 10 names a real column with no table; 11 a pre-flight
+  # check's rule ID; 14 has no rule and 15 no table and no column, which a scope may leave out
+  # (D19.54).
   overrides <- override_rows(
     rule_id = c(
       "no_such_rule", "value_too_high", rep("value_above_max", 4L), "table_unexpected",
       "column_unexpected", "value_above_max", "value_above_max", "dd_pk_missing",
-      "column_unexpected", "table_unexpected"
+      "column_unexpected", "table_unexpected", NA, "value_above_max"
     ),
     table_name = c(
       "hauls", "hauls", "nets", "hauls", NA, "hauls", "nets", "hauls", "hauls", NA, "hauls",
-      "nets", "nets"
+      "nets", "nets", "hauls", NA
     ),
     column_name = c(
       "minutes", "minutes", "mesh", "mesh", "mesh", "*", "*", "mesh", "water_body", "minutes",
-      "minutes", "mesh", "mesh"
+      "minutes", "mesh", "mesh", "minutes", NA
     )
   )
   found <- input_check("override_unknown_name", list(overrides = overrides))

@@ -689,22 +689,25 @@ test_that("a dictionary row with no table or attribute name stops pre-flight (m1
   nbsp <- strrep(intToUtf8(160L), 2L)
   # Rows 1 to 5 are the plan's. Then: a table name of Unicode spaces, a row missing both names, a
   # primary-key row with no attribute name, an empty and an ASCII-spaces attribute name (the
-  # reader makes both NA), and a padded name and one with a space inside, which are not missing.
+  # reader makes both NA), a padded name and one with a space inside, which are not missing, and
+  # last a primary-key row with no table name (M6's minors pass, m12).
   dictionary <- data.frame(
     table_name = c(
-      "plots", "plots", NA, "plots", "plots", nbsp, NA, "trees", "plots", "plots", "plots", "plots"
+      "plots", "plots", NA, "plots", "plots", nbsp, NA, "trees", "plots", "plots", "plots", "plots",
+      NA
     ),
     attribute_name = c(
-      "plot_id", NA, "shape", nbsp, "slope", "tag", NA, NA, "", "  ", " padded ", "in side"
+      "plot_id", NA, "shape", nbsp, "slope", "tag", NA, NA, "", "  ", " padded ", "in side",
+      "tree_id"
     ),
-    key_type = c("PK", ".", ".", ".", ".", ".", ".", "PK", ".", ".", ".", "."),
+    key_type = c("PK", ".", ".", ".", ".", ".", ".", "PK", ".", ".", ".", ".", "PK"),
     data_type = "character"
   )
   results <- preflight_checks(gpq_read_spec(dictionary))
   # dd_duplicate_attribute and dd_pk_missing also stop on these rows (several nameless
   # attributes of one table, tables without a primary key); only this check's findings are asserted.
   found <- results[results$rule_id == "dd_name_missing", ]
-  expect_equal(found$outcome, rep("stop", 8L))
+  expect_equal(found$outcome, rep("stop", 9L))
   expect_equal(found$detail, c(
     report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
     report_text("preflight_detail_dd_name_missing_table", attribute_name = "shape"),
@@ -713,7 +716,8 @@ test_that("a dictionary row with no table or attribute name stops pre-flight (m1
     report_text("preflight_detail_dd_name_missing_table", attribute_name = NA_character_),
     report_text("preflight_detail_dd_name_missing_attribute", table_name = "trees"),
     report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
-    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots")
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "tree_id")
   ))
   # A row missing both names is reported once, with the no-table text, its attribute shown as
   # (blank) (R11).

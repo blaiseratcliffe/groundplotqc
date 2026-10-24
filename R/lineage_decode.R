@@ -392,7 +392,8 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     x <- input$data[[table]][[column]]
     # A column stored as integer64 is read as a table made by reference over it: its own
     # duplicated() ignores fromLast, so the first holder of a repeated ID would be missed
-    # (D18.10, as record_pk_text() reads a PK).
+    # (D18.10, as record_pk_text() reads a PK). data.table reads an integer64 exactly at any
+    # setNumericRounding(), so the reset record_pk_text() makes is left out on purpose (R59).
     ids <- if (inherits(x, "integer64")) setDT(list(x)) else x
     repeats <- duplicated(ids) | duplicated(ids, fromLast = TRUE)
     candidate <- at[repeats[issues$row_number[at]]]

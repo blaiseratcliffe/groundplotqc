@@ -409,7 +409,16 @@ test_that("an integer64 overrides or evidence column stops the call without bit6
     "`evidence` names tables it doesn't take: previous.",
     fixed = TRUE
   )
-  # No integer64 column, no question put to the library.
+  # A name given twice is not looked through either (R71).
+  expect_error(
+    gpq_classify_issues(
+      issues, NULL,
+      evidence = list(lineage = lineage, lineage = lineage), overrides = overrides
+    ),
+    "`evidence` must be a list of data.frames or CSV paths, each named once.",
+    fixed = TRUE
+  )
+  # With no integer64 column the call doesn't stop, though the library is mocked as absent.
   expect_no_error(
     gpq_classify_issues(issues, NULL, overrides = fx_class_overrides(rule_id = "pk_duplicate"))
   )

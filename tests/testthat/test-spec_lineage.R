@@ -371,10 +371,15 @@ test_that("each finding is at its problem's cell and a kept row at its when cell
     reference_table = c(NA, NA, NA, NA, "sites", NA, NA, NA),
     data_type = c(rep("character", 7L), "numeric")
   )
+  # west's ID has labelled alternatives, so a condition row on it is refused whole (D19.48).
   lineage <- data.frame(
-    contributor_label = c("north", "north", "south"), table_name = c("sites", "trees", "trees"),
-    attribute_name = c("src_site_id", "src_tree_id", "src_tree_id"), spec_type = "id",
-    source_text = c("survey.site", "src_site_id + survey.tree", "field.tree_key"),
+    contributor_label = c("north", "north", "south", "west"),
+    table_name = c("sites", "trees", "trees", "trees"),
+    attribute_name = c("src_site_id", "src_tree_id", "src_tree_id", "src_tree_id"),
+    spec_type = "id",
+    source_text = c(
+      "survey.site", "src_site_id + survey.tree", "field.tree_key", "PSP: a.x + b.y | other: c.z"
+    ),
     note = NA, source_cell = NA
   )
   row <- function(contributor, part, source, when) {
@@ -393,23 +398,27 @@ test_that("each finding is at its problem's cell and a kept row at its when cell
     spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
   }
   good <- "kind == \"A\""
-  # On a workbook sheet each cell names its column: the entry's contributor_label (A), the part
-  # order (D) for a part and a nested part, the provider column (E), the condition (F).
+  # On a workbook sheet each cell names its column: the entry's contributor_label (A) for an
+  # entry and for an ID with alternatives, the part order (D) for a part and a nested part, the
+  # provider column (E), the condition (F).
   workbook <- withr::local_tempfile(fileext = ".xlsx")
   writeLines("stand-in", workbook)
   placed <- read(
     rbind(
+      row("west", "1", "x.y", good),
       row("east", "1", "x.y", good), row("north", "3", "x.y", good),
       row("north", "1", "x.y", good), row("south", "1", "a b", good),
       row("south", "1", "x.y", "kind = \"A\""), row("south", "1", "x.y", good)
     ),
-    list(lineage_when = list(path = workbook, sheet = "when", rows = 2:7))
+    list(lineage_when = list(path = workbook, sheet = "when", rows = 2:8))
   )
   found <- found_in(placed)
-  expect_equal(found$source_cell, c("when!A2", "when!D3", "when!D4", "when!E5", "when!F6"))
-  expect_equal(found$file, rep(basename(workbook), 5L))
+  expect_equal(
+    found$source_cell, c("when!A2", "when!A3", "when!D4", "when!D5", "when!E6", "when!F7")
+  )
+  expect_equal(found$file, rep(basename(workbook), 6L))
   # The row kept is placed at its condition's cell.
-  expect_equal(placed$lineage_spec$source_cell[!is.na(placed$lineage_spec$when)], "when!F7")
+  expect_equal(placed$lineage_spec$source_cell[!is.na(placed$lineage_spec$when)], "when!F8")
   # From a CSV file, each at its own line.
   path <- withr::local_tempfile(fileext = ".csv")
   data.table::fwrite(rbind(

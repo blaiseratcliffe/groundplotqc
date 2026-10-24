@@ -144,7 +144,11 @@ test_that("a blank raw value or provider code matches nothing (R39)", {
     provider_code = NA_character_, code = "NOP", column_name = "species", water_body = "LK"
   )
   gpq_classify_issues(issues, NULL, evidence = list(lineage = blank, crosswalk = crosswalk))
-  expect_false(identical(issues$class_basis[[7L]], "lineage"))
+  # The blank raw value is a changed cell (D19.61, R46), and the crosswalk doesn't list its
+  # code, so it is the crosswalk's step that classes it, not the lineage's.
+  expect_equal(
+    c(issues$issue_class[[7L]], issues$class_basis[[7L]]), c("harmonization", "crosswalk")
+  )
 })
 
 test_that("the evidence's caller errors (D19.28 (7), D19.58 (6))", {

@@ -2130,11 +2130,13 @@ test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)",
   script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
   testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
   script <- normalizePath(script)
-  # The list exists, but only a file name of the script's own folder is taken, so the run
-  # stops before it reads or writes anything.
+  # The list exists (the script's folder, reached by ../ and back down), but only a file name of
+  # the script's own folder is taken, so the run stops before it reads or writes anything. The
+  # path is relative, so file.exists() of it under the script's folder holds and the refusal is
+  # the script's own check of the name.
   input_dir <- withr::local_tempdir()
   output_dir <- file.path(withr::local_tempdir(), "edited")
-  listed <- file.path(dirname(script), "edits_20261015.R")
+  listed <- file.path("..", basename(dirname(script)), "edits_20261015.R")
   out <- suppressWarnings(system2(
     file.path(R.home("bin"), "Rscript"), shQuote(c(script, input_dir, output_dir, listed)),
     stdout = TRUE, stderr = TRUE
@@ -2236,6 +2238,12 @@ test_that("build_magp_evidence takes sound rows and returns both files' tables (
   expect_named(evidence, c("pipeline_computed", "crosswalk_provider_columns"))
   expect_equal(evidence$pipeline_computed$jurisdiction, c("*", "BC"))
   expect_equal(evidence$crosswalk_provider_columns$provider_column, c("AB_code", "NFI"))
+  # A file with its header and no row is sound: no row, no problem (M6's minors pass, m53).
+  empty <- build$build_magp_evidence(
+    evidence_spec(), evidence_config(computed = character(), provider = character())
+  )
+  expect_equal(vapply(empty, nrow, 0L), c(pipeline_computed = 0L, crosswalk_provider_columns = 0L))
+  expect_equal(unname(lapply(empty, names)), unname(build$evidence_files))
 })
 
 test_that("the build takes the tree's evidence files, copied unchanged (D19.59)", {
