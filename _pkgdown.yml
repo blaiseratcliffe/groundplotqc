@@ -18,6 +18,7 @@ reference:
       - gpq_write_results
   - title: "Generic engine: lineage and issue classes"
     contents:
+      - gpq_classify_issues
       - gpq_decode_lineage
   - title: MAGPlot 2.0 layer
     contents:
