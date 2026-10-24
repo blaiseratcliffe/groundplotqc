@@ -80,14 +80,6 @@ rule_classes <- function(issues, rule_rows, registry) {
 #' one without within its tier, 1 the strongest.
 #' @noRd
 read_overrides <- function(overrides, groups) {
-  # A column of class integer64 is written as text through bit64's methods, which a table
-  # read back with readRDS() doesn't load: load them where bit64 is installed, as a run does
-  # (D18.86), so the cell is its number. Not installed, there is no stop (D19.63).
-  wide <- is.data.frame(overrides) &&
-    any(vapply(overrides, inherits, logical(1), what = "integer64"))
-  if (wide) {
-    requireNamespace("bit64", quietly = TRUE)
-  }
   read <- read_input_table(overrides, "overrides")
   stop_if_unclean(read, "overrides")
   data <- read$data
@@ -366,6 +358,17 @@ gpq_classify_issues <- function(issues, rules, evidence = list(), overrides = NU
   fallback <- resolve_setting("fallback_class", settings, rules)$value
   # The issues' group columns: the caller's columns, beside 9.3's own.
   groups <- setdiff(names(issues), names(results_schema()$issues))
+  # A column of class integer64 is written as text through bit64's methods, which a table
+  # read back with readRDS() doesn't load: load them where bit64 is installed, as a run does
+  # (D18.86), so the cell is its number. Not installed, there is no stop (D19.63). The evidence
+  # is looked through only if it is a list, so one that isn't meets its own stop (W200).
+  tables_in <- c(list(overrides), if (is.list(evidence) && !is.data.frame(evidence)) evidence)
+  holds_integer64 <- vapply(tables_in, function(x) {
+    is.data.frame(x) && any(vapply(x, inherits, logical(1), what = "integer64"))
+  }, logical(1))
+  if (any(holds_integer64)) {
+    requireNamespace("bit64", quietly = TRUE)
+  }
   # Every table is read and checked before any issue is classed (D19.28 (7)).
   evidence_in <- read_evidence(
     read_run_inputs(evidence, "evidence", names(evidence_schema())), groups

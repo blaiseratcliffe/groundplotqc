@@ -118,12 +118,15 @@ evidence_classes <- function(issues, evidence, open) {
     every_value <- data[[group_col]] %chin% "*"
     one_value <- !every_value
     cell <- list(issues$table_name[rows], issues$column_name[rows])
-    by_value <- c("table_name", "column_name", group_col)
+    by_cell <- c("table_name", "column_name")
+    by_value <- c(by_cell, group_col)
+    # Each table and column once, and each with its group value once, so an issue meets one
+    # row at most however many derivations a table lists for it (16.2), as the crosswalk's are.
+    for_every <- unique(data[every_value, by_cell, with = FALSE])
+    for_one <- unique(data[one_value, by_value, with = FALSE])
     hits <- c(
-      key_matches(cell, rows, data[every_value], c("table_name", "column_name"))$row,
-      key_matches(
-        c(cell, list(issues[[group_col]][rows])), rows, data[one_value], by_value
-      )$row
+      key_matches(cell, rows, for_every, by_cell)$row,
+      key_matches(c(cell, list(issues[[group_col]][rows])), rows, for_one, by_value)$row
     )
     basis[match(unique(hits), open)] <- "computed"
   }

@@ -242,7 +242,7 @@ package_names <- function() {
   }))
   # Component names come from the schema, so the compiled files' names are checked as the
   # schema gives them (D12.32). The registry's column names are read too (D14.27), the
-  # results and metadata tables' names and columns (M3b's names), the run inputs' and the
+  # results and metadata tables' names and columns (M3b's names), and the run inputs' and the
   # evidence tables' columns (M6, D19.51, D19.58).
   columns <- c(
     names(spec_schema()), unlist(lapply(spec_schema(), names)), unlist(spec_input_schema()),
