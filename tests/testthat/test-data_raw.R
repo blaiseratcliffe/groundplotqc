@@ -2097,10 +2097,12 @@ test_that("build_magp_example.R builds the example with the tests' clean base (D
   expect_equal(rawToChar(memDecompress(bytes, "xz")[1:4]), "RDX3")
 })
 
-# M6's cleanup (M5 m9)
+# M6's cleanup (M5 m9). M6's tests in this file skip on CRAN, as R CMD check never runs it
+# (D19.81).
 test_that("edit_csv_cell.R applies the edit list its third argument names (D18.24)", {
   script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
   testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  testthat::skip_on_cran()
   # A synthetic copy laid out as edits_20261015.R's two entries want it: whole CRLF lines, NO
   # and ND on lines 102 and 103 with no treat_vs_dist, other codes above them.
   name <- "20261015_magpv2_treatment_disturbance.csv"
@@ -2129,6 +2131,7 @@ test_that("edit_csv_cell.R applies the edit list its third argument names (D18.2
 test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)", {
   script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
   testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  testthat::skip_on_cran()
   script <- normalizePath(script)
   # The list exists (the script's folder, reached by ../ and back down), but only a file name of
   # the script's own folder is taken, so the run stops before it reads or writes anything. The
@@ -2147,6 +2150,7 @@ test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)",
 })
 
 test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D19.27, D19.41)", {
+  testthat::skip_on_cran()
   lineage <- magp_spec()$lineage_spec
   expect_equal(unique(lineage$separator), "_")
   conditioned <- lineage[!is.na(lineage$when)]
@@ -2183,6 +2187,8 @@ test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D
 })
 
 # ---- MAGPlot's evidence files (M6; plan 3.6, 10.3; D19.38, D19.59) ----
+
+# The tests below skip on CRAN, as R CMD check never runs this file (D19.81).
 
 # A stand-in spec for build_magp_evidence(): the parts it reads, in MAGPlot's names. Two
 # translation tables, species and datum_walk, so that an attribute or a column can belong to
@@ -2229,6 +2235,7 @@ evidence_config <- function(computed = "magp_sites,datum,*,fill,",
 }
 
 test_that("build_magp_evidence takes sound rows and returns both files' tables (D19.59)", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   config <- evidence_config(
     computed = c("magp_sites,datum,*,fill,", "magp_sites,datum,BC,fill,NAD83"),
@@ -2247,6 +2254,7 @@ test_that("build_magp_evidence takes sound rows and returns both files' tables (
 })
 
 test_that("the build takes the tree's evidence files, copied unchanged (D19.59)", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   dirs <- tree_dirs()
   # magp_spec() is the spec the build makes of the tree's spec/ (a test above).
@@ -2262,6 +2270,7 @@ test_that("the build takes the tree's evidence files, copied unchanged (D19.59)"
 })
 
 test_that("the build stops on a pipeline_computed.csv row of no attribute of the dictionary", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   config <- evidence_config(computed = c(
     "magp_sites,datum,*,fill,", "magp_sites,no_such,*,id,", ",datum,AB,fill,",
@@ -2280,6 +2289,7 @@ test_that("the build stops on a pipeline_computed.csv row of no attribute of the
 })
 
 test_that("the build lists the problems of different checks in line order", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # The derivation check runs after the dictionary check, and its row comes first.
   config <- evidence_config(
@@ -2296,6 +2306,7 @@ test_that("the build lists the problems of different checks in line order", {
 })
 
 test_that("the build stops on a derivation that isn't one of plan 3.6's six (D19.38)", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   config <- evidence_config(computed = c("magp_sites,datum,*,register,", "magp_sites,datum,BC,,"))
   six <- "id, class, formula, count, fill or reference"
@@ -2310,6 +2321,7 @@ test_that("the build stops on a derivation that isn't one of plan 3.6's six (D19
 })
 
 test_that("the build stops on a jurisdiction the sheet lacks, \"*\" only in pipeline_computed", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # "*" is fine; PINU.ALB is a code, but of the species list, not of the jurisdiction sheet.
   config <- evidence_config(computed = c(
@@ -2342,6 +2354,7 @@ test_that("the build stops on a jurisdiction the sheet lacks, \"*\" only in pipe
 })
 
 test_that("the build stops on a row given twice in either file, naming the first one's line", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # The same table, attribute and jurisdiction with another derivation and note is a repeat.
   config <- evidence_config(computed = c(
@@ -2367,6 +2380,7 @@ test_that("the build stops on a row given twice in either file, naming the first
 })
 
 test_that("the build stops on a translation table the specification doesn't read", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # Its attribute and column aren't looked for in a table the spec doesn't read.
   config <- evidence_config(provider = c("speciess,species,AB,AB_code", ",species,AB,AB_code"))
@@ -2381,6 +2395,7 @@ test_that("the build stops on a translation table the specification doesn't read
 })
 
 test_that("the build stops on an attribute whose code list isn't the translation table", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # datum takes its codes from another translation table; jurisdiction's come from a sheet.
   config <- evidence_config(provider = c(
@@ -2399,6 +2414,7 @@ test_that("the build stops on an attribute whose code list isn't the translation
 })
 
 test_that("the build stops on a provider column the translation table lacks", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   # AB_datum is a column of the other translation table, not of species.
   config <- evidence_config(provider = c(
@@ -2416,6 +2432,7 @@ test_that("the build stops on a provider column the translation table lacks", {
 })
 
 test_that("the build stops on an evidence file without exactly its columns", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   provider_stop <- paste(
     "crosswalk_provider_columns.csv must have exactly the columns crosswalk, attribute_name,",
@@ -2452,6 +2469,7 @@ test_that("the build stops on an evidence file without exactly its columns", {
 })
 
 test_that("copy_evidence copies the two evidence files unchanged, a space in the path", {
+  testthat::skip_on_cran()
   build <- load_data_raw("build_magp_config.R")
   config <- evidence_config()
   out <- file.path(withr::local_tempdir(), "compiled set")
