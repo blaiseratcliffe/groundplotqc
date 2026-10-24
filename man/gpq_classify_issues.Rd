@@ -20,7 +20,8 @@ data.table, changed by reference.}
 \code{rules} rows give rules their classes, and its settings rows can give \code{fallback_class}.}
 
 \item{evidence}{A named list of evidence tables for issues whose class is \code{depends}, each
-a data.frame or the path of a CSV file: \code{computed}, \code{filled}, \code{lineage} and \code{crosswalk}.}
+a data.frame or the path of a CSV file: \code{computed}, \code{filled}, \code{lineage} and \code{crosswalk}
+(see Details).}
 
 \item{overrides}{\code{NULL}, or your overrides: a data.frame or the path of a CSV file with
 the columns \code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name}, \code{issue_class}
@@ -61,6 +62,32 @@ rules.
 
 Then an issue whose \code{reason_code} is \code{harmonization_artifact} is \code{harmonization}, with
 \code{class_basis} \code{"reason code"}, unless an override classed it or left it in conflict.
+
+Then the evidence settles an issue whose class is still \code{depends} as \code{harmonization}, the
+first of these tables to settle it giving \code{class_basis}:
+\itemize{
+\item \code{computed}: columns the pipeline computes, with the columns \code{table_name},
+\code{column_name}, \code{derivation} (\code{id}, \code{class}, \code{formula}, \code{count}, \code{fill} or \code{reference})
+and one group column of the issues, which gives the group value the row is for, \code{"*"}
+for every value. An issue on such a column in that group, of a record or of the whole
+column, is \code{"computed"}.
+\item \code{filled}: cells the pipeline's missing-value fill wrote (\code{table_name}, \code{record_pk},
+\code{column_name}, \code{written_value}). An issue on such a cell whose value is the one written
+is \code{"filled"}.
+\item \code{lineage}, the provider's raw values of the cells the pipeline changed (\code{table_name},
+\code{record_pk}, \code{column_name}, \code{raw_value}, \code{raw_source}), with \code{crosswalk}, each provider
+code and the code it is translated to (\code{provider_code}, \code{code}, \code{column_name} and one
+group column of the issues). Together they settle a record's \code{code_not_in_list} issue,
+whose raw value is its cell's \code{raw_value}, or its own value where \code{lineage} doesn't list
+the cell. Where \code{crosswalk} has rows for the issue's column and group value, a raw value
+listed there as a \code{provider_code} makes it \code{"lineage"}: the provider's code was valid. A
+raw value not listed there makes it \code{"crosswalk"} only where the pipeline changed the
+cell, that is where \code{lineage} lists the cell with a raw value other than its value;
+otherwise the issue stays unsettled, as does one whose column and group value
+\code{crosswalk} has no rows for.
+}
+
+A cell listed twice in \code{filled} or \code{lineage} stops classification.
 
 An issue whose class is still \code{depends} takes the \code{fallback_class} setting's class for its
 rule (\code{class_basis} \code{"fallback"}), else it is \code{unclassified} (\code{class_basis} \code{"default"}).

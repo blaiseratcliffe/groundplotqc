@@ -1,7 +1,8 @@
 # Issue classes (plan 3.4, 9.3, 10.3; D4.3, D9.27, D9.33, D19.28, D19.34, D19.51 to D19.54):
 # each issue's class from its rule's, then your overrides at 10.3 step 1's tiers, then the
-# reason-code rule, and for an issue whose class is still depends, the rule's fallback class,
-# else unclassified. The tables a caller gives are read as pre-flight reads its run inputs
+# reason-code rule, and for an issue whose class is still depends, the evidence
+# (R/lineage_evidence.R), then the rule's fallback class, else unclassified. The tables a
+# caller gives are read as pre-flight reads its run inputs
 # (read_input_table()); the issues are read by column and set by reference, never copied
 # whole, and each step is a key join, never a loop over rows (16.2).
 
@@ -240,6 +241,30 @@ override_classes <- function(issues, overrides, class, basis) {
 #' Then an issue whose `reason_code` is `harmonization_artifact` is `harmonization`, with
 #' `class_basis` `"reason code"`, unless an override classed it or left it in conflict.
 #'
+#' Then the evidence settles an issue whose class is still `depends` as `harmonization`, the
+#' first of these tables to settle it giving `class_basis`:
+#' - `computed`: columns the pipeline computes, with the columns `table_name`,
+#'   `column_name`, `derivation` (`id`, `class`, `formula`, `count`, `fill` or `reference`)
+#'   and one group column of the issues, which gives the group value the row is for, `"*"`
+#'   for every value. An issue on such a column in that group, of a record or of the whole
+#'   column, is `"computed"`.
+#' - `filled`: cells the pipeline's missing-value fill wrote (`table_name`, `record_pk`,
+#'   `column_name`, `written_value`). An issue on such a cell whose value is the one written
+#'   is `"filled"`.
+#' - `lineage`, the provider's raw values of the cells the pipeline changed (`table_name`,
+#'   `record_pk`, `column_name`, `raw_value`, `raw_source`), with `crosswalk`, each provider
+#'   code and the code it is translated to (`provider_code`, `code`, `column_name` and one
+#'   group column of the issues). Together they settle a record's `code_not_in_list` issue,
+#'   whose raw value is its cell's `raw_value`, or its own value where `lineage` doesn't list
+#'   the cell. Where `crosswalk` has rows for the issue's column and group value, a raw value
+#'   listed there as a `provider_code` makes it `"lineage"`: the provider's code was valid. A
+#'   raw value not listed there makes it `"crosswalk"` only where the pipeline changed the
+#'   cell, that is where `lineage` lists the cell with a raw value other than its value;
+#'   otherwise the issue stays unsettled, as does one whose column and group value
+#'   `crosswalk` has no rows for.
+#'
+#' A cell listed twice in `filled` or `lineage` stops classification.
+#'
 #' An issue whose class is still `depends` takes the `fallback_class` setting's class for its
 #' rule (`class_basis` `"fallback"`), else it is `unclassified` (`class_basis` `"default"`).
 #'
@@ -248,7 +273,8 @@ override_classes <- function(issues, overrides, class, basis) {
 #' @param rules `NULL`, or the rule set the run used, such as [magp_rules()] returns: its
 #'   `rules` rows give rules their classes, and its settings rows can give `fallback_class`.
 #' @param evidence A named list of evidence tables for issues whose class is `depends`, each
-#'   a data.frame or the path of a CSV file: `computed`, `filled`, `lineage` and `crosswalk`.
+#'   a data.frame or the path of a CSV file: `computed`, `filled`, `lineage` and `crosswalk`
+#'   (see Details).
 #' @param overrides `NULL`, or your overrides: a data.frame or the path of a CSV file with
 #'   the columns `fingerprint`, `rule_id`, `table_name`, `column_name`, `issue_class`
 #'   (`source` or `harmonization`), `who`, `when` and `why`, and any of the issues' group
@@ -341,7 +367,9 @@ gpq_classify_issues <- function(issues, rules, evidence = list(), overrides = NU
   # The issues' group columns: the caller's columns, beside 9.3's own.
   groups <- setdiff(names(issues), names(results_schema()$issues))
   # Every table is read and checked before any issue is classed (D19.28 (7)).
-  read_run_inputs(evidence, "evidence", c("computed", "filled", "lineage", "crosswalk"))
+  evidence_in <- read_evidence(
+    read_run_inputs(evidence, "evidence", names(evidence_schema())), groups
+  )
   given <- if (!is.null(overrides)) read_overrides(overrides, groups)
   # Step 1: the rule's class (D19.28 (1)).
   class <- rule_classes(issues, rules$rules, registry)
@@ -358,6 +386,11 @@ gpq_classify_issues <- function(issues, rules, evidence = list(), overrides = NU
     issues$reason_code %chin% "harmonization_artifact"
   class[artifact] <- "harmonization"
   basis[artifact] <- "reason code"
+  # Steps 2 to 5: the evidence settles an issue still depends as harmonization (D19.58).
+  open <- which(class == "depends")
+  settled <- evidence_classes(issues, evidence_in, open)
+  class[open[!is.na(settled)]] <- "harmonization"
+  basis[open[!is.na(settled)]] <- settled[!is.na(settled)]
   # An issue still depends takes its rule's fallback class, else it is unclassified (D19.34).
   open <- which(class == "depends")
   falls_back <- unname(fallback[issues$rule_id[open]])
