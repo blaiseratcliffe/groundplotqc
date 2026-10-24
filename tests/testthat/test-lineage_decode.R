@@ -33,6 +33,21 @@ test_that("each status, its key and the fingerprint (D19.13, D19.15, D19.16, D19
   expect_equal(got$fingerprint[[4L]], "value_below_min|trees|height|field.tree_key=k100")
   expect_equal(got$fingerprint[[3L]], "value_below_min|trees|height|41_7_b")
   expect_equal(got$fingerprint[[7L]], got$fingerprint_pk[[7L]])
+  # Classification meets the decoded fingerprints (D9.22, D19.54): an override on t4's
+  # provider-key fingerprint and one on t1's, which shares its key with t8 and so keeps the pk:
+  # form, class those two issues and no other.
+  gpq_classify_issues(
+    issues, NULL,
+    overrides = fx_class_overrides(
+      fingerprint = c(got$fingerprint[[4L]], got$fingerprint[[1L]]),
+      issue_class = c("harmonization", "source")
+    )
+  )
+  classed <- issues[issues$table_name == "trees"]
+  classed <- classed[order(classed$row_number)]
+  expect_equal(classed$class_basis == "override", c(TRUE, FALSE, FALSE, TRUE, rep(FALSE, 4L)))
+  expect_equal(classed$issue_class[c(1L, 4L)], c("source", "harmonization"))
+  expect_equal(sum(issues$class_basis == "override"), 2L)
 })
 
 test_that("a derived part is labelled with its bare attribute name (D19.47)", {

@@ -1,6 +1,6 @@
 # Fixtures for issue classes (plan 10.3; D19.28, D19.54, D19.58): a hand-made issues table on
 # the fish survey's tables, checked as a run's, with the group columns water_body and
-# station_id, and a builder of overrides.
+# station_id, carrying the fixture marker, and a builder of overrides.
 #   1: code_not_in_list (depends), catches.species, C1, "XXX", LK, S1
 #   2: code_not_in_list (depends), catches.species, C2, "PW", RV, S2
 #   3: value_above_max (depends), hauls.minutes, H2, "900", LK, S1
@@ -35,6 +35,7 @@ fx_class_issues <- function() {
   fingerprints <- issue_fingerprint(issues)
   data.table::set(issues, j = "fingerprint", value = fingerprints$fingerprint)
   data.table::set(issues, j = "fingerprint_pk", value = fingerprints$fingerprint_pk)
+  data.table::setattr(issues, "gpq_fixture", TRUE)
   issues
 }
 

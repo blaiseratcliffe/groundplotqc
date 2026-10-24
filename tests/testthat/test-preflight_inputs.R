@@ -96,6 +96,11 @@ test_that("input_unparseable names missing and extra columns, an override's grou
     "preflight_detail_input_unparseable_missing",
     input = "lineage", missing = "raw_source"
   ))
+  # From a CSV file, the finding is at its header, line 1.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(lineage, path)
+  found <- input_check("input_unparseable", list(lineage = path))
+  expect_equal(c(found$file, found$source_cell), c(basename(path), paste0(basename(path), ":1")))
   # Only the overrides take group columns.
   fill <- data.frame(
     table_name = "hauls", record_pk = "H1", column_name = "gear", written_value = "?",
@@ -145,6 +150,10 @@ test_that("input_unparseable names an override's class and one with no scope (D1
   expect_equal(found$file, rep(basename(path), 2L))
   expect_equal(found$source_cell, paste0(basename(path), c(":3", ":4")))
   expect_match(found$detail[[1L]], paste("Line 3 of", basename(path)), fixed = TRUE)
+  # A blank class is named as blank.
+  found <- input_check("input_unparseable", list(overrides = override_rows(issue_class = NA)))
+  expect_equal(nrow(found), 1L)
+  expect_match(found$detail, "(blank)", fixed = TRUE)
 })
 
 test_that("input_unparseable reports a run input's file that doesn't read cleanly", {
@@ -251,20 +260,22 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
   # table_unexpected or column_unexpected, whose issues hold the delivery's own names, so any
   # table and column goes with them; 10 names a real column with no table; 11 a pre-flight
   # check's rule ID; 14 has no rule and 15 no table and no column, which a scope may leave out
-  # (D19.54).
+  # (D19.54). 16 to 18 give no table and a column known without one: "*" (16), and the
+  # delivery's own names of a column_unexpected (17) and a table_unexpected (18) override.
   overrides <- override_rows(
     rule_id = c(
       "no_such_rule", "value_too_high", rep("value_above_max", 4L), "table_unexpected",
       "column_unexpected", "value_above_max", "value_above_max", "dd_pk_missing",
-      "column_unexpected", "table_unexpected", NA, "value_above_max"
+      "column_unexpected", "table_unexpected", NA, "value_above_max", "value_above_max",
+      "column_unexpected", "table_unexpected"
     ),
     table_name = c(
       "hauls", "hauls", "nets", "hauls", NA, "hauls", "nets", "hauls", "hauls", NA, "hauls",
-      "nets", "nets", "hauls", NA
+      "nets", "nets", "hauls", NA, NA, NA, NA
     ),
     column_name = c(
       "minutes", "minutes", "mesh", "mesh", "mesh", "*", "*", "mesh", "water_body", "minutes",
-      "minutes", "mesh", "mesh", "minutes", NA
+      "minutes", "mesh", "mesh", "minutes", NA, "*", "mesh", "*"
     )
   )
   found <- input_check("override_unknown_name", list(overrides = overrides))

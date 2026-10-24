@@ -220,6 +220,25 @@ test_that("MAGPlot's provider cells give each of their codes with their row's co
   }
 })
 
+test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns (D19.59)", {
+  computed <- computed_evidence()
+  read <- read_run_inputs(
+    list(computed = computed, crosswalk = crosswalk_evidence()), "evidence",
+    names(evidence_schema())
+  )
+  # The reader takes both for the run's group column, each derivation one of the six.
+  expect_no_error(read_evidence(read, groups = "jurisdiction"))
+  # Each table and column is the dictionary's, each jurisdiction "*" or a code of the sheet.
+  spec <- magp_spec()
+  expect_true(all(
+    paste(computed$table_name, computed$column_name) %chin%
+      paste(spec$attributes$table_name, spec$attributes$attribute_name)
+  ))
+  expect_true(all(
+    computed$jurisdiction %chin% c("*", spec$codes$code[spec$codes$source_name == "jurisdiction"])
+  ))
+})
+
 test_that("read_evidence_file stops on a file missing from the package", {
   # As magp_texts()'s test: pkgload's system.file() under load_all(), base's when installed.
   imports <- parent.env(environment(read_evidence_file))

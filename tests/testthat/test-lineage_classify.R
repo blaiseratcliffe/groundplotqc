@@ -58,6 +58,35 @@ test_that("overrides class issues at 10.3's tiers, a table before none within on
   expect_equal(issues$class_basis, rep("override", 8L))
 })
 
+test_that("each of the nine tiers beats the next one an issue also meets (D19.54)", {
+  issues <- fx_class_issues()
+  # Issue 1: catches.species, C1, code_not_in_list, LK. One override per tier, strongest first,
+  # each a scope the issue meets; the classes alternate, so a stronger tier differs from the next.
+  scopes <- list(
+    fx_class_overrides(fingerprint = issues$fingerprint[[1L]]),
+    fx_class_overrides(rule_id = "code_not_in_list", column_name = "species", water_body = "LK"),
+    fx_class_overrides(rule_id = "code_not_in_list", column_name = "species"),
+    fx_class_overrides(rule_id = "code_not_in_list", water_body = "LK"),
+    fx_class_overrides(rule_id = "code_not_in_list"),
+    fx_class_overrides(column_name = "species", water_body = "LK"),
+    fx_class_overrides(column_name = "species"),
+    fx_class_overrides(water_body = "LK"),
+    fx_class_overrides(table_name = "catches")
+  )
+  classes <- rep(c("source", "harmonization"), length.out = length(scopes))
+  for (i in seq_along(scopes)) {
+    scopes[[i]]$issue_class <- classes[[i]]
+  }
+  for (strongest in seq_along(scopes)) {
+    given <- data.table::rbindlist(scopes[strongest:9], fill = TRUE)
+    gpq_classify_issues(issues, NULL, overrides = given)
+    expect_equal(
+      c(issues$issue_class[[1L]], issues$class_basis[[1L]]), c(classes[[strongest]], "override"),
+      info = paste("tier", strongest)
+    )
+  }
+})
+
 test_that("two overrides of the winning tier with other classes leave it unclassified (D9.27)", {
   issues <- fx_class_issues()
   # One group column or two count alike; two rows giving one class are no conflict.
@@ -184,6 +213,16 @@ test_that("an issue still depends takes its rule's fallback class, whole by tier
   one <- fx_class_overrides(table_name = "hauls", column_name = "haul_date")
   gpq_classify_issues(issues, rules, overrides = one)
   expect_equal(c(issues$issue_class[[5L]], issues$class_basis[[5L]]), c("source", "override"))
+  # An override conflict stays unclassified: the fallback doesn't reach it.
+  gpq_classify_issues(
+    issues, NULL,
+    overrides = fx_class_overrides(
+      rule_id = "code_not_in_list", issue_class = c("source", "harmonization")
+    ),
+    settings = list(fallback_class = c(code_not_in_list = "source"))
+  )
+  expect_equal(issues$issue_class[c(1L, 2L, 6L, 7L, 8L)], rep("unclassified", 5L))
+  expect_equal(issues$class_basis[c(1L, 2L, 6L, 7L, 8L)], rep("override conflict", 5L))
 })
 
 test_that("classification's caller errors (D19.28 (7))", {
@@ -259,6 +298,18 @@ test_that("classification's caller errors (D19.28 (7))", {
     ),
     paste(
       "The override at row 2 of `overrides` gives the class \"Source\"; an override's class is",
+      "source or harmonization."
+    ),
+    fixed = TRUE
+  )
+  # A blank class is named as blank.
+  expect_error(
+    gpq_classify_issues(
+      issues, NULL,
+      overrides = fx_class_overrides(rule_id = "pk_duplicate", issue_class = NA)
+    ),
+    paste(
+      "The override at row 1 of `overrides` gives the class (blank); an override's class is",
       "source or harmonization."
     ),
     fixed = TRUE
@@ -422,4 +473,34 @@ test_that("an integer64 overrides or evidence column stops the call without bit6
   expect_no_error(
     gpq_classify_issues(issues, NULL, overrides = fx_class_overrides(rule_id = "pk_duplicate"))
   )
+})
+
+test_that("classification asks load_bit64() about its overrides and evidence tables (D19.80)", {
+  # The package's own function is mocked, not a base one, so this runs on CRAN too (R145).
+  seen <- list()
+  testthat::local_mocked_bindings(load_bit64 = function(tables) {
+    seen[[length(seen) + 1L]] <<- names(tables)
+    invisible(NULL)
+  })
+  issues <- fx_class_issues()
+  lineage <- data.frame(
+    table_name = "catches", record_pk = "C3", column_name = "species", raw_value = "ZZ",
+    raw_source = "catch.sp"
+  )
+  overrides <- fx_class_overrides(rule_id = "pk_duplicate")
+  gpq_classify_issues(issues, NULL, evidence = list(lineage = lineage), overrides = overrides)
+  expect_equal(seen, list(c("overrides", "lineage")))
+  # A malformed evidence argument is refused before anything is looked through.
+  seen <- list()
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = lineage, overrides = overrides),
+    "`evidence` must be a list of data.frames or CSV paths, each named once.",
+    fixed = TRUE
+  )
+  expect_length(seen, 0L)
+  # When it stops, nothing was classed.
+  testthat::local_mocked_bindings(load_bit64 = function(tables) stop("no bit64"))
+  fresh <- fx_class_issues()
+  expect_error(gpq_classify_issues(fresh, NULL, overrides = overrides), "no bit64", fixed = TRUE)
+  expect_true(all(is.na(fresh$issue_class)))
 })

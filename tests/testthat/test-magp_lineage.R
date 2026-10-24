@@ -1,4 +1,4 @@
-# Tests for MAGPlot's derived flags (D19.17, D19.41; R1).
+# Tests for MAGPlot's derived flags and its lineage spec (D19.17, D19.27, D19.41, D19.83; R1).
 
 test_that("age_tree is Y only for a tree every measurement of which has tree_type A", {
   tables <- list(
@@ -125,5 +125,41 @@ test_that("MAGPlot's spec decodes A2-shaped IDs of a BC and an ON contributor (D
   expect_equal(
     on_subplot_meas$provider_key,
     c("tblVegPlot.vegplotkey=8101", "tblTreeGrowthPlot.treegrowthplotkey=8102")
+  )
+})
+
+test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D19.27, D19.41)", {
+  lineage <- magp_spec()$lineage_spec
+  expect_equal(unique(lineage$separator), "_")
+  conditioned <- lineage[!is.na(lineage$when)]
+  expect_equal(conditioned$contributor_label, rep("ON", 3L))
+  # Each row's table, ID, provider column (D19.17, D19.27) and condition.
+  expect_setequal(
+    paste(
+      conditioned$table_name, conditioned$attribute_name, conditioned$part_source,
+      conditioned$when
+    ),
+    c(
+      "magp_trees src_tree_id tblAgeTree.agetreekey flag.age_tree == \"Y\"",
+      "magp_tree_meas src_treemeas_id tblAgeTree.agetreekey tree_type == \"A\"",
+      paste(
+        "magp_subplot_meas src_subpmeas_id tblVegPlot.vegplotkey",
+        "magp_subplot_id > frame_type == \"R\""
+      )
+    )
+  )
+  # All three condition the first part of a one-part ID.
+  expect_equal(conditioned$part_order, rep(1L, 3L))
+  expect_equal(conditioned$id_status, rep("single", 3L))
+  # Each condition sits just before its part's own A2 row.
+  at <- which(!is.na(lineage$when))
+  own <- lineage[at + 1L]
+  expect_true(all(is.na(own$when)))
+  expect_equal(own$table_name, conditioned$table_name)
+  expect_equal(own$attribute_name, conditioned$attribute_name)
+  expect_equal(own$part_order, conditioned$part_order)
+  manifest <- magp_spec()$manifest
+  expect_equal(
+    manifest$file[manifest$input == "lineage_when"], "data-raw/magp/lineage_when.csv"
   )
 })

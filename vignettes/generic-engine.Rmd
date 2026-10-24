@@ -190,7 +190,9 @@ gpq_classify_issues(
   checked$issues,
   rules = NULL, evidence = list(computed = computed), overrides = overrides
 )
-checked$issues[, c("rule_id", "table_name", "column_name", "value", "issue_class", "class_basis")]
+checked$issues[, c(
+  "rule_id", "table_name", "column_name", "value", "status", "issue_class", "class_basis"
+)]
 ```
 
 The other issues keep their rules' classes, with `class_basis` `default`. An issue whose

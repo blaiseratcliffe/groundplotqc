@@ -2097,8 +2097,8 @@ test_that("build_magp_example.R builds the example with the tests' clean base (D
   expect_equal(rawToChar(memDecompress(bytes, "xz")[1:4]), "RDX3")
 })
 
-# M6's cleanup (M5 m9). M6's tests in this file skip on CRAN, as R CMD check never runs it
-# (D19.81).
+# M6's cleanup (M5 m9). M6's fourteen tests in this file skip on CRAN, as R CMD check never
+# runs them (D19.81, D19.83).
 test_that("edit_csv_cell.R applies the edit list its third argument names (D18.24)", {
   script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
   testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
@@ -2149,46 +2149,10 @@ test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)",
   expect_false(dir.exists(output_dir))
 })
 
-test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D19.27, D19.41)", {
-  testthat::skip_on_cran()
-  lineage <- magp_spec()$lineage_spec
-  expect_equal(unique(lineage$separator), "_")
-  conditioned <- lineage[!is.na(lineage$when)]
-  expect_equal(conditioned$contributor_label, rep("ON", 3L))
-  # Each row's table, ID, provider column (D19.17, D19.27) and condition.
-  expect_setequal(
-    paste(
-      conditioned$table_name, conditioned$attribute_name, conditioned$part_source,
-      conditioned$when
-    ),
-    c(
-      "magp_trees src_tree_id tblAgeTree.agetreekey flag.age_tree == \"Y\"",
-      "magp_tree_meas src_treemeas_id tblAgeTree.agetreekey tree_type == \"A\"",
-      paste(
-        "magp_subplot_meas src_subpmeas_id tblVegPlot.vegplotkey",
-        "magp_subplot_id > frame_type == \"R\""
-      )
-    )
-  )
-  # All three condition the first part of a one-part ID.
-  expect_equal(conditioned$part_order, rep(1L, 3L))
-  expect_equal(conditioned$id_status, rep("single", 3L))
-  # Each condition sits just before its part's own A2 row.
-  at <- which(!is.na(lineage$when))
-  own <- lineage[at + 1L]
-  expect_true(all(is.na(own$when)))
-  expect_equal(own$table_name, conditioned$table_name)
-  expect_equal(own$attribute_name, conditioned$attribute_name)
-  expect_equal(own$part_order, conditioned$part_order)
-  manifest <- magp_spec()$manifest
-  expect_equal(
-    manifest$file[manifest$input == "lineage_when"], "data-raw/magp/lineage_when.csv"
-  )
-})
-
 # ---- MAGPlot's evidence files (M6; plan 3.6, 10.3; D19.38, D19.59) ----
 
-# The tests below skip on CRAN, as R CMD check never runs this file (D19.81).
+# These twelve tests and the two edit_csv_cell.R tests above are M6's fourteen in this file;
+# they skip on CRAN, as R CMD check never runs them (D19.81, D19.83).
 
 # A stand-in spec for build_magp_evidence(): the parts it reads, in MAGPlot's names. Two
 # translation tables, species and datum_walk, so that an attribute or a column can belong to

@@ -109,6 +109,74 @@ test_that("a code's raw value: valid gives lineage, a changed invalid one crossw
   expect_equal(issues$class_basis[c(1L, 2L, 7L)], rep("default", 3L))
 })
 
+test_that("computed and filled settle a code issue before lineage and the crosswalk (D19.58)", {
+  issues <- fx_class_issues()
+  lineage <- data.frame(
+    table_name = "catches", record_pk = "C1", column_name = "species", raw_value = "Pw",
+    raw_source = "catch.sp"
+  )
+  crosswalk <- data.frame(
+    provider_code = "Pw", code = "NOP", column_name = "species", water_body = "LK"
+  )
+  # Alone, lineage and the crosswalk settle issue 1 as "lineage".
+  gpq_classify_issues(issues, NULL, evidence = list(lineage = lineage, crosswalk = crosswalk))
+  expect_equal(issues$class_basis[[1L]], "lineage")
+  filled <- data.frame(
+    table_name = "catches", record_pk = "C1", column_name = "species", written_value = "XXX"
+  )
+  gpq_classify_issues(
+    issues, NULL,
+    evidence = list(filled = filled, lineage = lineage, crosswalk = crosswalk)
+  )
+  expect_equal(issues$class_basis[[1L]], "filled")
+  computed <- data.frame(
+    table_name = "catches", column_name = "species", water_body = "LK", derivation = "class"
+  )
+  gpq_classify_issues(
+    issues, NULL,
+    evidence = list(computed = computed, lineage = lineage, crosswalk = crosswalk)
+  )
+  expect_equal(issues$class_basis[[1L]], "computed")
+})
+
+test_that("a changed cell of a column or group value the crosswalk lacks passes on (D19.58 (5))", {
+  issues <- fx_class_issues()
+  crosswalk <- data.frame(
+    provider_code = "Pw", code = "NOP", column_name = "species", water_body = "LK"
+  )
+  # Issue 8 (hauls.gear) is a changed cell, but the crosswalk has rows for species only.
+  gear <- data.frame(
+    table_name = "hauls", record_pk = "H4", column_name = "gear", raw_value = "zz",
+    raw_source = "haul.gear"
+  )
+  gpq_classify_issues(issues, NULL, evidence = list(lineage = gear, crosswalk = crosswalk))
+  expect_equal(c(issues$issue_class[[8L]], issues$class_basis[[8L]]), c("unclassified", "default"))
+  # Issue 7 (LK) is a changed cell, but the crosswalk's species rows are RV's.
+  changed <- data.frame(
+    table_name = "catches", record_pk = "C3", column_name = "species", raw_value = "zz",
+    raw_source = "catch.sp"
+  )
+  other_group <- crosswalk
+  other_group$water_body <- "RV"
+  gpq_classify_issues(issues, NULL, evidence = list(lineage = changed, crosswalk = other_group))
+  expect_equal(c(issues$issue_class[[7L]], issues$class_basis[[7L]]), c("unclassified", "default"))
+})
+
+test_that("a provider code is valid only for the group value it is listed under (D19.58 (4))", {
+  issues <- fx_class_issues()
+  # LK's species rows list Pw only; ZZ is RV's provider code, and issue 7 (LK, unlisted) holds it.
+  crosswalk <- data.frame(
+    provider_code = c("Pw", "ZZ"), code = "NOP", column_name = "species",
+    water_body = c("LK", "RV")
+  )
+  lineage <- data.frame(
+    table_name = "catches", record_pk = "C1", column_name = "species", raw_value = "Pw",
+    raw_source = "catch.sp"
+  )
+  gpq_classify_issues(issues, NULL, evidence = list(lineage = lineage, crosswalk = crosswalk))
+  expect_equal(issues$class_basis[c(1L, 7L)], c("lineage", "default"))
+})
+
 test_that("a cell lineage lists with its own value as raw value is unchanged (D19.61, R46)", {
   # Applying D19.61's "the pipeline changed the value": a listed cell whose raw value is its
   # value, as text, passes step 5 on, as an unlisted cell does.

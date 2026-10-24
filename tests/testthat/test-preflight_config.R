@@ -797,6 +797,14 @@ test_that("rule_id_unknown names fallback_class's unregistered rules, by tier (D
   found <- check("rule_id_unknown", test_context(read_rule_set(dir)))
   expect_equal(found$detail, detail(report_text("preflight_setting_rule_set"), "ghost"))
   expect_equal(c(found$file, found$source_cell), c("rules_settings.csv", "rules_settings.csv:2"))
+  # A rule set given as R objects has no file, so its finding is placed by none.
+  in_memory <- list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "fallback_class", value = "ghost=source", type = "character")
+  )
+  found <- check("rule_id_unknown", test_context(in_memory))
+  expect_equal(found$detail, detail(report_text("preflight_setting_rule_set"), "ghost"))
+  expect_true(is.na(found$file) && is.na(found$source_cell))
   # It stops pre-flight.
   withr::local_options(groundplotqc.fallback_class = NULL)
   expect_error(
