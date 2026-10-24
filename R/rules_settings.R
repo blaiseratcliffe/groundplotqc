@@ -4,7 +4,8 @@
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
 # unknown_codes from M4a, read by the conformance checks; coordinate_attributes,
 # code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
-# Layer 3 (D18.9, D18.20), and the design candidates' eight, read by Layer 4 (D18.39). A
+# Layer 3 (D18.9, D18.20), the design candidates' eight, read by Layer 4 (D18.39), and from M6
+# fallback_class, read by gpq_classify_issues() and resolved whole like unknown_codes (D19.53). A
 # rule-set row gives a setting as text: a whole number for type "integer", several values
 # "; "-joined, a named value as "name=value" (D16.12).
 
@@ -21,6 +22,9 @@
 #' or "=", so a typo in a rule-set row stops rather than giving a code no value matches; a
 #' row ending in "; " has an empty last code (D16.21, D16.23, D16.24). The design candidates'
 #' four attribute-list settings also refuse, in every tier, a name given twice (D18.127).
+#' `fallback_class` is a named character vector by rule ID, each class "source" or
+#' "harmonization", each rule named once, written in a rule-set row as unknown_codes is, so
+#' the tier that gives it gives all of it (D19.53).
 #' @noRd
 setting_definitions <- function() {
   text_ok <- function(x) {
@@ -42,6 +46,16 @@ setting_definitions <- function() {
     pieces <- strsplit(text, "; ", fixed = TRUE)[[1L]]
     # strsplit() drops a trailing empty part, which is refused as any empty code is (D16.23).
     if (endsWith(text, "; ")) c(pieces, "") else pieces
+  }
+  # "name=value" parts, a part without "=" read as NA, which the test refuses (D16.12).
+  named_parts <- function(text) {
+    pieces <- parts(text)
+    named <- grepl("=", pieces, fixed = TRUE)
+    # fifelse() keeps a row with no part character, where ifelse() gives logical(0).
+    structure(
+      fifelse(named, sub("^[^=]*=", "", pieces), NA_character_),
+      names = fifelse(named, sub("=.*$", "", pieces), NA_character_)
+    )
   }
   as_whole <- function(text) {
     if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
@@ -126,15 +140,7 @@ setting_definitions <- function() {
         "no code NA, empty, padded with spaces or holding \";\" or \"=\",",
         "and no name empty, padded with spaces or holding \";\" or \"=\""
       ),
-      from_text = function(text) {
-        pieces <- parts(text)
-        named <- grepl("=", pieces, fixed = TRUE)
-        # fifelse() keeps a row with no part character, where ifelse() gives logical(0).
-        structure(
-          fifelse(named, sub("^[^=]*=", "", pieces), NA_character_),
-          names = fifelse(named, sub("=.*$", "", pieces), NA_character_)
-        )
-      }
+      from_text = named_parts
     ),
     # The attributes coordinate_out_of_bounds checks and the range rules leave (D18.9).
     coordinate_attributes = list(
@@ -187,7 +193,24 @@ setting_definitions <- function() {
     design_signature_by = one_name(
       "one attribute name, not NA, empty, padded with spaces or holding \";\", or none"
     ),
-    design_signature_columns = attribute_names
+    design_signature_columns = attribute_names,
+    # The class an issue whose rule's class is depends takes when nothing else settles it, by
+    # rule (10.3 step 6; D19.34, D19.35); none built in.
+    fallback_class = list(
+      type = "character", built_in = structure(character(), names = character()),
+      valid = function(x) {
+        text_ok(x) && all(x %chin% c("source", "harmonization")) && (length(x) == 0L || (
+          !is.null(names(x)) && !anyNA(names(x)) && all(validUTF8(names(x))) &&
+            plain(names(x), "[;=]") && !anyDuplicated(names(x))
+        ))
+      },
+      wants = paste(
+        "a character vector of classes named by rule ID, such as c(some_rule = \"source\"),",
+        "each class \"source\" or \"harmonization\", each rule named once, and no name empty,",
+        "padded with spaces or holding \";\" or \"=\""
+      ),
+      from_text = named_parts
+    )
   )
 }
 

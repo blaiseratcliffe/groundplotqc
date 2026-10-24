@@ -80,12 +80,13 @@ test_that("settings: each declared setting with its tier, then severity entries 
     "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
-    "design_signature_table", "design_signature_by", "design_signature_columns"
+    "design_signature_table", "design_signature_by", "design_signature_columns",
+    "fallback_class"
   )
   expect_equal(plain$setting, declared)
   expect_equal(
     plain$value,
-    c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA, NA, rep(NA, 8L))
+    c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA, NA, rep(NA, 9L))
   )
   expect_true(all(plain$tier == "built-in"))
   rule_set <- list(
@@ -167,7 +168,7 @@ test_that("a run's metadata has 9.5's tables in order, checked", {
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
     "design_signature_table", "design_signature_by", "design_signature_columns",
-    "severity:value_odd"
+    "fallback_class", "severity:value_odd"
   ))
   bad_id <- data.table::copy(metadata)
   bad_id$run <- data.table::copy(metadata$run)

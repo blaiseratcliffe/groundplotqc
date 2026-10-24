@@ -27,8 +27,9 @@ rule_registry <- function() {
 #' stops and its `warning` warns, and no rule set or setting changes either, D14.5);
 #' `default_class` (`source`, `harmonization`, `depends`, or `none` for information rules
 #' and pre-flight checks, which write no issues); `inputs` (what the rule reads, "; "-joined:
-#' specification components, `rules`, `settings:<name>`, `text`); `strategy` (`none` for a
-#' rule that proposes nothing); `message_id` (its text_id in the report text); `rule_version`
+#' specification components, `rules`, `settings:<name>`, `text`, and for the checks of the run
+#' inputs, `inputs`); `strategy` (`none` for a rule that proposes nothing); `message_id` (its
+#' text_id in the report text); `rule_version`
 #' (from 1, raised by the add-rule skill whenever the rule's check behaves differently, so its
 #' rule fingerprint changes, D15.6); `unit` (TRUE for a rule that checks a table or a column
 #' as one unit, D16.8, whose not_run rows are one "*" row each, D16.29, D17.15). Layer 6 and 7
@@ -106,7 +107,7 @@ build_rule_registry <- function() {
     ),
     # ---- task 5 ----
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
-    preflight("rule_id_unknown", "error", "rules; settings:severity"),
+    preflight("rule_id_unknown", "error", "rules; settings:fallback_class; settings:severity"),
     preflight("rule_set_override_invalid", "error", "rules; settings:severity"),
     preflight("rule_set_duplicate_row", "error", "rules"),
     # ---- M5: the names the settings give (4.2; D18.45 to D18.47) ----
@@ -116,6 +117,10 @@ build_rule_registry <- function() {
     preflight("text_id_missing", "error", "text"),
     preflight("text_id_fallback", "warning", "text; settings:lang"),
     preflight("text_slot_unknown", "error", "text"),
+    # ---- M6: the run inputs (4.2; D19.51) ----
+    preflight("input_unparseable", "error", "attributes; inputs"),
+    preflight("override_scope_conflict", "warning", "attributes; inputs"),
+    preflight("override_unknown_name", "warning", "attributes; inputs"),
     # ---- M4a: Layer 0, structure (6.1; D2.34, D8.11, D16.8) ----
     conformance("table_missing", 0L, "error", "harmonization", "attributes", unit = TRUE),
     conformance("table_unexpected", 0L, "warning", "harmonization", "attributes", unit = TRUE),

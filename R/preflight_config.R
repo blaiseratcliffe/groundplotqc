@@ -4,14 +4,16 @@
 # checks in R/preflight.R do. A finding on a rule-set row read from a file names the file and
 # the row's line (D14.19); the other findings concern no file, so `file` is NA.
 
-#' What pre-flight's checks read besides the spec (D14.6, D14.13, D18.46)
+#' What pre-flight's checks read besides the spec (D14.6, D14.13, D18.46, D19.51, D19.53)
 #'
 #' The rule set and the text table as checked, the severity setting's argument and option
 #' entries, the resolved run language, the settings that name tables and attributes, each
 #' resolved with its tier (`settings`, which setting_unknown_name and option_unknown_name
-#' read), and the registry. Caller errors in any of them stop here, before a check runs.
+#' read), `fallback_class` resolved with its tier (rule_id_unknown reads its rule IDs), the
+#' run inputs read (`inputs`, read_run_inputs()), and the registry. Caller errors in any of
+#' them stop here, before a check runs.
 #' @noRd
-preflight_context <- function(rules = NULL, settings = list(), text = NULL) {
+preflight_context <- function(rules = NULL, settings = list(), text = NULL, inputs = list()) {
   rules <- validate_rule_set(rules)
   check_settings(settings, rules)
   # The settings that name tables and attributes of the dictionary (D18.45).
@@ -26,7 +28,10 @@ preflight_context <- function(rules = NULL, settings = list(), text = NULL) {
   list(
     rules = rules, severity = severity_entries(settings),
     lang = resolve_setting("lang", settings, rules)$value, settings = resolved,
-    text = validate_text_table(text), registry = rule_registry()
+    fallback_class = resolve_setting("fallback_class", settings, rules),
+    text = validate_text_table(text),
+    inputs = read_run_inputs(inputs, "inputs", names(run_input_schema())),
+    registry = rule_registry()
   )
 }
 
@@ -61,12 +66,13 @@ rule_set_rows <- function(context) {
   out
 }
 
-#' Where a severity setting entry came from, as report text
+#' Where a setting's entry came from, as report text: given as an argument, or set as the
+#' option groundplotqc.<setting> (D18.46, D19.67)
 #' @noRd
-setting_where <- function(tier) {
+setting_where <- function(tier, setting) {
   fifelse(
     tier == "argument", report_text("preflight_setting_argument"),
-    report_text("preflight_setting_option")
+    report_text("preflight_setting_option", setting = setting)
   )
 }
 
@@ -251,8 +257,25 @@ preflight_rule_set_checks <- function() {
       ))
     },
     rule_id_unknown = function(spec, context) {
-      if (is.null(context$rules) && nrow(context$severity) == 0L) {
+      fallback <- context$fallback_class
+      no_input <- is.null(context$rules) && nrow(context$severity) == 0L &&
+        length(fallback$value) == 0L
+      if (no_input) {
         return("no_input")
+      }
+      # fallback_class's rule IDs, each once, from the tier that gave the whole setting; a
+      # rule-set row is placed by its file line, as setting_unknown_name places one (D18.46).
+      named <- unique(names(fallback$value))
+      settings_rows <- context$rules$settings
+      settings_file <- attr(settings_rows, "source_file", exact = TRUE) %||% NA_character_
+      on_file <- fallback$tier == "rule set" && !is.na(settings_file)
+      settings_line <- attr(settings_rows, "source_lines", exact = TRUE)[
+        match("fallback_class", settings_rows$setting)
+      ]
+      fallback_where <- if (fallback$tier == "rule set") {
+        report_text("preflight_setting_rule_set")
+      } else {
+        setting_where(fallback$tier, "fallback_class")
       }
       registered <- context$registry$rule_id
       rows <- rule_set_rows(context)
@@ -269,8 +292,16 @@ preflight_rule_set_checks <- function() {
         ),
         findings_of(NA_character_, report_text(
           "preflight_detail_rule_id_unknown_setting",
-          where = setting_where(entries$tier), rule_id = entries$rule_id
-        ))
+          where = setting_where(entries$tier, "severity"), rule_id = entries$rule_id
+        )),
+        findings_of(
+          if (on_file) settings_file else NA_character_,
+          report_text(
+            "preflight_detail_rule_id_unknown_fallback_class",
+            where = fallback_where, rule_id = named[!named %chin% registered]
+          ),
+          if (on_file) paste0(settings_file, ":", settings_line) else NA_character_
+        )
       ))
     },
     rule_set_override_invalid = function(spec, context) {
@@ -329,11 +360,11 @@ preflight_rule_set_checks <- function() {
         ),
         findings_of(NA_character_, report_text(
           "preflight_detail_rule_set_override_invalid_setting_preflight",
-          where = setting_where(entry_fixed$tier), rule_id = entry_fixed$rule_id
+          where = setting_where(entry_fixed$tier, "severity"), rule_id = entry_fixed$rule_id
         )),
         findings_of(NA_character_, report_text(
           "preflight_detail_rule_set_override_invalid_setting",
-          where = setting_where(entry_open$tier), rule_id = entry_open$rule_id,
+          where = setting_where(entry_open$tier, "severity"), rule_id = entry_open$rule_id,
           value = entry_open$severity,
           allowed = allowed_text(allowed$severity, entry_open$rule_id)
         ))

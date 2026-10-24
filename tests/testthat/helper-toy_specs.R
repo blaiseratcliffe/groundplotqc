@@ -197,6 +197,19 @@ fx_planted_settings <- function() {
   list(severity = c(also_unknown = "error"), coordinate_attributes = "nowhere")
 }
 
+# Run inputs with one planted defect per check of the inputs, for fx_planted_spec() (D19.51):
+# row 2 repeats row 1's scope with the other class (override_scope_conflict 1); row 3 names a
+# rule no one registered (override_unknown_name 1); row 4's class is neither source nor
+# harmonization (input_unparseable 1, its only finding).
+fx_planted_inputs <- function() {
+  list(overrides = data.frame(
+    fingerprint = NA, rule_id = c("raw_na", "raw_na", "nobody_rule", "raw_na"),
+    table_name = "plots", column_name = c("shape", "shape", "shape", "soil"),
+    issue_class = c("source", "harmonization", "source", "sometimes"), who = "A. Reviewer",
+    when = "2026-10-22", why = "Planted."
+  ))
+}
+
 # An empty rule set: every check of the rule set runs and finds nothing.
 fx_empty_rule_set <- function() {
   list(rules = data.frame(

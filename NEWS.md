@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9013 (development version)
+# groundplotqc 0.0.0.9014 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -44,3 +44,5 @@
 - `gpq_preflight()` stops on a dictionary row whose table or attribute name is missing, empty or only spaces (`dd_name_missing`).
 - `gpq_read_spec()` gains `lineage_when`, conditions under which a part of a source ID is read from another provider column, and `lineage_separator`, the text composite IDs join their parts with; the lineage spec gains the columns `when` and `separator`, and pre-flight checks the conditions (`lineage_when_invalid`). `magp_spec()` gives Ontario's age trees and vegetation subplots their own provider keys.
 - New `gpq_decode_lineage()` shows each record-level issue in the provider's terms: the record's source ID, read from the tables at the issue's row, split into the parts its contributor's lineage spec expects, each labelled with the provider's table and column (`provider_key`), with a status saying how far it decoded (`provider_key_status`); an issue's fingerprint is taken from the provider key where that key is unique. It stops if the tables aren't the ones the issues came from.
+- `gpq_preflight()` takes the run's optional inputs, `inputs`: `overrides`, `lineage` and `pipeline_fill`, each a data.frame or the path of a CSV file. It stops on an input it can't read cleanly or without exactly its columns, and on an override whose class isn't source or harmonization or that gives no scope (`input_unparseable`); it warns on two overrides that give one scope two classes (`override_scope_conflict`) and on an override naming a rule, table or column it doesn't know (`override_unknown_name`).
+- The setting `fallback_class` (option `groundplotqc.fallback_class`) gives, by rule, the class of an issue whose rule's class is `depends` when nothing else settles it. The tier that gives it gives all of it, replacing the lower tiers' entries. Pre-flight stops on a rule it names that isn't registered (`rule_id_unknown`).
