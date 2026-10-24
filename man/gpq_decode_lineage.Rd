@@ -102,3 +102,7 @@ results <- gpq_check_conformance(
 gpq_decode_lineage(results$issues, list(plots = plots), spec, key_col = "contributor")
 results$issues[, c("record_pk", "provider_key", "provider_key_status")]
 }
+\seealso{
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}} for the issues, and \code{\link[=gpq_classify_issues]{gpq_classify_issues()}}, which
+classes them.
+}

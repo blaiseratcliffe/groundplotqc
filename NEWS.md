@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9017 (development version)
+# groundplotqc 0.0.0.9018 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -49,3 +49,4 @@
 - New `gpq_classify_issues()` gives each issue its class (`issue_class`) and what decided it (`class_basis`): its rule's class, from the rule set's `rules` rows or the registry; your overrides, the most specific matching row winning and two that disagree leaving the issue unclassified, an override of a renamed or split rule applying to its new rules; and, for an issue whose rule's class is `depends` that nothing else settles, the rule's `fallback_class`, else `unclassified`.
 - `gpq_classify_issues()` reads its evidence for issues whose rule's class is `depends`: `computed`, columns the pipeline computes; `filled`, cells its missing-value fill wrote; and, for code issues, `lineage`, the provider's raw values, with `crosswalk`, each provider code and the code it is translated to. Each settles an issue as harmonization.
 - MAGPlot's configuration gains `pipeline_computed.csv`, the attributes MAGPlot's processing scripts compute for every record, and `crosswalk_provider_columns.csv`, the translation-table columns that hold each jurisdiction's provider codes; the build checks every row of both against the specification before it copies them.
+- The article "Using the engine on your own dataset" ends with the fish survey's issues classed by an override and a `computed` row.

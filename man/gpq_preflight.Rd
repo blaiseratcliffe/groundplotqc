@@ -154,3 +154,7 @@ stopped <- tryCatch(
 )
 subset(stopped$preflight, outcome == "stop", c(rule_id, detail))
 }
+\seealso{
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}}, which runs it first, and \code{\link[=gpq_classify_issues]{gpq_classify_issues()}}, which
+reads the overrides it checks.
+}

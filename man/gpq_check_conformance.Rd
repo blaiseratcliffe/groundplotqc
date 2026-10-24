@@ -176,3 +176,7 @@ results <- gpq_check_conformance(
 table(results$results$status)
 results$issues[results$issues$status == "open", c("rule_id", "table_name", "column_name")]
 }
+\seealso{
+\code{\link[=gpq_preflight]{gpq_preflight()}}, which the run calls first; \code{\link[=gpq_decode_lineage]{gpq_decode_lineage()}} and
+\code{\link[=gpq_classify_issues]{gpq_classify_issues()}}, which give its issues their provider keys and classes.
+}

@@ -138,6 +138,8 @@
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
 #'   Write it with [gpq_write_results()].
+#' @seealso [gpq_preflight()], which the run calls first; [gpq_decode_lineage()] and
+#'   [gpq_classify_issues()], which give its issues their provider keys and classes.
 #' @examples
 #' # magp_example with one planted defect: a missing value in a column that must hold one.
 #' trees <- data.table::copy(magp_example$magp_trees)

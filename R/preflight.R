@@ -730,6 +730,8 @@ preflight_check_functions <- function() {
 #' language and on a caller's text table; and with run inputs, `input_unparseable`,
 #' `override_scope_conflict` and `override_unknown_name`. No rule set or setting changes what
 #' a check stops or warns on.
+#' @seealso [gpq_check_conformance()], which runs it first, and [gpq_classify_issues()], which
+#'   reads the overrides it checks.
 #' @examples
 #' example <- function(file) system.file("extdata", "examples", file, package = "groundplotqc")
 #' forest <- gpq_read_spec(

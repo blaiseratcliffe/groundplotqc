@@ -490,6 +490,8 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
 #'   `flag.<name>`. A record whose key the data.frame doesn't give has no flag there.
 #' @return `issues`, invisibly, with `provider_key`, `provider_key_status` and `fingerprint`
 #'   set.
+#' @seealso [gpq_check_conformance()] for the issues, and [gpq_classify_issues()], which
+#'   classes them.
 #' @examples
 #' # One table of plots whose source ID is the provider's site and plot joined by "_".
 #' dictionary <- data.frame(
