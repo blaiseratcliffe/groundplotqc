@@ -3,6 +3,8 @@
 
 test_that("each issue takes its rule's class, set by reference and returned invisibly (D19.28)", {
   issues <- fx_class_issues()
+  # An issue not evaluated is classed alike (D19.28 (6)).
+  data.table::set(issues, i = 3L, j = "status", value = "not_evaluated")
   before <- data.table::copy(issues)
   address <- data.table::address(issues)
   # A rules row gives value_above_max the class source on hauls; a blank class defers; a row
@@ -26,6 +28,11 @@ test_that("each issue takes its rule's class, set by reference and returned invi
   # Only the two columns change.
   others <- setdiff(names(issues), c("issue_class", "class_basis"))
   expect_identical(issues[, others, with = FALSE], before[, others, with = FALSE])
+  # An information rule's issue is given the class none (D19.58): the registry gives
+  # parent_without_children that class.
+  data.table::set(issues, i = 8L, j = "rule_id", value = "parent_without_children")
+  gpq_classify_issues(issues, NULL)
+  expect_equal(c(issues$issue_class[[8L]], issues$class_basis[[8L]]), c("none", "default"))
 })
 
 test_that("overrides class issues at 10.3's tiers, a table before none within one (D19.54)", {
@@ -72,18 +79,26 @@ test_that("two overrides of the winning tier with other classes leave it unclass
 
 test_that("an override's fingerprint meets the issue's fingerprint or its pk: form (D9.22)", {
   issues <- fx_class_issues()
-  # Issue 2 decoded: its fingerprint is the provider key's, its pk: form unchanged.
+  # Issues 2 and 6 decoded: their fingerprints are the provider keys', their pk: forms
+  # unchanged.
   data.table::set(
     issues,
     i = 2L, j = "fingerprint", value = "code_not_in_list|catches|species|catch.id=7"
   )
+  data.table::set(
+    issues,
+    i = 6L, j = "fingerprint", value = "code_not_in_list|catches|species|catch.id=9"
+  )
+  # Issue 2 is met by its pk: form, issue 6 by its provider key's, issue 7 by its one form.
   overrides <- fx_class_overrides(
-    fingerprint = c(issues$fingerprint_pk[[2L]], issues$fingerprint[[7L]]),
-    issue_class = c("source", "harmonization")
+    fingerprint = c(
+      issues$fingerprint_pk[[2L]], issues$fingerprint[[7L]], issues$fingerprint[[6L]]
+    ),
+    issue_class = c("source", "harmonization", "source")
   )
   gpq_classify_issues(issues, NULL, overrides = overrides)
-  expect_equal(issues$issue_class[c(2L, 7L)], c("source", "harmonization"))
-  expect_equal(issues$class_basis[c(2L, 7L)], c("override", "override"))
+  expect_equal(issues$issue_class[c(2L, 6L, 7L)], c("source", "source", "harmonization"))
+  expect_equal(issues$class_basis[c(2L, 6L, 7L)], rep("override", 3L))
 })
 
 test_that("an override of a renamed or split rule applies to its new rule IDs (D19.51)", {
@@ -104,6 +119,11 @@ test_that("an override of a renamed or split rule applies to its new rule IDs (D
     "source"
   ))
   expect_equal(issues$class_basis[-4L], rep("override", 7L))
+  # The rename is made on the reader's own copy: a caller's data.table is as it was.
+  as_table <- data.table::as.data.table(overrides)
+  kept <- data.table::copy(as_table)
+  gpq_classify_issues(issues, NULL, overrides = as_table)
+  expect_identical(as_table, kept)
 })
 
 test_that("a harmonization_artifact issue no override classed is harmonization (D19.28 (3))", {
@@ -212,9 +232,26 @@ test_that("classification's caller errors (D19.28 (7))", {
     ),
     fixed = TRUE
   )
+  # Issues with no group columns say so.
+  ungrouped <- issues[, !c("water_body", "station_id")]
+  expect_error(
+    gpq_classify_issues(ungrouped, NULL, overrides = colour),
+    paste(
+      "`overrides` must have the columns fingerprint, rule_id, table_name, column_name,",
+      "issue_class, who, when, why, and may have the issues' group columns (the issues have",
+      "none); not taken: colour."
+    ),
+    fixed = TRUE
+  )
   no_why <- fx_class_overrides(rule_id = "pk_duplicate")
   no_why$why <- NULL
   expect_error(gpq_classify_issues(issues, NULL, overrides = no_why), "missing: why.", fixed = TRUE)
+  # Both problems are joined with a semicolon.
+  colour$why <- NULL
+  expect_error(
+    gpq_classify_issues(issues, NULL, overrides = colour), "missing: why; not taken: colour.",
+    fixed = TRUE
+  )
   expect_error(
     gpq_classify_issues(
       issues, NULL,
@@ -247,6 +284,16 @@ test_that("overrides read from a CSV file are placed by line; one that doesn't r
     paste0("The override at line 2 of ", basename(path), " gives the class \"Source\""),
     fixed = TRUE
   )
+  # A row with no scope is placed by its line too: the second row is the file's line 3.
+  data.table::fwrite(fx_class_overrides(rule_id = c("pk_duplicate", NA)), path)
+  expect_error(
+    gpq_classify_issues(issues, NULL, overrides = path),
+    paste0(
+      "The override at line 3 of ", basename(path), " gives no scope: no fingerprint, rule_id,",
+      " table_name, column_name or group column."
+    ),
+    fixed = TRUE
+  )
   writeLines(
     c(
       "fingerprint,rule_id,table_name,column_name,issue_class,who,when,why",
@@ -263,4 +310,43 @@ test_that("overrides read from a CSV file are placed by line; one that doesn't r
   data.table::fwrite(fx_class_overrides(rule_id = "pk_duplicate"), path)
   gpq_classify_issues(issues, NULL, overrides = path)
   expect_equal(c(issues$issue_class[[4L]], issues$class_basis[[4L]]), c("source", "override"))
+})
+
+test_that("an empty issues table or an empty overrides table classes without a stop", {
+  issues <- fx_class_issues()
+  gpq_classify_issues(issues, NULL)
+  classes <- issues$issue_class
+  basis <- issues$class_basis
+  # Overrides with no rows change nothing.
+  none <- fx_class_overrides(rule_id = "pk_duplicate")[0L, ]
+  gpq_classify_issues(issues, NULL, overrides = none)
+  expect_equal(issues$issue_class, classes)
+  expect_equal(issues$class_basis, basis)
+  # A run with no issues, as a clean run's: with no overrides, some, and none.
+  empty <- fx_class_issues()[0L]
+  gpq_classify_issues(empty, NULL)
+  gpq_classify_issues(empty, NULL, overrides = fx_class_overrides(rule_id = "pk_duplicate"))
+  gpq_classify_issues(empty, NULL, overrides = none)
+  expect_identical(nrow(empty), 0L)
+  expect_identical(empty$issue_class, character())
+  expect_identical(empty$class_basis, character())
+})
+
+test_that("an overrides group column stored as integer64 is read as its number (D18.86)", {
+  # Found installed without loading it, which skip_if_not_installed() would do: where no
+  # earlier test has loaded bit64, classification is what loads it.
+  testthat::skip_if(!nzchar(system.file(package = "bit64")), "bit64 isn't installed.")
+  # A table kept with saveRDS() and read back where bit64's namespace isn't loaded holds the
+  # column as the number's 64 bits in a double. This builds 5000000000 so, loading nothing.
+  bits <- writeBin(c(705032704L, 1L), raw(), endian = "little")
+  stored <- structure(readBin(bits, "double", endian = "little"), class = "integer64")
+  overrides <- fx_class_overrides()
+  overrides$water_body <- stored
+  issues <- fx_class_issues()
+  data.table::set(issues, i = 1L, j = "water_body", value = "5000000000")
+  gpq_classify_issues(issues, NULL, overrides = overrides)
+  expect_equal(c(issues$issue_class[[1L]], issues$class_basis[[1L]]), c("source", "override"))
+  expect_equal(issues$class_basis[-1L], rep("default", 7L))
+  # The stored bits are bit64's own for that number.
+  expect_identical(unclass(stored), unclass(bit64::as.integer64("5000000000")))
 })
