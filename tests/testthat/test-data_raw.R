@@ -2182,7 +2182,10 @@ test_that("MAGPlot's lineage spec has ON's three conditions and the separator (D
 
 # ---- MAGPlot's evidence files (M6; plan 3.6, 10.3; D19.38, D19.59) ----
 
-# A stand-in spec for build_magp_evidence(): the parts it reads, in MAGPlot's names.
+# A stand-in spec for build_magp_evidence(): the parts it reads, in MAGPlot's names. Two
+# translation tables, species and datum_walk, so that an attribute or a column can belong to
+# the other one: species takes its codes from the first, datum from the second, and
+# jurisdiction from a sheet, whose codes are AB and BC (PINU.ALB is a code of another list).
 evidence_spec <- function() {
   list(
     attributes = data.table::data.table(
@@ -2194,13 +2197,15 @@ evidence_spec <- function() {
       source_name = c("jurisdiction", "jurisdiction", "species")
     ),
     code_list_map = data.table::data.table(
-      attribute_name = c("jurisdiction", "species"), source_type = c("sheet", "crosswalk"),
-      source_name = c("jurisdiction", "species")
+      attribute_name = c("jurisdiction", "species", "datum"),
+      source_type = c("sheet", "crosswalk", "crosswalk"),
+      source_name = c("jurisdiction", "species", "datum_walk")
     ),
     crosswalks = data.table::data.table(
-      crosswalk = "species", source_row = c(1L, 1L, 2L, 2L),
-      crosswalk_column = c("NFI", "AB_code", "NFI", "AB_code"),
-      value = c("NFI", "AB_code", "PINU.ALB", "Pw / Pa")
+      crosswalk = c(rep("species", 4L), rep("datum_walk", 2L)),
+      source_row = c(1L, 1L, 2L, 2L, 1L, 1L),
+      crosswalk_column = c("NFI", "AB_code", "NFI", "AB_code", "code", "AB_datum"),
+      value = c("NFI", "AB_code", "PINU.ALB", "Pw / Pa", "code", "AB_datum")
     )
   )
 }
@@ -2250,15 +2255,33 @@ test_that("the build takes the tree's evidence files, copied unchanged (D19.59)"
 
 test_that("the build stops on a pipeline_computed.csv row of no attribute of the dictionary", {
   build <- load_data_raw("build_magp_config.R")
-  config <- evidence_config(
-    computed = c("magp_sites,datum,*,fill,", "magp_sites,no_such,*,id,", ",datum,AB,fill,")
-  )
+  config <- evidence_config(computed = c(
+    "magp_sites,datum,*,fill,", "magp_sites,no_such,*,id,", ",datum,AB,fill,",
+    "magp_sites,,*,id,"
+  ))
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
     paste0(
       "pipeline_computed.csv has rows the build can't take, so nothing was built: ",
       "line 3: the dictionary has no attribute \"no_such\" in table \"magp_sites\"; ",
-      "line 4: the dictionary has no attribute \"datum\" in table (blank)."
+      "line 4: the dictionary has no attribute \"datum\" in table (blank); ",
+      "line 5: the dictionary has no attribute (blank) in table \"magp_sites\"."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build lists the problems of different checks in line order", {
+  build <- load_data_raw("build_magp_config.R")
+  # The derivation check runs after the dictionary check, and its row comes first.
+  config <- evidence_config(
+    computed = c("magp_sites,datum,AB,register,", "magp_sites,no_such,AB,fill,")
+  )
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: derivation \"register\" isn't id, class, formula, count, fill or reference; ",
+      "line 3: the dictionary has no attribute \"no_such\" in table \"magp_sites\"."
     ),
     fixed = TRUE
   )
@@ -2280,19 +2303,31 @@ test_that("the build stops on a derivation that isn't one of plan 3.6's six (D19
 
 test_that("the build stops on a jurisdiction the sheet lacks, \"*\" only in pipeline_computed", {
   build <- load_data_raw("build_magp_config.R")
-  config <- evidence_config(computed = c("magp_sites,datum,QUE,fill,", "magp_sites,datum,*,id,"))
+  # "*" is fine; PINU.ALB is a code, but of the species list, not of the jurisdiction sheet.
+  config <- evidence_config(computed = c(
+    "magp_sites,datum,QUE,fill,", "magp_sites,datum,*,id,", "magp_sites,datum,PINU.ALB,fill,",
+    "magp_sites,datum,,class,"
+  ))
+  neither <- "is neither \"*\" nor a code of the jurisdiction sheet"
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
-    "line 2: jurisdiction \"QUE\" is neither \"*\" nor a code of the jurisdiction sheet.",
+    paste0(
+      "line 2: jurisdiction \"QUE\" ", neither, "; ",
+      "line 4: jurisdiction \"PINU.ALB\" ", neither, "; ",
+      "line 5: jurisdiction (blank) ", neither, "."
+    ),
     fixed = TRUE
   )
-  config <- evidence_config(provider = c("species,species,*,AB_code", "species,species,QC,NFI"))
+  config <- evidence_config(provider = c(
+    "species,species,*,AB_code", "species,species,QC,NFI", "species,species,,AB_code"
+  ))
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
     paste0(
       "crosswalk_provider_columns.csv has rows the build can't take, so nothing was built: ",
       "line 2: jurisdiction \"*\" isn't a code of the jurisdiction sheet; ",
-      "line 3: jurisdiction \"QC\" isn't a code of the jurisdiction sheet."
+      "line 3: jurisdiction \"QC\" isn't a code of the jurisdiction sheet; ",
+      "line 4: jurisdiction (blank) isn't a code of the jurisdiction sheet."
     ),
     fixed = TRUE
   )
@@ -2326,26 +2361,30 @@ test_that("the build stops on a row given twice in either file, naming the first
 test_that("the build stops on a translation table the specification doesn't read", {
   build <- load_data_raw("build_magp_config.R")
   # Its attribute and column aren't looked for in a table the spec doesn't read.
-  config <- evidence_config(provider = "speciess,species,AB,AB_code")
+  config <- evidence_config(provider = c("speciess,species,AB,AB_code", ",species,AB,AB_code"))
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
-    "line 2: the specification reads no translation table \"speciess\".",
+    paste0(
+      "line 2: the specification reads no translation table \"speciess\"; ",
+      "line 3: the specification reads no translation table (blank)."
+    ),
     fixed = TRUE
   )
 })
 
 test_that("the build stops on an attribute whose code list isn't the translation table", {
   build <- load_data_raw("build_magp_config.R")
-  # datum is an attribute, but takes no codes from species; jurisdiction's come from a sheet.
-  config <- evidence_config(
-    provider = c("species,datum,AB,AB_code", "species,jurisdiction,AB,AB_code")
-  )
+  # datum takes its codes from another translation table; jurisdiction's come from a sheet.
+  config <- evidence_config(provider = c(
+    "species,datum,AB,AB_code", "species,jurisdiction,AB,AB_code", "species,,AB,AB_code"
+  ))
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
     paste0(
       "line 2: attribute \"datum\" doesn't take its codes from translation table \"species\"; ",
       "line 3: attribute \"jurisdiction\" doesn't take its codes from translation table ",
-      "\"species\"."
+      "\"species\"; ",
+      "line 4: attribute (blank) doesn't take its codes from translation table \"species\"."
     ),
     fixed = TRUE
   )
@@ -2353,12 +2392,16 @@ test_that("the build stops on an attribute whose code list isn't the translation
 
 test_that("the build stops on a provider column the translation table lacks", {
   build <- load_data_raw("build_magp_config.R")
-  config <- evidence_config(provider = c("species,species,AB,ab_code", "species,species,BC,"))
+  # AB_datum is a column of the other translation table, not of species.
+  config <- evidence_config(provider = c(
+    "species,species,AB,ab_code", "species,species,BC,", "species,species,AB,AB_datum"
+  ))
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
     paste0(
       "line 2: translation table \"species\" has no column \"ab_code\"; ",
-      "line 3: translation table \"species\" has no column (blank)."
+      "line 3: translation table \"species\" has no column (blank); ",
+      "line 4: translation table \"species\" has no column \"AB_datum\"."
     ),
     fixed = TRUE
   )
@@ -2366,16 +2409,35 @@ test_that("the build stops on a provider column the translation table lacks", {
 
 test_that("the build stops on an evidence file without exactly its columns", {
   build <- load_data_raw("build_magp_config.R")
+  provider_stop <- paste(
+    "crosswalk_provider_columns.csv must have exactly the columns crosswalk, attribute_name,",
+    "jurisdiction, provider_column, so nothing was built."
+  )
+  # The columns in another order.
   config <- evidence_config()
   writeLines(
     c("crosswalk,attribute_name,provider_column,jurisdiction", "species,species,AB_code,AB"),
     file.path(config, "crosswalk_provider_columns.csv")
   )
+  expect_error(build$build_magp_evidence(evidence_spec(), config), provider_stop, fixed = TRUE)
+  # An extra column after them.
+  config <- evidence_config()
+  writeLines(
+    c("crosswalk,attribute_name,jurisdiction,provider_column,x", "species,species,AB,AB_code,1"),
+    file.path(config, "crosswalk_provider_columns.csv")
+  )
+  expect_error(build$build_magp_evidence(evidence_spec(), config), provider_stop, fixed = TRUE)
+  # The other file without its last column.
+  config <- evidence_config()
+  writeLines(
+    c("table_name,attribute_name,jurisdiction,derivation", "magp_sites,datum,*,fill"),
+    file.path(config, "pipeline_computed.csv")
+  )
   expect_error(
     build$build_magp_evidence(evidence_spec(), config),
     paste(
-      "crosswalk_provider_columns.csv must have exactly the columns crosswalk, attribute_name,",
-      "jurisdiction, provider_column, so nothing was built."
+      "pipeline_computed.csv must have exactly the columns table_name, attribute_name,",
+      "jurisdiction, derivation, note, so nothing was built."
     ),
     fixed = TRUE
   )
@@ -2386,6 +2448,8 @@ test_that("copy_evidence copies the two evidence files unchanged, a space in the
   config <- evidence_config()
   out <- file.path(withr::local_tempdir(), "compiled set")
   dir.create(out)
+  # A copy from an earlier build is written over, as every recompile does.
+  writeLines("an earlier copy", file.path(out, "pipeline_computed.csv"))
   copied <- build$copy_evidence(config, out)
   expect_setequal(basename(copied), c("pipeline_computed.csv", "crosswalk_provider_columns.csv"))
   for (path in copied) {

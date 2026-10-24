@@ -24,28 +24,31 @@ test_that("computed_evidence() is pipeline_computed.csv as the evidence computed
 
 test_that("crosswalk_evidence() splits, trims, filters and pools on a small spec (D19.59)", {
   # Translation table "walk": a header row, then four rows; `keep` is the filter of "kind",
-  # which two tables use, and "other" has no filter. Row 5 has no MAGPlot code.
+  # which two tables use and which takes two values, Y and Z (row 4 holds N), and "other" has
+  # no filter. Row 5 has no MAGPlot code.
   cells <- function(column, values) {
     data.table::data.table(
       crosswalk = "walk", source_row = seq_along(values), crosswalk_column = column,
       value = values
     )
   }
-  # A no-break space before the 9, which space_padding() trims as it trims any Unicode space.
-  spaced <- paste0(intToUtf8(160L), "9")
+  # A no-break space before the 9, which space_padding() trims as it trims any Unicode space,
+  # and one on its own, which it takes for a blank part.
+  nbsp <- intToUtf8(160L)
+  spaced <- paste0(nbsp, "9")
   spec <- list(
     code_list_map = data.table::data.table(
       table_name = c("t1", "t2", "t1"), attribute_name = c("kind", "kind", "other"),
       source_type = "crosswalk", source_name = "walk", code_column = "code",
-      filter_column = c("keep", "keep", NA), filter_values = c("Y", "Y", NA),
+      filter_column = c("keep", "keep", NA), filter_values = c("Y; Z", "Y; Z", NA),
       status = "resolved"
     ),
     crosswalks = rbind(
       cells("code", c("code", "K1", "K2", "K3", NA)),
-      cells("keep", c("keep", "Y", "Y", "N", "Y")),
-      cells("ab_one", c("ab_one", "1, 2", " 3 ", "4", "5")),
+      cells("keep", c("keep", "Y", "Z", "N", "Y")),
+      cells("ab_one", c("ab_one", "1, 2", " 2 ", "4", "5")),
       cells("ab_two", c("ab_two", "2/x", spaced, "6", "7")),
-      cells("bc", c("bc", "1,,2", " ", "8", "9"))
+      cells("bc", c("bc", "1,,2", nbsp, "8", "9"))
     )
   )
   # AB's two columns for "kind"; a row whose attribute takes no codes from the table.
@@ -58,16 +61,86 @@ test_that("crosswalk_evidence() splits, trims, filters and pools on a small spec
   evidence <- crosswalk_evidence(spec)
   expect_named(evidence, c("jurisdiction", "provider_code", "code", "column_name"))
   expect_true(all(vapply(evidence, is.character, TRUE)))
-  # "2" of AB's two columns is one row; row 4's filter value and row 5's missing code keep
-  # them out of "kind"; "other" keeps rows 2 to 4.
+  # "2" of AB's two columns is one row on row 2; on row 3 AB's " 2 " gives the same provider
+  # code another MAGPlot code, K2, and both stay. Row 3's Z is kept by the filter, row 4's N
+  # and row 5's missing code keep them out of "kind"; "other" keeps rows 2 to 4.
   expected <- c(
-    "AB 1 K1 kind", "AB 2 K1 kind", "AB 3 K2 kind", "AB x K1 kind", "AB 9 K2 kind",
+    "AB 1 K1 kind", "AB 2 K1 kind", "AB 2 K2 kind", "AB x K1 kind", "AB 9 K2 kind",
     "BC 1 K1 kind", "BC 2 K1 kind",
-    "AB 1 K1 other", "AB 2 K1 other", "AB 3 K2 other", "AB 4 K3 other"
+    "AB 1 K1 other", "AB 2 K1 other", "AB 2 K2 other", "AB 4 K3 other"
   )
   got <- paste(evidence$jurisdiction, evidence$provider_code, evidence$code, evidence$column_name)
   expect_setequal(got, expected)
   expect_equal(nrow(evidence), length(expected))
+})
+
+test_that("crosswalk_evidence() gives every coded row where no code list has a filter (D19.59)", {
+  cells <- function(column, values) {
+    data.table::data.table(
+      crosswalk = "walk", source_row = seq_along(values), crosswalk_column = column,
+      value = values
+    )
+  }
+  spec <- list(
+    code_list_map = data.table::data.table(
+      table_name = "t1", attribute_name = "kind", source_type = "crosswalk",
+      source_name = "walk", code_column = "code", filter_column = NA_character_,
+      filter_values = NA_character_, status = "resolved"
+    ),
+    crosswalks = rbind(
+      cells("code", c("code", "K1", "K2", "K3")),
+      cells("ab_one", c("ab_one", "1", "2", "2"))
+    )
+  )
+  map <- data.table::data.table(
+    crosswalk = "walk", attribute_name = "kind", jurisdiction = "AB", provider_column = "ab_one"
+  )
+  testthat::local_mocked_bindings(read_evidence_file = function(name) map)
+  evidence <- crosswalk_evidence(spec)
+  got <- paste(evidence$jurisdiction, evidence$provider_code, evidence$code, evidence$column_name)
+  expect_setequal(got, c("AB 1 K1 kind", "AB 2 K2 kind", "AB 2 K3 kind"))
+  expect_equal(nrow(evidence), 3L)
+})
+
+test_that("crosswalk_evidence() gives no rows where no provider cell pairs with a code (D19.59)", {
+  cells <- function(column, values) {
+    data.table::data.table(
+      crosswalk = "walk", source_row = seq_along(values), crosswalk_column = column,
+      value = values
+    )
+  }
+  spec <- list(
+    code_list_map = data.table::data.table(
+      table_name = "t1", attribute_name = "kind", source_type = "crosswalk",
+      source_name = "walk", code_column = "code", filter_column = "keep",
+      filter_values = "Y", status = "resolved"
+    ),
+    crosswalks = rbind(
+      cells("code", c("code", "K1", "K2")),
+      cells("keep", c("keep", "Y", "N")),
+      cells("ab_one", c("ab_one", "1", "2"))
+    )
+  )
+  # A map row whose attribute has no list in `spec`, and a map with no rows.
+  maps <- list(
+    data.table::data.table(
+      crosswalk = "walk", attribute_name = "absent", jurisdiction = "AB",
+      provider_column = "ab_one"
+    ),
+    data.table::data.table(
+      crosswalk = character(), attribute_name = character(), jurisdiction = character(),
+      provider_column = character()
+    )
+  )
+  for (map in maps) {
+    evidence <- testthat::with_mocked_bindings(
+      crosswalk_evidence(spec),
+      read_evidence_file = function(name) map
+    )
+    expect_named(evidence, c("jurisdiction", "provider_code", "code", "column_name"))
+    expect_true(all(vapply(evidence, is.character, TRUE)))
+    expect_equal(nrow(evidence), 0L)
+  }
 })
 
 test_that("MAGPlot's crosswalk evidence: its columns, distinct rows, listed codes (D19.59)", {

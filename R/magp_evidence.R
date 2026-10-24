@@ -80,10 +80,11 @@ crosswalk_evidence <- function(spec = magp_spec()) {
   )
   filtered <- lists[!is.na(lists$filter_column)]
   wanted <- strsplit(filtered$filter_values, "; ", fixed = TRUE)
+  # as.character() because unlist() of nothing is NULL, which would drop the column.
   wanted <- data.table(
     crosswalk = rep(filtered$crosswalk, lengths(wanted)),
     crosswalk_column = rep(filtered$filter_column, lengths(wanted)),
-    value = unlist(wanted, use.names = FALSE),
+    value = as.character(unlist(wanted, use.names = FALSE)),
     list_id = rep(filtered$list_id, lengths(wanted))
   )
   kept <- cells[wanted, on = c("crosswalk", "crosswalk_column", "value"), nomatch = NULL]
@@ -106,7 +107,8 @@ crosswalk_evidence <- function(spec = magp_spec()) {
   paired <- coded_rows[provided, on = c("list_id", "source_row"), nomatch = NULL]
   parts <- strsplit(paired$provider_cell, "[,/]")
   n_parts <- lengths(parts)
-  part <- unlist(parts, use.names = FALSE)
+  # As above, for a map that pairs no cell with a code.
+  part <- as.character(unlist(parts, use.names = FALSE))
   padding <- space_padding(part)
   keep <- !is.na(part) & !padding$blank
   unique(data.table(
