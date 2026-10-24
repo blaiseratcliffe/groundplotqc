@@ -359,15 +359,19 @@ gpq_classify_issues <- function(issues, rules, evidence = list(), overrides = NU
   # The issues' group columns: the caller's columns, beside 9.3's own.
   groups <- setdiff(names(issues), names(results_schema()$issues))
   # A column of class integer64 is written as text through bit64's methods, which a table
-  # read back with readRDS() doesn't load: load them where bit64 is installed, as a run does
-  # (D18.86), so the cell is its number. Not installed, there is no stop (D19.63). The evidence
-  # is looked through only if it is a list, so one that isn't meets its own stop (W200).
-  tables_in <- c(list(overrides), if (is.list(evidence) && !is.data.frame(evidence)) evidence)
-  holds_integer64 <- vapply(tables_in, function(x) {
-    is.data.frame(x) && any(vapply(x, inherits, logical(1), what = "integer64"))
-  }, logical(1))
-  if (any(holds_integer64)) {
-    requireNamespace("bit64", quietly = TRUE)
+  # read back with readRDS() doesn't load: they are loaded before any table is read, as a run
+  # does (D18.86, D19.80), so the cell is its number; without bit64 installed the call stops,
+  # naming the first such table and column, load_bit64()'s text. The overrides come first, then
+  # each element of the evidence by its own name. An evidence argument that read_run_inputs()
+  # would refuse, as it is not a list or its names are not each one the call takes once, is not
+  # looked through, so its own stop (W200, W201) comes first.
+  names_in <- names(evidence)
+  takes <- is.list(evidence) && !is.data.frame(evidence) && (length(evidence) == 0L || (
+    !is.null(names_in) && all(names_in %in% names(evidence_schema())) && !anyDuplicated(names_in)
+  ))
+  if (takes) {
+    tables_in <- c(list(overrides = overrides), evidence)
+    load_bit64(tables_in[vapply(tables_in, is.data.frame, logical(1))])
   }
   # Every table is read and checked before any issue is classed (D19.28 (7)).
   evidence_in <- read_evidence(

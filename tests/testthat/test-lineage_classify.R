@@ -350,3 +350,67 @@ test_that("an overrides group column stored as integer64 is read as its number (
   # The stored bits are bit64's own for that number.
   expect_identical(unclass(stored), unclass(bit64::as.integer64("5000000000")))
 })
+
+test_that("an integer64 overrides or evidence column stops the call without bit64 (D19.80)", {
+  # The test mocks base requireNamespace(), which no CRAN check may change (R145).
+  testthat::skip_on_cran()
+  # The column is built from the number's bits, so the test needs no bit64.
+  bits <- writeBin(c(705032704L, 1L), raw(), endian = "little")
+  stored <- structure(readBin(bits, "double", endian = "little"), class = "integer64")
+  overrides <- fx_class_overrides()
+  overrides$water_body <- stored
+  lineage <- data.frame(
+    table_name = "catches", record_pk = "C3", column_name = "species", raw_value = NA,
+    raw_source = "catch.sp"
+  )
+  lineage$raw_value <- stored
+  # base::requireNamespace() stands in for a library without bit64, for this test only.
+  testthat::local_mocked_bindings(requireNamespace = function(...) FALSE, .package = "base")
+  issues <- fx_class_issues()
+  stops <- function(table, column) {
+    paste(
+      sprintf(
+        "Table %s: the column %s is stored as integer64, which needs the bit64 package to be",
+        table, column
+      ),
+      "read correctly. Install it with install.packages(\"bit64\") and run again."
+    )
+  }
+  expect_error(
+    gpq_classify_issues(issues, NULL, overrides = overrides), stops("overrides", "water_body"),
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = list(lineage = lineage)),
+    stops("lineage", "raw_value"),
+    fixed = TRUE
+  )
+  # With both, the overrides are named first. Nothing was classed before either stop.
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = list(lineage = lineage), overrides = overrides),
+    stops("overrides", "water_body"),
+    fixed = TRUE
+  )
+  expect_true(all(is.na(issues$issue_class)))
+  # An evidence argument that is malformed, or names a table the call doesn't take, meets its
+  # own stop first.
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = lineage, overrides = overrides),
+    "`evidence` must be a list of data.frames or CSV paths, each named once.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = list(lineage), overrides = overrides),
+    "`evidence` must be a list of data.frames or CSV paths, each named once.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_classify_issues(issues, NULL, evidence = list(previous = lineage), overrides = overrides),
+    "`evidence` names tables it doesn't take: previous.",
+    fixed = TRUE
+  )
+  # No integer64 column, no question put to the library.
+  expect_no_error(
+    gpq_classify_issues(issues, NULL, overrides = fx_class_overrides(rule_id = "pk_duplicate"))
+  )
+})
