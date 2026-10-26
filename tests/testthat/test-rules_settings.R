@@ -10,13 +10,14 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two, M4a's five and M5's (D14.9, D16.11, D18.39)", {
+test_that("the declared settings are M3a's two, M4a's five, M5's and M6's (D16.11, D19.53)", {
   expect_named(setting_definitions(), c(
     "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
     "unknown_codes", "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
-    "design_signature_table", "design_signature_by", "design_signature_columns"
+    "design_signature_table", "design_signature_by", "design_signature_columns",
+    "fallback_class"
   ))
 })
 
@@ -115,7 +116,7 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
       "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern,",
       "design_geometry_table, design_geometry_by, design_geometry_columns, subplot_label_table,",
       "subplot_label_columns, design_signature_table, design_signature_by,",
-      "design_signature_columns."
+      "design_signature_columns, fallback_class."
     ),
     fixed = TRUE
   )
@@ -612,4 +613,77 @@ test_that("the design candidates' attribute lists refuse a repeated name in ever
     expect_identical(resolve_setting(name, given(character()))$value, character(), info = name)
     expect_equal(resolve_setting(name, given(c("u", "v")))$value, c("u", "v"), info = name)
   }
+})
+
+# ---- M6 task 7 ----
+
+test_that("fallback_class resolves whole by tier, each class source or harmonization (D19.53)", {
+  withr::local_options(groundplotqc.fallback_class = NULL)
+  none <- structure(character(), names = character())
+  expect_equal(resolve_setting("fallback_class"), list(value = none, tier = "built-in"))
+  withr::local_options(groundplotqc.fallback_class = c(rule_a = "source", rule_b = "harmonization"))
+  expect_equal(resolve_setting("fallback_class")$tier, "option")
+  # The tier that gives it gives all of it: an argument naming one rule leaves rule_b none.
+  expect_equal(
+    resolve_setting("fallback_class", list(fallback_class = c(rule_a = "harmonization"))),
+    list(value = c(rule_a = "harmonization"), tier = "argument")
+  )
+  rows <- function(value) {
+    validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = "fallback_class", value = value, type = "character")
+    ))
+  }
+  expect_equal(
+    resolve_setting("fallback_class", rules = rows("rule_c=source; rule_d=harmonization")),
+    list(value = c(rule_c = "source", rule_d = "harmonization"), tier = "rule set")
+  )
+  # A blank row gives none, over the option.
+  expect_equal(
+    resolve_setting("fallback_class", rules = rows(NA_character_)),
+    list(value = none, tier = "rule set")
+  )
+  wants <- "must be a character vector of classes named by rule ID"
+  wrong <- list(
+    c(rule_a = "depends"), c(rule_a = NA_character_), "source",
+    c(rule_a = "source", rule_a = "harmonization"), c(" rule_a" = "source"),
+    c("a=b" = "source"), c(rule_a = 1)
+  )
+  for (bad in wrong) {
+    expect_error(
+      resolve_setting("fallback_class", list(fallback_class = bad)),
+      paste("Setting fallback_class (argument)", wants),
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_error(
+    resolve_setting("fallback_class", rules = rows("rule_a=unclassified")),
+    paste("Setting fallback_class (rule set)", wants),
+    fixed = TRUE
+  )
+  # A rule named twice is refused in the rule-set tier and the option tier too (D19.62).
+  expect_error(
+    resolve_setting("fallback_class", rules = rows("rule_a=source; rule_a=harmonization")),
+    paste("Setting fallback_class (rule set)", wants),
+    fixed = TRUE
+  )
+  withr::local_options(groundplotqc.fallback_class = c(rule_a = "Source"))
+  expect_error(
+    resolve_setting("fallback_class"),
+    paste("Setting fallback_class (option groundplotqc.fallback_class)", wants),
+    fixed = TRUE
+  )
+  withr::local_options(
+    groundplotqc.fallback_class = c(rule_a = "source", rule_a = "harmonization")
+  )
+  expect_error(
+    resolve_setting("fallback_class"),
+    paste("Setting fallback_class (option groundplotqc.fallback_class)", wants),
+    fixed = TRUE
+  )
+  # settings.csv writes it as a rule set's row gives it.
+  expect_equal(
+    setting_text(c(rule_a = "source", rule_b = "harmonization")),
+    "rule_a=source; rule_b=harmonization"
+  )
 })

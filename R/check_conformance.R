@@ -138,6 +138,8 @@
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
 #'   Write it with [gpq_write_results()].
+#' @seealso [gpq_preflight()], which the run calls first; [gpq_decode_lineage()] and
+#'   [gpq_classify_issues()], which give its issues their provider keys and classes.
 #' @examples
 #' # magp_example with one planted defect: a missing value in a column that must hold one.
 #' trees <- data.table::copy(magp_example$magp_trees)
@@ -197,24 +199,8 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
   read <- read_tables(tables, spec, table_map)
   tables <- read$tables
   validate_tables(tables)
-  # A column of class integer64, as a DBI query of a BIGINT column returns it, is read through
-  # bit64's methods, which a table read back with readRDS() doesn't load: the run loads them,
-  # so every layer reads the column as stored numbers, and without bit64 installed it stops,
-  # naming the first such column (D18.86).
-  wide <- lapply(tables, function(table) {
-    names(table)[vapply(table, inherits, logical(1), what = "integer64")]
-  })
-  holding <- which(lengths(wide) > 0L)
-  if (length(holding) > 0L && !requireNamespace("bit64", quietly = TRUE)) {
-    first <- holding[[1L]]
-    stop(sprintf(
-      paste0(
-        "Table %s: the column %s is stored as integer64, which needs the bit64 package to be ",
-        "read correctly. Install it with install.packages(\"bit64\") and run again."
-      ),
-      mark_invalid_utf8(names(tables)[[first]]), mark_invalid_utf8(wide[[first]][[1L]])
-    ), call. = FALSE)
-  }
+  # Every layer reads an integer64 column through bit64's methods, loaded here (D18.86).
+  load_bit64(tables)
   input <- conformance_input(tables, spec, group_cols, key_col, read$text_tables)
   if (is.null(run_id)) {
     run_id <- new_run_id(run_start)

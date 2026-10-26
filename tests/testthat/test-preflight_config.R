@@ -757,3 +757,69 @@ test_that("a run warns of an option's unknown names and ignores them (D18.47)", 
   signature <- rows[rows$rule_id == "design_duplicate_signature"]
   expect_equal(c(signature$status, signature$not_run_reason), c("not_run", "no_input"))
 })
+
+# ---- M6 task 7 ----
+
+test_that("rule_id_unknown names fallback_class's unregistered rules, by tier (D19.53)", {
+  withr::local_options(groundplotqc.severity = NULL, groundplotqc.fallback_class = NULL)
+  detail <- function(where, rule_id) {
+    report_text(
+      "preflight_detail_rule_id_unknown_fallback_class",
+      where = where, rule_id = rule_id
+    )
+  }
+  # The setting alone runs the check; registered rules pass.
+  known <- test_context(settings = list(fallback_class = c(conform = "source")))
+  expect_equal(nrow(check("rule_id_unknown", known)), 0L)
+  given <- test_context(settings = list(
+    fallback_class = c(conform = "source", nobody = "harmonization")
+  ))
+  found <- check("rule_id_unknown", given)
+  expect_equal(found$detail, detail(report_text("preflight_setting_argument"), "nobody"))
+  expect_true(is.na(found$file) && is.na(found$source_cell))
+  # The option phrase names its setting (D19.67).
+  withr::local_options(groundplotqc.fallback_class = c(by_option = "source"))
+  found <- check("rule_id_unknown", test_context())
+  expect_equal(found$detail, paste(
+    "The fallback_class setting set as the option groundplotqc.fallback_class names rule",
+    "by_option, which isn't registered."
+  ))
+  # A rule set's row gives the whole setting, the option's entry gone, placed by its line.
+  dir <- withr::local_tempdir()
+  writeLines(
+    c("rule_id,table_name,attribute_name,severity,class,enabled", "conform,*,*,,,TRUE"),
+    file.path(dir, "rules_rules.csv")
+  )
+  writeLines(
+    c("setting,value,type", "fallback_class,conform=source; ghost=source,character"),
+    file.path(dir, "rules_settings.csv")
+  )
+  found <- check("rule_id_unknown", test_context(read_rule_set(dir)))
+  expect_equal(found$detail, detail(report_text("preflight_setting_rule_set"), "ghost"))
+  expect_equal(c(found$file, found$source_cell), c("rules_settings.csv", "rules_settings.csv:2"))
+  # A rule set given as R objects has no file, so its finding is placed by none.
+  in_memory <- list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "fallback_class", value = "ghost=source", type = "character")
+  )
+  found <- check("rule_id_unknown", test_context(in_memory))
+  expect_equal(found$detail, detail(report_text("preflight_setting_rule_set"), "ghost"))
+  expect_true(is.na(found$file) && is.na(found$source_cell))
+  # It stops pre-flight.
+  withr::local_options(groundplotqc.fallback_class = NULL)
+  expect_error(
+    gpq_preflight(fx_fish_spec(), settings = list(fallback_class = c(ghost = "source"))),
+    class = "gpq_preflight_error"
+  )
+})
+
+test_that("the option phrase names the severity setting's option as before (D19.67)", {
+  # setting_where() takes the setting's name; severity's findings read as they did.
+  expect_equal(
+    setting_where(c("argument", "option"), "severity"),
+    c("given as an argument", "set as the option groundplotqc.severity")
+  )
+  expect_equal(
+    setting_where("option", "fallback_class"), "set as the option groundplotqc.fallback_class"
+  )
+})

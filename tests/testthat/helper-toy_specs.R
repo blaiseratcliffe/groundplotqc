@@ -65,7 +65,8 @@ fx_forest_spec <- function() {
 
 # A synthetic spec with one planted defect per pre-flight check (plan 4.2); the expected
 # findings are in test-preflight.R. Each defect triggers only its own check (D12.31):
-#   plots.plot_id twice: dd_duplicate_attribute 1; trees.tree_id typed "text":
+#   plots.plot_id twice: dd_duplicate_attribute 1; a plots row with no attribute name:
+#   dd_name_missing 1; trees.tree_id typed "text":
 #   dd_type_unknown 1; a second type column, datatype (types are read from data_type):
 #   dd_type_column_ambiguous 1; trees without a PK: dd_pk_missing 1; trees.plot_id to
 #   "stands": dd_fk_target_missing 1; soils: code_list_missing 1; cover's sheet without a cover
@@ -84,7 +85,8 @@ fx_forest_spec <- function() {
 # overlapping); lineage_spec_unparseable 2 (BC src_site_id's "a.b+" and ON's blank
 # src_plot_id); src_site_id also carries lineage_spec_row_unflagged 1 (an A2 row, no DD
 # flag) and lineage_id_unflagged 1 (an ID by name, no DD flag), and "regen" in BC
-# src_plot_id lineage_name_unknown 1.
+# src_plot_id lineage_name_unknown 1. A lineage_when row naming part 9 of BC's two-part
+# src_plot_id: lineage_when_invalid 1.
 fx_planted_spec <- function() {
   bad_text <- rawToChar(as.raw(c(0x6F, 0x6B, 0x97)))
   Encoding(bad_text) <- "UTF-8"
@@ -92,23 +94,23 @@ fx_planted_spec <- function() {
   writeLines(c("note,author", "first,ab", "second, with a comma,cd"), notes)
   dictionary <- data.frame(
     table_name = c(
-      "plots", "plots", "plots", "plots", "plots", "trees", "trees", "plots", "plots"
+      "plots", "plots", "plots", "plots", "plots", "trees", "trees", "plots", "plots", "plots"
     ),
     attribute_name = c(
       "plot_id", "plot_id", "shape", "soil", "cover", "tree_id", "plot_id", "src_plot_id",
-      "src_site_id"
+      "src_site_id", NA
     ),
-    key_type = c("PK", "PK", ".", ".", ".", ".", "FK", ".", "."),
-    reference_table = c(NA, NA, NA, NA, NA, NA, "stands", NA, NA),
-    lookup_table = c(NA, NA, "Y", "soils", "Y", NA, NA, NA, NA),
+    key_type = c("PK", "PK", ".", ".", ".", ".", "FK", ".", ".", "."),
+    reference_table = c(NA, NA, NA, NA, NA, NA, "stands", NA, NA, NA),
+    lookup_table = c(NA, NA, "Y", "soils", "Y", NA, NA, NA, NA, NA),
     description = c(
       "Plot.", "Again.", bad_text, "Soil.", "Cover.", "Tree.", "Plot.", "Source plot.",
-      "Source site."
+      "Source site.", "Nameless."
     ),
-    appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA),
-    data_type = c(rep("character", 5L), "text", rep("character", 3L)),
+    appendix = c(NA, NA, NA, NA, NA, NA, NA, "A2", NA, NA),
+    data_type = c(rep("character", 5L), "text", rep("character", 4L)),
     datatype = "character",
-    min_value = c(NA, NA, "abc", NA, NA, NA, NA, NA, NA)
+    min_value = c(NA, NA, "abc", NA, NA, NA, NA, NA, NA, NA)
   )
   code_lists <- list(
     shape = data.frame(
@@ -135,6 +137,10 @@ fx_planted_spec <- function() {
       attribute_name = c("src_plot_id", "src_site_id", "src_plot_id"),
       spec_type = "id", source_text = c("tbl.key + regen", "a.b+", NA),
       note = NA, source_cell = c("A2!D5", "A2!D6", "A2!F5")
+    ),
+    lineage_when = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      part_order = "9", part_source = "tbl.other", when = "shape == \"SQ\"", note = NA
     ),
     crosswalks = list(cond = data.frame(code = c("A", bad_walk))),
     id_pattern = "^src_.*_id$",
@@ -189,6 +195,19 @@ fx_planted_rule_set <- function() {
 
 fx_planted_settings <- function() {
   list(severity = c(also_unknown = "error"), coordinate_attributes = "nowhere")
+}
+
+# Run inputs with one planted defect per check of the inputs, for fx_planted_spec() (D19.51):
+# row 2 repeats row 1's scope with the other class (override_scope_conflict 1); row 3 names a
+# rule no one registered (override_unknown_name 1); row 4's class is neither source nor
+# harmonization (input_unparseable 1, its only finding).
+fx_planted_inputs <- function() {
+  list(overrides = data.frame(
+    fingerprint = NA, rule_id = c("raw_na", "raw_na", "nobody_rule", "raw_na"),
+    table_name = "plots", column_name = c("shape", "shape", "shape", "soil"),
+    issue_class = c("source", "harmonization", "source", "sometimes"), who = "A. Reviewer",
+    when = "2026-10-22", why = "Planted."
+  ))
 }
 
 # An empty rule set: every check of the rule set runs and finds nothing.

@@ -2,9 +2,10 @@
 # D12.20, D12.22, D12.25, D14.2, D14.15). Reads the one dated file of each kind in spec/ and
 # the hand-kept files in data-raw/magp/, applies spec_exceptions.csv to the dictionary, runs
 # pre-flight on the spec and the rule set (its report under runs/build_magp_config/), and
-# writes inst/extdata/magp/ only when pre-flight doesn't stop: the compiled spec, and the
-# rule set's rules_<component>.csv files copied unchanged. It never writes data-raw/magp/
-# or spec/.
+# writes inst/extdata/magp/ only when pre-flight doesn't stop: the compiled spec, the rule
+# set's rules_<component>.csv files copied unchanged, and MAGPlot's evidence files,
+# pipeline_computed.csv and crosswalk_provider_columns.csv, copied unchanged once every row
+# checks against the spec (D19.59). It never writes data-raw/magp/ or spec/.
 # Run from the repo root: Rscript data-raw/build_magp_config.R
 
 # MAGPlot's settings that aren't tables (D12.20), named after the arguments they fill
@@ -21,8 +22,22 @@ id_bands <- list(
 )
 # The DD column and value flagging A2 attributes (D12.13).
 lineage_flag <- c(column = "appendix", value = "A2")
+# What A2's composite IDs join their parts with (D2.14, D19.12).
+lineage_separator <- "_"
 
 spec_file_pattern <- "^([0-9]{8})_magpv2_(.+)[.](xlsx|csv)$"
+
+# MAGPlot's evidence files and their columns (plan 3.6; D19.38, D19.59): the build checks each
+# against the spec and copies it unchanged into the compiled folder, where R/magp_evidence.R
+# reads it.
+evidence_files <- list(
+  pipeline_computed.csv = c(
+    "table_name", "attribute_name", "jurisdiction", "derivation", "note"
+  ),
+  crosswalk_provider_columns.csv = c(
+    "crosswalk", "attribute_name", "jurisdiction", "provider_column"
+  )
+)
 
 spec_files <- function(spec_dir = "spec") {
   files <- list.files(spec_dir, pattern = spec_file_pattern)
@@ -180,9 +195,9 @@ crosswalk_element <- function(path, columns) {
 }
 
 # The manifest names a hand-kept file by its repo path, a bare name meaning spec/
-# (D12.33): the rows of precedence.csv, key_pairs.csv and reach.csv, which their origins give,
-# and a row for spec_exceptions.csv, input dictionary:exceptions, since the build applies it
-# to the DD before the read and the engine doesn't know.
+# (D12.33): the rows of precedence.csv, key_pairs.csv, reach.csv and lineage_when.csv, which
+# their origins give, and a row for spec_exceptions.csv, input dictionary:exceptions, since
+# the build applies it to the DD before the read and the engine doesn't know.
 record_hand_kept <- function(spec, config_dir) {
   repo_path <- function(name) paste0("data-raw/magp/", name)
   exceptions <- manifest_row(
@@ -191,7 +206,7 @@ record_hand_kept <- function(spec, config_dir) {
   data.table::set(exceptions, j = "file", value = repo_path("spec_exceptions.csv"))
   # rbindlist() makes a new table, set here, so the caller's spec keeps its manifest.
   manifest <- data.table::rbindlist(list(spec$manifest, exceptions))
-  for (input in intersect(c("precedence", "key_pairs", "reach"), manifest$input)) {
+  for (input in intersect(c("precedence", "key_pairs", "reach", "lineage_when"), manifest$input)) {
     row <- match(input, manifest$input)
     data.table::set(manifest, i = row, j = "file", value = repo_path(paste0(input, ".csv")))
   }
@@ -239,7 +254,7 @@ read_hand_kept <- function(path) {
 
 build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw", "magp")) {
   files <- spec_files(spec_dir)
-  # The seven hand-kept files read through config() are all read before any spec file is
+  # The eight hand-kept files read through config() are all read before any spec file is
   # opened; type_map.csv is read last, through gpq_type_map(path), which carries its findings
   # on to pre-flight.
   config <- function(name) read_hand_kept(file.path(config_dir, name))
@@ -249,6 +264,7 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
   precedence <- config("precedence.csv")
   key_pairs <- config("key_pairs.csv")
   reach <- config("reach.csv")
+  lineage_when <- config("lineage_when.csv")
   sentinels <- validate_sentinels(config("sentinels.csv")$data)
   dd_sheet <- workbook_sheets(files[["DD"]])[[1L]]
   dictionary <- raw_to_table(read_xlsx_raw(files[["DD"]], dd_sheet))
@@ -271,6 +287,7 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
     dictionary = dictionary, code_lists = files[["Lookup_Tables"]],
     non_code_sheets = non_code_sheets, datasets = files[["datasets"]],
     lineage_spec = build_lineage_input(read_xlsx_raw(files[["A2"]], sheet), sheet),
+    lineage_when = lineage_when$data, lineage_separator = lineage_separator,
     crosswalks = if (length(crosswalks) > 0L) crosswalks,
     id_pattern = id_pattern, id_bands = id_bands,
     precedence = precedence$data[, taken, with = FALSE], key_pairs = key_pairs$data,
@@ -296,6 +313,10 @@ build_magp_spec <- function(spec_dir = "spec", config_dir = file.path("data-raw"
       reach = list(
         path = file.path(config_dir, "reach.csv"),
         rows = if (length(reach$lines) > 0L) reach$lines else 2L
+      ),
+      lineage_when = list(
+        path = file.path(config_dir, "lineage_when.csv"),
+        rows = if (length(lineage_when$lines) > 0L) lineage_when$lines else 2L
       )
     ), if (!is.null(one_to_many)) list(one_to_many = one_to_many$origin)),
     column_map = gpq_column_map(lineage_flag = lineage_flag),
@@ -372,12 +393,149 @@ copy_rule_set <- function(config_dir, out_dir) {
   invisible(file.path(out_dir, basename(files)))
 }
 
+# MAGPlot's evidence files (plan 3.6, 10.3; D19.38, D19.59), each read clean and every row
+# checked against the spec: in pipeline_computed.csv a table and attribute of the dictionary,
+# a derivation of plan 3.6's six and a jurisdiction "*" or a code of the jurisdiction sheet;
+# in crosswalk_provider_columns.csv a translation table the spec reads, an attribute whose
+# code list is that table, a column of that table and a code of the jurisdiction sheet; in
+# neither a row given twice. A file without exactly its columns stops the build, and so does
+# a bad row, each problem named by the file line its row starts on, before anything is
+# written. Returns the two tables, named by file.
+build_magp_evidence <- function(spec, config_dir = file.path("data-raw", "magp")) {
+  # Several columns as one key, as the engine joins names (R/check_input.R).
+  key <- function(...) paste(..., sep = "\r")
+  codes <- spec$codes
+  jurisdictions <- codes$code[
+    codes$source_type %in% "sheet" & codes$source_name %in% "jurisdiction"
+  ]
+  # One kind of problem: the line of each row that has it, and its text.
+  problem <- function(lines, failed, text) {
+    data.table::data.table(line = lines[failed], text = text[failed])
+  }
+  # A row whose key an earlier row has, its text naming that row's line ("%d").
+  repeated <- function(lines, row_key, text) {
+    first <- match(row_key, row_key)
+    problem(lines, first < seq_along(row_key), sprintf(text, lines[first]))
+  }
+  read_checked <- function(name, problems) {
+    path <- file.path(config_dir, name)
+    read <- read_hand_kept(path)
+    columns <- evidence_files[[name]]
+    if (!identical(names(read$data), columns)) {
+      stop(
+        path, " must have exactly the columns ", paste(columns, collapse = ", "),
+        ", so nothing was built.",
+        call. = FALSE
+      )
+    }
+    found <- problems(read$data, read$lines)
+    if (nrow(found) > 0L) {
+      found <- found[order(found$line)]
+      stop(
+        path, " has rows the build can't take, so nothing was built: ",
+        paste0("line ", found$line, ": ", found$text, collapse = "; "), ".",
+        call. = FALSE
+      )
+    }
+    read$data
+  }
+  computed <- read_checked("pipeline_computed.csv", function(rows, lines) {
+    attributes <- spec$attributes
+    derivations <- c("id", "class", "formula", "count", "fill", "reference")
+    data.table::rbindlist(list(
+      problem(
+        lines,
+        !key(rows$table_name, rows$attribute_name) %in%
+          key(attributes$table_name, attributes$attribute_name),
+        sprintf(
+          "the dictionary has no attribute %s in table %s",
+          quote_value(rows$attribute_name), quote_value(rows$table_name)
+        )
+      ),
+      problem(
+        lines, !rows$derivation %in% derivations,
+        sprintf(
+          "derivation %s isn't %s or %s", quote_value(rows$derivation),
+          paste(derivations[-length(derivations)], collapse = ", "),
+          derivations[[length(derivations)]]
+        )
+      ),
+      problem(
+        lines, !rows$jurisdiction %in% c("*", jurisdictions),
+        sprintf(
+          "jurisdiction %s is neither \"*\" nor a code of the jurisdiction sheet",
+          quote_value(rows$jurisdiction)
+        )
+      ),
+      repeated(
+        lines, key(rows$table_name, rows$attribute_name, rows$jurisdiction),
+        "line %d already gives this table, attribute and jurisdiction"
+      )
+    ))
+  })
+  provider <- read_checked("crosswalk_provider_columns.csv", function(rows, lines) {
+    # A translation table's header cells name its columns.
+    headers <- spec$crosswalks[spec$crosswalks$source_row %in% 1L]
+    lists <- spec$code_list_map[spec$code_list_map$source_type %in% "crosswalk"]
+    read_by_spec <- rows$crosswalk %in% headers$crosswalk
+    data.table::rbindlist(list(
+      problem(
+        lines, !read_by_spec,
+        sprintf(
+          "the specification reads no translation table %s", quote_value(rows$crosswalk)
+        )
+      ),
+      # An attribute and a column are looked for only in a table the specification reads.
+      problem(
+        lines,
+        read_by_spec & !key(rows$crosswalk, rows$attribute_name) %in%
+          key(lists$source_name, lists$attribute_name),
+        sprintf(
+          "attribute %s doesn't take its codes from translation table %s",
+          quote_value(rows$attribute_name), quote_value(rows$crosswalk)
+        )
+      ),
+      problem(
+        lines,
+        read_by_spec & !key(rows$crosswalk, rows$provider_column) %in%
+          key(headers$crosswalk, headers$crosswalk_column),
+        sprintf(
+          "translation table %s has no column %s", quote_value(rows$crosswalk),
+          quote_value(rows$provider_column)
+        )
+      ),
+      problem(
+        lines, !rows$jurisdiction %in% jurisdictions,
+        sprintf(
+          "jurisdiction %s isn't a code of the jurisdiction sheet", quote_value(rows$jurisdiction)
+        )
+      ),
+      repeated(
+        lines, key(rows$crosswalk, rows$attribute_name, rows$jurisdiction, rows$provider_column),
+        "the row repeats line %d"
+      )
+    ))
+  })
+  list(pipeline_computed = computed, crosswalk_provider_columns = provider)
+}
+
+# The evidence files copied unchanged into the compiled folder, beside the spec.
+copy_evidence <- function(config_dir, out_dir) {
+  files <- file.path(config_dir, names(evidence_files))
+  copied <- file.copy(files, out_dir, overwrite = TRUE)
+  if (!all(copied)) {
+    stop("Couldn't copy ", paste(basename(files[!copied]), collapse = ", "), ".", call. = FALSE)
+  }
+  invisible(file.path(out_dir, names(evidence_files)))
+}
+
 main <- function() {
   library(data.table)
   pkgload::load_all(".", quiet = TRUE)
   config_dir <- file.path("data-raw", "magp")
   spec <- build_magp_spec(config_dir = config_dir)
   rules <- build_magp_rules(spec, config_dir)
+  build_magp_evidence(spec, config_dir)
   stopped <- tryCatch(
     {
       gpq_preflight(spec, rules = rules, output_dir = file.path("runs", "build_magp_config"))
@@ -392,7 +550,8 @@ main <- function() {
   out_dir <- file.path("inst", "extdata", "magp")
   write_compiled_spec(spec, out_dir)
   copy_rule_set(config_dir, out_dir)
-  cat("Compiled the specification and the rule set into inst/extdata/magp/.\n")
+  copy_evidence(config_dir, out_dir)
+  cat("Compiled the specification, the rule set and the evidence files into inst/extdata/magp/.\n")
 }
 
 if (sys.nframe() == 0L) {

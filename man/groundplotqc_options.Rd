@@ -88,6 +88,16 @@ and \code{groundplotqc.design_signature_columns}: the table
 \code{design_duplicate_signature} reads, its foreign key to the records
 compared, and the attributes whose values, over the table's rows that name
 a record, make up that record's signature. Built-in: none.
+\item \code{groundplotqc.fallback_class}: by rule ID, the class an issue takes when its
+rule's class is \code{depends} and nothing else settles it, such as
+\code{c(some_rule = "source")}: each class \code{"source"} or \code{"harmonization"}, each
+rule named once. Built-in: none, so such an issue is unclassified. Unlike
+the severity setting, the first tier that gives it gives all of it: an
+argument or a rule set naming one rule replaces every entry of the option,
+so the other rules have none. In a rule set's settings rows it is written
+as "rule_id=class" parts, and in every tier a rule ID can't be empty, begin
+or end with a space, tab or line break, or hold ";" or "=". Pre-flight stops
+on a rule ID that isn't registered (\code{rule_id_unknown}).
 }
 
 In a rule set's settings rows, a whole number has type \code{integer}, a setting

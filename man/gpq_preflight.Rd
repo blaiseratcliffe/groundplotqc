@@ -7,6 +7,7 @@
 gpq_preflight(
   spec,
   rules = NULL,
+  inputs = list(),
   settings = list(),
   text = NULL,
   output_dir = NULL
@@ -19,10 +20,27 @@ gpq_preflight(
 \code{\link[=magp_rules]{magp_rules()}} returns. Its \code{rules} rows are checked against the specification and the
 registered rules, and its \code{settings} rows give settings.}
 
+\item{inputs}{A named list of the run's optional inputs, each a data.frame or the path of
+a CSV file, read as text: \code{overrides}, your classes for issues, with the columns
+\code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name}, \code{issue_class}, \code{who}, \code{when} and
+\code{why}, and any of the run's group columns, each an attribute of the specification;
+\code{lineage}, the provider's raw values of the cells the pipeline changed (\code{table_name},
+\code{record_pk}, \code{column_name}, \code{raw_value}, \code{raw_source}); and \code{pipeline_fill}, the cells
+the pipeline's missing-value fill wrote (\code{table_name}, \code{record_pk}, \code{column_name},
+\code{written_value}). Pre-flight stops on an input it can't read cleanly or without exactly
+its columns, and on an override whose \code{issue_class} isn't \code{source} or \code{harmonization} or
+that gives none of \code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name} and the group
+columns (\code{input_unparseable}). It warns on two overrides that give one scope two classes
+(\code{override_scope_conflict}), and on an override naming a rule that isn't registered, or
+a table or column the dictionary doesn't have (\code{override_unknown_name}); a rule renamed
+or split since is known, as is a column \code{"*"}, and the delivery's own names in an
+override of \code{table_unexpected} or \code{column_unexpected}.}
+
 \item{settings}{A named list of settings, which come before the rule set's, the
 options' and the built-in values (see \link{groundplotqc_options}). Pre-flight reads \code{lang},
 the run language, whose text \code{text_id_fallback} checks; \code{severity}, severities by rule
-ID; and the settings that name tables and attributes (\code{unknown_codes},
+ID, and \code{fallback_class}, classes by rule ID, whose rule IDs \code{rule_id_unknown} checks;
+and the settings that name tables and attributes (\code{unknown_codes},
 \code{coordinate_attributes}, \code{code_set_skip_attributes} and the eight settings of
 \code{design_geometry_inconsistent}, \code{subplot_label_ambiguous} and
 \code{design_duplicate_signature}), whose names \code{setting_unknown_name} and
@@ -48,9 +66,9 @@ A check with findings has one row per finding.
 }
 \description{
 Checks a specification, never the data, and stops before a run that would read it
-wrongly. Given a rule set, it checks the rule set's rows too, and it checks the
-settings and report text a run would use. Each check gives one row per finding, or one
-pass or not-run row.
+wrongly. Given a rule set, it checks the rule set's rows too; it checks the settings and
+report text a run would use, and the run's optional inputs it is given. Each check gives
+one row per finding, or one pass or not-run row.
 }
 \section{Conditions}{
 
@@ -72,21 +90,23 @@ the specification's \code{clashes} component.
 
 \section{Checks}{
 
-\code{dd_duplicate_attribute}, \code{dd_type_unknown}, \code{dd_type_column_ambiguous},
+\code{dd_duplicate_attribute}, \code{dd_name_missing}, \code{dd_type_unknown}, \code{dd_type_column_ambiguous},
 \code{dd_pk_missing}, \code{dd_fk_target_missing}, \code{code_list_missing}, \code{code_column_missing},
 \code{code_list_duplicate_code}, \code{code_list_blank_row}, \code{code_list_unreferenced},
 \code{code_list_empty_column}, \code{spec_clash_resolved}, \code{spec_clash_unresolved},
-\code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed},
-\code{site_id_range_invalid}, \code{lineage_spec_unparseable}, \code{lineage_name_unknown},
+\code{datasets_row_missing}, \code{spec_encoding_invalid}, \code{spec_csv_malformed}, \code{site_id_range_invalid},
+\code{lineage_spec_unparseable}, \code{lineage_when_invalid}, \code{lineage_name_unknown},
 \code{lineage_spec_row_unflagged}, \code{lineage_id_unflagged}, \code{crosswalk_unreadable},
 \code{dd_format_invalid}, \code{key_pair_invalid}, \code{reach_invalid}, \code{one_to_many_invalid}; with a
-rule set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set or a
-severity setting, \code{rule_id_unknown} and \code{rule_set_override_invalid}; with a setting that
-names tables or attributes, \code{setting_unknown_name} (given as an argument or in the rule
-set) and \code{option_unknown_name} (set as an option); and \code{text_id_missing},
-\code{text_id_fallback} and \code{text_slot_unknown}, on the report text of the registered rules in
-English and in the run language and on a caller's text table. No rule set or setting
-changes what a check stops or warns on.
+rule set, \code{rule_set_unknown_column} and \code{rule_set_duplicate_row}; with a rule set, a
+severity setting or a \code{fallback_class} setting, \code{rule_id_unknown}, and with a rule set or a
+severity setting, \code{rule_set_override_invalid}; with a setting that names tables or
+attributes, \code{setting_unknown_name} (given as an argument or in the rule set) and
+\code{option_unknown_name} (set as an option); \code{text_id_missing}, \code{text_id_fallback} and
+\code{text_slot_unknown}, on the report text of the registered rules in English and in the run
+language and on a caller's text table; and with run inputs, \code{input_unparseable},
+\code{override_scope_conflict} and \code{override_unknown_name}. No rule set or setting changes what
+a check stops or warns on.
 }
 
 \examples{
@@ -122,4 +142,19 @@ rules <- list(rules = data.frame(
 ))
 stopped <- tryCatch(gpq_preflight(forest, rules = rules), gpq_preflight_error = function(e) e)
 subset(stopped$preflight, outcome == "stop", c(rule_id, detail))
+
+# An override whose class isn't source or harmonization stops pre-flight too.
+overrides <- data.frame(
+  fingerprint = NA, rule_id = "raw_na", table_name = "TREES", column_name = NA,
+  issue_class = "provider", who = "A. Reviewer", when = "2026-10-22", why = "Checked."
+)
+stopped <- tryCatch(
+  gpq_preflight(forest, inputs = list(overrides = overrides)),
+  gpq_preflight_error = function(e) e
+)
+subset(stopped$preflight, outcome == "stop", c(rule_id, detail))
+}
+\seealso{
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}}, which runs it first, and \code{\link[=gpq_classify_issues]{gpq_classify_issues()}}, which
+reads the overrides it checks.
 }

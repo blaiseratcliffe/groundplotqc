@@ -169,3 +169,307 @@ test_that("a blank type or contributor shows as (blank) in its finding (D12.54)"
     "(blank) plots.src_plot_id: type (blank) is neither id nor compiled."
   )
 })
+
+test_that("lineage_when rows go before their part's own row, in the file's order (D19.12)", {
+  # The file's order is neither the provider columns' nor the conditions' alphabetical order.
+  when <- rbind(
+    fx_lineage_when("kind == \"L\"", "field.live_key"),
+    fx_lineage_when("kind == \"A\"", "field.age_key")
+  )
+  spec <- fx_lineage_spec(lineage_when = when)
+  lineage <- spec$lineage_spec
+  south <- lineage[lineage$contributor_label == "south"]
+  expect_equal(south$part_source, c("field.live_key", "field.age_key", "field.tree_key"))
+  expect_equal(south$when, c("kind == \"L\"", "kind == \"A\"", NA))
+  expect_equal(south$id_status, rep("single", 3L))
+  expect_equal(south$part_kind, rep("source", 3L))
+  expect_equal(unique(lineage$separator), "_")
+  # A2's own rows keep their order.
+  expect_equal(lineage$part_source[is.na(lineage$when)], fx_lineage_spec()$lineage_spec$part_source)
+})
+
+test_that("each lineage_when row keeps its first problem, a finding at its cell (D19.37, D19.48)", {
+  bad <- data.frame(
+    contributor_label = c("east", "north", "north", "north", "south", "south", NA),
+    table_name = "trees", attribute_name = "src_tree_id",
+    part_order = c("1", "3", "x", "1", "1", "1", "1"),
+    part_source = c("a.b", "a.b", "a.b", "a.b", "a b", "a.b", "a.b"),
+    when = c(
+      "kind == \"A\"", "kind == \"A\"", "kind == \"A\"", "kind == \"A\"", "kind == \"A\"",
+      "kind = \"A\"", "kind == \"A\""
+    ),
+    note = NA
+  )
+  spec <- fx_lineage_spec(lineage_when = bad)
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  expect_equal(nrow(found), 7L)
+  # Kinds by the detail texts' ids: entry (east, and the blank contributor), part (3, x),
+  # nested (north's part 1 is src_site_id's parts), source, when.
+  ids <- c(
+    "entry", "part", "part", "nested", "source", "when", "entry"
+  )
+  expected <- vapply(seq_along(ids), function(i) {
+    report_text(
+      paste0("preflight_detail_lineage_when_invalid_", ids[[i]]),
+      contributor_label = bad$contributor_label[[i]], table_name = "trees",
+      attribute_name = "src_tree_id",
+      value = bad[[c(
+        entry = "contributor_label", part = "part_order", nested = "part_order",
+        source = "part_source", when = "when"
+      )[[ids[[i]]]]]][[i]]
+    )
+  }, character(1))
+  expect_setequal(found$detail, expected)
+  # No bad row reaches the component.
+  expect_true(all(is.na(spec$lineage_spec$when)))
+})
+
+test_that("a row on an ID with labelled alternatives is a finding (D19.48)", {
+  lineage <- data.frame(
+    contributor_label = "south", table_name = "trees", attribute_name = "src_tree_id",
+    spec_type = "id", source_text = "PSP: a.x + b.y | other: c.z", note = NA, source_cell = NA
+  )
+  spec <- fx_lineage_spec(lineage_spec = lineage, lineage_when = fx_lineage_when())
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  expect_equal(found$detail, report_text(
+    "preflight_detail_lineage_when_invalid_alternatives",
+    contributor_label = "south", table_name = "trees", attribute_name = "src_tree_id",
+    value = "south"
+  ))
+})
+
+test_that("a lineage_when file's findings cite its lines (D12.54)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(fx_lineage_when("kind == A"), path)
+  spec <- fx_lineage_spec(lineage_when = path)
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  expect_equal(found$source_cell, paste0(basename(path), ":2"))
+  expect_equal(spec$manifest$file[spec$manifest$input == "lineage_when"], basename(path))
+})
+
+test_that("a lineage_when input without exactly its columns is a caller's error (D12.33)", {
+  extra <- cbind(fx_lineage_when(), extra = 1)
+  expect_error(fx_lineage_spec(lineage_when = extra), "not taken: extra")
+})
+
+# ---- the task 4 fix round: R10's order, cells and content ----
+
+test_that("a condition on a later part goes before that part's row, with R10's content (D19.12)", {
+  when <- data.frame(
+    contributor_label = c("north", "north", "south"), table_name = "trees",
+    attribute_name = "src_tree_id", part_order = c("2", "2", "1"),
+    part_source = c("survey.alt", "survey.alt2", "kind"),
+    when = c("kind == \"A\"", "kind == \"L\"", "kind == \"A\""),
+    note = c("first", "second", "bare")
+  )
+  spec <- fx_lineage_spec(lineage_when = when)
+  lineage <- spec$lineage_spec
+  north <- lineage[lineage$contributor_label == "north"]
+  # Part 2's two conditions, in the file's order, between part 1's row and part 2's own row.
+  expect_equal(north$attribute_name, c("src_site_id", rep("src_tree_id", 4L)))
+  expect_equal(north$part_order, c(1L, 1L, 2L, 2L, 2L))
+  expect_equal(
+    north$part_source, c("survey.site", "src_site_id", "survey.alt", "survey.alt2", "survey.tree")
+  )
+  expect_equal(north$when, c(NA, NA, "kind == \"A\"", "kind == \"L\"", NA))
+  expect_equal(north$part_kind, c("source", "derived", "source", "source", "source"))
+  # A condition row takes its entry's id_status, has no source text and keeps its own note.
+  expect_equal(north$id_status, c("single", rep("composite", 4L)))
+  expect_equal(north$source_text[3:4], c(NA_character_, NA_character_))
+  expect_equal(north$note, c(NA, NA, "first", "second", NA))
+  expect_equal(north$alternative, rep(NA_character_, 5L))
+  # A bare name is a derived part, before the part's own source row.
+  south <- lineage[lineage$contributor_label == "south"]
+  expect_equal(south$part_source, c("kind", "field.tree_key"))
+  expect_equal(south$part_kind, c("derived", "source"))
+  expect_equal(south$when, c("kind == \"A\"", NA))
+})
+
+test_that("a part that is another ID is refused only within the row's contributor (R10)", {
+  lineage <- data.frame(
+    contributor_label = c("north", "north", "south"), table_name = c("sites", "trees", "trees"),
+    attribute_name = c("src_site_id", "src_tree_id", "src_tree_id"), spec_type = "id",
+    source_text = c("survey.site", "src_site_id + survey.tree", "src_site_id + field.x"),
+    note = NA, source_cell = NA
+  )
+  when <- data.frame(
+    contributor_label = c("south", "north"), table_name = "trees",
+    attribute_name = "src_tree_id", part_order = "1", part_source = "field.k",
+    when = "kind == \"A\"", note = NA
+  )
+  spec <- fx_lineage_spec(lineage_spec = lineage, lineage_when = when)
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  # North's part 1 is its src_site_id; south has no such ID, so its part 1 is a plain name.
+  expect_equal(found$detail, report_text(
+    "preflight_detail_lineage_when_invalid_nested",
+    contributor_label = "north", table_name = "trees", attribute_name = "src_tree_id",
+    value = "1"
+  ))
+  kept <- spec$lineage_spec[!is.na(spec$lineage_spec$when)]
+  expect_equal(kept$contributor_label, "south")
+  expect_equal(kept$part_source, "field.k")
+})
+
+test_that("a row with several problems keeps the first, in R10's order (D19.37, D19.48)", {
+  row <- function(contributor, table, part, source, when) {
+    data.frame(
+      contributor_label = contributor, table_name = table, attribute_name = "src_tree_id",
+      part_order = part, part_source = source, when = when, note = NA
+    )
+  }
+  detail <- function(kind, contributor, table, value) {
+    report_text(
+      paste0("preflight_detail_lineage_when_invalid_", kind),
+      contributor_label = contributor, table_name = table, attribute_name = "src_tree_id",
+      value = value
+    )
+  }
+  bad_when <- "kind = \"A\""
+  when <- rbind(
+    # east has no entry; its source and condition are bad too.
+    row("east", "trees", "1", "a b", bad_when),
+    # west's entry (A2's "X") has no parts, so it names no entry with parts.
+    row("west", "trees", "1", "a.b", "kind == \"A\""),
+    # no entry on this table.
+    row("north", "sites", "1", "a b", bad_when),
+    # a part that isn't one of north's two, beside a bad source and a bad condition.
+    row("north", "trees", "3", "a b", bad_when),
+    # north's part 1 is another ID, beside a bad source and a bad condition.
+    row("north", "trees", "1", "a b", bad_when),
+    # a bad source beside a bad condition.
+    row("south", "trees", "1", "a b", bad_when)
+  )
+  spec <- fx_lineage_spec(lineage_when = when)
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  expect_equal(nrow(found), 6L)
+  expect_setequal(found$detail, c(
+    detail("entry", "east", "trees", "east"), detail("entry", "west", "trees", "west"),
+    detail("entry", "north", "sites", "north"), detail("part", "north", "trees", "3"),
+    detail("nested", "north", "trees", "1"), detail("source", "south", "trees", "a b")
+  ))
+  expect_true(all(is.na(spec$lineage_spec$when)))
+  # An ID with labelled alternatives comes before a part that isn't one of its parts.
+  lineage <- data.frame(
+    contributor_label = "south", table_name = "trees", attribute_name = "src_tree_id",
+    spec_type = "id", source_text = "PSP: a.x + b.y | other: c.z", note = NA, source_cell = NA
+  )
+  spec <- fx_lineage_spec(
+    lineage_spec = lineage, lineage_when = row("south", "trees", "9", "a b", bad_when)
+  )
+  found <- spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  expect_equal(found$detail, detail("alternatives", "south", "trees", "south"))
+})
+
+test_that("each finding is at its problem's cell and a kept row at its when cell (R10, D12.54)", {
+  dictionary <- data.frame(
+    table_name = c(rep("sites", 3L), rep("trees", 5L)),
+    attribute_name = c(
+      "site_id", "contributor", "src_site_id", "tree_id", "site_id", "kind", "src_tree_id",
+      "height"
+    ),
+    key_type = c("PK", ".", ".", "PK", "FK", ".", ".", "."),
+    reference_table = c(NA, NA, NA, NA, "sites", NA, NA, NA),
+    data_type = c(rep("character", 7L), "numeric")
+  )
+  # west's ID has labelled alternatives, so a condition row on it is refused whole (D19.48).
+  lineage <- data.frame(
+    contributor_label = c("north", "north", "south", "west"),
+    table_name = c("sites", "trees", "trees", "trees"),
+    attribute_name = c("src_site_id", "src_tree_id", "src_tree_id", "src_tree_id"),
+    spec_type = "id",
+    source_text = c(
+      "survey.site", "src_site_id + survey.tree", "field.tree_key", "PSP: a.x + b.y | other: c.z"
+    ),
+    note = NA, source_cell = NA
+  )
+  row <- function(contributor, part, source, when) {
+    data.frame(
+      contributor_label = contributor, table_name = "trees", attribute_name = "src_tree_id",
+      part_order = part, part_source = source, when = when, note = NA
+    )
+  }
+  read <- function(when, origins) {
+    gpq_read_spec(
+      dictionary,
+      lineage_spec = lineage, lineage_when = when, lineage_separator = "_", origins = origins
+    )
+  }
+  found_in <- function(spec) {
+    spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  }
+  good <- "kind == \"A\""
+  # On a workbook sheet each cell names its column: the entry's contributor_label (A) for an
+  # entry and for an ID with alternatives, the part order (D) for a part and a nested part, the
+  # provider column (E), the condition (F).
+  workbook <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", workbook)
+  placed <- read(
+    rbind(
+      row("west", "1", "x.y", good),
+      row("east", "1", "x.y", good), row("north", "3", "x.y", good),
+      row("north", "1", "x.y", good), row("south", "1", "a b", good),
+      row("south", "1", "x.y", "kind = \"A\""), row("south", "1", "x.y", good)
+    ),
+    list(lineage_when = list(path = workbook, sheet = "when", rows = 2:8))
+  )
+  found <- found_in(placed)
+  expect_equal(
+    found$source_cell, c("when!A2", "when!A3", "when!D4", "when!D5", "when!E6", "when!F7")
+  )
+  expect_equal(found$file, rep(basename(workbook), 6L))
+  # The row kept is placed at its condition's cell.
+  expect_equal(placed$lineage_spec$source_cell[!is.na(placed$lineage_spec$when)], "when!F8")
+  # From a CSV file, each at its own line.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(rbind(
+    row("south", "1", "x.y", good), row("south", "1", "x.y", "kind = \"A\""),
+    row("south", "1", "q.r", good), row("east", "1", "x.y", good)
+  ), path)
+  spec <- read(path, NULL)
+  expect_equal(found_in(spec)$source_cell, paste0(basename(path), c(":3", ":5")))
+  kept <- spec$lineage_spec[!is.na(spec$lineage_spec$when)]
+  expect_equal(kept$part_source, c("x.y", "q.r"))
+  expect_equal(kept$source_cell, paste0(basename(path), c(":2", ":4")))
+})
+
+test_that("empty, repeated and nameless lineage_when rows are read as R10 says (D19.37)", {
+  found_in <- function(spec) {
+    spec$read_findings[spec$read_findings$rule_id == "lineage_when_invalid"]
+  }
+  outcome <- function(spec) {
+    checks <- preflight_checks(spec)
+    checks[checks$rule_id == "lineage_when_invalid", c("outcome", "n_findings")]
+  }
+  # No row in the lineage spec for the contributor: the entry is not found.
+  alone <- gpq_read_spec(
+    data.frame(table_name = "t", attribute_name = "id", key_type = "PK", data_type = "character"),
+    lineage_when = data.frame(
+      contributor_label = "south", table_name = "t", attribute_name = "id", part_order = "1",
+      part_source = "x.y", when = "id == \"1\"", note = NA
+    )
+  )
+  expect_equal(found_in(alone)$detail, report_text(
+    "preflight_detail_lineage_when_invalid_entry",
+    contributor_label = "south", table_name = "t", attribute_name = "id"
+  ))
+  expect_equal(outcome(alone)$outcome, "stop")
+  # A table of no rows is given and passes.
+  empty <- fx_lineage_spec(lineage_when = fx_lineage_when()[0, ])
+  expect_equal(nrow(found_in(empty)), 0L)
+  expect_true("lineage_when" %in% empty$manifest$input)
+  expect_equal(outcome(empty)$outcome, "pass")
+  expect_true(all(is.na(empty$lineage_spec$when)))
+  # The same row twice is two rows, each read.
+  twice <- fx_lineage_spec(lineage_when = rbind(fx_lineage_when(), fx_lineage_when()))
+  expect_equal(nrow(found_in(twice)), 0L)
+  expect_equal(sum(!is.na(twice$lineage_spec$when)), 2L)
+  # A row of nothing but blanks names no entry, shown as (blank).
+  blank <- fx_lineage_spec(lineage_when = data.frame(
+    contributor_label = NA, table_name = NA, attribute_name = NA, part_order = NA,
+    part_source = NA, when = NA, note = NA
+  ))
+  expect_equal(found_in(blank)$detail, report_text(
+    "preflight_detail_lineage_when_invalid_entry",
+    contributor_label = NA, table_name = NA, attribute_name = NA
+  ))
+})

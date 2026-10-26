@@ -341,8 +341,8 @@ reach_rows <- function(input, reach) {
 #' The record reaches the last attribute of id_band_columns' key chain by D16.13's shortest
 #' path (reach_column()); that value is looked up in the key's column of the labels sheet
 #' (`labels_sheet` in the code_lists component), and the label is the same row's
-#' `labels_column`. NA where id_band_columns has no row, the record reaches no value, or the
-#' sheet holds no row of it.
+#' `labels_column`, through contributor_labels(). NA where id_band_columns has no row, the
+#' record reaches no value, or the sheet holds no row of it.
 #' @noRd
 record_labels <- function(input, table) {
   spec <- input$spec
@@ -367,18 +367,8 @@ record_labels <- function(input, table) {
   home_n <- if (reached$home %chin% names(input$data)) nrow(input$data[[reached$home]]) else 0L
   home <- list(home = reached$home, rows = seq_len(home_n))
   value <- value_text(reached_values(input, home, key))
-  lists <- spec$code_lists
-  # Worked out before the brackets, so no name inside them is taken for a column.
-  in_sheet <- lists$sheet == bands$labels_sheet[[1L]] & lists$source_row > 1L
-  sheet <- lists[in_sheet]
-  # Worked out before the brackets too: `sheet` is also a column of the code lists.
-  is_key <- sheet$sheet_column == key
-  is_label <- sheet$sheet_column == bands$labels_column[[1L]]
-  keyed <- sheet[is_key]
-  labelled <- sheet[is_label]
-  label <- labelled$value[match(keyed$source_row, labelled$source_row)]
-  home_label <- label[match(value, keyed$value, incomparables = NA)]
-  home_label[reached$rows]
+  # The labels sheet is read once, as decoding reads it (contributor_labels(), D19.49).
+  contributor_labels(spec, key, value)[reached$rows]
 }
 
 #' The rows whose group holds more than one distinct value
@@ -407,15 +397,14 @@ disagreeing_rows <- function(groups, value) {
 #' a composite key compared whole and reported on its first part, its value the parts joined
 #' with "|" (D18.10 (2), D18.42), a number-typed part compared by its number, as the joins
 #' read it, and text that doesn't read as one as written (D18.100); a key NA, blank or a
-#' sentinel, allowed or not, is left
-#' alone, pk_missing's where `allowed_in_pk` refuses it; not_run (no_column) where a part's
-#' column wasn't given (D9.24). `pk_missing` per key part: NA, blank or a sentinel
-#' `allowed_in_pk` refuses (D7.9, D18.15). `fk_orphan` per foreign key to a parent's PK: a
-#' value naming no parent row, expected the parent table; a sentinel `allowed_in_fk` allows
-#' counts as not evaluated, with no issue (D7.3, D7.7, D18.33); NA, blanks and refused
-#' sentinels are fk_unassigned's (D7.9); not_run (no_table, no_column) without the parent's
-#' key. `fk_unassigned` per foreign key: NA, blank or a sentinel `allowed_in_fk` refuses
-#' (D2.28, D18.10 (1), D18.15).
+#' sentinel, allowed or not, is left alone, pk_missing's where `allowed_in_pk` refuses it;
+#' not_run (no_column) where a part's column wasn't given (D9.24). `pk_missing` per key part:
+#' NA, blank or a sentinel `allowed_in_pk` refuses (D7.9, D18.15). `fk_orphan` per foreign key
+#' to a parent's PK: a value naming no parent row, expected the parent table; a sentinel
+#' `allowed_in_fk` allows counts as not evaluated, with no issue (D7.3, D7.7, D18.33); NA,
+#' blanks and refused sentinels are fk_unassigned's (D7.9); not_run (no_table, no_column)
+#' without the parent's key. `fk_unassigned` per foreign key: NA, blank or a sentinel
+#' `allowed_in_fk` refuses (D2.28, D18.10 (1), D18.15).
 #' `fk_sentinel_unverified` per foreign key of a number type: each record holding a sentinel
 #' `allowed_in_fk` allows, never looked up (D12.31, D16.2, D18.33). `fk_not_applicable_mismatch`
 #' per foreign key: not_run, no_matrix, until a matrix says where the type's not-applicable
@@ -426,40 +415,41 @@ disagreeing_rows <- function(groups, value) {
 #' left alone, and a record whose unit is "*" isn't checked (D2.30, D18.3, D18.6, D18.35).
 #' `key_incoherent` per table and first attribute of a `key_pairs` left side: a record whose
 #' two sides of a pair differ, compared as text, two plain numbers as stored and, where they
-#' differ, as written (D18.101); its value and expected the failing pairs'
-#' sides labelled by the left side's last attribute; a side whose chain breaks, or whose value
-#' is NA, blank or a sentinel, isn't compared, and a record none of whose pairs was compared
-#' isn't checked (D18.1, D18.40). `record_unreachable` per table the `reach` input walks: a row
-#' no link reaches, on its PK's first part; a table with a `from_parent` link leaves its
-#' unreached rows unchecked, each left to the FK rules or under an unreached parent; a row
-#' only a linked table or a link's key column not given could reach, found by a second walk
-#' taking each such table or column as a root, is unchecked; a record pk_missing reports is not
-#' evaluated, rooted there; not_run (no_table) where a root table wasn't given (D18.4, D18.14,
-#' D18.43, D18.66, D18.68).
+#' differ, as written (D18.101); its value and expected the failing pairs' sides labelled by
+#' the left side's last attribute; a side whose chain breaks, or whose value is NA, blank or a
+#' sentinel, isn't compared, and a record none of whose pairs was compared isn't checked
+#' (D18.1, D18.40). `record_unreachable` per table the `reach` input walks: a row no link
+#' reaches, on its PK's first part; a table with a `from_parent` link leaves its unreached rows
+#' unchecked, each left to the FK rules or under an unreached parent; a row only a linked table
+#' or a link's key column not given could reach, found by a second walk taking each such table
+#' or column as a root, is unchecked; a record pk_missing reports is not evaluated, rooted
+#' there; not_run (no_table) where a root table wasn't given (D18.4, D18.14, D18.43, D18.66,
+#' D18.68).
 #' `parent_without_children` per foreign key to a parent's PK: the parent rows no child row
 #' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34). The
-#' candidates read their tables and columns from the
-#' settings, each name the dictionary's (pre-flight stops on an argument's or the rule set's
-#' unknown name and conformance_context() drops an option's, D18.45, D18.47, and with it every
-#' name of `design_geometry_by`, `subplot_label_columns` or `design_signature_columns`, D18.90),
-#' one not_run row (no_input) without them: `design_geometry_inconsistent` per
-#' compared column, every record of a `design_geometry_by` group holding more than one
-#' distinct value, expected the group's values as given; `subplot_label_ambiguous` on the last
-#' of `subplot_label_columns`, every record whose values there a record of another PK holds,
-#' the key compared by its parts as pk_duplicate compares them (D18.104), a record whose key
-#' is NA, blank or a missing-value code a key can't hold not grouped (R45), not_run
-#' (no_column) without a column of the key;
-#' `design_duplicate_signature` on the table `design_signature_by` names, every row whose
-#' rows in the table, written as text and sorted, another row of its report unit has too,
+#' candidates read their tables and columns from the settings, each name the dictionary's
+#' (pre-flight stops on an argument's or the rule set's unknown name and conformance_context()
+#' drops an option's, D18.45, D18.47, and with it every name of `design_geometry_by`,
+#' `subplot_label_columns` or `design_signature_columns`, D18.90), one not_run row (no_input)
+#' without them: `design_geometry_inconsistent` per compared column, every record of a
+#' `design_geometry_by` group holding more than one distinct value, expected the group's values
+#' as given; `subplot_label_ambiguous` on the last of `subplot_label_columns`, every record
+#' whose values there a record of another PK holds, the key compared by its parts as
+#' pk_duplicate compares them (D18.104), a record whose key is NA, blank or a missing-value
+#' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
+#' `design_duplicate_signature` on the parent key `design_signature_by` names: every parent
+#' record that has the same rows in the table as another parent record of its report unit, each
+#' row read by its `design_signature_columns` values written as text and the rows sorted,
 #' expected the others' keys (Appendix E K1, K8, K10; D8.24, D9.26, D18.39). A number-typed
 #' column is compared by its numbers, one stored as text too, text that doesn't coerce as
 #' written (D18.80), and a number-typed column of `design_geometry_by` or
 #' `subplot_label_columns` groups the records so, a text-typed one as given (D18.126); an
 #' `expected` list shows its first example_cap values in C order and the count of the rest
-#' (D18.81), but a number-typed attribute's blanks first, then its numbers in ascending order,
-#' then the rest in C order (D18.102), a blank value as the blank text (D18.83), and is NA at
-#' example_cap 0 (D18.82). A record whose grouping value is NA, blank or a sentinel, read by
-#' key_rows() from the values as given, isn't grouped.
+#' (D18.81), but `design_geometry_inconsistent`'s lists a number-typed attribute's blanks
+#' first, then its numbers in ascending order, then the rest in C order (D18.102); a blank
+#' value shows as the blank text (D18.83), and the list is NA at example_cap 0 (D18.82). A
+#' record whose grouping value is NA, blank or a sentinel, read by key_rows() from the values
+#' as given, isn't grouped.
 #' @noRd
 check_keys <- function(input, context) {
   # data.table's ranks and repeats read doubles exactly here, whatever setNumericRounding()

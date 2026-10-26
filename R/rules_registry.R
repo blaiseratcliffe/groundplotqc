@@ -27,8 +27,9 @@ rule_registry <- function() {
 #' stops and its `warning` warns, and no rule set or setting changes either, D14.5);
 #' `default_class` (`source`, `harmonization`, `depends`, or `none` for information rules
 #' and pre-flight checks, which write no issues); `inputs` (what the rule reads, "; "-joined:
-#' specification components, `rules`, `settings:<name>`, `text`); `strategy` (`none` for a
-#' rule that proposes nothing); `message_id` (its text_id in the report text); `rule_version`
+#' specification components, `rules`, `settings:<name>`, `text`, and for the checks of the run
+#' inputs, `inputs`); `strategy` (`none` for a rule that proposes nothing); `message_id` (its
+#' text_id in the report text); `rule_version`
 #' (from 1, raised by the add-rule skill whenever the rule's check behaves differently, so its
 #' rule fingerprint changes, D15.6); `unit` (TRUE for a rule that checks a table or a column
 #' as one unit, D16.8, whose not_run rows are one "*" row each, D16.29, D17.15). Layer 6 and 7
@@ -72,6 +73,8 @@ build_rule_registry <- function() {
   )
   rbindlist(list(
     preflight("dd_duplicate_attribute", "error", "attributes"),
+    # ---- M6: m136's check (4.2; D19.32) ----
+    preflight("dd_name_missing", "error", "attributes"),
     preflight("dd_type_unknown", "error", "attributes; type_map; read_findings"),
     preflight("dd_type_column_ambiguous", "error", "read_findings"),
     preflight("dd_pk_missing", "error", "attributes; keys"),
@@ -89,6 +92,8 @@ build_rule_registry <- function() {
     preflight("spec_csv_malformed", "error", "read_findings"),
     preflight("site_id_range_invalid", "error", "read_findings"),
     preflight("lineage_spec_unparseable", "error", "attributes; lineage_spec; read_findings"),
+    # ---- M6: the lineage spec's conditions (4.2; D19.37) ----
+    preflight("lineage_when_invalid", "error", "read_findings"),
     preflight("lineage_name_unknown", "warning", "attributes; lineage_spec"),
     preflight("lineage_spec_row_unflagged", "warning", "attributes; lineage_spec"),
     preflight("lineage_id_unflagged", "warning", "attributes"),
@@ -102,7 +107,7 @@ build_rule_registry <- function() {
     ),
     # ---- task 5 ----
     preflight("rule_set_unknown_column", "error", "attributes; rules"),
-    preflight("rule_id_unknown", "error", "rules; settings:severity"),
+    preflight("rule_id_unknown", "error", "rules; settings:fallback_class; settings:severity"),
     preflight("rule_set_override_invalid", "error", "rules; settings:severity"),
     preflight("rule_set_duplicate_row", "error", "rules"),
     # ---- M5: the names the settings give (4.2; D18.45 to D18.47) ----
@@ -112,6 +117,10 @@ build_rule_registry <- function() {
     preflight("text_id_missing", "error", "text"),
     preflight("text_id_fallback", "warning", "text; settings:lang"),
     preflight("text_slot_unknown", "error", "text"),
+    # ---- M6: the run inputs (4.2; D19.51) ----
+    preflight("input_unparseable", "error", "attributes; inputs"),
+    preflight("override_scope_conflict", "warning", "attributes; inputs"),
+    preflight("override_unknown_name", "warning", "attributes; inputs"),
     # ---- M4a: Layer 0, structure (6.1; D2.34, D8.11, D16.8) ----
     conformance("table_missing", 0L, "error", "harmonization", "attributes", unit = TRUE),
     conformance("table_unexpected", 0L, "warning", "harmonization", "attributes", unit = TRUE),
@@ -126,7 +135,8 @@ build_rule_registry <- function() {
       "class_mismatch", 1L, "error", "harmonization", "attributes; type_map",
       unit = TRUE
     ),
-    # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63).
+    # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63), and
+    # coercion_loss reports an integer64 value a double can't hold exactly (D18.111).
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
@@ -165,7 +175,8 @@ build_rule_registry <- function() {
       "attributes; keys; type_map; sentinels; settings:column_level_min_n", "sentinel_fix"
     ),
     # Version 2 (M5), these three: a column stored as integer64 holds the codes plain stored
-    # numbers hold (D18.64, m55).
+    # numbers hold (D18.64, m55), a whole code compared with it as bit64 reads the code's text
+    # (D18.112).
     conformance(
       "sentinel_wrong_type", 2L, "error", "harmonization",
       "attributes; type_map; sentinels; settings:column_level_min_n; settings:unknown_codes",
@@ -295,12 +306,14 @@ build_rule_registry <- function() {
       "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels"
     ),
     # ---- M5: Appendix E's design candidates (K1, K8, K10; D8.24, D9.26, D18.39) ----
+    # design_geometry_inconsistent and design_duplicate_signature show the first example_cap
+    # values of an `expected` list, so they read it (D18.81, D18.82; m111).
     conformance(
       "design_geometry_inconsistent", 4L, "error", "harmonization",
       paste(
         "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
         "settings:design_geometry_by; settings:design_geometry_columns;",
-        "settings:design_geometry_table"
+        "settings:design_geometry_table; settings:example_cap"
       )
     ),
     conformance(
@@ -315,7 +328,7 @@ build_rule_registry <- function() {
       paste(
         "attributes; keys; type_map; sentinels; settings:column_level_min_n;",
         "settings:design_signature_by; settings:design_signature_columns;",
-        "settings:design_signature_table"
+        "settings:design_signature_table; settings:example_cap"
       )
     )
   ))

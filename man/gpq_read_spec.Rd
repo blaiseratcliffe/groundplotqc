@@ -10,6 +10,8 @@ gpq_read_spec(
   non_code_sheets = NULL,
   datasets = NULL,
   lineage_spec = NULL,
+  lineage_when = NULL,
+  lineage_separator = NULL,
   crosswalks = NULL,
   id_pattern = NULL,
   id_bands = NULL,
@@ -39,6 +41,19 @@ or a reference table), or a named list of data.frames or CSV paths, named by she
 path), with exactly the columns
 \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type} (\code{id} or
 \code{compiled}), \code{source_text}, \code{note} and \code{source_cell}.}
+
+\item{lineage_when}{\code{NULL}, or a table (data.frame or CSV path) with exactly the columns
+\code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{part_order}, \code{part_source}, \code{when}
+and \code{note}: each row another provider column for one part of an ID the lineage spec
+gives, used for a record where \code{when} holds. \code{when} is one condition: \code{column == "value"}, \code{column != "value"}, \code{column \%in\% c("a", "b")}, \code{is_present(column)} or
+\code{is_sentinel(column)}, where \code{column} is an attribute of the table, a chain of its
+foreign keys joined by " > " ending in an attribute, such as \code{"plot_id > shape"}, or a
+flag that \code{\link[=gpq_decode_lineage]{gpq_decode_lineage()}} is given, written \verb{flag.<name>}. A part's rows are tried
+in order before the lineage spec's own part. Pre-flight stops on a row it can't apply
+(\code{lineage_when_invalid}).}
+
+\item{lineage_separator}{\code{NULL}, or the text the parts of a composite ID are joined with,
+such as \code{"_"}. Without it, \code{\link[=gpq_decode_lineage]{gpq_decode_lineage()}} shows composite IDs as delivered.}
 
 \item{crosswalks}{\code{NULL}, or a named list of translation tables: each a data.frame, a
 CSV path, or \code{list(table = , code_col = , filter_col = , filter_values = )}, where
@@ -87,9 +102,9 @@ Pre-flight stops if a table the walk checks can't be reached from a root. A reco
 reachable only through a table or key column not given is left unchecked.}
 
 \item{origins}{\code{NULL}, or, for inputs given as data.frames that came from files, a list
-named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{precedence},
-\code{key_pairs}, \code{one_to_many}, \code{reach}, \verb{code_lists:<sheet>}, \verb{crosswalks:<name>}) of
-\code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in
+named by input, each once (\code{dictionary}, \code{datasets}, \code{lineage_spec}, \code{lineage_when},
+\code{precedence}, \code{key_pairs}, \code{one_to_many}, \code{reach}, \verb{code_lists:<sheet>}, \verb{crosswalks:<name>})
+of \code{list(path = , sheet = , rows = , columns = )}: the file, named in findings and hashed in
 the manifest; a workbook's sheet, or \code{NULL} for a CSV file; the file row of the first
 data row, later rows following on, or the file row of every data row, or \code{NULL} to count
 rows as R counts them; and the file column, by number or letter, of every column of the
@@ -118,15 +133,14 @@ Reads a data dictionary and its companion inputs into one specification object, 
 defect in the specification: each one is recorded in the \code{read_findings} component,
 and \code{\link[=gpq_preflight]{gpq_preflight()}} decides whether it stops.
 
-It does stop, with an error, on a mistake in the call: an argument in the wrong form;
-a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
-unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a \code{precedence}, \code{lineage_spec},
-\code{key_pairs}, \code{one_to_many} or \code{reach} table without exactly its columns; a \code{precedence}
-table with an unknown \code{winner} or \code{blank_rule}, or with two rows for one sheet, key and
-attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
-column it lacks, or with no values for an attribute that uses it; or an origin that
-doesn't fit its input.
+It does stop, with an error, on a mistake in the call: an argument in the wrong form; a file that
+doesn't exist, or a CSV file that can't be read, such as one in UTF-16, unless it is a
+translation table, which is then a finding; a dictionary without its table or attribute column; a
+\code{precedence}, \code{lineage_spec}, \code{lineage_when}, \code{key_pairs}, \code{one_to_many} or \code{reach} table without
+exactly its columns; a \code{lineage_separator} that isn't one piece of text; a \code{precedence} table
+with an unknown \code{winner} or \code{blank_rule}, or with two rows for one sheet, key and attribute; a
+name given in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or
+with no values for an attribute that uses it; or an origin that doesn't fit its input.
 }
 \section{Components}{
 
@@ -140,7 +154,7 @@ Each component is a data.table with these columns:
 \item \code{codes}: \code{table_name}, \code{attribute_name}, \code{code}, \code{source_type}, \code{source_name}, \code{source_row}
 \item \code{non_code_sheets}: \code{sheet}
 \item \code{datasets}: the input's own columns, all text
-\item \code{lineage_spec}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type}, \code{alternative}, \code{part_order}, \code{part_source}, \code{part_kind}, \code{id_status}, \code{source_text}, \code{note}, \code{source_cell}
+\item \code{lineage_spec}: \code{contributor_label}, \code{table_name}, \code{attribute_name}, \code{spec_type}, \code{alternative}, \code{part_order}, \code{part_source}, \code{part_kind}, \code{when}, \code{id_status}, \code{separator}, \code{source_text}, \code{note}, \code{source_cell}
 \item \code{crosswalks}: \code{crosswalk}, \code{source_row}, \code{crosswalk_column}, \code{value}, \code{source_cell}
 \item \code{id_bands}: \code{label}, \code{band_start}, \code{band_end}, \code{reserved}, \code{source_row}, \code{source_cell}, \code{key_value}
 \item \code{id_band_columns}: \code{table_name}, \code{attribute_name}, \code{key_attribute}, \code{labels_sheet}, \code{labels_column}

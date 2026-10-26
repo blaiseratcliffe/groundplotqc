@@ -1,0 +1,4 @@
+contributor_label,table_name,attribute_name,part_order,part_source,when,note
+ON,magp_trees,src_tree_id,1,tblAgeTree.agetreekey,"flag.age_tree == ""Y""",A2 F13's note; D19.17; D19.41; D19.43
+ON,magp_tree_meas,src_treemeas_id,1,tblAgeTree.agetreekey,"tree_type == ""A""",A2 F15's note; D19.17
+ON,magp_subplot_meas,src_subpmeas_id,1,tblVegPlot.vegplotkey,"magp_subplot_id > frame_type == ""R""",A2 F12's note; D19.18; D19.27

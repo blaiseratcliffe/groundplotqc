@@ -1,9 +1,10 @@
 # Fingerprints (plan 9.6; D4.2, D4.7, D8.16, D9.22, D15.6 to D15.9): an issue's readable
 # fingerprint, which the comparison with a previous run and the acknowledgements match on
 # (M8a), and a rule's definition fingerprint, which tells a change made by rules or
-# specification from a change in the data (D4.7). At M3b an issue's provider key is never
-# filled, so its fingerprint is the pk: form; M6 fills the provider key where it decodes,
-# and M9 and M13 add the matrix and threshold versions to the rule fingerprint.
+# specification from a change in the data (D4.7). A run's issues have the pk: form;
+# gpq_decode_lineage() fills the provider key where it decodes and sets the fingerprint from
+# it, keeping the pk: form where another record of the table holds the same key (D19.15).
+# M9 and M13 add the matrix and threshold versions to the rule fingerprint.
 
 #' The SHA-256 of a raw vector, as 64 lower-case hex characters
 #' @noRd

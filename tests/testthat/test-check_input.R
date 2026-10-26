@@ -987,3 +987,22 @@ test_that("an integer64 value's double is bit64's cast, whatever its text parses
   expect_identical(coerced$lost, lost)
   expect_identical(coerced$value, value)
 })
+
+# M6's cleanup (M5 m134)
+test_that("coerce_column() muffles bit64's precision warning alone, never another (D18.121)", {
+  testthat::skip_if_not_installed("bit64")
+  testthat::skip_if(
+    utils::packageVersion("testthat") < "3.3.0", "local_mocked_s3_method() is testthat 3.3.0's"
+  )
+  x <- bit64::as.integer64(c("9007199254740993", "5"))
+  # bit64's cast made to warn once more after its own warning, which it gives for 2^53 + 1.
+  real_cast <- utils::getS3method("as.double", "integer64")
+  testthat::local_mocked_s3_method("as.double", "integer64", function(x, ...) {
+    cast <- real_cast(x, ...)
+    warning("another warning from the cast", call. = FALSE)
+    cast
+  })
+  seen <- testthat::capture_warnings(coerced <- coerce_column(x, "double"))
+  expect_identical(unique(seen), "another warning from the cast")
+  expect_identical(coerced$lost, c(TRUE, FALSE))
+})

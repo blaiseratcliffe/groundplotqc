@@ -13,19 +13,22 @@ test_that("the checks run in 4.2's order with the approved outcomes", {
   on_failure <- rules$on_failure
   names(on_failure) <- rules$rule_id
   expect_equal(on_failure, c(
-    dd_duplicate_attribute = "stop", dd_type_unknown = "stop", dd_type_column_ambiguous = "stop",
+    dd_duplicate_attribute = "stop", dd_name_missing = "stop", dd_type_unknown = "stop",
+    dd_type_column_ambiguous = "stop",
     dd_pk_missing = "stop", dd_fk_target_missing = "stop", code_list_missing = "stop",
     code_column_missing = "stop", code_list_duplicate_code = "warn", code_list_blank_row = "warn",
     code_list_unreferenced = "stop", code_list_empty_column = "warn", spec_clash_resolved = "warn",
     spec_clash_unresolved = "stop", datasets_row_missing = "warn", spec_encoding_invalid = "stop",
     spec_csv_malformed = "stop", site_id_range_invalid = "stop", lineage_spec_unparseable = "stop",
-    lineage_name_unknown = "warn", lineage_spec_row_unflagged = "warn",
+    lineage_when_invalid = "stop", lineage_name_unknown = "warn",
+    lineage_spec_row_unflagged = "warn",
     lineage_id_unflagged = "warn", crosswalk_unreadable = "stop", dd_format_invalid = "stop",
     key_pair_invalid = "stop", reach_invalid = "stop", one_to_many_invalid = "warn",
     rule_set_unknown_column = "stop", rule_id_unknown = "stop",
     rule_set_override_invalid = "stop", rule_set_duplicate_row = "stop",
     setting_unknown_name = "stop", option_unknown_name = "warn",
-    text_id_missing = "stop", text_id_fallback = "warn", text_slot_unknown = "stop"
+    text_id_missing = "stop", text_id_fallback = "warn", text_slot_unknown = "stop",
+    input_unparseable = "stop", override_scope_conflict = "warn", override_unknown_name = "warn"
   ))
 })
 
@@ -41,11 +44,13 @@ test_that("each planted defect gives its check's findings", {
   )
   results <- preflight_checks(
     fx_planted_spec(),
-    preflight_context(fx_planted_rule_set(), fx_planted_settings(), planted_text)
+    preflight_context(
+      fx_planted_rule_set(), fx_planted_settings(), planted_text, fx_planted_inputs()
+    )
   )
   expect_equal(vapply(results, class, ""), preflight_columns())
   expect_equal(summarise_checks(results), c(
-    dd_duplicate_attribute = "stop 1", dd_type_unknown = "stop 1",
+    dd_duplicate_attribute = "stop 1", dd_name_missing = "stop 1", dd_type_unknown = "stop 1",
     dd_type_column_ambiguous = "stop 1", dd_pk_missing = "stop 1",
     dd_fk_target_missing = "stop 1", code_list_missing = "stop 1",
     code_column_missing = "stop 1", code_list_duplicate_code = "warn 1",
@@ -54,21 +59,25 @@ test_that("each planted defect gives its check's findings", {
     spec_clash_unresolved = "stop 1", datasets_row_missing = "warn 1",
     spec_encoding_invalid = "stop 1", spec_csv_malformed = "stop 1",
     site_id_range_invalid = "stop 2", lineage_spec_unparseable = "stop 2",
-    lineage_name_unknown = "warn 1", lineage_spec_row_unflagged = "warn 1",
+    lineage_when_invalid = "stop 1", lineage_name_unknown = "warn 1",
+    lineage_spec_row_unflagged = "warn 1",
     lineage_id_unflagged = "warn 1", crosswalk_unreadable = "stop 1",
     dd_format_invalid = "stop 1", key_pair_invalid = "stop 1", reach_invalid = "stop 1",
     one_to_many_invalid = "warn 1", rule_set_unknown_column = "stop 1", rule_id_unknown = "stop 3",
     rule_set_override_invalid = "stop 1", rule_set_duplicate_row = "stop 1",
     setting_unknown_name = "stop 1", option_unknown_name = "warn 1",
     text_id_missing = "pass 0",
-    text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1"
+    text_id_fallback = paste("warn", nrow(rule_registry())), text_slot_unknown = "stop 1",
+    input_unparseable = "stop 1", override_scope_conflict = "warn 1",
+    override_unknown_name = "warn 1"
   ))
   site <- results[results$rule_id == "site_id_range_invalid", ]
   expect_equal(site$n_findings, c(2L, 2L))
   expect_true(any(grepl("ZZ", site$detail)))
   # Each check's findings carry its planted defect's witness (plan 18.3).
   witness <- c(
-    dd_duplicate_attribute = "plots.plot_id", dd_type_unknown = "trees.tree_id",
+    dd_duplicate_attribute = "plots.plot_id", dd_name_missing = "table plots",
+    dd_type_unknown = "trees.tree_id",
     dd_type_column_ambiguous = "data_type, datatype", dd_pk_missing = "Table trees",
     dd_fk_target_missing = "\"stands\"", code_list_missing = "\"soils\"",
     code_column_missing = "Code list cover", code_list_duplicate_code = "\"SQ\"",
@@ -77,11 +86,14 @@ test_that("each planted defect gives its check's findings", {
     spec_clash_unresolved = "kind for id \"2\"", datasets_row_missing = "id \"3\"",
     spec_encoding_invalid = "ok<97>", spec_csv_malformed = "line 3",
     site_id_range_invalid = "\"ZZ\"", lineage_spec_unparseable = "plots.src_",
+    lineage_when_invalid = "part \"9\", which isn't one of its parts",
     lineage_name_unknown = "\"regen\"", lineage_spec_row_unflagged = "plots.src_site_id",
     lineage_id_unflagged = "plots.src_site_id", crosswalk_unreadable = "translation table cond",
     dd_format_invalid = "\"abc\"", key_pair_invalid = "\"nothing > soil\"",
     reach_invalid = "\"sometimes\"", one_to_many_invalid = "plots.src_plot_id",
-    setting_unknown_name = "attribute nowhere", option_unknown_name = "attribute nothing"
+    setting_unknown_name = "attribute nowhere", option_unknown_name = "attribute nothing",
+    input_unparseable = "\"sometimes\"", override_scope_conflict = "row 1",
+    override_unknown_name = "nobody_rule"
   )
   for (rule in names(witness)) {
     details <- results$detail[results$rule_id == rule]
@@ -157,6 +169,11 @@ test_that("a clean spec with every input runs every check, each without a findin
       contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
       spec_type = "id", source_text = "tbl.key", note = NA, source_cell = "A2!D5"
     ),
+    lineage_when = data.frame(
+      contributor_label = "BC", table_name = "plots", attribute_name = "src_plot_id",
+      part_order = "1", part_source = "alt.key", when = "kind == \"A\"", note = NA
+    ),
+    lineage_separator = "_",
     crosswalks = list(cond = data.frame(status = c("L", "D"))),
     id_pattern = "^src_.*_id$",
     id_bands = list(
@@ -182,8 +199,26 @@ test_that("a clean spec with every input runs every check, each without a findin
     column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
   )
   withr::local_options(groundplotqc.coordinate_attributes = "kind")
+  # Clean run inputs, the overrides with a group column, an attribute of the spec (D19.51).
+  inputs <- list(
+    overrides = data.frame(
+      fingerprint = NA, rule_id = "code_not_in_list", table_name = "plots",
+      column_name = "kind", issue_class = "source", who = "A. Reviewer", when = "2026-10-22",
+      why = "Checked.", contributor_code = "1"
+    ),
+    lineage = data.frame(
+      table_name = "plots", record_pk = "p1", column_name = "kind", raw_value = "a",
+      raw_source = "tbl.kind"
+    ),
+    pipeline_fill = data.frame(
+      table_name = "plots", record_pk = "p1", column_name = "kind", written_value = "A"
+    )
+  )
   results <- preflight_checks(
-    spec, preflight_context(fx_empty_rule_set(), list(code_set_skip_attributes = "status"))
+    spec,
+    preflight_context(
+      fx_empty_rule_set(), list(code_set_skip_attributes = "status"), NULL, inputs
+    )
   )
   # One row per check, none not_run, stop or warn: every check met clean input.
   expect_equal(results$rule_id, preflight_rules()$rule_id)
@@ -646,4 +681,130 @@ test_that("gpq_preflight refuses an edited spec and an output_dir that isn't a f
   expect_error(gpq_preflight(spec, output_dir = file), "output_dir")
   # A refusal leaves data.table's option as the caller had it.
   expect_identical(getOption("datatable.auto.index"), auto_index)
+})
+
+# ---- task 3 ----
+
+test_that("a dictionary row with no table or attribute name stops pre-flight (m136, D19.32)", {
+  nbsp <- strrep(intToUtf8(160L), 2L)
+  # Rows 1 to 5 are the plan's. Then: a table name of Unicode spaces, a row missing both names, a
+  # primary-key row with no attribute name, an empty and an ASCII-spaces attribute name (the
+  # reader makes both NA), a padded name and one with a space inside, which are not missing, and
+  # last a primary-key row with no table name (M6's minors pass, m12).
+  dictionary <- data.frame(
+    table_name = c(
+      "plots", "plots", NA, "plots", "plots", nbsp, NA, "trees", "plots", "plots", "plots", "plots",
+      NA
+    ),
+    attribute_name = c(
+      "plot_id", NA, "shape", nbsp, "slope", "tag", NA, NA, "", "  ", " padded ", "in side",
+      "tree_id"
+    ),
+    key_type = c("PK", ".", ".", ".", ".", ".", ".", "PK", ".", ".", ".", ".", "PK"),
+    data_type = "character"
+  )
+  results <- preflight_checks(gpq_read_spec(dictionary))
+  # dd_duplicate_attribute and dd_pk_missing also stop on these rows (several nameless
+  # attributes of one table, tables without a primary key); only this check's findings are asserted.
+  found <- results[results$rule_id == "dd_name_missing", ]
+  expect_equal(found$outcome, rep("stop", 9L))
+  expect_equal(found$detail, c(
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "shape"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "tag"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = NA_character_),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "trees"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_attribute", table_name = "plots"),
+    report_text("preflight_detail_dd_name_missing_table", attribute_name = "tree_id")
+  ))
+  # A row missing both names is reported once, with the no-table text, its attribute shown as
+  # (blank) (R11).
+  expect_match(found$detail[5L], "(blank)", fixed = TRUE)
+  # Each finding points to its row of a CSV dictionary (data rows at lines 3 and 5 lack a name).
+  path <- withr::local_tempfile(fileext = ".csv")
+  writeLines(c(
+    "table_name,attribute_name,key_type,data_type", "t,id,PK,character", "t,,.,character",
+    "u,x,.,character", ",y,.,character"
+  ), path)
+  cells <- preflight_checks(gpq_read_spec(path))
+  cells <- cells[cells$rule_id == "dd_name_missing", ]
+  expect_equal(cells$source_cell, paste0(basename(path), c(":3", ":5")))
+  expect_equal(cells$file, rep(basename(path), 2L))
+  # m136's case: a row whose only defect is its missing attribute name, which reached the
+  # results check before, stops a run at pre-flight, on this check alone.
+  nameless <- gpq_read_spec(dictionary[1:2, ])
+  stopped <- tryCatch(
+    gpq_check_conformance(list(plots = data.frame(plot_id = "a")), nameless),
+    gpq_preflight_error = function(e) e
+  )
+  expect_s3_class(stopped, "gpq_preflight_error")
+  expect_equal(
+    unique(stopped$preflight$rule_id[stopped$preflight$outcome == "stop"]), "dd_name_missing"
+  )
+})
+
+test_that("lineage_when_invalid is not_run without the input, and stops on a bad row (D19.37)", {
+  plain <- preflight_checks(fx_lineage_spec())
+  expect_equal(plain$not_run_reason[plain$rule_id == "lineage_when_invalid"], "no_input")
+  clean <- preflight_checks(fx_lineage_spec(lineage_when = fx_lineage_when()))
+  expect_equal(clean$outcome[clean$rule_id == "lineage_when_invalid"], "pass")
+  bad <- preflight_checks(fx_lineage_spec(lineage_when = fx_lineage_when("kind = \"A\"")))
+  expect_equal(bad$outcome[bad$rule_id == "lineage_when_invalid"], "stop")
+})
+
+test_that("a condition row keeps A2's findings at A2's cells, its own at its input's (D12.54)", {
+  dictionary <- data.frame(
+    table_name = "plots", attribute_name = c("plot_id", "kind", "src_plot_id", "src_site_id"),
+    key_type = c("PK", ".", ".", "."), appendix = c(NA, NA, "A2", NA), data_type = "character"
+  )
+  lineage <- data.frame(
+    contributor_label = "BC", table_name = "plots",
+    attribute_name = c("src_plot_id", "src_site_id"), spec_type = "id",
+    source_text = c("tbl.key + regen", "tbl.site"), note = NA, source_cell = c("A2!D5", "A2!D6")
+  )
+  # A condition on the unflagged src_site_id's only part, and one whose provider column is a
+  # name the dictionary lacks, on the second part of src_plot_id.
+  when <- data.frame(
+    contributor_label = "BC", table_name = "plots",
+    attribute_name = c("src_site_id", "src_plot_id"), part_order = c("1", "2"),
+    part_source = c("alt.site", "nowhere"), when = "kind == \"A\"", note = NA
+  )
+  # Pre-flight once per form the conditions come in, each rule read from its results.
+  checked <- function(when) {
+    preflight_checks(gpq_read_spec(
+      dictionary,
+      lineage_spec = lineage, lineage_when = when,
+      column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+    ))
+  }
+  check <- function(results, rule) results[results$rule_id == rule, ]
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(when, path)
+  from_memory <- checked(when)
+  from_file <- checked(path)
+  # The row of src_site_id in the lineage spec is A2's, whatever form the conditions came in.
+  for (results in list(from_memory, from_file)) {
+    unflagged <- check(results, "lineage_spec_row_unflagged")
+    expect_equal(unflagged$detail, report_text(
+      "preflight_detail_lineage_spec_row_unflagged",
+      table_name = "plots", attribute_name = "src_site_id"
+    ))
+    expect_equal(unflagged$file, "in memory")
+    expect_equal(unflagged$source_cell, "A2!D6")
+  }
+  # A name the dictionary lacks: A2's "regen" at A2's cell, the condition's "nowhere" at its
+  # line of the lineage_when file, and that file.
+  unknown <- check(from_file, "lineage_name_unknown")
+  expect_equal(nrow(unknown), 2L)
+  condition <- grepl("nowhere", unknown$detail, fixed = TRUE)
+  expect_equal(unknown$file[condition], basename(path))
+  expect_equal(unknown$source_cell[condition], paste0(basename(path), ":3"))
+  expect_equal(unknown$file[!condition], "in memory")
+  expect_equal(unknown$source_cell[!condition], "A2!D5")
+  # Given in memory, the condition's finding has no cell and the same file as A2's.
+  in_memory <- check(from_memory, "lineage_name_unknown")
+  expect_equal(in_memory$file, rep("in memory", 2L))
+  expect_equal(sort(in_memory$source_cell, na.last = TRUE), c("A2!D5", NA))
 })

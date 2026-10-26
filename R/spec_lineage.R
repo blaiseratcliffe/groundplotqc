@@ -1,6 +1,7 @@
 # The lineage spec (plan 3.6, 10.1; D7.8, D9.14, D12.14, D12.25, D12.31). A2's id rows
 # are parsed in its legend's notation; anything that doesn't split cleanly is rejected,
-# never guessed. Compiled rows document provenance and aren't parsed.
+# never guessed. Compiled rows document provenance and aren't parsed. The lineage_when
+# conditions are read and merged here too (D19.12, D19.36, D19.37).
 
 lineage_part_pattern <- "^[A-Za-z_][A-Za-z0-9_]*([.][A-Za-z_][A-Za-z0-9_]*)?$"
 
@@ -158,7 +159,8 @@ build_lineage_spec <- function(lineage, attributes, file, tokens = NULL,
     data.table(
       contributor_label = one$contributor_label, table_name = one$table_name,
       attribute_name = one$attribute_name, spec_type = one$spec_type, parsed,
-      source_text = one$source_text, note = one$note, source_cell = one$source_cell
+      when = NA_character_, separator = NA_character_, source_text = one$source_text,
+      note = one$note, source_cell = one$source_cell
     )
   })
   component <- bind_component("lineage_spec", rows)
@@ -185,4 +187,125 @@ build_lineage_spec <- function(lineage, attributes, file, tokens = NULL,
   }
   out$component <- component
   out
+}
+
+#' The lineage_when input, read and checked against the lineage spec (D19.12, D19.36, D19.37,
+#' D19.43, D19.48)
+#'
+#' Exactly its columns, a caller's error otherwise (D12.33). Each row conditions one part of
+#' an ID `lineage` gives, A2's rows as build_lineage_spec() places them. A row keeps its first
+#' problem, a lineage_when_invalid finding at the cell it lies in: it names no id entry of the
+#' lineage spec with parts (`entry`); the entry has labelled alternatives (`alternatives`,
+#' D19.48); its part_order isn't one of the entry's parts (`part`); that part is another ID's
+#' parts (`nested`); its part_source isn't a table.column or a bare name (`source`); or its
+#' when isn't one condition on the entry's table (parse_condition(), `when`). The other rows
+#' come back as `rows`, with the lineage_spec component's columns (NULL when none), and
+#' `target`, the row of each one's part in `lineage`.
+#' @noRd
+read_lineage_when <- function(x, lineage, attributes, keys, origin = NULL) {
+  table <- read_input_table(x, "lineage_when", origin)
+  columns <- spec_input_schema()$lineage_when
+  check_input_columns(table$data, columns, "lineage_when")
+  data <- table$data[, columns, with = FALSE]
+  n <- nrow(data)
+  is_id <- lineage$spec_type %chin% "id"
+  with_parts <- is_id & lineage$id_status %chin% c("single", "composite")
+  entries <- paste(
+    lineage$contributor_label, lineage$table_name, lineage$attribute_name,
+    sep = "\r"
+  )
+  named <- paste(data$contributor_label, data$table_name, data$attribute_name, sep = "\r")
+  unnamed <- is.na(data$contributor_label) | is.na(data$table_name) | is.na(data$attribute_name)
+  whole <- !is.na(data$part_order) & grepl("^[0-9]+$", data$part_order)
+  number <- suppressWarnings(as.integer(data$part_order))
+  problem <- rep(NA_character_, n)
+  target <- rep(NA_integer_, n)
+  for (i in seq_len(n)) {
+    entry <- which(with_parts & entries == named[[i]])
+    part <- entry[lineage$part_order[entry] %in% number[[i]]]
+    nests <- length(part) == 1L && lineage$part_kind[[part]] %chin% "derived" && any(
+      is_id & lineage$contributor_label == data$contributor_label[[i]] &
+        lineage$attribute_name == lineage$part_source[[part]],
+      na.rm = TRUE
+    )
+    problem[[i]] <- if (unnamed[[i]] || length(entry) == 0L) {
+      "entry"
+    } else if (any(!is.na(lineage$alternative[entry]))) {
+      "alternatives"
+    } else if (!whole[[i]] || length(part) != 1L) {
+      "part"
+    } else if (nests) {
+      "nested"
+    } else if (
+      is.na(data$part_source[[i]]) || !grepl(lineage_part_pattern, data$part_source[[i]])
+    ) {
+      "source"
+    } else if (is.null(parse_condition(data$when[[i]], data$table_name[[i]], keys, attributes))) {
+      "when"
+    } else {
+      NA_character_
+    }
+    if (is.na(problem[[i]])) {
+      target[[i]] <- part
+    }
+  }
+  # Each finding at the cell its problem lies in; the value shown is the cell's.
+  cell <- c(
+    entry = "contributor_label", alternatives = "contributor_label", part = "part_order",
+    nested = "part_order", source = "part_source", when = "when"
+  )
+  findings <- lapply(unique(problem[!is.na(problem)]), function(kind) {
+    at <- which(problem == kind)
+    data.table(
+      rule_id = "lineage_when_invalid", input = "lineage_when", file = table$where$file,
+      detail = report_text(
+        paste0("preflight_detail_lineage_when_invalid_", kind),
+        contributor_label = data$contributor_label[at], table_name = data$table_name[at],
+        attribute_name = data$attribute_name[at], value = data[[cell[[kind]]]][at]
+      ),
+      source_cell = cell_references(
+        table$where, at + 1L, rep(match(cell[[kind]], names(table$data)), length(at))
+      )
+    )
+  })
+  kept <- which(is.na(problem))
+  rows <- if (length(kept) > 0L) {
+    data.table(
+      contributor_label = data$contributor_label[kept], table_name = data$table_name[kept],
+      attribute_name = data$attribute_name[kept], spec_type = rep("id", length(kept)),
+      alternative = NA_character_, part_order = number[kept],
+      part_source = data$part_source[kept],
+      part_kind = fifelse(grepl(".", data$part_source[kept], fixed = TRUE), "source", "derived"),
+      when = data$when[kept], id_status = lineage$id_status[target[kept]],
+      separator = NA_character_, source_text = NA_character_, note = data$note[kept],
+      source_cell = cell_references(
+        table$where, kept + 1L, rep(match("when", names(table$data)), length(kept))
+      )
+    )
+  }
+  list(
+    rows = rows, target = target[kept], manifest = table$manifest,
+    findings = bind_component("read_findings", c(list(table$findings), findings))
+  )
+}
+
+#' The lineage_spec component with its conditions and separator (D19.12, D19.36)
+#'
+#' Each condition row from read_lineage_when() goes just before the row of the part it
+#' conditions, the rows for one part in the file's order, so a part's conditions are tried
+#' in order before A2's own part; every row takes the separator, NA when none is given.
+#' @noRd
+merge_lineage_when <- function(lineage, when_in, separator) {
+  component <- lineage
+  if (!is.null(when_in$rows)) {
+    n_own <- nrow(lineage)
+    n_when <- nrow(when_in$rows)
+    component <- rbindlist(list(lineage, when_in$rows), use.names = TRUE)
+    position <- c(seq_len(n_own), when_in$target)
+    own_last <- c(rep(1L, n_own), rep(0L, n_when))
+    file_order <- c(integer(n_own), seq_len(n_when))
+    component <- component[order(position, own_last, file_order)]
+  }
+  set(component, j = "separator", value = rep(separator %||% NA_character_, nrow(component)))
+  component
 }

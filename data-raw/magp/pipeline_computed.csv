@@ -1,0 +1,301 @@
+table_name,attribute_name,jurisdiction,derivation,note
+magp_contributors,n_datasets,*,count,distinct datasets of the contributor
+magp_datasets,temporal_extent,*,formula,earliest to latest year of meas_date per dataset
+magp_datasets,n_sites,*,count,rebuilt from the delivery
+magp_datasets,n_plots,*,count,rebuilt from the delivery
+magp_datasets,n_trees,*,count,rebuilt from the delivery
+magp_datasets,n_treemeas,*,count,rebuilt from the delivery
+magp_sites,magp_site_id,*,id,"AB 30250000 + row (provisional); BC, ON and QC from the site register, new sites next_id + seq"
+magp_sites,jurisdiction,*,fill,"AB, BC, ON, QC"
+magp_sites,estab_date,*,formula,earliest dated meas_date (5.3); AB keeps its establishment-date build where 5.3 finds no dated visit
+magp_sites,n_visits,*,count,over dated visits only
+magp_sites,n_cycles,*,count,over dated visits only
+magp_sites,datum,BC,fill,NAD83
+magp_sites,utm_src,BC,fill,G
+magp_sites,lat_long_src,BC,fill,G
+magp_sites,comments,BC,formula,site without measurements where no tree
+magp_sites,utm_src,AB,class,"C if the src_block holds more than one plot, else G"
+magp_sites,lat_long_src,AB,class,"C if the src_block holds more than one plot, else G"
+magp_sites,coord_src,AB,class,by last measurement year
+magp_sites,coord_acc,AB,class,by last measurement year
+magp_sites,slope_class,AB,class,band on slope
+magp_sites,elevation_src,AB,fill,C
+magp_sites,slope_src,AB,fill,G
+magp_sites,utm_src,ON,class,"G if a value is present, else X"
+magp_sites,lat_long_src,ON,class,"G if a value is present, else X"
+magp_sites,slope_src,ON,class,"G if a value is present, else X"
+magp_sites,aspect_src,ON,class,"G if a value is present, else X"
+magp_sites,slope_class,ON,class,bands; Z if slope <= 2; X if no aspect
+magp_sites,aspect_class,ON,class,bands; Z if slope <= 2; X if no aspect
+magp_sites,site_shape,QC,fill,C
+magp_sites,site_radius,QC,fill,11.28
+magp_sites,elevation_src,QC,fill,C
+magp_sites,slope_src,QC,fill,G
+magp_sites,aspect_src,QC,fill,G
+magp_sites,aspect_class,QC,class,"band, north wrap-around, Z if slope <= 2"
+magp_site_dist,magp_dist_id,AB,id,site + number
+magp_site_dist,magp_dist_id,ON,id,site + number
+magp_site_dist,magp_dist_id,QC,id,site + number
+magp_site_dist,magp_site_id,AB,id,site + number
+magp_site_dist,magp_site_id,ON,id,site + number
+magp_site_dist,magp_site_id,QC,id,site + number
+magp_site_treat,magp_treat_id,AB,id,site + number
+magp_site_treat,magp_treat_id,ON,id,site + number
+magp_site_treat,magp_treat_id,QC,id,site + number
+magp_site_treat,magp_site_id,AB,id,site + number
+magp_site_treat,magp_site_id,ON,id,site + number
+magp_site_treat,magp_site_id,QC,id,site + number
+magp_site_dist,src_dist_id,AB,id,company_plot_number.number
+magp_site_dist,src_dist_id,QC,id,id_pe_mes_eventcol
+magp_site_treat,src_treat_id,AB,id,company_plot_number.number
+magp_site_treat,src_treat_id,QC,id,id_pe_mes_eventcol
+magp_site_dist,dist_num,ON,count,sequence within site
+magp_site_dist,dist_num,QC,count,sequence within site
+magp_site_treat,treat_num,ON,count,sequence within site
+magp_site_treat,treat_num,QC,count,sequence within site
+magp_site_dist,disturbance_pct,AB,formula,midpoint of the severity band
+magp_site_dist,comments,QC,formula,source column: <col>
+magp_site_treat,comments,QC,formula,source column: <col>
+magp_site_visits,magp_visit_id,*,id,site + visit_num
+magp_site_visits,magp_site_id,*,id,site + visit_num
+magp_site_visits,src_visit_id,AB,id,company_plot_number.measurement_number
+magp_site_visits,sample_type,AB,fill,F
+magp_site_visits,sample_type,ON,fill,F
+magp_site_visits,sample_type,QC,fill,F
+magp_site_visits,visit_type,AB,class,"EST at visit 1, else REM"
+magp_site_visits,visit_type,QC,class,"EST at visit 1, else REM"
+magp_site_visits,meas_type,AB,fill,ALL
+magp_site_visits,meas_type,BC,fill,ALL
+magp_site_visits,meas_type,QC,fill,ALL
+magp_site_visits,meas_type,ON,class,sorted list of TRE/AGE/VEG/STN in the cluster
+magp_site_visits,visit_num,ON,count,dense rank of the cluster
+magp_site_visits,meas_num,BC,count,dense rank of meas_year
+magp_site_visits,meas_num,ON,count,dense rank of meas_year
+magp_site_visits,meas_num,AB,formula,equal to visit_num
+magp_site_visits,meas_num,QC,formula,equal to visit_num
+magp_site_visits,cycle_num,BC,count,equal to meas_num
+magp_site_visits,cycle_num,ON,count,"dense rank of (startyear, packagekey) by plot, cycle-package visits only"
+magp_site_visits,n_plots,*,count,from the plot measurements (5.3)
+magp_site_visits,meas_plots,*,formula,from the plot measurements (5.3)
+magp_site_visits,meas_frames,*,class,from the plot measurements (5.3)
+magp_site_visits,comments,BC,formula,site visit without measurements
+magp_site_visits,comments,ON,formula,clustering notes
+magp_plots,magp_plot_id,*,id,site + plot
+magp_plots,magp_site_id,*,id,site + plot
+magp_plots,src_plot_id,BC,id,site_identifier_cor_plot_src
+magp_plots,src_plot_id,ON,id,plotkey_plot
+magp_plots,plot,AB,class,1; 0 for buffer-only rows
+magp_plots,plot,QC,fill,1
+magp_plots,slope_class,AB,class,bands
+magp_plots,slope_class,BC,class,bands
+magp_plots,slope_class,ON,class,bands
+magp_plots,aspect_class,BC,class,bands
+magp_plots,aspect_class,ON,class,bands
+magp_plots,aspect_class,QC,class,the site's class
+magp_plots,design_change,*,class,Y/N/Z
+magp_subplots,magp_subplot_id,*,id,plot + subplot label
+magp_subplots,magp_site_id,*,id,plot + subplot label
+magp_subplots,magp_plot_id,*,id,plot + subplot label
+magp_subplots,src_subplot_id,AB,id,the label only
+magp_subplots,src_subplot_id,BC,id,src_plot_id_subplot
+magp_subplots,src_subplot_id,QC,id,a copy of magp_subplot_id
+magp_subplots,plot,QC,fill,1
+magp_subplots,subplot,AB,formula,frame_type + frame_num
+magp_subplots,subplot,ON,formula,frame_type + frame_num
+magp_subplots,subplot,BC,class,inferred frame
+magp_subplots,subplot,QC,class,inferred frame
+magp_subplots,frame_type,BC,class,lookup on the inferred subplot
+magp_subplots,frame_type,ON,class,"M/O by plot, R on the tally side"
+magp_subplots,frame_type,QC,class,first letter of the inferred subplot
+magp_subplots,frame_num,BC,class,lookup on the inferred subplot
+magp_subplots,frame_num,ON,count,1 on tree frames; dense rank of vegplotkey on R frames
+magp_subplots,ef_change,*,class,Y/N/Z
+magp_designs,magp_design_id,*,id,numbered by the pipeline
+magp_designs,main_design,*,id,numbered by the pipeline
+magp_designs,frame_design,*,id,numbered by the pipeline
+magp_designs,magp_contributor_id,*,fill,"100, 110, 170, 180"
+magp_designs,n_subplots,*,count,measured subplots per plot measurement
+magp_designs,meas_subplots,*,formula,measured subplots per plot measurement
+magp_designs,slope_adj,AB,fill,Y
+magp_design_frames,magp_frame_id,*,id,"design id + ""_"" + subplot"
+magp_design_frames,magp_design_id,*,id,"design id + ""_"" + subplot"
+magp_design_frames,src_frame_name,*,class,label assigned by MAGPlot
+magp_design_frames,frame_type,BC,class,as magp_subplots
+magp_design_frames,frame_type,ON,class,as magp_subplots
+magp_design_frames,frame_type,QC,class,as magp_subplots
+magp_design_frames,frame_num,BC,class,as magp_subplots
+magp_design_frames,frame_num,ON,count,as magp_subplots
+magp_design_frames,subplot,AB,formula,as magp_subplots
+magp_design_frames,subplot,ON,formula,as magp_subplots
+magp_design_frames,subplot,BC,class,as magp_subplots
+magp_design_frames,subplot,QC,class,as magp_subplots
+magp_design_frames,plot_shape,ON,class,C or R by dimension; X on R frames
+magp_design_frames,plot_shape,QC,fill,C
+magp_design_frames,min_dbh,QC,class,looked up from the frame radius
+magp_design_frames,max_dbh,QC,class,looked up from the frame radius
+magp_design_frames,min_ht,QC,class,looked up from the frame radius
+magp_design_frames,min_ht,BC,fill,"0.1 on S3, missing codes elsewhere"
+magp_design_frames,min_ht,ON,fill,"0 on R, missing codes elsewhere"
+magp_design_frames,meas_meth,AB,class,"CM on R frames, else M"
+magp_design_frames,meas_meth,BC,fill,M; C on S3
+magp_design_frames,meas_meth,ON,fill,M
+magp_design_frames,tag_type,AB,class,T on M/S else Z
+magp_design_frames,tag_type,QC,class,P on M else Z
+magp_design_frames,tag_type,BC,fill,P; Z on S3
+magp_design_frames,tag_type,ON,fill,P
+magp_design_frames,census,AB,fill,Y
+magp_design_frames,census,QC,class,Y if met_eval holds nombrement
+magp_design_frames,standing_dead,AB,class,by frame type and year
+magp_design_frames,standing_dead,QC,class,on M
+magp_design_frames,comments,AB,formula,design notes
+magp_design_frames,comments,ON,formula,design notes
+magp_design_frames,comments,QC,formula,design notes
+magp_plot_meas,magp_plotmeas_id,*,id,design resolved in 5.3
+magp_plot_meas,magp_visit_id,*,id,design resolved in 5.3
+magp_plot_meas,magp_plot_id,*,id,design resolved in 5.3
+magp_plot_meas,magp_design_id,*,id,design resolved in 5.3
+magp_plot_meas,visit_num,ON,count,from the visit clusters
+magp_subplot_meas,visit_num,ON,count,from the visit clusters
+magp_tree_meas,visit_num,ON,count,from the visit clusters
+magp_plot_meas,nrow_sph1_tree,*,count,AB's nrow_sph_tally replaced on R-frame evidence
+magp_plot_meas,nrow_sph9_tree,*,count,AB's nrow_sph_tally replaced on R-frame evidence
+magp_plot_meas,nrow_sph_tally,*,count,AB's nrow_sph_tally replaced on R-frame evidence
+magp_plot_meas,sph1_tree,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,baph1_tree,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,sph9_tree,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,baph9_tree,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,sph_tally,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,baph_tally,*,formula,as nrow_sph_tally for AB's sph_tally
+magp_plot_meas,n_species,*,count,live species across frames
+magp_plot_meas,comments,AB,formula,regeneration coverage text
+magp_subplot_meas,magp_subpmeas_id,*,id,
+magp_subplot_meas,magp_plotmeas_id,*,id,
+magp_subplot_meas,magp_visit_id,*,id,
+magp_subplot_meas,magp_subplot_id,*,id,
+magp_subplot_meas,magp_frame_id,*,id,
+magp_subplot_meas,src_subpmeas_id,AB,id,a copy of magp_subpmeas_id
+magp_subplot_meas,src_subpmeas_id,BC,id,src_subplot_id_visit
+magp_subplot_meas,src_subpmeas_id,QC,id,id_pe_mes_subplot
+magp_subplot_meas,comments,AB,formula,method text
+magp_subplot_meas,comments,BC,formula,tagging-limit note
+magp_trees,magp_tree_id,*,id,AB's subplot from the latest visit
+magp_trees,magp_site_id,*,id,AB's subplot from the latest visit
+magp_trees,magp_subplot_id,*,id,AB's subplot from the latest visit
+magp_trees,src_tree_id,AB,id,assembled from parts
+magp_trees,src_tree_id,BC,id,assembled from parts
+magp_trees,plot,AB,class,plot of the latest measured frame
+magp_trees,plot,QC,fill,1
+magp_trees,subplot,AB,formula,frame label
+magp_trees,subplot,ON,formula,frame label
+magp_trees,subplot,BC,class,inferred frame
+magp_trees,subplot,QC,class,inferred frame
+magp_trees,subplot_history,*,formula,A --> B sequence
+magp_trees,tree_origin,BC,class,decided once per tree; 5.4's carry-forward also fills blanks
+magp_trees,tree_loc,BC,class,by subplot or growth plot; 5.4's carry-forward
+magp_trees,tree_loc,ON,class,by subplot or growth plot; 5.4's carry-forward
+magp_tree_meas,magp_treemeas_id,*,id,
+magp_tree_meas,magp_tree_id,*,id,
+magp_tree_meas,magp_subpmeas_id,*,id,
+magp_tree_meas,magp_frame_id,*,id,
+magp_tree_meas,src_treemeas_id,AB,id,assembled from parts
+magp_tree_meas,src_treemeas_id,BC,id,assembled from parts
+magp_tree_meas,tree_type,AB,class,BT/A/RV/M
+magp_tree_meas,tree_type,BC,class,by subplot
+magp_tree_meas,tree_type,ON,class,A/H/L
+magp_tree_meas,tree_change_class,AB,class,5.3 status-pair rule
+magp_tree_meas,tree_change_class,ON,class,5.3 status-pair rule
+magp_tree_meas,tree_change_class,QC,class,5.3 status-pair rule
+magp_tree_meas,tree_stance,AB,class,from condition codes
+magp_tree_meas,dead_cause,AB,class,from condition codes
+magp_tree_meas,stem_cond,BC,class,from broken-top or deformity codes
+magp_tree_meas,stem_cond,ON,class,from broken-top or deformity codes
+magp_tree_meas,meas_est_height,AB,class,
+magp_tree_meas,meas_est_height,QC,class,
+magp_tree_meas,meas_est_dbh,AB,class,
+magp_tree_meas,meas_est_dbh,BC,class,
+magp_tree_meas,meas_est_dbh,ON,class,
+magp_tree_meas,crown_length,AB,formula,height - hlc
+magp_tree_meas,crown_length,BC,formula,height - hlc; -1 where negative
+magp_tree_meas,lcr,AB,formula,crown_length / height x 100
+magp_tree_meas,lcr_meas_meth,AB,class,C/Z
+magp_tree_meas,hlc_meas_meth,AB,class,
+magp_tree_meas,hlc_meas_meth,BC,class,
+magp_tree_meas,hlc_meas_meth,ON,class,
+magp_tree_meas,cw_meas_meth,AB,class,
+magp_tree_meas,cw_meas_meth,ON,class,
+magp_tree_meas,plot_wt,AB,class,"0 on O frames, else 1"
+magp_tree_meas,plot_wt,ON,formula,0 for age trees and plot 0; area ratio for PIP; else 1
+magp_tree_meas,plot_wt,QC,fill,1
+magp_tree_meas,tree_wt,AB,class,0/1
+magp_tree_meas,tree_wt,ON,class,0/1
+magp_tree_meas,tree_wt,QC,fill,1
+magp_tree_meas,tree_ba,*,formula,-9 where tree_wt is 0
+magp_tree_meas,tree_ef_unadj,*,formula,-9 where tree_wt is 0
+magp_tree_meas,tree_ef_adj,*,formula,-9 where tree_wt is 0
+magp_tree_meas,tree_baph_adj,*,formula,-9 where tree_wt is 0
+magp_tree_meas,comments,ON,formula,ht_meas_date: ...
+magp_tree_cond,magp_cond_id,*,id,
+magp_tree_cond,magp_treemeas_id,*,id,
+magp_tree_cond,src_cond_id,AB,id,assembled from parts
+magp_tree_cond,src_cond_id,ON,id,assembled from parts
+magp_tree_cond,src_cond_id,QC,id,assembled from parts
+magp_tree_cond,cond_num,*,count,slot or sequence
+magp_tree_cond,severity,ON,class,band on extent or defol_max
+magp_tree_cond,severity,QC,class,band on extent or defol_max
+magp_tree_cond,condition_location,ON,class,thirds of the stem
+magp_tree_cond,condition_location,QC,class,by source column
+magp_tree_cond,comments,QC,formula,
+magp_tree_age,magp_age_id,*,id,
+magp_tree_age,magp_treemeas_id,*,id,
+magp_tree_age,src_age_id,AB,id,assembled from parts
+magp_tree_age,src_age_id,BC,id,assembled from parts
+magp_tree_age,sample_num,AB,fill,1
+magp_tree_age,sample_num,BC,fill,1
+magp_tree_age,sample_num,QC,fill,1
+magp_tree_age,sample_num,ON,count,sequence
+magp_tree_age,age_sample_type,AB,class,
+magp_tree_age,age_sample_type,BC,class,
+magp_tree_age,ring_count_src,AB,fill,OC
+magp_tree_age,ring_count_src,ON,class,FC/OC/OV
+magp_tree_age,total_age_src,AB,fill,ACY
+magp_tree_age,total_age_src,ON,fill,BCD on base samples
+magp_tree_age,meas_est_age,AB,fill,M
+magp_tree_age,meas_est_age,BC,class,
+magp_tree_age,meas_est_age,ON,class,
+magp_tree_age,comments,ON,formula,
+magp_tree_age,comments,QC,formula,
+magp_tally_trees,magp_tally_id,*,id,
+magp_tally_trees,magp_subpmeas_id,*,id,
+magp_tally_trees,magp_frame_id,*,id,
+magp_tally_trees,src_tally_id,AB,id,assembled from parts
+magp_tally_trees,src_tally_id,BC,id,assembled from parts
+magp_tally_trees,src_tally_id,QC,id,assembled from parts
+magp_tally_trees,reg_meas_num,*,count,sequence within the subplot measurement
+magp_tally_trees,tally_type,AB,fill,RE
+magp_tally_trees,ht_class,ON,class,from the regeneration type name
+magp_tally_trees,dbh_class,ON,class,from the regeneration type name
+magp_tally_trees,dbh_midpoint,BC,class,assumed midpoint per class
+magp_tally_trees,dbh_midpoint,QC,class,assumed midpoint per class
+magp_tally_trees,dbh_midpoint,ON,fill,1.25 on saplings
+magp_tally_trees,tally_ef_unadj,*,formula,
+magp_tally_trees,tally_ef_adj,*,formula,
+magp_tally_trees,tally_ba,*,formula,
+magp_tally_trees,tally_baph_adj,*,formula,
+magp_tally_trees,comments,QC,formula,censored or presence-only notes
+magp_contributors,magp_contributor_id,*,reference,MAGPlot reference file: the lookup workbook's contributor sheet
+magp_contributors,abbreviated_name,*,reference,MAGPlot reference file: the lookup workbook's contributor sheet
+magp_contributors,full_name,*,reference,MAGPlot reference file: the lookup workbook's contributor sheet
+magp_contributors,src_database_name,*,reference,MAGPlot reference file: the lookup workbook's contributor sheet
+magp_contributors,magp_database_name,*,reference,MAGPlot reference file: the lookup workbook's contributor sheet
+magp_datasets,magp_dataset_id,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,magp_contributor_id,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,src_dataset_id,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,gp_type,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,gp_network,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,probability_sampling,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,sampling_design,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,site_design,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,plot_design,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,plot_layout_fig,*,reference,MAGPlot reference file: the datasets register
+magp_datasets,meas_interval,*,reference,MAGPlot reference file: the datasets register; AB's descriptors typed in by analysts
+magp_datasets,comments,*,reference,MAGPlot reference file: the datasets register

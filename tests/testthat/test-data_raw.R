@@ -173,14 +173,24 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   writeLines("sheet", file.path(config, "precedence.csv"))
   writeLines("table_name", file.path(config, "key_pairs.csv"))
   writeLines("table_name", file.path(config, "reach.csv"))
+  writeLines("contributor_label", file.path(config, "lineage_when.csv"))
   spec <- gpq_read_spec(
     data.frame(table_name = "t", attribute_name = "a", key_type = "PK", data_type = "character"),
+    lineage_spec = data.frame(
+      contributor_label = "x", table_name = "t", attribute_name = "a", spec_type = "id",
+      source_text = "p.q", note = NA, source_cell = NA
+    ),
+    lineage_when = data.frame(
+      contributor_label = "x", table_name = "t", attribute_name = "a", part_order = "1",
+      part_source = "r.s", when = "a == \"1\"", note = NA
+    ),
     precedence = data.frame(
       sheet = "s", key_col = "k", attribute_name = "c", winner = "datasets", blank_rule = "wins"
     ),
     key_pairs = data.frame(table_name = "t", left = "a", right = "a", note = NA),
     reach = data.frame(table_name = "t", attribute_name = NA, how = "root"),
     origins = list(
+      lineage_when = list(path = file.path(config, "lineage_when.csv"), rows = 2L),
       precedence = list(path = file.path(config, "precedence.csv"), rows = 2L),
       key_pairs = list(path = file.path(config, "key_pairs.csv"), rows = 2L),
       reach = list(path = file.path(config, "reach.csv"), rows = 2L)
@@ -193,6 +203,9 @@ test_that("the manifest names hand-kept files by repo path, the exceptions inclu
   expect_equal(manifest$file[manifest$input == "precedence"], "data-raw/magp/precedence.csv")
   expect_equal(manifest$file[manifest$input == "key_pairs"], "data-raw/magp/key_pairs.csv")
   expect_equal(manifest$file[manifest$input == "reach"], "data-raw/magp/reach.csv")
+  expect_equal(
+    manifest$file[manifest$input == "lineage_when"], "data-raw/magp/lineage_when.csv"
+  )
   exceptions <- manifest[manifest$input == "dictionary:exceptions", ]
   expect_equal(exceptions$file, "data-raw/magp/spec_exceptions.csv")
   expect_equal(
@@ -430,6 +443,15 @@ test_that("the hand-kept files have their columns", {
   expect_named(hand_kept("precedence.csv"), c(spec_input_schema()$precedence, "decision"))
   expect_named(hand_kept("key_pairs.csv"), spec_input_schema()$key_pairs)
   expect_named(hand_kept("reach.csv"), spec_input_schema()$reach)
+  expect_named(
+    hand_kept("pipeline_computed.csv"),
+    c("table_name", "attribute_name", "jurisdiction", "derivation", "note")
+  )
+  expect_named(
+    hand_kept("crosswalk_provider_columns.csv"),
+    c("crosswalk", "attribute_name", "jurisdiction", "provider_column")
+  )
+  expect_named(hand_kept("lineage_when.csv"), spec_input_schema()$lineage_when)
   expect_true(all(hand_kept("non_code_sheets.csv")$reason %in% c("reference", "superseded")))
 })
 
@@ -440,7 +462,7 @@ test_that("the hand-kept rows are valid where the build takes them", {
   # The reader's own checks: winner and blank_rule from their lists, one row per key.
   expect_no_error(read_precedence(precedence[, spec_input_schema()$precedence, with = FALSE]))
   found <- magp_spec()$read_findings$rule_id
-  expect_false(any(c("key_pair_invalid", "reach_invalid") %in% found))
+  expect_false(any(c("key_pair_invalid", "reach_invalid", "lineage_when_invalid") %in% found))
 })
 
 test_that("the reader reads the DD workbook in spec/ from its first sheet", {
@@ -2073,4 +2095,356 @@ test_that("build_magp_example.R builds the example with the tests' clean base (D
   bytes <- readBin(path, "raw", file.size(path))
   expect_equal(bytes[1:6], as.raw(c(0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00)))
   expect_equal(rawToChar(memDecompress(bytes, "xz")[1:4]), "RDX3")
+})
+
+# M6's cleanup (M5 m9). M6's fourteen tests in this file skip on CRAN, as R CMD check never
+# runs them (D19.81, D19.83).
+test_that("edit_csv_cell.R applies the edit list its third argument names (D18.24)", {
+  script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
+  testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  testthat::skip_on_cran()
+  # A synthetic copy laid out as edits_20261015.R's two entries want it: whole CRLF lines, NO
+  # and ND on lines 102 and 103 with no treat_vs_dist, other codes above them.
+  name <- "20261015_magpv2_treatment_disturbance.csv"
+  lines <- c("magp_codes,treat_vs_dist", sprintf("C%03d,T", 1:100), "NO,", "ND,")
+  crlf <- function(x) charToRaw(paste0(paste(x, collapse = "\r\n"), "\r\n"))
+  input_dir <- withr::local_tempdir()
+  writeBin(crlf(lines), file.path(input_dir, name))
+  output_dir <- file.path(withr::local_tempdir(), "edited")
+  out <- suppressWarnings(system2(
+    file.path(R.home("bin"), "Rscript"),
+    shQuote(c(normalizePath(script), input_dir, output_dir, "edits_20261015.R")),
+    stdout = TRUE, stderr = TRUE
+  ))
+  expect_null(attr(out, "status"), info = paste(out, collapse = "\n"))
+  expect_match(
+    out, "line 103, magp_codes = ND, treat_vs_dist: (blank) -> D",
+    fixed = TRUE, all = FALSE
+  )
+  # The two cells edited, every other byte as it was.
+  written <- file.path(output_dir, name)
+  expect_identical(
+    readBin(written, "raw", file.size(written)), crlf(c(lines[1:101], "NO,T", "ND,D"))
+  )
+})
+
+test_that("edit_csv_cell.R refuses an edit list named with its folder (D18.24)", {
+  script <- testthat::test_path("..", "..", "data-raw", "spec_edits", "edit_csv_cell.R")
+  testthat::skip_if_not(file.exists(script), "data-raw/spec_edits/ is not in this tree")
+  testthat::skip_on_cran()
+  script <- normalizePath(script)
+  # The list exists (the script's folder, reached by ../ and back down), but only a file name of
+  # the script's own folder is taken, so the run stops before it reads or writes anything. The
+  # path is relative, so file.exists() of it under the script's folder holds and the refusal is
+  # the script's own check of the name.
+  input_dir <- withr::local_tempdir()
+  output_dir <- file.path(withr::local_tempdir(), "edited")
+  listed <- file.path("..", basename(dirname(script)), "edits_20261015.R")
+  out <- suppressWarnings(system2(
+    file.path(R.home("bin"), "Rscript"), shQuote(c(script, input_dir, output_dir, listed)),
+    stdout = TRUE, stderr = TRUE
+  ))
+  expect_equal(attr(out, "status"), 1L)
+  expect_match(out, "No edit list named ", fixed = TRUE, all = FALSE)
+  expect_false(dir.exists(output_dir))
+})
+
+# ---- MAGPlot's evidence files (M6; plan 3.6, 10.3; D19.38, D19.59) ----
+
+# These twelve tests and the two edit_csv_cell.R tests above are M6's fourteen in this file;
+# they skip on CRAN, as R CMD check never runs them (D19.81, D19.83).
+
+# A stand-in spec for build_magp_evidence(): the parts it reads, in MAGPlot's names. Two
+# translation tables, species and datum_walk, so that an attribute or a column can belong to
+# the other one: species takes its codes from the first, datum from the second, and
+# jurisdiction from a sheet, whose codes are AB and BC (PINU.ALB is a code of another list).
+evidence_spec <- function() {
+  list(
+    attributes = data.table::data.table(
+      table_name = c("magp_sites", "magp_sites", "magp_tree_meas"),
+      attribute_name = c("jurisdiction", "datum", "species")
+    ),
+    codes = data.table::data.table(
+      code = c("AB", "BC", "PINU.ALB"), source_type = c("sheet", "sheet", "crosswalk"),
+      source_name = c("jurisdiction", "jurisdiction", "species")
+    ),
+    code_list_map = data.table::data.table(
+      attribute_name = c("jurisdiction", "species", "datum"),
+      source_type = c("sheet", "crosswalk", "crosswalk"),
+      source_name = c("jurisdiction", "species", "datum_walk")
+    ),
+    crosswalks = data.table::data.table(
+      crosswalk = c(rep("species", 4L), rep("datum_walk", 2L)),
+      source_row = c(1L, 1L, 2L, 2L, 1L, 1L),
+      crosswalk_column = c("NFI", "AB_code", "NFI", "AB_code", "code", "AB_datum"),
+      value = c("NFI", "AB_code", "PINU.ALB", "Pw / Pa", "code", "AB_datum")
+    )
+  )
+}
+
+# A folder holding the two evidence files, each its header and the rows given, by default a
+# sound row of the stand-in spec; removed when the calling test ends.
+evidence_config <- function(computed = "magp_sites,datum,*,fill,",
+                            provider = "species,species,AB,AB_code") {
+  dir <- withr::local_tempdir(.local_envir = parent.frame())
+  writeLines(
+    c("table_name,attribute_name,jurisdiction,derivation,note", computed),
+    file.path(dir, "pipeline_computed.csv")
+  )
+  writeLines(
+    c("crosswalk,attribute_name,jurisdiction,provider_column", provider),
+    file.path(dir, "crosswalk_provider_columns.csv")
+  )
+  dir
+}
+
+test_that("build_magp_evidence takes sound rows and returns both files' tables (D19.59)", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  config <- evidence_config(
+    computed = c("magp_sites,datum,*,fill,", "magp_sites,datum,BC,fill,NAD83"),
+    provider = c("species,species,AB,AB_code", "species,species,BC,NFI")
+  )
+  evidence <- build$build_magp_evidence(evidence_spec(), config)
+  expect_named(evidence, c("pipeline_computed", "crosswalk_provider_columns"))
+  expect_equal(evidence$pipeline_computed$jurisdiction, c("*", "BC"))
+  expect_equal(evidence$crosswalk_provider_columns$provider_column, c("AB_code", "NFI"))
+  # A file with its header and no row is sound: no row, no problem (M6's minors pass, m53).
+  empty <- build$build_magp_evidence(
+    evidence_spec(), evidence_config(computed = character(), provider = character())
+  )
+  expect_equal(vapply(empty, nrow, 0L), c(pipeline_computed = 0L, crosswalk_provider_columns = 0L))
+  expect_equal(unname(lapply(empty, names)), unname(build$evidence_files))
+})
+
+test_that("the build takes the tree's evidence files, copied unchanged (D19.59)", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  dirs <- tree_dirs()
+  # magp_spec() is the spec the build makes of the tree's spec/ (a test above).
+  expect_no_error(build$build_magp_evidence(magp_spec(), dirs$config))
+  for (name in names(build$evidence_files)) {
+    copy <- system.file("extdata", "magp", name, package = "groundplotqc")
+    expect_true(nzchar(copy), info = name)
+    expect_identical(
+      unname(tools::md5sum(copy)), unname(tools::md5sum(file.path(dirs$config, name))),
+      info = name
+    )
+  }
+})
+
+test_that("the build stops on a pipeline_computed.csv row of no attribute of the dictionary", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  config <- evidence_config(computed = c(
+    "magp_sites,datum,*,fill,", "magp_sites,no_such,*,id,", ",datum,AB,fill,",
+    "magp_sites,,*,id,"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "pipeline_computed.csv has rows the build can't take, so nothing was built: ",
+      "line 3: the dictionary has no attribute \"no_such\" in table \"magp_sites\"; ",
+      "line 4: the dictionary has no attribute \"datum\" in table (blank); ",
+      "line 5: the dictionary has no attribute (blank) in table \"magp_sites\"."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build lists the problems of different checks in line order", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # The derivation check runs after the dictionary check, and its row comes first.
+  config <- evidence_config(
+    computed = c("magp_sites,datum,AB,register,", "magp_sites,no_such,AB,fill,")
+  )
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: derivation \"register\" isn't id, class, formula, count, fill or reference; ",
+      "line 3: the dictionary has no attribute \"no_such\" in table \"magp_sites\"."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a derivation that isn't one of plan 3.6's six (D19.38)", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  config <- evidence_config(computed = c("magp_sites,datum,*,register,", "magp_sites,datum,BC,,"))
+  six <- "id, class, formula, count, fill or reference"
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: derivation \"register\" isn't ", six, "; ",
+      "line 3: derivation (blank) isn't ", six, "."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a jurisdiction the sheet lacks, \"*\" only in pipeline_computed", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # "*" is fine; PINU.ALB is a code, but of the species list, not of the jurisdiction sheet.
+  config <- evidence_config(computed = c(
+    "magp_sites,datum,QUE,fill,", "magp_sites,datum,*,id,", "magp_sites,datum,PINU.ALB,fill,",
+    "magp_sites,datum,,class,"
+  ))
+  neither <- "is neither \"*\" nor a code of the jurisdiction sheet"
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: jurisdiction \"QUE\" ", neither, "; ",
+      "line 4: jurisdiction \"PINU.ALB\" ", neither, "; ",
+      "line 5: jurisdiction (blank) ", neither, "."
+    ),
+    fixed = TRUE
+  )
+  config <- evidence_config(provider = c(
+    "species,species,*,AB_code", "species,species,QC,NFI", "species,species,,AB_code"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "crosswalk_provider_columns.csv has rows the build can't take, so nothing was built: ",
+      "line 2: jurisdiction \"*\" isn't a code of the jurisdiction sheet; ",
+      "line 3: jurisdiction \"QC\" isn't a code of the jurisdiction sheet; ",
+      "line 4: jurisdiction (blank) isn't a code of the jurisdiction sheet."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a row given twice in either file, naming the first one's line", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # The same table, attribute and jurisdiction with another derivation and note is a repeat.
+  config <- evidence_config(computed = c(
+    "magp_sites,datum,BC,fill,a", "magp_sites,datum,*,fill,", "magp_sites,datum,BC,class,b"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    "line 4: line 2 already gives this table, attribute and jurisdiction.",
+    fixed = TRUE
+  )
+  # Two columns of one jurisdiction are two rows; the same column again is a repeat.
+  config <- evidence_config(provider = c(
+    "species,species,AB,AB_code", "species,species,AB,NFI", "species,species,AB,AB_code"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste(
+      "crosswalk_provider_columns.csv has rows the build can't take, so nothing was built:",
+      "line 4: the row repeats line 2."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a translation table the specification doesn't read", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # Its attribute and column aren't looked for in a table the spec doesn't read.
+  config <- evidence_config(provider = c("speciess,species,AB,AB_code", ",species,AB,AB_code"))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: the specification reads no translation table \"speciess\"; ",
+      "line 3: the specification reads no translation table (blank)."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on an attribute whose code list isn't the translation table", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # datum takes its codes from another translation table; jurisdiction's come from a sheet.
+  config <- evidence_config(provider = c(
+    "species,datum,AB,AB_code", "species,jurisdiction,AB,AB_code", "species,,AB,AB_code"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: attribute \"datum\" doesn't take its codes from translation table \"species\"; ",
+      "line 3: attribute \"jurisdiction\" doesn't take its codes from translation table ",
+      "\"species\"; ",
+      "line 4: attribute (blank) doesn't take its codes from translation table \"species\"."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on a provider column the translation table lacks", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  # AB_datum is a column of the other translation table, not of species.
+  config <- evidence_config(provider = c(
+    "species,species,AB,ab_code", "species,species,BC,", "species,species,AB,AB_datum"
+  ))
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste0(
+      "line 2: translation table \"species\" has no column \"ab_code\"; ",
+      "line 3: translation table \"species\" has no column (blank); ",
+      "line 4: translation table \"species\" has no column \"AB_datum\"."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("the build stops on an evidence file without exactly its columns", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  provider_stop <- paste(
+    "crosswalk_provider_columns.csv must have exactly the columns crosswalk, attribute_name,",
+    "jurisdiction, provider_column, so nothing was built."
+  )
+  # The columns in another order.
+  config <- evidence_config()
+  writeLines(
+    c("crosswalk,attribute_name,provider_column,jurisdiction", "species,species,AB_code,AB"),
+    file.path(config, "crosswalk_provider_columns.csv")
+  )
+  expect_error(build$build_magp_evidence(evidence_spec(), config), provider_stop, fixed = TRUE)
+  # An extra column after them.
+  config <- evidence_config()
+  writeLines(
+    c("crosswalk,attribute_name,jurisdiction,provider_column,x", "species,species,AB,AB_code,1"),
+    file.path(config, "crosswalk_provider_columns.csv")
+  )
+  expect_error(build$build_magp_evidence(evidence_spec(), config), provider_stop, fixed = TRUE)
+  # The other file without its last column.
+  config <- evidence_config()
+  writeLines(
+    c("table_name,attribute_name,jurisdiction,derivation", "magp_sites,datum,*,fill"),
+    file.path(config, "pipeline_computed.csv")
+  )
+  expect_error(
+    build$build_magp_evidence(evidence_spec(), config),
+    paste(
+      "pipeline_computed.csv must have exactly the columns table_name, attribute_name,",
+      "jurisdiction, derivation, note, so nothing was built."
+    ),
+    fixed = TRUE
+  )
+})
+
+test_that("copy_evidence copies the two evidence files unchanged, a space in the path", {
+  testthat::skip_on_cran()
+  build <- load_data_raw("build_magp_config.R")
+  config <- evidence_config()
+  out <- file.path(withr::local_tempdir(), "compiled set")
+  dir.create(out)
+  # A copy from an earlier build is written over, as every recompile does.
+  writeLines("an earlier copy", file.path(out, "pipeline_computed.csv"))
+  copied <- build$copy_evidence(config, out)
+  expect_setequal(basename(copied), c("pipeline_computed.csv", "crosswalk_provider_columns.csv"))
+  for (path in copied) {
+    expect_identical(
+      unname(tools::md5sum(path)), unname(tools::md5sum(file.path(config, basename(path))))
+    )
+  }
 })

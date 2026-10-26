@@ -4,6 +4,8 @@
 "non_code_sheets","in memory",,
 "datasets","20261005_magpv2_datasets.csv","20261005","04f00036aa30315d26aae174a65f7fbeb06a54818c84849ce2b9f70c06224b31"
 "lineage_spec","20261005_magpv2_A2.xlsx","20261005","86bd28ff57baf5371a51900c393e655de25be008ac5753ce456f27e27e006b70"
+"lineage_when","data-raw/magp/lineage_when.csv",,"ac119f968ba170df0842a441d8d272289433a07fc4ea107a8bf0be5286da3e4d"
+"lineage_separator","in memory",,
 "crosswalks:condition","20261005_magpv2_condition.csv","20261005","38ae9975a1becad2eb01122ff5497407f6ec5d22b74b4b4d4faa9e5b075cac7c"
 "crosswalks:severity","20261005_magpv2_severity.csv","20261005","c70841da3a74e8e6f5ea1a2f80734f1a3506c242dc86552ed873c5705cb17675"
 "crosswalks:species","20261005_magpv2_species.csv","20261005","8c87871f8d6c9e9a8233eed78879ab33228e6a46b0f2d8079793248ce246c618"

@@ -2104,6 +2104,19 @@ test_that("reach_invalid finds each table the walk checks that no walk from a ro
   expect_equal(nrow(found_in(walked)), 0L)
   checks <- preflight_checks(walked)
   expect_equal(checks$outcome[checks$rule_id == "reach_invalid"], "pass")
+  # The rootless walk read from a data.frame placed on a workbook sheet, so each cell names its
+  # column: the plots, with no row of their own, at the from_child row's attribute_name (B),
+  # the trees at their own row's table_name (A) (R108; M6's cleanup, M5 m80).
+  workbook <- withr::local_tempfile(fileext = ".xlsx")
+  writeLines("stand-in", workbook)
+  placed <- gpq_read_spec(
+    dictionary,
+    reach = data.frame(table_name = "trees", attribute_name = "plot_id", how = "from_child"),
+    origins = list(reach = list(path = workbook, sheet = "reach", rows = 2L))
+  )
+  found <- found_in(placed)
+  expect_equal(found$detail, unreached(c("plots", "trees")))
+  expect_equal(found$source_cell, c("reach!B2", "reach!A2"))
 })
 
 # ---- the Copilot fix round (R170) ----
@@ -2160,4 +2173,37 @@ test_that("the bands' unknown column is a finding beside a dictionary row with n
   ))
   expect_equal(nrow(spec$id_band_columns), 0L)
   expect_error(gpq_preflight(spec), class = "gpq_preflight_error")
+})
+
+test_that("lineage_separator is one piece of text, on every lineage row (D19.12, D19.36)", {
+  for (bad in list(c("_", "."), "", NA_character_, 1, TRUE)) {
+    expect_error(fx_lineage_spec(separator = bad), "lineage_separator", info = deparse(bad))
+  }
+  expect_true(all(is.na(fx_lineage_spec(separator = NULL)$lineage_spec$separator)))
+  dotted <- fx_lineage_spec(separator = ".")
+  expect_equal(unique(dotted$lineage_spec$separator), ".")
+  expect_equal(dotted$manifest$file[dotted$manifest$input == "lineage_separator"], "in memory")
+})
+
+test_that("lineage_when takes an origin; lineage_separator takes none (D12.33)", {
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(fx_lineage_when(), path)
+  read <- fx_lineage_spec(lineage_when = data.table::fread(path, colClasses = "character"))
+  expect_equal(read$manifest$file[read$manifest$input == "lineage_when"], "in memory")
+  expect_error(
+    gpq_read_spec(
+      data.frame(table_name = "t", attribute_name = "id", key_type = "PK", data_type = "character"),
+      lineage_separator = "_", origins = list(lineage_separator = list(path = path))
+    ),
+    "take no origin"
+  )
+})
+
+test_that("a spec without lineage_when reloads identical, its two columns NA (D12.14)", {
+  spec <- fx_lineage_spec(separator = NULL)
+  expect_named(spec$lineage_spec, names(spec_schema()$lineage_spec))
+  expect_true(all(is.na(spec$lineage_spec$when)))
+  dir <- withr::local_tempdir()
+  write_compiled_spec(spec, dir)
+  expect_identical(read_compiled_spec(dir), spec)
 })
