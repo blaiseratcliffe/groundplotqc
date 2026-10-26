@@ -13,12 +13,13 @@ It does stop, with an error, on a mistake in the call: an argument in
 the wrong form; a file that doesn't exist, or a CSV file that can't be
 read, such as one in UTF-16, unless it is a translation table, which is
 then a finding; a dictionary without its table or attribute column; a
-`precedence`, `lineage_spec`, `key_pairs`, `one_to_many` or `reach`
-table without exactly its columns; a `precedence` table with an unknown
-`winner` or `blank_rule`, or with two rows for one sheet, key and
-attribute; a name given in R that isn't valid UTF-8; a translation
-table's filter on a column it lacks, or with no values for an attribute
-that uses it; or an origin that doesn't fit its input.
+`precedence`, `lineage_spec`, `lineage_when`, `key_pairs`, `one_to_many`
+or `reach` table without exactly its columns; a `lineage_separator` that
+isn't one piece of text; a `precedence` table with an unknown `winner`
+or `blank_rule`, or with two rows for one sheet, key and attribute; a
+name given in R that isn't valid UTF-8; a translation table's filter on
+a column it lacks, or with no values for an attribute that uses it; or
+an origin that doesn't fit its input.
 
 ## Usage
 
@@ -29,6 +30,8 @@ gpq_read_spec(
   non_code_sheets = NULL,
   datasets = NULL,
   lineage_spec = NULL,
+  lineage_when = NULL,
+  lineage_separator = NULL,
   crosswalks = NULL,
   id_pattern = NULL,
   id_bands = NULL,
@@ -74,6 +77,29 @@ gpq_read_spec(
   with exactly the columns `contributor_label`, `table_name`,
   `attribute_name`, `spec_type` (`id` or `compiled`), `source_text`,
   `note` and `source_cell`.
+
+- lineage_when:
+
+  `NULL`, or a table (data.frame or CSV path) with exactly the columns
+  `contributor_label`, `table_name`, `attribute_name`, `part_order`,
+  `part_source`, `when` and `note`: each row another provider column for
+  one part of an ID the lineage spec gives, used for a record where
+  `when` holds. `when` is one condition: `column == "value"`,
+  `column != "value"`, `column %in% c("a", "b")`, `is_present(column)`
+  or `is_sentinel(column)`, where `column` is an attribute of the table,
+  a chain of its foreign keys joined by " \> " ending in an attribute,
+  such as `"plot_id > shape"`, or a flag that
+  [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  is given, written `flag.<name>`. A part's rows are tried in order
+  before the lineage spec's own part. Pre-flight stops on a row it can't
+  apply (`lineage_when_invalid`).
+
+- lineage_separator:
+
+  `NULL`, or the text the parts of a composite ID are joined with, such
+  as `"_"`. Without it,
+  [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  shows composite IDs as delivered.
 
 - crosswalks:
 
@@ -147,8 +173,8 @@ gpq_read_spec(
 
   `NULL`, or, for inputs given as data.frames that came from files, a
   list named by input, each once (`dictionary`, `datasets`,
-  `lineage_spec`, `precedence`, `key_pairs`, `one_to_many`, `reach`,
-  `code_lists:<sheet>`, `crosswalks:<name>`) of
+  `lineage_spec`, `lineage_when`, `precedence`, `key_pairs`,
+  `one_to_many`, `reach`, `code_lists:<sheet>`, `crosswalks:<name>`) of
   `list(path = , sheet = , rows = , columns = )`: the file, named in
   findings and hashed in the manifest; a workbook's sheet, or `NULL` for
   a CSV file; the file row of the first data row, later rows following
@@ -214,7 +240,7 @@ Each component is a data.table with these columns:
 
 - `lineage_spec`: `contributor_label`, `table_name`, `attribute_name`,
   `spec_type`, `alternative`, `part_order`, `part_source`, `part_kind`,
-  `id_status`, `source_text`, `note`, `source_cell`
+  `when`, `id_status`, `separator`, `source_text`, `note`, `source_cell`
 
 - `crosswalks`: `crosswalk`, `source_row`, `crosswalk_column`, `value`,
   `source_cell`

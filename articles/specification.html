@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -148,40 +148,45 @@ wasn’t given.</p>
 <span><span class="co">#&gt;                        rule_id outcome not_run_reason</span></span>
 <span><span class="co">#&gt;                         &lt;char&gt;  &lt;char&gt;         &lt;char&gt;</span></span>
 <span><span class="co">#&gt;  1:     dd_duplicate_attribute    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  2:            dd_type_unknown    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  3:   dd_type_column_ambiguous    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  4:              dd_pk_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  5:       dd_fk_target_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  6:          code_list_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  7:        code_column_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  8:   code_list_duplicate_code    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt;  9:        code_list_blank_row    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 10:     code_list_unreferenced    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 11:     code_list_empty_column    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 12:        spec_clash_resolved not_run       no_input</span></span>
-<span><span class="co">#&gt; 13:      spec_clash_unresolved not_run       no_input</span></span>
-<span><span class="co">#&gt; 14:       datasets_row_missing not_run       no_input</span></span>
-<span><span class="co">#&gt; 15:      spec_encoding_invalid    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 16:         spec_csv_malformed    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 17:      site_id_range_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 18:   lineage_spec_unparseable not_run       no_input</span></span>
-<span><span class="co">#&gt; 19:       lineage_name_unknown not_run       no_input</span></span>
-<span><span class="co">#&gt; 20: lineage_spec_row_unflagged not_run       no_input</span></span>
-<span><span class="co">#&gt; 21:       lineage_id_unflagged not_run       no_input</span></span>
-<span><span class="co">#&gt; 22:       crosswalk_unreadable not_run       no_input</span></span>
-<span><span class="co">#&gt; 23:          dd_format_invalid    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 24:           key_pair_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 25:              reach_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 26:        one_to_many_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 27:    rule_set_unknown_column not_run       no_input</span></span>
-<span><span class="co">#&gt; 28:            rule_id_unknown not_run       no_input</span></span>
-<span><span class="co">#&gt; 29:  rule_set_override_invalid not_run       no_input</span></span>
-<span><span class="co">#&gt; 30:     rule_set_duplicate_row not_run       no_input</span></span>
-<span><span class="co">#&gt; 31:       setting_unknown_name not_run       no_input</span></span>
-<span><span class="co">#&gt; 32:        option_unknown_name not_run       no_input</span></span>
-<span><span class="co">#&gt; 33:            text_id_missing    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 34:           text_id_fallback    pass           &lt;NA&gt;</span></span>
-<span><span class="co">#&gt; 35:          text_slot_unknown    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  2:            dd_name_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  3:            dd_type_unknown    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  4:   dd_type_column_ambiguous    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  5:              dd_pk_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  6:       dd_fk_target_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  7:          code_list_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  8:        code_column_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt;  9:   code_list_duplicate_code    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 10:        code_list_blank_row    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 11:     code_list_unreferenced    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 12:     code_list_empty_column    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 13:        spec_clash_resolved not_run       no_input</span></span>
+<span><span class="co">#&gt; 14:      spec_clash_unresolved not_run       no_input</span></span>
+<span><span class="co">#&gt; 15:       datasets_row_missing not_run       no_input</span></span>
+<span><span class="co">#&gt; 16:      spec_encoding_invalid    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 17:         spec_csv_malformed    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 18:      site_id_range_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 19:   lineage_spec_unparseable not_run       no_input</span></span>
+<span><span class="co">#&gt; 20:       lineage_when_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 21:       lineage_name_unknown not_run       no_input</span></span>
+<span><span class="co">#&gt; 22: lineage_spec_row_unflagged not_run       no_input</span></span>
+<span><span class="co">#&gt; 23:       lineage_id_unflagged not_run       no_input</span></span>
+<span><span class="co">#&gt; 24:       crosswalk_unreadable not_run       no_input</span></span>
+<span><span class="co">#&gt; 25:          dd_format_invalid    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 26:           key_pair_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 27:              reach_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 28:        one_to_many_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 29:    rule_set_unknown_column not_run       no_input</span></span>
+<span><span class="co">#&gt; 30:            rule_id_unknown not_run       no_input</span></span>
+<span><span class="co">#&gt; 31:  rule_set_override_invalid not_run       no_input</span></span>
+<span><span class="co">#&gt; 32:     rule_set_duplicate_row not_run       no_input</span></span>
+<span><span class="co">#&gt; 33:       setting_unknown_name not_run       no_input</span></span>
+<span><span class="co">#&gt; 34:        option_unknown_name not_run       no_input</span></span>
+<span><span class="co">#&gt; 35:            text_id_missing    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 36:           text_id_fallback    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 37:          text_slot_unknown    pass           &lt;NA&gt;</span></span>
+<span><span class="co">#&gt; 38:          input_unparseable not_run       no_input</span></span>
+<span><span class="co">#&gt; 39:    override_scope_conflict not_run       no_input</span></span>
+<span><span class="co">#&gt; 40:      override_unknown_name not_run       no_input</span></span>
 <span><span class="co">#&gt;                        rule_id outcome not_run_reason</span></span>
 <span><span class="co">#&gt;                         &lt;char&gt;  &lt;char&gt;         &lt;char&gt;</span></span></code></pre></div>
 <p>A defect in the specification is a finding, not a failure to read.

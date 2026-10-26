@@ -9,7 +9,7 @@ set and R options. This page lists the R options."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -127,6 +127,16 @@ and <code>groundplotqc.design_signature_columns</code>: the table
 <code>design_duplicate_signature</code> reads, its foreign key to the records
 compared, and the attributes whose values, over the table's rows that name
 a record, make up that record's signature. Built-in: none.</p></li>
+<li><p><code>groundplotqc.fallback_class</code>: by rule ID, the class an issue takes when its
+rule's class is <code>depends</code> and nothing else settles it, such as
+<code>c(some_rule = "source")</code>: each class <code>"source"</code> or <code>"harmonization"</code>, each
+rule named once. Built-in: none, so such an issue is unclassified. Unlike
+the severity setting, the first tier that gives it gives all of it: an
+argument or a rule set naming one rule replaces every entry of the option,
+so the other rules have none. In a rule set's settings rows it is written
+as "rule_id=class" parts, and in every tier a rule ID can't be empty, begin
+or end with a space, tab or line break, or hold ";" or "=". Pre-flight stops
+on a rule ID that isn't registered (<code>rule_id_unknown</code>).</p></li>
 </ul><p>In a rule set's settings rows, a whole number has type <code>integer</code>, a setting
 with several values gives them joined by "; ", and a named one gives
 "name=value" parts. In every tier, a code can't be empty, begin or end with

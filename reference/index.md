@@ -23,6 +23,13 @@
 - [`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md)
   : Write a run's results to its folder
 
+## Generic engine: lineage and issue classes
+
+- [`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md)
+  : Class a run's issues
+- [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  : Decode the provider's keys of a run's issues
+
 ## MAGPlot 2.0 layer
 
 - [`magp_example`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_example.md)

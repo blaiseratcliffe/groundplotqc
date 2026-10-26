@@ -3,27 +3,25 @@
 gpq_preflight() checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the read_findings component,
 and gpq_preflight() decides whether it stops.
-It does stop, with an error, on a mistake in the call: an argument in the wrong form;
-a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
-unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a precedence, lineage_spec,
-key_pairs, one_to_many or reach table without exactly its columns; a precedence
-table with an unknown winner or blank_rule, or with two rows for one sheet, key and
-attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
-column it lacks, or with no values for an attribute that uses it; or an origin that
-doesn't fit its input."><meta property="og:description" content="Reads a data dictionary and its companion inputs into one specification object, which
+It does stop, with an error, on a mistake in the call: an argument in the wrong form; a file that
+doesn't exist, or a CSV file that can't be read, such as one in UTF-16, unless it is a
+translation table, which is then a finding; a dictionary without its table or attribute column; a
+precedence, lineage_spec, lineage_when, key_pairs, one_to_many or reach table without
+exactly its columns; a lineage_separator that isn't one piece of text; a precedence table
+with an unknown winner or blank_rule, or with two rows for one sheet, key and attribute; a
+name given in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or
+with no values for an attribute that uses it; or an origin that doesn't fit its input."><meta property="og:description" content="Reads a data dictionary and its companion inputs into one specification object, which
 gpq_preflight() checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the read_findings component,
 and gpq_preflight() decides whether it stops.
-It does stop, with an error, on a mistake in the call: an argument in the wrong form;
-a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
-unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a precedence, lineage_spec,
-key_pairs, one_to_many or reach table without exactly its columns; a precedence
-table with an unknown winner or blank_rule, or with two rows for one sheet, key and
-attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
-column it lacks, or with no values for an attribute that uses it; or an origin that
-doesn't fit its input."></head><body>
+It does stop, with an error, on a mistake in the call: an argument in the wrong form; a file that
+doesn't exist, or a CSV file that can't be read, such as one in UTF-16, unless it is a
+translation table, which is then a finding; a dictionary without its table or attribute column; a
+precedence, lineage_spec, lineage_when, key_pairs, one_to_many or reach table without
+exactly its columns; a lineage_separator that isn't one piece of text; a precedence table
+with an unknown winner or blank_rule, or with two rows for one sheet, key and attribute; a
+name given in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or
+with no values for an attribute that uses it; or an origin that doesn't fit its input."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -31,7 +29,7 @@ doesn't fit its input."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -67,15 +65,14 @@ doesn't fit its input."></head><body>
 <code><a href="gpq_preflight.html">gpq_preflight()</a></code> checks and the checks of later layers read. Reading never stops on a
 defect in the specification: each one is recorded in the <code>read_findings</code> component,
 and <code><a href="gpq_preflight.html">gpq_preflight()</a></code> decides whether it stops.</p>
-<p>It does stop, with an error, on a mistake in the call: an argument in the wrong form;
-a file that doesn't exist, or a CSV file that can't be read, such as one in UTF-16,
-unless it is a translation table, which is then a finding; a
-dictionary without its table or attribute column; a <code>precedence</code>, <code>lineage_spec</code>,
-<code>key_pairs</code>, <code>one_to_many</code> or <code>reach</code> table without exactly its columns; a <code>precedence</code>
-table with an unknown <code>winner</code> or <code>blank_rule</code>, or with two rows for one sheet, key and
-attribute; a name given in R that isn't valid UTF-8; a translation table's filter on a
-column it lacks, or with no values for an attribute that uses it; or an origin that
-doesn't fit its input.</p>
+<p>It does stop, with an error, on a mistake in the call: an argument in the wrong form; a file that
+doesn't exist, or a CSV file that can't be read, such as one in UTF-16, unless it is a
+translation table, which is then a finding; a dictionary without its table or attribute column; a
+<code>precedence</code>, <code>lineage_spec</code>, <code>lineage_when</code>, <code>key_pairs</code>, <code>one_to_many</code> or <code>reach</code> table without
+exactly its columns; a <code>lineage_separator</code> that isn't one piece of text; a <code>precedence</code> table
+with an unknown <code>winner</code> or <code>blank_rule</code>, or with two rows for one sheet, key and attribute; a
+name given in R that isn't valid UTF-8; a translation table's filter on a column it lacks, or
+with no values for an attribute that uses it; or an origin that doesn't fit its input.</p>
     </div>
 
     <div class="section level2">
@@ -86,6 +83,8 @@ doesn't fit its input.</p>
 <span>  non_code_sheets <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  datasets <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  lineage_spec <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  lineage_when <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  lineage_separator <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  crosswalks <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  id_pattern <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  id_bands <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -128,6 +127,23 @@ or a reference table), or a named list of data.frames or CSV paths, named by she
 path), with exactly the columns
 <code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>spec_type</code> (<code>id</code> or
 <code>compiled</code>), <code>source_text</code>, <code>note</code> and <code>source_cell</code>.</p></dd>
+
+
+<dt id="arg-lineage-when">lineage_when<a class="anchor" aria-label="anchor" href="#arg-lineage-when"></a></dt>
+<dd><p><code>NULL</code>, or a table (data.frame or CSV path) with exactly the columns
+<code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>part_order</code>, <code>part_source</code>, <code>when</code>
+and <code>note</code>: each row another provider column for one part of an ID the lineage spec
+gives, used for a record where <code>when</code> holds. <code>when</code> is one condition: <code>column == "value"</code>, <code>column != "value"</code>, <code>column %in% c("a", "b")</code>, <code>is_present(column)</code> or
+<code>is_sentinel(column)</code>, where <code>column</code> is an attribute of the table, a chain of its
+foreign keys joined by " &gt; " ending in an attribute, such as <code>"plot_id &gt; shape"</code>, or a
+flag that <code><a href="gpq_decode_lineage.html">gpq_decode_lineage()</a></code> is given, written <code>flag.&lt;name&gt;</code>. A part's rows are tried
+in order before the lineage spec's own part. Pre-flight stops on a row it can't apply
+(<code>lineage_when_invalid</code>).</p></dd>
+
+
+<dt id="arg-lineage-separator">lineage_separator<a class="anchor" aria-label="anchor" href="#arg-lineage-separator"></a></dt>
+<dd><p><code>NULL</code>, or the text the parts of a composite ID are joined with,
+such as <code>"_"</code>. Without it, <code><a href="gpq_decode_lineage.html">gpq_decode_lineage()</a></code> shows composite IDs as delivered.</p></dd>
 
 
 <dt id="arg-crosswalks">crosswalks<a class="anchor" aria-label="anchor" href="#arg-crosswalks"></a></dt>
@@ -192,9 +208,9 @@ reachable only through a table or key column not given is left unchecked.</p></d
 
 <dt id="arg-origins">origins<a class="anchor" aria-label="anchor" href="#arg-origins"></a></dt>
 <dd><p><code>NULL</code>, or, for inputs given as data.frames that came from files, a list
-named by input, each once (<code>dictionary</code>, <code>datasets</code>, <code>lineage_spec</code>, <code>precedence</code>,
-<code>key_pairs</code>, <code>one_to_many</code>, <code>reach</code>, <code>code_lists:&lt;sheet&gt;</code>, <code>crosswalks:&lt;name&gt;</code>) of
-<code>list(path = , sheet = , rows = , columns = )</code>: the file, named in findings and hashed in
+named by input, each once (<code>dictionary</code>, <code>datasets</code>, <code>lineage_spec</code>, <code>lineage_when</code>,
+<code>precedence</code>, <code>key_pairs</code>, <code>one_to_many</code>, <code>reach</code>, <code>code_lists:&lt;sheet&gt;</code>, <code>crosswalks:&lt;name&gt;</code>)
+of <code>list(path = , sheet = , rows = , columns = )</code>: the file, named in findings and hashed in
 the manifest; a workbook's sheet, or <code>NULL</code> for a CSV file; the file row of the first
 data row, later rows following on, or the file row of every data row, or <code>NULL</code> to count
 rows as R counts them; and the file column, by number or letter, of every column of the
@@ -237,7 +253,7 @@ is <code>NA</code>; text is kept exactly as written.</p>
 <li><p><code>codes</code>: <code>table_name</code>, <code>attribute_name</code>, <code>code</code>, <code>source_type</code>, <code>source_name</code>, <code>source_row</code></p></li>
 <li><p><code>non_code_sheets</code>: <code>sheet</code></p></li>
 <li><p><code>datasets</code>: the input's own columns, all text</p></li>
-<li><p><code>lineage_spec</code>: <code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>spec_type</code>, <code>alternative</code>, <code>part_order</code>, <code>part_source</code>, <code>part_kind</code>, <code>id_status</code>, <code>source_text</code>, <code>note</code>, <code>source_cell</code></p></li>
+<li><p><code>lineage_spec</code>: <code>contributor_label</code>, <code>table_name</code>, <code>attribute_name</code>, <code>spec_type</code>, <code>alternative</code>, <code>part_order</code>, <code>part_source</code>, <code>part_kind</code>, <code>when</code>, <code>id_status</code>, <code>separator</code>, <code>source_text</code>, <code>note</code>, <code>source_cell</code></p></li>
 <li><p><code>crosswalks</code>: <code>crosswalk</code>, <code>source_row</code>, <code>crosswalk_column</code>, <code>value</code>, <code>source_cell</code></p></li>
 <li><p><code>id_bands</code>: <code>label</code>, <code>band_start</code>, <code>band_end</code>, <code>reserved</code>, <code>source_row</code>, <code>source_cell</code>, <code>key_value</code></p></li>
 <li><p><code>id_band_columns</code>: <code>table_name</code>, <code>attribute_name</code>, <code>key_attribute</code>, <code>labels_sheet</code>, <code>labels_column</code></p></li>

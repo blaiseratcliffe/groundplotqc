@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9010</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -38,7 +38,7 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.0.0.9010" id="groundplotqc-0009010-development-version">groundplotqc 0.0.0.9010 (development version)<a class="anchor" aria-label="anchor" href="#groundplotqc-0009010-development-version"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.0.0.9018" id="groundplotqc-0009018-development-version">groundplotqc 0.0.0.9018 (development version)<a class="anchor" aria-label="anchor" href="#groundplotqc-0009018-development-version"></a></h2>
 <ul><li>First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.</li>
 <li>
 <code><a href="../reference/gpq_column_map.html">gpq_column_map()</a></code>, <code><a href="../reference/gpq_type_map.html">gpq_type_map()</a></code> and <code><a href="../reference/gpq_sentinels.html">gpq_sentinels()</a></code> describe a specification’s dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.</li>
@@ -99,6 +99,19 @@
 <li>A key holding NA, NaN, a blank or a missing-value code never leads to a parent record, whatever codes the parent’s key holds. Before, a NaN key joined a parent’s NaN key, and R’s <code><a href="https://rdrr.io/r/base/match.html" class="external-link">match()</a></code> let some of the others through, depending on the values and the R session, so a record’s group values and the counts of the rules that follow keys could change from run to run.</li>
 <li>Pre-flight checks the tables and attributes that settings name: <code>unknown_codes</code>, <code>coordinate_attributes</code>, <code>code_set_skip_attributes</code> and the eight settings of the three design checks. A name the specification lacks stops pre-flight when given as an argument or in a rule set (<code>setting_unknown_name</code>); set as an option, which applies to every specification checked in the session, it warns (<code>option_unknown_name</code>) and is ignored. A value of the wrong shape for one of these settings now stops <code><a href="../reference/gpq_preflight.html">gpq_preflight()</a></code> as well as <code><a href="../reference/gpq_check_conformance.html">gpq_check_conformance()</a></code>.</li>
 <li>Layer 4 checks plot designs, each check reading its table and columns from new settings, which MAGPlot’s rule set gives: <code>design_geometry_inconsistent</code> (records of one group that disagree on a value), <code>subplot_label_ambiguous</code> (records of different keys with the same labels) and <code>design_duplicate_signature</code> (records of one report unit with the same rows in another table, a warning).</li>
+<li>
+<code><a href="../reference/gpq_preflight.html">gpq_preflight()</a></code> stops on a dictionary row whose table or attribute name is missing, empty or only spaces (<code>dd_name_missing</code>).</li>
+<li>
+<code><a href="../reference/gpq_read_spec.html">gpq_read_spec()</a></code> gains <code>lineage_when</code>, conditions under which a part of a source ID is read from another provider column, and <code>lineage_separator</code>, the text composite IDs join their parts with; the lineage spec gains the columns <code>when</code> and <code>separator</code>, and pre-flight checks the conditions (<code>lineage_when_invalid</code>). <code><a href="../reference/magp_spec.html">magp_spec()</a></code> gives Ontario’s age trees and vegetation subplots their own provider keys.</li>
+<li>New <code><a href="../reference/gpq_decode_lineage.html">gpq_decode_lineage()</a></code> shows each record-level issue in the provider’s terms: the record’s source ID, read from the tables at the issue’s row, split into the parts its contributor’s lineage spec expects, each labelled with the provider’s table and column (<code>provider_key</code>), with a status saying how far it decoded (<code>provider_key_status</code>); an issue’s fingerprint is taken from the provider key where that key is unique. It stops if the tables aren’t the ones the issues came from.</li>
+<li>
+<code><a href="../reference/gpq_preflight.html">gpq_preflight()</a></code> takes the run’s optional inputs, <code>inputs</code>: <code>overrides</code>, <code>lineage</code> and <code>pipeline_fill</code>, each a data.frame or the path of a CSV file. It stops on an input it can’t read cleanly or without exactly its columns, and on an override whose class isn’t source or harmonization or that gives no scope (<code>input_unparseable</code>); it warns on two overrides that give one scope two classes (<code>override_scope_conflict</code>) and on an override naming a rule, table or column it doesn’t know (<code>override_unknown_name</code>).</li>
+<li>The setting <code>fallback_class</code> (option <code>groundplotqc.fallback_class</code>) gives, by rule, the class of an issue whose rule’s class is <code>depends</code> when nothing else settles it. The tier that gives it gives all of it, replacing the lower tiers’ entries. Pre-flight stops on a rule it names that isn’t registered (<code>rule_id_unknown</code>).</li>
+<li>New <code><a href="../reference/gpq_classify_issues.html">gpq_classify_issues()</a></code> gives each issue its class (<code>issue_class</code>) and what decided it (<code>class_basis</code>): its rule’s class, from the rule set’s <code>rules</code> rows or the registry; your overrides, the most specific matching row winning and two that disagree leaving the issue unclassified, an override of a renamed or split rule applying to its new rules; and, for an issue whose rule’s class is <code>depends</code> that nothing else settles, the rule’s <code>fallback_class</code>, else <code>unclassified</code>.</li>
+<li>
+<code><a href="../reference/gpq_classify_issues.html">gpq_classify_issues()</a></code> reads its evidence for issues whose rule’s class is <code>depends</code>: <code>computed</code>, columns the pipeline computes; <code>filled</code>, cells its missing-value fill wrote; and, for code issues, <code>lineage</code>, the provider’s raw values, with <code>crosswalk</code>, each provider code and the code it is translated to. Each settles an issue as harmonization.</li>
+<li>MAGPlot’s configuration gains <code>pipeline_computed.csv</code>, the attributes MAGPlot’s processing scripts compute for every record, and <code>crosswalk_provider_columns.csv</code>, the translation-table columns that hold each jurisdiction’s provider codes; the build checks every row of both against the specification before it copies them.</li>
+<li>The article “Using the engine on your own dataset” ends with the fish survey’s issues classed by an override and a <code>computed</code> row.</li>
 </ul></div>
   </main></div>
 

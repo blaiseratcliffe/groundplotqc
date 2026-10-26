@@ -1,6 +1,6 @@
 # Changelog
 
-## groundplotqc 0.0.0.9010 (development version)
+## groundplotqc 0.0.0.9018 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint
   configuration, continuous integration on Windows, macOS and Linux, and
@@ -274,3 +274,60 @@
   a value), `subplot_label_ambiguous` (records of different keys with
   the same labels) and `design_duplicate_signature` (records of one
   report unit with the same rows in another table, a warning).
+- [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
+  stops on a dictionary row whose table or attribute name is missing,
+  empty or only spaces (`dd_name_missing`).
+- [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
+  gains `lineage_when`, conditions under which a part of a source ID is
+  read from another provider column, and `lineage_separator`, the text
+  composite IDs join their parts with; the lineage spec gains the
+  columns `when` and `separator`, and pre-flight checks the conditions
+  (`lineage_when_invalid`).
+  [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
+  gives Ontario’s age trees and vegetation subplots their own provider
+  keys.
+- New
+  [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  shows each record-level issue in the provider’s terms: the record’s
+  source ID, read from the tables at the issue’s row, split into the
+  parts its contributor’s lineage spec expects, each labelled with the
+  provider’s table and column (`provider_key`), with a status saying how
+  far it decoded (`provider_key_status`); an issue’s fingerprint is
+  taken from the provider key where that key is unique. It stops if the
+  tables aren’t the ones the issues came from.
+- [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
+  takes the run’s optional inputs, `inputs`: `overrides`, `lineage` and
+  `pipeline_fill`, each a data.frame or the path of a CSV file. It stops
+  on an input it can’t read cleanly or without exactly its columns, and
+  on an override whose class isn’t source or harmonization or that gives
+  no scope (`input_unparseable`); it warns on two overrides that give
+  one scope two classes (`override_scope_conflict`) and on an override
+  naming a rule, table or column it doesn’t know
+  (`override_unknown_name`).
+- The setting `fallback_class` (option `groundplotqc.fallback_class`)
+  gives, by rule, the class of an issue whose rule’s class is `depends`
+  when nothing else settles it. The tier that gives it gives all of it,
+  replacing the lower tiers’ entries. Pre-flight stops on a rule it
+  names that isn’t registered (`rule_id_unknown`).
+- New
+  [`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md)
+  gives each issue its class (`issue_class`) and what decided it
+  (`class_basis`): its rule’s class, from the rule set’s `rules` rows or
+  the registry; your overrides, the most specific matching row winning
+  and two that disagree leaving the issue unclassified, an override of a
+  renamed or split rule applying to its new rules; and, for an issue
+  whose rule’s class is `depends` that nothing else settles, the rule’s
+  `fallback_class`, else `unclassified`.
+- [`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md)
+  reads its evidence for issues whose rule’s class is `depends`:
+  `computed`, columns the pipeline computes; `filled`, cells its
+  missing-value fill wrote; and, for code issues, `lineage`, the
+  provider’s raw values, with `crosswalk`, each provider code and the
+  code it is translated to. Each settles an issue as harmonization.
+- MAGPlot’s configuration gains `pipeline_computed.csv`, the attributes
+  MAGPlot’s processing scripts compute for every record, and
+  `crosswalk_provider_columns.csv`, the translation-table columns that
+  hold each jurisdiction’s provider codes; the build checks every row of
+  both against the specification before it copies them.
+- The article “Using the engine on your own dataset” ends with the fish
+  survey’s issues classed by an override and a `computed` row.

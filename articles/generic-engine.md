@@ -200,3 +200,65 @@ again <- gpq_read_results(run_dir)
 identical(again$issues, results$issues)
 #> [1] TRUE
 ```
+
+## Issue classes
+
+Each issue has a class: `source`, for the provider to fix in their data;
+`harmonization`, made when the data was converted to the specification’s
+form; or `unclassified`.
+[`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md)
+gives each issue its rule’s class, unless one of your overrides gives it
+another. Where a rule’s class is `depends`, the evidence you give can
+settle it, and `class_basis` says what decided each issue’s class.
+
+Two more mistakes give the survey such issues: a station 600 metres
+deep, past the dictionary’s 500, and a haul of 900 minutes, past its
+600. Both are `value_above_max`, a rule whose class is `depends`.
+
+``` r
+
+planted <- tables
+planted$stations$depth[2] <- 600
+planted$hauls$minutes[3] <- 900L
+checked <- gpq_check_conformance(planted, fish, group_cols = "water_body", layers = 0:3)
+```
+
+An override records your decision: the long haul is the provider’s to
+fix. A `computed` row says the pipeline computes the stations’ depth, so
+a wrong depth is harmonization. Its column `water_body` is the run’s
+group column, and `"*"` stands for every value.
+
+``` r
+
+overrides <- data.frame(
+  fingerprint = NA, rule_id = "value_above_max", table_name = "hauls",
+  column_name = "minutes", issue_class = "source", who = "A. Reviewer",
+  when = "2026-10-22", why = "The gear log gives 20 minutes."
+)
+computed <- data.frame(
+  table_name = "stations", column_name = "depth", water_body = "*", derivation = "formula"
+)
+gpq_classify_issues(
+  checked$issues,
+  rules = NULL, evidence = list(computed = computed), overrides = overrides
+)
+checked$issues[, c(
+  "rule_id", "table_name", "column_name", "value", "status", "issue_class", "class_basis"
+)]
+#>               rule_id table_name column_name  value        status   issue_class class_basis
+#>                <char>     <char>      <char> <char>        <char>        <char>      <char>
+#> 1:             raw_na    catches      weight   <NA>          open harmonization     default
+#> 2: whitespace_padding      hauls        gear    TN           open harmonization     default
+#> 3:   code_not_in_list      hauls        gear    TN  not_evaluated  unclassified     default
+#> 4:    value_below_min    catches      weight   <NA> not_evaluated  unclassified     default
+#> 5:    value_above_max   stations       depth    600          open harmonization    computed
+#> 6:    value_above_max      hauls     minutes    900          open        source    override
+#> 7:    value_above_max    catches      weight   <NA> not_evaluated  unclassified     default
+#> 8:  decimals_exceeded    catches      weight   <NA> not_evaluated  unclassified     default
+```
+
+The other issues keep their rules’ classes, with `class_basis`
+`default`. An issue whose rule’s class is `depends` and that nothing
+settles is `unclassified`; the setting `fallback_class` gives such a
+rule a class of its own (see
+[`?groundplotqc_options`](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)).

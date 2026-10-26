@@ -224,6 +224,15 @@ the most specific row that gives a value wins (table and attribute, then
 table and `"*"`, then `"*"` and attribute, then `"*"` and `"*"`). A rule
 turned off writes no rows there.
 
+## See also
+
+[`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md),
+which the run calls first;
+[`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+and
+[`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md),
+which give its issues their provider keys and classes.
+
 ## Examples
 
 ``` r

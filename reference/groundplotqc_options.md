@@ -104,6 +104,18 @@ value:
   compared, and the attributes whose values, over the table's rows that
   name a record, make up that record's signature. Built-in: none.
 
+- `groundplotqc.fallback_class`: by rule ID, the class an issue takes
+  when its rule's class is `depends` and nothing else settles it, such
+  as `c(some_rule = "source")`: each class `"source"` or
+  `"harmonization"`, each rule named once. Built-in: none, so such an
+  issue is unclassified. Unlike the severity setting, the first tier
+  that gives it gives all of it: an argument or a rule set naming one
+  rule replaces every entry of the option, so the other rules have none.
+  In a rule set's settings rows it is written as "rule_id=class" parts,
+  and in every tier a rule ID can't be empty, begin or end with a space,
+  tab or line break, or hold ";" or "=". Pre-flight stops on a rule ID
+  that isn't registered (`rule_id_unknown`).
+
 In a rule set's settings rows, a whole number has type `integer`, a
 setting with several values gives them joined by "; ", and a named one
 gives "name=value" parts. In every tier, a code can't be empty, begin or
