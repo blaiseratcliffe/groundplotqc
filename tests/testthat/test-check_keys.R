@@ -1187,6 +1187,23 @@ test_that("parent_without_children counts the parent's rows where it can't run (
   expect_equal(c(row$status, row$not_run_reason), c("not_run", "none_checked"))
 })
 
+# M7a task 3's review (D20.106)
+test_that("a parent whose padded key fails Layer 2 is still checked (D20.106)", {
+  # Station 1's key with a trailing space fails whitespace_padding (Layer 2) but still holds a
+  # key, so parent_without_children checks it: no haul names it exactly, so it is childless,
+  # and only a key that is missing, blank, a missing-value code or a value Layer 1 can't read
+  # counts as not evaluated (D20.106). So at Layers 0 to 4 and at Layer 4 alone.
+  fish <- fx_fish_clean()
+  padded <- edited("stations", "station_id", 1L, paste0(fish$stations$station_id[[1L]], " "))
+  results <- fish_run(padded)
+  expect_equal(placed_at(opened(results, "whitespace_padding")), "stations station_id 1")
+  for (rows in list(results$results, fish_run(padded, layers = 4)$results)) {
+    row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "hauls"]
+    expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(2L, 1L, 0L))
+    expect_equal(row$status, "fail")
+  }
+})
+
 # task 13's fix round (the datatable review's F3): the walk run in CRAN mode too (D18.48)
 test_that("record_unreachable walks the fish toy from its root: a station no haul names fails", {
   # The hauls are the root; a catch is reached through its haul, and a station through a haul

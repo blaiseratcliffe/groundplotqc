@@ -1088,6 +1088,35 @@ test_that("a not_run row counts its counted table's records unchecked (D20.15, D
   )
 })
 
+# M7a task 3's review (D20.10, D20.16)
+test_that("the outcomes refuse marked or not-evaluated rows that aren't row numbers", {
+  for (rows in list(c(2L, 2L), 0L, NA_integer_, 1.5, matrix(2L), "2")) {
+    expect_error(
+      record_outcome("r", "t", "c", 1L, "a", reaches_other_unit = rows),
+      paste(
+        "Rule r: `reaches_other_unit` must be row numbers, each once: whole numbers from 1",
+        "within the integer range."
+      ),
+      fixed = TRUE, info = deparse(rows)
+    )
+    expect_error(
+      count_outcome("r", "t", "c", "p", 1L, not_evaluated = rows),
+      paste(
+        "Rule r: `not_evaluated` must be row numbers, each once: whole numbers from 1 within",
+        "the integer range."
+      ),
+      fixed = TRUE, info = deparse(rows)
+    )
+  }
+  # None given is none; rows given are kept as integers.
+  expect_identical(record_outcome("r", "t", "c", 1L, "a")$reaches_other_unit, integer())
+  expect_identical(
+    record_outcome("r", "t", "c", 1L, "a", reaches_other_unit = c(3, 2))$reaches_other_unit,
+    c(3L, 2L)
+  )
+  expect_identical(count_outcome("r", "t", "c", "p", 1L)$not_evaluated, integer())
+})
+
 # M7a task 3 (D18.89, D20.10, D20.14): sites hold each record's unit and area; a measurement
 # reaches its unit through its design first and its area through its site, and an observation
 # reaches the problem unit's key, plot_id, through its measurement.
@@ -1112,7 +1141,8 @@ test_that("reaches_other_unit marks a record whose values come from another unit
   spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
     table_name = "meas", left = "site_id", right = "plot_id > site_id", note = NA
   ))
-  # Site 3 has no unit, so its records' unit is "*"; measurement 8 has no design.
+  # Site 3 has no unit, so its records' unit is "*"; measurement 8 has no design. Measurements
+  # 9 and 10 name a plot of another site than their own, as measurement 7 does.
   tables <- list(
     sites = data.table::data.table(
       site_id = c("s1", "s2", "s3", "s4"), unit = c("u1", "u2", NA, "u2"),
@@ -1123,10 +1153,11 @@ test_that("reaches_other_unit marks a record whose values come from another unit
       plot_id = c("p1", "p2", "p3", "p4"), site_id = c("s1", "s2", "s3", "s4")
     ),
     meas = data.table::data.table(
-      meas_id = paste0("m", 1:8), design_id = c("d1", "d1", "d2", "d2", "d1", "d2", "d1", NA),
-      site_id = c("s1", "s1", "s1", "s2", "s3", "s4", "s1", "s3"),
-      plot_id = c("p1", "p1", "p1", "p2", "p3", "p4", "p2", "p3"),
-      note = c("x", "y", "y", "z", "x", "z", "x", "w")
+      meas_id = paste0("m", 1:10),
+      design_id = c("d1", "d1", "d2", "d2", "d1", "d2", "d1", NA, "d2", "d1"),
+      site_id = c("s1", "s1", "s1", "s2", "s3", "s4", "s1", "s3", "s2", "s1"),
+      plot_id = c("p1", "p1", "p1", "p2", "p3", "p4", "p2", "p3", "p4", "p3"),
+      note = c("x", "y", "y", "z", "x", "z", "x", "w", "y", "w")
     ),
     obs = data.table::data.table(
       obs_id = c("o1", "o2"), design_id = "d1", meas_id = c("m3", "m1")
@@ -1141,7 +1172,9 @@ test_that("reaches_other_unit marks a record whose values come from another unit
   # of u1. Measurement 5 and plot 3 read their area from site 3, whose unit is "*", and so
   # does measurement 8, its own unit "*" (D20.10 (a)). A value read in the record's own table,
   # or from a record of its own unit, marks nothing.
-  expect_equal(grouped$meas, c(FALSE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, TRUE))
+  expect_equal(
+    grouped$meas, c(FALSE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE)
+  )
   expect_equal(grouped$plots, c(FALSE, FALSE, TRUE, FALSE))
   expect_false(any(c(grouped$sites, grouped$designs, grouped$obs)))
   # The problem unit's key read from another unit's record marks it too (D20.81): observation 1
@@ -1151,15 +1184,21 @@ test_that("reaches_other_unit marks a record whose values come from another unit
   expect_false(any(unlist(marks(character()))))
   # Issues take the marks: key_incoherent fails measurement 7, whose plot is site 2's, of unit
   # u2, though its group values are its own unit's (D18.89's (A)); fk_unassigned fails
-  # measurement 8, marked by its area.
+  # measurement 8, marked by its area. key_incoherent also fails measurement 9, whose plot is
+  # site 4's, of its own unit u2, so unmarked, and measurement 10, whose plot is site 3's,
+  # whose unit is "*", so marked (D20.10 (a)).
   results <- gpq_check_conformance(tables, spec, group_cols = c("unit", "area"), layers = 4)
   open <- results$issues[results$issues$status == "open"]
-  expect_equal(paste(open$rule_id, open$row_number), c("fk_unassigned 8", "key_incoherent 7"))
-  expect_equal(open$reaches_other_unit, c(TRUE, TRUE))
+  expect_equal(
+    paste(open$rule_id, open$row_number),
+    c("fk_unassigned 8", "key_incoherent 7", "key_incoherent 9", "key_incoherent 10")
+  )
+  expect_equal(open$reaches_other_unit, c(TRUE, TRUE, FALSE, TRUE))
   # A column-level issue is marked when any record it covers is (D20.10 (b)): every
-  # measurement fails a stand-in rule, so the group (u1, a1), measurements 1, 2 and 7, gives
-  # one unmarked issue and the group (u2, a1), measurements 3 and 6, one marked; a later
-  # layer's records masked by them collapse alike.
+  # measurement fails a stand-in rule, so the group (u1, a1), measurements 1, 2, 7 and 10,
+  # gives one unmarked issue, the group (u2, a1), measurements 3 and 6, one marked, and the
+  # group (u2, a2), measurements 4 and 9, one unmarked; a later layer's records masked by them
+  # collapse alike.
   local_stand_in_rules()
   settings <- list(column_level_min_n = 2L)
   input <- conformance_input(tables, spec, c("unit", "area"))
@@ -1177,8 +1216,8 @@ test_that("reaches_other_unit marks a record whose values come from another unit
   expect_equal(
     paste(whole$status, whole$unit, whole$area, whole$reaches_other_unit),
     c(
-      "open u1 a1 FALSE", "open u2 a1 TRUE", "not_evaluated u1 a1 FALSE",
-      "not_evaluated u2 a1 TRUE"
+      "open u1 a1 FALSE", "open u2 a1 TRUE", "open u2 a2 FALSE", "not_evaluated u1 a1 FALSE",
+      "not_evaluated u2 a1 TRUE", "not_evaluated u2 a2 FALSE"
     )
   )
   single <- issues[issues$level == "record"]

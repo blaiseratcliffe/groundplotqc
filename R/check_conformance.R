@@ -49,8 +49,8 @@
 #'   `design_geometry_inconsistent`, `subplot_label_ambiguous`, `design_duplicate_signature`.
 #'
 #' Two of these write no issue at this version: `parent_without_children` counts, in the
-#' results only, the parent records that no child record names (a parent whose key is missing
-#' or failed an earlier check counts as not evaluated), and
+#' results only, the parent records that no child record names (a parent whose key is missing,
+#' blank, a missing-value code or a value Layer 1 can't read counts as not evaluated), and
 #' `fk_not_applicable_mismatch` writes only `not_run` rows until a version brings the
 #' applicability matrix. `record_unreachable` runs only when `gpq_read_spec()` was given
 #' `reach`, and the design checks only when their settings name their tables and columns;
@@ -651,12 +651,15 @@ record_layer <- function(found, layer, input, context, state, run_id) {
     masked <- integer(n_groups)
     # Worked out before the brackets.
     by_columns <- input$group_cols
-    for (piece in state$issues[seq_along(state$issues) >= issues_from]) {
-      n <- length(piece$issue_id)
-      held <- rep_len(piece$status, n) == "not_evaluated"
-      if (!any(held)) {
+    # Only the pieces the outcome wrote are read, and a piece of open issues only is passed over
+    # before any of its columns is stretched to its length (16.2).
+    wrote <- seq.int(issues_from, length.out = length(state$issues) - issues_from + 1L)
+    for (piece in state$issues[wrote]) {
+      if (!any(piece$status == "not_evaluated")) {
         next
       }
+      n <- length(piece$issue_id)
+      held <- rep_len(piece$status, n) == "not_evaluated"
       whole <- rep_len(piece$level, n) == "column"
       group <- row_group[rep_len(piece$row_number, n)]
       at <- which(held & whole)

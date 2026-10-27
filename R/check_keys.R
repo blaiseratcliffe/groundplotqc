@@ -731,15 +731,22 @@ check_keys <- function(input, context) {
           any_compared <- logical(n)
           # The rows a side of which is read from a record of another report unit than the
           # row's own, or of one whose unit is "*" (D18.89, D20.10); none without group columns.
-          own <- if (length(input$group_cols) > 0L) units_of(table, n)
+          # The rows' own units are read at the first side through keys, and each reached
+          # record's unit is found by its group before any text is read (16.2).
+          own <- NULL
           other <- logical(n)
           # A side's value at the row its chain reaches, as chain_values() reads it; a side
           # through keys marks the rows whose reached record's unit isn't theirs.
           through <- function(chain) {
             at <- chain_rows(input, table, chain$steps)
             reached <- which(!is.na(at))
-            if (!is.null(own) && nrow(chain$steps) > 0L && length(reached) > 0L) {
-              theirs <- units_of(chain$table, nrow(input$data[[chain$table]]))[at[reached]]
+            grouped <- length(input$group_cols) > 0L
+            if (grouped && nrow(chain$steps) > 0L && length(reached) > 0L) {
+              if (is.null(own)) {
+                own <<- units_of(table, n)
+              }
+              held <- input$groups[[chain$table]]
+              theirs <- held$values[[input$group_cols[[1L]]]][held$row_group[at[reached]]]
               other[reached[theirs == "*" | theirs != own[reached]]] <<- TRUE
             }
             reached_values(input, list(home = chain$table, rows = at), chain$attribute)

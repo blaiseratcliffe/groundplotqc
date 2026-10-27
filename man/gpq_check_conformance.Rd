@@ -129,8 +129,8 @@ Layers and the rules they can raise:
 }
 
 Two of these write no issue at this version: \code{parent_without_children} counts, in the
-results only, the parent records that no child record names (a parent whose key is missing
-or failed an earlier check counts as not evaluated), and
+results only, the parent records that no child record names (a parent whose key is missing,
+blank, a missing-value code or a value Layer 1 can't read counts as not evaluated), and
 \code{fk_not_applicable_mismatch} writes only \code{not_run} rows until a version brings the
 applicability matrix. \code{record_unreachable} runs only when \code{gpq_read_spec()} was given
 \code{reach}, and the design checks only when their settings name their tables and columns;
