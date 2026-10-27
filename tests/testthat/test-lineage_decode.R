@@ -454,3 +454,35 @@ test_that("a table's records are decoded by its first ID attribute that has an e
   )
   expect_equal(issues$provider_key_status[c(1L, 4L)], c("decoded", "decoded"))
 })
+
+# ---- M7a: a key that can't split back exactly (D20.35) ----
+
+test_that("a part or a label holding \"; \" or \"=\" gives raw, the ID as delivered (D20.35)", {
+  tables <- fx_lineage_tables()
+  # North's IDs split on "_" into two parts: t1's second part holds "; ", and t2's first holds
+  # "=" beside a missing-value code, which alone would be partial. South's ID is one part: t4's
+  # holds "=". t8 keeps "41_7", now held by no other tree, and decodes.
+  tables$trees$src_tree_id[c(1L, 2L, 4L)] <- c("41_7; b", "41=_X", "k=100")
+  issues <- fx_lineage_made_issues(tables, c(1L, 2L, 4L, 8L))
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("raw", "raw", "raw", "decoded"))
+  expect_equal(
+    issues$provider_key, c("41_7; b", "41=_X", "k=100", "survey.site=41; survey.tree=7")
+  )
+  # The fingerprint follows the key: the ID as delivered for a raw record (9.6).
+  expect_equal(issues$fingerprint[3:4], paste0(
+    "value_below_min|trees|height|", c("k=100", "survey.site=41; survey.tree=7")
+  ))
+  # A label holding "=": a spec read by gpq_read_spec() gives none (a part's source is a
+  # table.column or a bare name), so south's is changed after reading, and t4's clean ID is
+  # raw too.
+  spec <- lineage_spec_default
+  spec$lineage_spec <- data.table::copy(spec$lineage_spec)
+  at <- which(spec$lineage_spec$part_source == "field.tree_key")
+  data.table::set(spec$lineage_spec, at, "part_source", "field.tree=key")
+  tables <- fx_lineage_tables()
+  issues <- fx_lineage_made_issues(tables, c(4L, 8L))
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("raw", "decoded"))
+  expect_equal(issues$provider_key, c("k100", "survey.site=41; survey.tree=7"))
+})

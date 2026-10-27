@@ -150,7 +150,7 @@ label_parts <- function(input, table, rows, slots, flags) {
 }
 
 #' Some records of a table decoded: each one's provider key and its status (9.3; D19.13,
-#' D19.15, D19.16, D19.47, D19.48; R4 to R7)
+#' D19.15, D19.16, D19.47, D19.48, D20.35; R4 to R7)
 #'
 #' `rows` are rows of `table`, `labels` each record's A2 label (contributor_labels()). In order:
 #' `fallback_pk`, no key, where the table has no ID attribute to decode (source_id_attribute())
@@ -159,11 +159,12 @@ label_parts <- function(input, table, rows, slots, flags) {
 #' `no_lineage_spec`, the ID as delivered, where the record has no label, its label no entry,
 #' or the entry is unparseable; `raw`, the ID as delivered, where the entry has labelled
 #' alternatives (D19.48), a nested ID can't expand, there is no separator to split a composite
-#' by, or the ID doesn't split into the expected number of parts; otherwise `decoded`, each
-#' part as `<label>=<value>` joined by "; ", a source part labelled with its provider's
-#' `table.column` and a derived one with its bare attribute name (D19.47), or `partial`, so
-#' written, where a part is blank or any missing-value code the spec has, of any type (R5). A
-#' single ID isn't split (D19.13). Returns `list(provider_key, status)`.
+#' by, the ID doesn't split into the expected number of parts, or a part or its label holds
+#' "; " or "=", which would keep the key from splitting back into its parts exactly (D20.35);
+#' otherwise `decoded`, each part as `<label>=<value>` joined by "; ", a source part labelled
+#' with its provider's `table.column` and a derived one with its bare attribute name (D19.47),
+#' or `partial`, so written, where a part is blank or any missing-value code the spec has, of
+#' any type (R5). A single ID isn't split (D19.13). Returns `list(provider_key, status)`.
 #' @noRd
 decode_records <- function(input, table, rows, labels, flags) {
   spec <- input$spec
@@ -185,6 +186,11 @@ decode_records <- function(input, table, rows, labels, flags) {
   codes <- sentinels$value[sentinels$data_type == columns$family[[at]]]
   usable <- !is.na(text) & !space_padding(text)$blank & !text %chin% codes
   any_code <- unique(sentinels$value)
+  # Text holding what joins a key, "; " between its parts or "=" in each, looked for in the
+  # bytes, as both are ASCII (D20.35).
+  holds_joiner <- function(x) {
+    grepl("; ", x, fixed = TRUE, useBytes = TRUE) | grepl("=", x, fixed = TRUE, useBytes = TRUE)
+  }
   # A record with no label, or whose label the lineage spec gives no id entry for this
   # attribute, has no lineage spec: set in one step, so the loop below runs over the spec's
   # contributors only (16.2).
@@ -234,7 +240,12 @@ decode_records <- function(input, table, rows, labels, flags) {
     missing_part <- Reduce(`|`, lapply(parts, function(part) {
       space_padding(part)$blank | part %chin% any_code
     }))
-    status[ok] <- fifelse(missing_part, "partial", "decoded")
+    # A part or a label holding "; " or "=" would split back from the key otherwise than it
+    # was joined, so the record is shown as delivered, raw (D20.31 (a), D20.35).
+    unsplittable <- Reduce(`|`, lapply(seq_along(slots), function(k) {
+      holds_joiner(parts[[k]]) | holds_joiner(part_labels[[k]])
+    }))
+    status[ok] <- fifelse(unsplittable, "raw", fifelse(missing_part, "partial", "decoded"))
   }
   # A record shown as delivered keeps its ID's text as its key.
   delivered <- status %chin% c("no_lineage_spec", "raw")
@@ -458,7 +469,9 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
 #'   joined by "; ". An ID of one part isn't split.
 #' - `partial`: as `decoded`, but a part is blank or a missing-value code.
 #' - `raw`: the ID as delivered: it doesn't split into the expected parts (a value holding the
-#'   separator), its entry has labelled alternatives, or there is no separator.
+#'   separator), its entry has labelled alternatives, there is no separator, or one of its
+#'   parts or labels holds "; " or "=". The last case keeps every `decoded` or `partial` key
+#'   splitting back into its parts exactly.
 #' - `no_lineage_spec`: the ID as delivered: the record's contributor has no entry for it.
 #' - `fallback_pk`: no key: a column-level issue, a table with no ID to decode, an ID that is
 #'   missing, blank or a missing-value code, or an entry that says the contributor has no ID.

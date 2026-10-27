@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9020 (development version)
+# groundplotqc 0.0.0.9021 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -55,3 +55,4 @@
 - `parent_without_children`'s not-run row now counts the parent table's rows when the parent's key column, or the child's table or key column, isn't given, and no records when the parent table isn't given. A parent whose key is missing, blank, a missing-value code or a value Layer 1 can't read counts as not evaluated (`rule_version` 2).
 - `undeclared_code_set` writes one issue per report unit, each holding only that unit's values; values from records with no unit go in a row of their own, under "*" (`rule_version` 2).
 - Issues gain `reaches_other_unit`, TRUE where an issue holds a value read from a record of another report unit, or from a record whose report unit is "*": a group value or the problem unit's key reached through the keys, a side that `key_incoherent` compared, or one of `undeclared_code_set`'s values from records with no unit. It isn't part of the fingerprint. Run folders written by earlier versions lack it and `n_unchecked`, so `gpq_read_results()` can't read them.
+- `gpq_decode_lineage()` shows a record's ID as delivered (status `raw`) when one of its parts or labels holds "; " or "=", so every decoded or partly decoded key splits back into its parts exactly.
