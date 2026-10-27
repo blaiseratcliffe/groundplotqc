@@ -104,11 +104,23 @@ test_that("report units round-trip through run.csv as written and read (D20.7)",
   text <- rawToChar(readBin(path, "raw", file.size(path)))
   Encoding(text) <- "UTF-8"
   expect_true(grepl(run$report_units, text, fixed = TRUE))
+  # A field that ends in a backslash, just before its closing quote, is written and read back
+  # as joined too.
+  ends <- data.table::copy(run)
+  data.table::set(ends, j = "report_units", value = join_units(c("100", r"(b\)")))
+  ends_dir <- withr::local_tempdir()
+  write_run_metadata(list(run = ends), ends_dir)
+  ends_path <- file.path(ends_dir, "metadata", "run.csv")
+  back <- read_run_csv(ends_path, metadata_schema()$run)
+  expect_identical(back$report_units, r"(100; b\\)")
+  expect_identical(split_units(back$report_units), c("100", r"(b\)"))
+  ends_text <- rawToChar(readBin(ends_path, "raw", file.size(ends_path)))
+  expect_true(grepl(r"("100; b\\",)", ends_text, fixed = TRUE))
 })
 
 test_that("a group value that is the text \"*\" is no report unit (D20.6)", {
   stations <- data.table::copy(fx_fish_clean()$stations)
-  stations$water_body[[1L]] <- "*"
+  data.table::set(stations, 1L, "water_body", "*")
   results <- gpq_check_conformance(
     list(stations = stations), fx_fish_spec(),
     group_cols = "water_body", layers = 0

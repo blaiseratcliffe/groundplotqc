@@ -10,8 +10,8 @@
 #' (`reports/report.html`, `tables/report_issues.csv`) and the run's own tables
 #' (`tables/results.csv`, `tables/issues.csv`, `tables/corrections.csv`). unit_file_name()
 #' encodes the first character of a unit that is one of them, in any case, so no provider's
-#' file can take one's name; a test holds every file a run and its build write in those
-#' folders to a unit's file or one of these stems. A file added later adds its stem here.
+#' file can take the name of one of them; a test holds every file a run and its build write
+#' in those folders to a unit's file or one of these stems. A file added later adds its stem here.
 #' @noRd
 package_file_stems <- c(
   "preflight", "national_summary", "report", "results", "issues", "corrections"
@@ -66,8 +66,10 @@ unit_file_name <- function(units) {
       units[[long[[1L]]]], size[[long[[1L]]]]
     ), call. = FALSE)
   }
-  # The stems are ASCII, so tolower() folds ASCII letters only; the first pair is named.
-  lower <- tolower(stems)
+  # Folded in ASCII as the reserved names are, whatever the session's locale: on Linux, in a
+  # Turkish one, tolower() gives "I" a dotless i, so "I" and "i" wouldn't stop. The first pair
+  # is named.
+  lower <- chartr(paste(LETTERS, collapse = ""), paste(letters, collapse = ""), stems)
   again <- which(duplicated(lower))
   if (length(again) > 0L) {
     seen <- match(lower[[again[[1L]]]], lower)

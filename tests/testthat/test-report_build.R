@@ -64,3 +64,20 @@ test_that("unit_file_name() stops on stems alike ignoring case or over 200 bytes
   expect_identical(nchar(unit_file_name(strrep("é", 33L))), 198L)
   expect_error(unit_file_name(strrep("é", 34L)), "of 204 bytes once encoded", fixed = TRUE)
 })
+
+test_that("unit_file_name() folds letter case in ASCII, whatever the locale's rules (D20.8)", {
+  # In a Turkish or Azeri UTF-8 locale on Linux, tolower() gives "I" a dotless i (U+0131).
+  # The function runs here with a tolower() that does so, so "I" and "i" must still stop, on
+  # any platform and in any locale.
+  dotless <- function(x) base::tolower(gsub("I", "ı", x, fixed = TRUE))
+  turkish <- unit_file_name
+  environment(turkish) <- list2env(
+    list(tolower = dotless),
+    parent = environment(unit_file_name)
+  )
+  expect_error(
+    turkish(c("I", "i")), "Report units I and i give the same file name, I.html,",
+    fixed = TRUE
+  )
+  expect_error(turkish(c("ID1", "id1")), "Report units ID1 and id1 give", fixed = TRUE)
+})
