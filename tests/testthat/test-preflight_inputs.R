@@ -301,7 +301,7 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
   expect_match(found$detail, paste("Line 2 of", basename(path)), fixed = TRUE)
 })
 
-test_that("override_unknown_name looks a column up in its row's table as a pair (m59)", {
+test_that("override_unknown_name looks a column up in its row's table as a pair (M6 m59)", {
   # Table and column are matched together, not as text joined by a separator: here table "a"
   # and column "b\rc" would read as table "a\rb"'s column "c" if the two were pasted with "\r".
   # Row 2 names that column in its own table and row 3 a column of "a"; neither is a finding.

@@ -230,27 +230,29 @@ test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns 
   expect_no_error(read_evidence(read, groups = "jurisdiction"))
   # Each table and column is the dictionary's, each jurisdiction "*" or a code of the sheet.
   spec <- magp_spec()
-  jurisdictions <- spec$codes$code[spec$codes$source_name == "jurisdiction"]
+  # The sheet's codes and the keys as the build takes them (data-raw/build_magp_config.R).
+  jurisdictions <- spec$codes$code[
+    spec$codes$source_type %in% "sheet" & spec$codes$source_name %in% "jurisdiction"
+  ]
   expect_true(all(
-    paste(computed$table_name, computed$column_name) %chin%
-      paste(spec$attributes$table_name, spec$attributes$attribute_name)
+    paste(computed$table_name, computed$column_name, sep = "\r") %chin%
+      paste(spec$attributes$table_name, spec$attributes$attribute_name, sep = "\r")
   ))
   expect_true(all(computed$jurisdiction %chin% c("*", jurisdictions)))
-  # The crosswalk's map, row by row as the build checks it (m63): a translation table the spec
-  # reads, an attribute whose code list is that table, a column of it and a code of the sheet,
-  # never "*". A row naming anything else gives no evidence, which no other test here would
-  # notice. The evidence then holds only those attributes and codes.
+  # The crosswalk's map, row by row as the build checks it (M6 m63): a translation table the
+  # spec reads, an attribute whose code list is that table, a column of it and a code of the
+  # sheet, never "*". A row naming anything else gives no evidence, which no other test here
+  # would notice. The evidence then holds only those attributes and codes.
   map <- read_evidence_file("crosswalk_provider_columns.csv")
   expect_gt(nrow(map), 0L)
+  # Each pair is looked up by an anti-join on its columns: a row it keeps fails the test, which
+  # then prints that row.
   lists <- spec$code_list_map[spec$code_list_map$source_type %in% "crosswalk"]
-  expect_true(all(
-    paste(map$crosswalk, map$attribute_name) %chin% paste(lists$source_name, lists$attribute_name)
-  ))
+  expect_equal(map[!lists, on = c(crosswalk = "source_name", "attribute_name")], map[0L])
   headers <- spec$crosswalks[spec$crosswalks$source_row %in% 1L]
-  expect_true(all(
-    paste(map$crosswalk, map$provider_column) %chin%
-      paste(headers$crosswalk, headers$crosswalk_column)
-  ))
+  expect_equal(
+    map[!headers, on = c(crosswalk = "crosswalk", provider_column = "crosswalk_column")], map[0L]
+  )
   expect_true(all(map$jurisdiction %chin% jurisdictions))
   expect_true(all(crosswalk$column_name %chin% lists$attribute_name))
   expect_true(all(crosswalk$jurisdiction %chin% jurisdictions))
@@ -258,7 +260,7 @@ test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns 
 
 test_that("read_evidence_file stops on a file missing from the package", {
   # Installed, as R CMD check runs it, the test mocks base system.file(), which no CRAN check
-  # may change (R145).
+  # may change (R145, D20.84).
   testthat::skip_on_cran()
   # As magp_texts()'s test: pkgload's system.file() under load_all(), base's when installed.
   imports <- parent.env(environment(read_evidence_file))

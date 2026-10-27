@@ -224,7 +224,7 @@ override_unknown_names <- function(spec, read, registry) {
   known_table <- !is.na(table) & (table %chin% a$table_name | delivered)
   known_column <- column %chin% "*" | delivered
   # Each row's attribute in the dictionary, found on its table and column together by one join
-  # (16.2); NA where the row's table has no such column.
+  # (16.2; M6 m59, D20.86); NA where the row's table has no such column.
   attribute_row <- a[
     data,
     on = c(table_name = "table_name", attribute_name = "column_name"), mult = "first",

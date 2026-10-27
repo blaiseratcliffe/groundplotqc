@@ -134,7 +134,7 @@ test_that("the checks above bite on a planted row: an id the engine lacks, a non
 
 test_that("magp_texts stops on a file missing from the package", {
   # Installed, as R CMD check runs it, the test mocks base system.file(), which no CRAN check
-  # may change (R145).
+  # may change (R145, D20.85).
   testthat::skip_on_cran()
   # system.file() stands in for a package without the file, for this test only. Under
   # load_all() the package calls pkgload's own system.file(), found among its imports; an
