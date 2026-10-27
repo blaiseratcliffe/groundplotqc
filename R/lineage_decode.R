@@ -375,15 +375,19 @@ issues_match_tables <- function(issues, input) {
   invisible(NULL)
 }
 
-#' Which issues' provider keys another record of their table holds too (D19.15, D19.76)
+#' Which issues' provider keys another record of their table holds too (9.6; D19.15, D19.76,
+#' D20.107)
 #'
-#' Counted over the table's records of every contributor in `tables`: only the records whose ID
-#' an issue's record shares are decoded again, found by duplicated() on the ID column (16.2),
-#' each labelled as the run labelled it: an issue's record by its issue's key_col value, any
-#' other record by its key_col value in `tables`. Where `tables` reach key_col for no record of
-#' the table (a table or column on the way not given), they can't label a record with no issue:
-#' it counts as holding the key of each issue sharing its ID, so those keep the pk: form.
-#' Returns one logical per issue.
+#' Counted over the table's records of every contributor in `tables`, found by key: only the
+#' records that could hold an issue's key are decoded again. They are the records whose ID an
+#' issue's record shares, found by duplicated() on the ID column (16.2), and, where an ID of a
+#' column held as text holds "=", the records whose ID is spelled as an issue's decoded key or
+#' is the values of an issue's delivered key joined by a separator of the table's entries,
+#' found by %chin% (D20.107). Each is labelled as the run labelled it: an issue's record by its
+#' issue's key_col value, any other record by its key_col value in `tables`. Where `tables`
+#' reach key_col for no record of the table (a table or column on the way not given), they
+#' can't label a record with no issue: it counts as holding the key of each issue that shares
+#' its ID or found it by key, so those keep the pk: form. Returns one logical per issue.
 #' @noRd
 shared_provider_keys <- function(issues, input, key_col, flags) {
   shared <- logical(nrow(issues))
@@ -391,6 +395,7 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
   record <- which(!is.na(issues$row_number))
   spec <- input$spec
   columns <- input$columns
+  lineage <- spec$lineage_spec
   for (table in unique(issues$table_name[keyed])) {
     at <- keyed[issues$table_name[keyed] == table]
     attribute <- source_id_attribute(spec, table)
@@ -402,13 +407,52 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     # setNumericRounding(), so the reset record_pk_text() makes is left out on purpose (R59).
     ids <- if (inherits(x, "integer64")) setDT(list(x)) else x
     repeats <- duplicated(ids) | duplicated(ids, fromLast = TRUE)
-    candidate <- at[repeats[issues$row_number[at]]]
+    # A record with another ID can hold an issue's key too (9.6, D20.107): its ID spelled as
+    # the issue's decoded key, so raw or no_lineage_spec, or the values of the issue's
+    # delivered key joined by a separator of the table's entries, as a decoded key's ID is.
+    # Either way an ID holds "=" (a key's, or the delivered key's own), so a column not held
+    # as text, or with no ID holding "=", is passed by after one grepl() (16.2).
+    spelled <- character()
+    spelled_by <- integer()
+    found <- integer()
+    by_key <- integer()
+    text <- stored_text(x)
+    if (!is.null(text) && any(grepl("=", text, fixed = TRUE, useBytes = TRUE))) {
+      key <- issues$provider_key[at]
+      decoded <- issues$provider_key_status[at] %chin% c("decoded", "partial")
+      delivered <- which(!decoded & grepl("=", key, fixed = TRUE, useBytes = TRUE))
+      # A latin1 key is read as UTF-8; one that still isn't valid UTF-8 no pattern can read.
+      readable <- utf8_marked(utf8_converted(key[delivered]))
+      valid <- validUTF8(readable)
+      delivered <- delivered[valid]
+      # The values: the first "<label>=" dropped, and each "; <label>=" after it made the
+      # separator, taken as fixed text.
+      values <- sub("^[^=]*=", "", readable[valid])
+      is_entry <- lineage$spec_type %chin% "id" & lineage$table_name %chin% table &
+        lineage$attribute_name %chin% attribute
+      separators <- unique(lineage$separator[is_entry])
+      separators <- separators[!is.na(separators)]
+      joined <- lapply(separators, function(separator) {
+        gsub("; [^=]*=", gsub("\\", "\\\\", separator, fixed = TRUE), values)
+      })
+      # With no separator, only a one-part entry decodes: its ID is the value alone.
+      if (length(joined) == 0L) {
+        joined <- list(values)
+      }
+      spelled <- c(key[decoded], unlist(joined, use.names = FALSE))
+      spelled_by <- c(which(decoded), rep(delivered, length(joined)))
+      found <- which(text %chin% spelled)
+      by_key <- spelled_by[spelled %chin% text[found]]
+    }
+    candidate <- at[repeats[issues$row_number[at]] | seq_along(at) %in% by_key]
     if (length(candidate) == 0L) {
       next
     }
     # Matched on the repeated rows only, so a classed column isn't written as text whole.
     repeated <- which(repeats)
     holders <- repeated[x[repeated] %in% x[issues$row_number[candidate]]]
+    # The issues' own records too, as one found by key may share no ID.
+    holders <- sort(unique(c(holders, found, issues$row_number[candidate])))
     # A holder that is an issue's record takes that issue's key_col value, as the run gave it
     # (D19.76); the table's other holders are read from `tables`.
     on_table <- record[issues$table_name[record] == table]
@@ -440,10 +484,12 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     held <- held[!is.na(held)]
     twice <- unique(held[duplicated(held)])
     # A holder `tables` can't label holds, for all decoding can tell, the key of each issue
-    # sharing its ID (D19.76).
+    # sharing its ID or finding it by key (D19.76, D20.107).
     rows <- issues$row_number[candidate]
+    loose <- holders[unlabelled]
+    by_loose <- if (length(spelled) > 0L) at[spelled_by[spelled %chin% text[loose]]]
     shared[candidate] <- issues$provider_key[candidate] %in% twice |
-      x[rows] %in% x[holders[unlabelled]]
+      x[rows] %in% x[loose] | candidate %in% by_loose
   }
   shared
 }

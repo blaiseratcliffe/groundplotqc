@@ -469,9 +469,11 @@ test_that("a part or a label holding \"; \" or \"=\" gives raw, the ID as delive
   expect_equal(
     issues$provider_key, c("41_7; b", "41=_X", "k=100", "survey.site=41; survey.tree=7")
   )
-  # The fingerprint follows the key: the ID as delivered for a raw record (9.6).
-  expect_equal(issues$fingerprint[3:4], paste0(
-    "value_below_min|trees|height|", c("k=100", "survey.site=41; survey.tree=7")
+  # The fingerprint follows the key: the ID as delivered for a raw record (9.6), as no other
+  # tree holds any of the four keys.
+  expect_equal(issues$fingerprint, paste0(
+    "value_below_min|trees|height|",
+    c("41_7; b", "41=_X", "k=100", "survey.site=41; survey.tree=7")
   ))
   # A label holding "=": a spec read by gpq_read_spec() gives none (a part's source is a
   # table.column or a bare name), so south's is changed after reading, and t4's clean ID is
@@ -485,4 +487,67 @@ test_that("a part or a label holding \"; \" or \"=\" gives raw, the ID as delive
   gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
   expect_equal(issues$provider_key_status, c("raw", "decoded"))
   expect_equal(issues$provider_key, c("k100", "survey.site=41; survey.tree=7"))
+})
+
+test_that("\"=\" is found in a part's bytes, in UTF-8 and latin1 text alike (D20.35)", {
+  # t4's one part holds "=" beside a non-ASCII letter, in UTF-8, and t5's is the same text
+  # marked latin1: both raw. t2's second part is the letter alone, with no joiner: decoded.
+  utf8 <- "é=1"
+  latin1 <- iconv(utf8, "UTF-8", "latin1")
+  expect_identical(Encoding(c(utf8, latin1)), c("UTF-8", "latin1"))
+  tables <- fx_lineage_tables()
+  tables$trees$src_tree_id[c(2L, 4L, 5L)] <- c("41_é", utf8, latin1)
+  issues <- fx_lineage_made_issues(tables, c(2L, 4L, 5L))
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("decoded", "raw", "raw"))
+  expect_equal(issues$provider_key, c("survey.site=41; survey.tree=é", utf8, utf8))
+})
+
+# ---- M7a: a key held by a record with another ID (D20.107) ----
+
+test_that("an ID spelled as another record's decoded key shares the pk: form (D20.107)", {
+  spelled <- "survey.site=41; survey.tree=7"
+  # South's ID is one part, so t4's, spelled as north's t8's decoded key, is raw (D20.35) and
+  # its key is its ID: t8's key. t1 moves off "41_7", so no two trees share an ID.
+  tables <- fx_lineage_tables()
+  tables$trees$src_tree_id[c(1L, 4L)] <- c("42_7", spelled)
+  issues <- fx_lineage_made_issues(tables, c(1L, 4L, 8L))
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("decoded", "raw", "decoded"))
+  expect_equal(issues$provider_key, c("survey.site=42; survey.tree=7", spelled, spelled))
+  expect_equal(issues$fingerprint, c(
+    "value_below_min|trees|height|survey.site=42; survey.tree=7", issues$fingerprint_pk[2:3]
+  ))
+  # Each finds the other where it alone has an issue: t8 as its key is t4's ID, t4 as its
+  # key's values joined by the separator are t8's ID.
+  issues <- fx_lineage_made_issues(tables, 8L)
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+  issues <- fx_lineage_made_issues(tables, 4L)
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+  # A holder so found that the tables can't label counts as holding the key (D19.76): t8,
+  # where sites lack their contributor column.
+  issues <- fx_lineage_made_issues(tables, 4L)
+  no_column <- tables
+  no_column$sites$contributor <- NULL
+  gpq_decode_lineage(issues, no_column, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+  # M6's case: north's entry has two parts, and t1's ID, spelled as t8's key, doesn't split
+  # on "_", so it is raw and its key is its ID: t8's key.
+  tables <- fx_lineage_tables()
+  tables$trees$src_tree_id[1L] <- spelled
+  issues <- fx_lineage_made_issues(tables, c(1L, 8L))
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key_status, c("raw", "decoded"))
+  expect_equal(issues$provider_key, c(spelled, spelled))
+  expect_equal(issues$fingerprint, issues$fingerprint_pk)
+  # A record found by a key but holding another doesn't count: east's t6 has no entry, so its
+  # key is its ID, whose value "41_7" is t1's and t8's ID, but they decode to north's key.
+  tables <- fx_lineage_tables()
+  tables$trees$src_tree_id[6L] <- "field.tree_key=41_7"
+  issues <- fx_lineage_made_issues(tables, 6L)
+  gpq_decode_lineage(issues, tables, lineage_spec_default, key_col = "contributor")
+  expect_equal(issues$provider_key_status, "no_lineage_spec")
+  expect_equal(issues$fingerprint, "value_below_min|trees|height|field.tree_key=41_7")
 })
