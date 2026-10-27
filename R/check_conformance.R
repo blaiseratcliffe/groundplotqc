@@ -75,11 +75,13 @@
 #' `column_level_min_n` records were checked, the run records one column-level issue; masked
 #' records sharing one root collapse the same way.
 #'
-#' A record's group values are read from its own table, or from the nearest table that holds
-#' the column, through the foreign keys; a record that can't reach one, whose keys on the way
-#' don't match, or whose value there is blank or missing, has `"*"` there. A group value
-#' marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
-#' run, naming the column, the table it is read from and its first such row.
+#' A record's group values are read from its own table or, through the foreign keys, from a
+#' table that holds the column, shortest route first. Where a key on the way is missing, blank
+#' or a missing-value code, or the value found is blank, missing or `"*"`, the next route is
+#' tried. A record no route reaches, or whose key on the way names no parent record, has `"*"`
+#' there. A group value marked latin1 is converted to UTF-8 and runs; one whose bytes aren't
+#' valid UTF-8 stops the run, naming the column, the table it is read from and its first such
+#' row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
