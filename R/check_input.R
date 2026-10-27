@@ -395,7 +395,9 @@ walk_fk_paths <- function(input, table, targets, usable = NULL) {
       break
     }
     end <- route$reference_table[[nrow(route)]]
-    reached <- chain_rows(input, table, route, rows = open)
+    # While every record is open the whole table is followed, so the first hop reads the key
+    # column itself (16.2).
+    reached <- chain_rows(input, table, route, rows = if (length(open) < n) open)
     took <- !is.na(reached)
     if (!is.null(usable) && any(took)) {
       took[took] <- usable(end, reached[took])
@@ -598,7 +600,10 @@ reached_values <- function(input, reached, column_name) {
   value <- rep(NA_character_, length(rows))
   for (table in tables) {
     here <- which(home == table)
-    value[here] <- value_text(read(table, rows[here]))
+    # Each distinct row reached is written as text once (16.2).
+    at <- rows[here]
+    distinct <- unique(at)
+    value[here] <- value_text(read(table, distinct))[match(at, distinct)]
   }
   value
 }

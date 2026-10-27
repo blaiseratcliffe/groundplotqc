@@ -207,6 +207,8 @@ reach_rows <- function(input, reach) {
     rows <- input$cache[[name]]
     if (is.null(rows)) {
       rows <- chain_rows(input, edge$table_name, edge)
+      # Only walk_fk_paths() reads the orphan mark, so the rows are kept without it.
+      attr(rows, "orphan") <- NULL
       if (keep) {
         assign(name, rows, envir = input$cache)
       }
@@ -497,7 +499,10 @@ check_keys <- function(input, context) {
   parent_rows <- function(edge) {
     name <- paste(edge$table_name, edge$attribute_name, sep = "\r")
     if (is.null(joined[[name]])) {
-      assign(name, chain_rows(input, edge$table_name, edge), envir = joined)
+      rows <- chain_rows(input, edge$table_name, edge)
+      # Only walk_fk_paths() reads the orphan mark, so the rows are kept without it.
+      attr(rows, "orphan") <- NULL
+      assign(name, rows, envir = joined)
     }
     joined[[name]]
   }

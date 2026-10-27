@@ -119,8 +119,8 @@ chain_rows <- function(input, table, steps, rows = NULL) {
     # An integer key is read against integer codes, so %in% copies no key to doubles (16.2):
     # only a whole code an integer holds can equal one; -99.5 isn't -99 (m86).
     if (is.integer(from)) {
-      whole <- is.na(masked) | (masked == trunc(masked) & abs(masked) <= .Machine$integer.max)
-      masked <- as.integer(masked[whole])
+      integral <- is.na(masked) | (masked == trunc(masked) & abs(masked) <= .Machine$integer.max)
+      masked <- as.integer(masked[integral])
     }
     hidden <- from %in% masked
     rows[hidden] <- NA_integer_

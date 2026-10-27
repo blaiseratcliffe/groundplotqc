@@ -412,9 +412,9 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
       if (all(is.na(home)) || all(is.na(reached$rows))) {
         unlabelled[other] <- TRUE
       } else {
-        at <- holders[other]
+        other_rows <- holders[other]
         key_values[other] <- value_text(reached_values(
-          input, list(home = reached$home[at], rows = reached$rows[at]), key_col
+          input, list(home = reached$home[other_rows], rows = reached$rows[other_rows]), key_col
         ))
       }
     }

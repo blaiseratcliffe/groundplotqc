@@ -406,6 +406,30 @@ test_that("a record tries its next route past a masked break and stops at an orp
   )
   expect_equal(reached$rows, by_station)
   expect_equal(reached$home, ifelse(is.na(by_station), NA_character_, "stations"))
+  # Records in two homes (R5): catches 1 and 2 keep haul 1, whose water body is made "RV"
+  # where its station's is "LK", so they reach hauls; catch 3's masked haul key sends it to its
+  # station, and catch 5's orphan haul key gives "*". The problem unit's key is read in each
+  # record's own home, in the order of the rows asked.
+  two_hauls <- data.table::copy(hauls)
+  two_hauls$water_body[[1L]] <- "RV"
+  two_catches <- data.table::copy(fish$catches)
+  two_catches$station_id <- hauls$station_id[match(two_catches$haul_id, hauls$haul_id)]
+  two_catches$haul_id[[3L]] <- NA
+  two_catches$haul_id[[5L]] <- "H-none"
+  two <- list(stations = stations, hauls = two_hauls, catches = two_catches)
+  input <- conformance_input(two, spec, key_col = "water_body")
+  expect_equal(input$key_rows$catches$home[c(1L, 3L, 5L)], c("hauls", "stations", NA))
+  expect_equal(key_text(input, "catches", c(5L, 3L, 1L)), c("*", "LK", "RV"))
+  # A holder whose column wasn't given counts as broken too: with hauls' water_body left out,
+  # catches 1 and 2 go on to their station, and only the orphan reaches none.
+  without <- data.table::copy(two_hauls)
+  data.table::set(without, j = "water_body", value = NULL)
+  two$hauls <- without
+  reached <- reach_column(conformance_input(two, spec), "catches", "water_body")
+  expected <- match(two_catches$station_id, stations$station_id)
+  expected[[5L]] <- NA_integer_
+  expect_equal(reached$rows, expected)
+  expect_equal(reached$home, ifelse(is.na(expected), NA_character_, "stations"))
 })
 
 test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {

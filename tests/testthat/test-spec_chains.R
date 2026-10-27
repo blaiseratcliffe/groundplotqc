@@ -229,4 +229,11 @@ test_that("chain_rows() follows the rows given and marks orphans apart from mask
   # A parent table not given breaks every row without making an orphan.
   input <- conformance_input(fish[c("hauls", "catches")], spec)
   expect_false(any(attr(chain_rows(input, "hauls", up), "orphan")))
+  # So does a parent's key column not given: haul 3's key, an orphan above, is only a break.
+  stations <- data.table::copy(fish$stations)
+  data.table::set(stations, j = "station_id", value = NULL)
+  fish$stations <- stations
+  no_key <- chain_rows(conformance_input(fish, spec), "hauls", up)
+  expect_equal(no_key, rep(NA_integer_, nrow(hauls)), ignore_attr = "orphan")
+  expect_false(any(attr(no_key, "orphan")))
 })
