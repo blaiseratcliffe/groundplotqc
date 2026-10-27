@@ -301,6 +301,23 @@ test_that("override_unknown_name warns of each unknown name but those issues hol
   expect_match(found$detail, paste("Line 2 of", basename(path)), fixed = TRUE)
 })
 
+test_that("override_unknown_name looks a column up in its row's table as a pair (m59)", {
+  # Table and column are matched together, not as text joined by a separator: here table "a"
+  # and column "b\rc" would read as table "a\rb"'s column "c" if the two were pasted with "\r".
+  # Row 2 names that column in its own table and row 3 a column of "a"; neither is a finding.
+  stub <- list(attributes = data.table::data.table(
+    table_name = c("a", "a\rb"), attribute_name = c("x", "c")
+  ))
+  overrides <- override_rows(table_name = c("a", "a\rb", "a"), column_name = c("b\rc", "c", "x"))
+  found <- preflight_check_functions()[["override_unknown_name"]](
+    stub, preflight_context(inputs = list(overrides = overrides))
+  )
+  expect_equal(found$detail, report_text(
+    "preflight_detail_override_unknown_name_attribute",
+    position = input_row(1L), table_name = "a", attribute_name = "b\rc"
+  ))
+})
+
 test_that("gpq_preflight warns on overrides, stops on one it can't use, and keeps them (16.2)", {
   spec <- fish_spec
   overrides <- override_rows(issue_class = c("source", "harmonization"))

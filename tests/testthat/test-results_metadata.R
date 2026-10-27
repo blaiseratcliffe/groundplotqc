@@ -57,18 +57,22 @@ test_that("the run table is one row with the versions, group columns and outcome
 })
 
 test_that("the git commit is HEAD's in a checkout, NA outside one", {
-  # Loaded from a checkout, as devtools::test() runs, the commit is HEAD's.
   folder <- dirname(system.file("DESCRIPTION", package = "groundplotqc"))
-  if (file.exists(file.path(folder, ".git")) && nzchar(Sys.which("git"))) {
-    expect_match(package_git_commit(), "^[0-9a-f]{40}$")
+  if (file.exists(file.path(folder, ".git"))) {
+    # Loaded from a checkout, as devtools::test() runs, the commit is HEAD's. Then system.file()
+    # is mocked to find no .git, as in an installed package; the mock is made only here, so an
+    # installed run, as R CMD check and CRAN make, rebinds nothing (R145, D20.85).
+    if (nzchar(Sys.which("git"))) {
+      expect_match(package_git_commit(), "^[0-9a-f]{40}$")
+    }
+    imports <- parent.env(environment(package_git_commit))
+    if (exists("system.file", envir = imports, inherits = FALSE)) {
+      testthat::local_mocked_bindings(system.file = function(...) "")
+    } else {
+      testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
+    }
   }
-  # An installed package has no .git, so system.file() finds none.
-  imports <- parent.env(environment(package_git_commit))
-  if (exists("system.file", envir = imports, inherits = FALSE)) {
-    testthat::local_mocked_bindings(system.file = function(...) "")
-  } else {
-    testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
-  }
+  # An installed package has no .git, so the commit is NA, with nothing mocked there.
   expect_true(is.na(package_git_commit()))
 })
 
