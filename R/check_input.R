@@ -429,7 +429,10 @@ walk_fk_paths <- function(input, table, targets, usable = NULL) {
 #'   record can't reach a column, D9.24, D16.13, D20.1), ordered by their text, and `n`, the
 #'   number of groups, 1 without group columns; `key_rows`, per table, each row's home table
 #'   and its row there for the key column (reach_column(), R5);
-#' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill.
+#' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill;
+#' - in each table's `groups`, also `reaches_other_unit`, one per row: TRUE where a group value
+#'   or the problem unit's key was read from a record of another report unit than the row's
+#'   own, or of one whose unit is "*" (D18.89, D20.10).
 #' @noRd
 conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL,
                               text_tables = character()) {
@@ -484,6 +487,37 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
     list()
   } else {
     structure(lapply(present, function(table) reach_column(input, table, key_col)), names = present)
+  }
+  # Each record's reaches_other_unit mark (D18.89, D20.10): TRUE where a group value, or the
+  # problem unit's key (D20.81), was read through the keys from a record whose own report unit
+  # is another than the record's, or "*". A value read in the record's own table is its own
+  # unit's, and a record that reached no value has "*" there, read from no record, so neither
+  # sets it. The report unit's value is read where the unit is that value, so only the other
+  # group columns are walked, a second time, as group_index() keeps no route; the key's rows
+  # are key_rows'. FALSE throughout without group columns.
+  for (table in present) {
+    grouping <- input$groups[[table]]
+    marked <- logical(length(grouping$row_group))
+    walked <- group_cols[-1L]
+    if (length(group_cols) > 0L && !is.null(key_col) && !key_col %chin% group_cols) {
+      walked <- c(walked, key_col)
+    }
+    for (column_name in walked) {
+      reached <- if (column_name %chin% group_cols) {
+        reach_column(input, table, column_name)
+      } else {
+        input$key_rows[[table]]
+      }
+      # Each table the records read the value in (R5), but their own.
+      for (home in setdiff(unique(reached$home[!is.na(reached$home)]), table)) {
+        here <- which(reached$home == home)
+        held <- input$groups[[home]]
+        theirs <- held$values[[group_cols[[1L]]]][held$row_group[reached$rows[here]]]
+        own <- grouping$values[[group_cols[[1L]]]][grouping$row_group[here]]
+        marked[here] <- marked[here] | theirs == "*" | theirs != own
+      }
+    }
+    input$groups[[table]]$reaches_other_unit <- marked
   }
   input
 }

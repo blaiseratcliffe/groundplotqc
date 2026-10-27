@@ -543,6 +543,7 @@ test_that("a site whose chain breaks or ends without a band isn't checked (D18.2
   rows <- results$results[results$results$rule_id == "site_id_out_of_range"]
   # Sites 7 and 8 are checked; the six others count in neither n_checked nor n_fail.
   expect_equal(c(rows$n_checked, rows$n_fail, rows$n_not_evaluated), c(2L, 0L, 0L))
+  expect_equal(rows$n_unchecked, 6L)
   expect_equal(rows$status, "pass")
   # A blank key breaks the chain too (D18.31): with sites 7 and 8 reaching their dataset only
   # through a blank key, nothing is checked, so the row is not_run (D18.22).
@@ -554,7 +555,10 @@ test_that("a site whose chain breaks or ends without a band isn't checked (D18.2
   expect_equal(nrow(opened(blank, "site_id_out_of_range")), 0L)
   rows <- blank$results[blank$results$rule_id == "site_id_out_of_range"]
   expect_equal(c(rows$status, rows$not_run_reason), c("not_run", "none_checked"))
-  expect_equal(c(rows$n_checked, rows$n_fail, rows$n_not_evaluated), c(0L, 0L, 8L))
+  # Every site is unchecked, so the row reads 0 not evaluated (D20.15).
+  expect_equal(
+    c(rows$n_checked, rows$n_fail, rows$n_not_evaluated, rows$n_unchecked), c(0L, 0L, 0L, 8L)
+  )
 })
 
 test_that("without a banded column site_id_out_of_range is one not_run row, no_input (R19)", {
@@ -809,4 +813,39 @@ test_that("undeclared_code_set's results show example_cap of its values, its iss
     found <- opened(results, "undeclared_code_set")
     expect_equal(found$value, "East; North; South", info = cap)
   }
+})
+
+# M7a task 3 (D18.60, D20.11, D20.14)
+test_that("undeclared_code_set writes one issue per report unit with its own values (D20.11)", {
+  registry <- rule_registry()
+  expect_equal(registry$rule_version[registry$rule_id == "undeclared_code_set"], 2L)
+  fish <- fx_clean_tables(fx_fish_spec(), n = 6L)
+  stations <- data.table::copy(fish$stations)
+  # Two water bodies and a station with none: North is LK's only, South both's, East RV's, and
+  # West only the station with no water body's, whose report unit is "*".
+  data.table::set(stations, j = "water_body", value = c("LK", "LK", "RV", "RV", NA, "LK"))
+  data.table::set(
+    stations,
+    j = "station_name", value = c("North", "South", "South", "East", "West", "North")
+  )
+  fish$stations <- stations
+  settings <- list(code_set_max_values = 4L)
+  results <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    group_cols = "water_body", settings = settings, layers = 3
+  )
+  found <- opened(results, "undeclared_code_set")
+  expect_equal(found$water_body, c("*", "LK", "RV"))
+  expect_equal(found$value, c("West", "North; South", "East; South"))
+  expect_equal(found$n_records, c(1L, 3L, 2L))
+  expect_equal(found$reaches_other_unit, c(TRUE, FALSE, FALSE))
+  expect_true(all(found$level == "column" & found$record_pk == "*"))
+  # The column is judged whole: one results row of "*", counting no records.
+  row <- results$results[results$results$rule_id == "undeclared_code_set"]
+  expect_equal(c(row$water_body, row$status), c("*", "fail"))
+  expect_true(is.na(row$n_unchecked))
+  # Without group columns, one issue holds every value, unmarked, as before.
+  whole <- opened(fish_run(fish, settings = settings, layers = 3), "undeclared_code_set")
+  expect_equal(whole$value, "East; North; South; West")
+  expect_equal(c(whole$n_records, whole$reaches_other_unit), c(6L, FALSE))
 })

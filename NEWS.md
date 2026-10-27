@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9019 (development version)
+# groundplotqc 0.0.0.9020 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -51,3 +51,7 @@
 - MAGPlot's configuration gains `pipeline_computed.csv`, the attributes MAGPlot's processing scripts compute for every record, and `crosswalk_provider_columns.csv`, the translation-table columns that hold each jurisdiction's provider codes; the build checks every row of both against the specification before it copies them.
 - The article "Using the engine on your own dataset" ends with the fish survey's issues classed by an override and a `computed` row.
 - A record whose shortest path of keys to a group column breaks on a missing, blank or missing-value-code key or value, or a table not given, tries the next path, shortest first, so fewer records are grouped under "*"; a key that names no parent record still gives "*".
+- Results gain `n_unchecked`, the records a rule never reached; `n_not_evaluated` now counts only records a rule reached but didn't evaluate.
+- `parent_without_children`'s not-run row now counts the parent table's rows when the parent's key column, or the child's table or key column, isn't given, and no records when the parent table isn't given. A parent whose key is missing or failed an earlier check counts as not evaluated (`rule_version` 2).
+- `undeclared_code_set` writes one issue per report unit, each holding only that unit's values; values from records with no unit go in a row of their own, under "*" (`rule_version` 2).
+- Issues gain `reaches_other_unit`, TRUE where an issue holds a value read from a record of another report unit, or from a record whose report unit is "*": a group value or the problem unit's key reached through the keys, a side that `key_incoherent` compared, or one of `undeclared_code_set`'s values from records with no unit. It isn't part of the fingerprint. Run folders written by earlier versions lack it and `n_unchecked`, so `gpq_read_results()` can't read them.

@@ -129,7 +129,9 @@ decimal_places <- function(number) {
 #' warning where the column holds more than `code_set_max_values` values (not NA, blank, a
 #' sentinel of its type or an unknown code of the attribute) and no more than that many
 #' distinct ones, each distinct value read once (D8.24, D9.26, D18.20, R11); its issue lists
-#' them all in C order and its results row's examples the first `example_cap` (D18.103).
+#' them all in C order and its results row's examples the first `example_cap` (D18.103). With
+#' group columns the column is still judged whole, but its issue is one per report unit, each
+#' listing its own records' values, those of records whose unit is "*" under "*" (D20.11).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -323,10 +325,39 @@ check_domains <- function(input, context) {
           # The issue lists every value; the results row shows the first example_cap of them, NA
           # at 0, as a record rule's examples do (D18.103).
           shown <- listed[seq_len(min(length(listed), context$example_cap))]
+          examples <- if (length(shown) > 0L) paste(shown, collapse = "; ") else NA_character_
+          if (length(input$group_cols) == 0L) {
+            return(unit_outcome(
+              "undeclared_code_set", table, attribute, TRUE, length(x),
+              value = paste(listed, collapse = "; "), examples = examples
+            ))
+          }
+          # The column is judged whole (D18.20), and its issue goes to each report unit with that
+          # unit's own values, in C order, those of records whose unit is "*" under "*" (D18.60,
+          # D20.11): `value` and `n_records` (the unit's records in the table) named by unit, the
+          # units in C order, a unit none of whose records holds a value left out. Each record's
+          # unit and value are read as integer codes, so no text is copied per record (16.2).
+          grouping <- input$groups[[table]]
+          labels <- grouping$values[[input$group_cols[[1L]]]]
+          units <- unique(labels)
+          unit_code <- match(labels, units)[grouping$row_group]
+          value_code <- match(text, listed)
+          held <- which(!is.na(value_code))
+          width <- length(listed)
+          pair <- unique((unit_code[held] - 1L) * width + value_code[held])
+          unit_at <- (pair - 1L) %/% width + 1L
+          value_at <- (pair - 1L) %% width + 1L
+          ordered <- order(units[unit_at], value_at, method = "radix")
+          named <- units[unit_at[ordered]]
+          holding <- unique(named)
+          values <- vapply(
+            split(listed[value_at[ordered]], factor(named, levels = holding)), paste, "",
+            collapse = "; "
+          )
+          rows <- tabulate(unit_code, length(units))[match(holding, units)]
           unit_outcome(
-            "undeclared_code_set", table, attribute, TRUE, length(x),
-            value = paste(listed, collapse = "; "),
-            examples = if (length(shown) > 0L) paste(shown, collapse = "; ") else NA_character_
+            "undeclared_code_set", table, attribute, TRUE, structure(rows, names = holding),
+            value = structure(unname(values), names = holding), examples = examples
           )
         }
       )

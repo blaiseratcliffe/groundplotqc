@@ -13,6 +13,13 @@ test_that("results_schema() puts the caller's columns in their places, as text (
   expect_equal(results[match("column_name", results) + 1:2], c("unit", "area"))
   issues <- names(schema$issues)
   expect_equal(issues[match("provider_key_status", issues) + 1:3], c("unit", "area", "plot"))
+  # D20.18's columns: n_unchecked beside the other counts, reaches_other_unit after the
+  # caller's columns (9.2, 9.3).
+  expect_equal(results[match("n_not_evaluated", results) + 1L], "n_unchecked")
+  expect_equal(
+    issues[match("plot", issues) + 0:2], c("plot", "reaches_other_unit", "root_issue_id")
+  )
+  expect_equal(results_schema()$issues[["reaches_other_unit"]], "logical")
   expect_equal(unname(schema$issues[c("unit", "area", "plot")]), rep("character", 3L))
   expect_false(any(c("unit", "area", "plot") %in% names(schema$corrections)))
   # A key column that is also a group column comes once.
@@ -54,7 +61,8 @@ test_that("the constructors complete a table with NA", {
     run_id = "r", run_scope = "package", rule_id = "value_odd", rule_fingerprint = "f",
     stage = "conformance", layer = 2L, severity = "error", table_name = "t",
     column_name = "c", unit = "u", n_checked = 2L, n_fail = 0L, n_not_evaluated = 0L,
-    reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L, status = "pass",
+    n_unchecked = 0L, reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L,
+    status = "pass",
     message_id = "m"
   )
   table <- new_results(given, group_cols = "unit")
@@ -354,4 +362,39 @@ test_that("bind_results() appends one run's results to another's, renumbering ID
   }
   data.table::set(other$metadata$run, j = "run_id", value = "20261008T130000Z_000000")
   expect_error(bind_results(object, other), "Only results of one run")
+})
+
+# M7a task 3 (D20.10, D20.15, D20.18)
+test_that("n_unchecked is NA only on a unit rule's row; reaches_other_unit is always given", {
+  local_results_registry()
+  object <- fx_results()
+  check <- function(table, name, column, value) {
+    changed <- data.table::copy(table)
+    data.table::set(changed, i = 1L, j = column, value = value)
+    validate_schema(changed, name, fish_schema(name))
+  }
+  expect_error(check(object$results, "results", "n_unchecked", -1L), "negative counts")
+  expect_error(
+    check(object$results, "results", "n_unchecked", NA_integer_),
+    paste(
+      "gives n_unchecked to the row of a rule that checks whole tables or columns, or leaves it",
+      "NA on another rule's row"
+    )
+  )
+  expect_error(
+    check(object$issues, "issues", "reaches_other_unit", NA), "blank cells in reaches_other_unit"
+  )
+  # A unit rule's row counts no records (D16.8): its n_unchecked is NA.
+  unit_row <- data.table::copy(object$results[1L])
+  data.table::set(
+    unit_row,
+    j = c("rule_id", "layer", "n_fail", "n_distinct_fail_values", "status", "n_unchecked"),
+    value = list("table_missing", 0L, 0L, 0L, "pass", NA_integer_)
+  )
+  expect_no_error(validate_schema(unit_row, "results", fish_schema("results")))
+  data.table::set(unit_row, j = "n_unchecked", value = 0L)
+  expect_error(
+    validate_schema(unit_row, "results", fish_schema("results")),
+    "gives n_unchecked to the row of a rule that checks whole tables or columns"
+  )
 })

@@ -125,6 +125,8 @@ test_that("fk_orphan and fk_unassigned split a key's failures, its open sentinel
   rows <- results$results
   row <- rows[rows$rule_id == "fk_orphan" & rows$table_name == "catches"]
   expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(7L, 1L, 1L))
+  # Its own not-evaluated record was reached, so none is unchecked (D18.71, D20.15).
+  expect_equal(row$n_unchecked, 0L)
   expect_false(any(results$issues$rule_id == "fk_orphan" & results$issues$row_number == 5L))
 })
 
@@ -166,7 +168,9 @@ test_that("fk_not_applicable_mismatch is not_run, no_matrix, per foreign key and
   ))
   expect_true(all(rows$status == "not_run" & rows$not_run_reason == "no_matrix"))
   catches <- rows[rows$table_name == "catches"]
-  expect_equal(sum(catches$n_not_evaluated), nrow(fish$catches))
+  # The rule reached none of their records: each is unchecked (D20.15).
+  expect_equal(sum(catches$n_unchecked), nrow(fish$catches))
+  expect_equal(sum(catches$n_not_evaluated), 0L)
 })
 
 # task 10's fix round (the spec review's I2)
@@ -462,7 +466,8 @@ test_that("an integer64 parent key a double can't hold takes no child (D18.111)"
     )
   )
   # Layer 4 alone: the first and third children are orphans, though the third names the first
-  # parent's own key, and the first parent has no child (D18.111's cost until m113).
+  # parent's own key, and the first parent, whose key joins nothing, isn't evaluated by
+  # parent_without_children (D18.111's cost until m113; D20.16).
   results <- gpq_check_conformance(tables, spec, layers = 4)
   found <- opened(results)
   expect_equal(paste(found$rule_id, placed_at(found), found$value), c(
@@ -471,7 +476,7 @@ test_that("an integer64 parent key a double can't hold takes no child (D18.111)"
   row <- results$results[results$results$rule_id == "fk_orphan"]
   expect_equal(c(row$n_checked, row$n_fail), c(3L, 2L))
   row <- results$results[results$results$rule_id == "parent_without_children"]
-  expect_equal(c(row$n_checked, row$n_fail), c(2L, 1L))
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(1L, 0L, 1L))
   # Layers 0 to 4: coercion_loss reports the parent's key and the third child's, which Layer 4
   # leaves not evaluated, each rooted at its own; the first child's key is still an orphan
   # (D18.91).
@@ -511,7 +516,8 @@ test_that("integer64 parent keys 2^53 and 2^53 + 1 don't collide in the joins (D
     )
   )
   # The second parent holds no key the first holds: it is no holder of the first's key, and
-  # no child names it. pk_duplicate compares the keys as stored (R147).
+  # no child names it, so parent_without_children doesn't evaluate it (D20.16). pk_duplicate
+  # compares the keys as stored (R147).
   expect_identical(pk_holders(conformance_input(tables, spec), "p"), c(1L, NA))
   results <- gpq_check_conformance(tables, spec, layers = 4)
   expect_equal(nrow(opened(results)), 0L)
@@ -519,7 +525,7 @@ test_that("integer64 parent keys 2^53 and 2^53 + 1 don't collide in the joins (D
   row <- rows[rows$rule_id == "pk_duplicate" & rows$table_name == "p"]
   expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
   row <- rows[rows$rule_id == "parent_without_children"]
-  expect_equal(c(row$n_checked, row$n_fail), c(2L, 1L))
+  expect_equal(c(row$n_checked, row$n_fail, row$n_not_evaluated), c(1L, 0L, 1L))
   row <- rows[rows$rule_id == "fk_orphan"]
   expect_equal(c(row$n_checked, row$n_fail), c(2L, 0L))
   # Layers 0 to 4: coercion_loss reports the second parent's key, which Layer 4 leaves not
@@ -808,7 +814,48 @@ test_that("a record whose report unit is \"*\" isn't checked: its group none_che
   expect_equal(nrow(opened(results, "src_id_duplicate")), 0L)
   row <- results$results[results$results$rule_id == "src_id_duplicate"]
   expect_equal(c(row$water_body, row$status, row$not_run_reason), c("*", "not_run", "none_checked"))
-  expect_equal(c(row$n_checked, row$n_not_evaluated), c(0L, 2L))
+  # Its records are unchecked, so it reads 0 not evaluated (D20.15).
+  expect_equal(c(row$n_checked, row$n_not_evaluated, row$n_unchecked), c(0L, 0L, 2L))
+})
+
+# M7a task 3 (D20.1, D20.15): ON's age trees, whose shortest route to their contributor breaks
+# on a missing frame key, on synthetic data
+test_that("a record whose shortest route breaks is checked through the next (D20.15)", {
+  # The fish spec with a second route to a water body: catches key straight to their station
+  # too, one key, so that route is the shortest, and through their haul the next, two (D20.22).
+  # Written back to a CSV file, so the spec reads it as fx_fish_spec() reads its file; species
+  # is marked as an ID, for src_id_duplicate.
+  dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
+  station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
+  station$table <- "catches"
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(rbind(dictionary, station), path)
+  spec <- gpq_read_spec(
+    dictionary = path, code_lists = fx_fish_code_lists(), id_pattern = "^species$",
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$station_id <- fish$hauls$station_id[match(catches$haul_id, fish$hauls$haul_id)]
+  # Catches 1 and 2 hold the missing-value code for their station: catch 1 reaches its water
+  # body through its haul; catch 2's haul is missing too, so no route reaches one and its unit
+  # is "*", as ON's "A" trees' was through their shortest route before D20.1.
+  catches$station_id[1:2] <- "?"
+  catches$haul_id[[2L]] <- NA
+  fish$catches <- catches
+  results <- gpq_check_conformance(fish, spec, group_cols = "water_body", layers = 4)
+  rows <- results$results[results$results$rule_id == "src_id_duplicate"]
+  star <- rows[rows$water_body == "*"]
+  expect_equal(c(star$status, star$not_run_reason), c("not_run", "none_checked"))
+  expect_equal(c(star$n_checked, star$n_not_evaluated, star$n_unchecked), c(0L, 0L, 1L))
+  # Every other catch, catch 1 included, is checked in its water body.
+  expect_equal(sum(rows$n_checked), nrow(catches) - 1L)
+  expect_equal(sum(rows$n_unchecked), 1L)
 })
 
 test_that("a contributor's documented one-to-many ID isn't warned; another's is (D18.3, D18.6)", {
@@ -1073,6 +1120,73 @@ test_that("parent_without_children counts childless parents per relation, no iss
   expect_equal(c(row$status, row$not_run_reason), c("not_run", "no_table"))
 })
 
+# M7a task 3 (D20.16, M5 m112, m131)
+test_that("parent_without_children counts the parent's rows where it can't run (D20.16)", {
+  fish <- fx_fish_clean()
+  spec <- fx_fish_spec()
+  registry <- rule_registry()
+  expect_equal(registry$rule_version[registry$rule_id == "parent_without_children"], 2L)
+  context <- conformance_context(spec, NULL, list(), 4L)
+  without <- function(table, column) {
+    tables <- fish
+    tables[[table]] <- data.table::copy(fish[[table]])
+    data.table::set(tables[[table]], j = column, value = NULL)
+    tables
+  }
+  # Each case's not_run outcome counts the parent's rows: the parent's key column or table not
+  # given (D20.16), or the child's (D20.80).
+  cases <- list(
+    list(without("stations", "station_id"), "hauls", "no_column", "stations"),
+    list(fish[c("hauls", "catches")], "hauls", "no_table", "stations"),
+    list(without("catches", "haul_id"), "catches", "no_column", "hauls"),
+    list(fish[c("stations", "hauls")], "catches", "no_table", "hauls")
+  )
+  for (case in cases) {
+    found <- check_keys(conformance_input(case[[1L]], spec), context)$parent_without_children
+    tables <- vapply(found, `[[`, "", "table_name")
+    outcome <- found[[match(case[[2L]], tables)]]
+    expect_equal(
+      c(outcome$kind, outcome$reason, outcome$counted_table),
+      c("not_run", case[[3L]], case[[4L]]),
+      info = paste(case[[2L]], case[[3L]])
+    )
+  }
+  # The parent's key column not given: one row per water body of the stations, each counting
+  # its stations as unchecked.
+  results <- gpq_check_conformance(
+    without("stations", "station_id"), spec,
+    group_cols = "water_body", layers = 4
+  )
+  row <- results$results[
+    results$results$rule_id == "parent_without_children" & results$results$table_name == "hauls"
+  ]
+  units <- sort(unique(fish$stations$water_body), method = "radix")
+  expect_equal(row$water_body, units)
+  expect_equal(row$n_unchecked, tabulate(match(fish$stations$water_body, units), length(units)))
+  expect_true(all(row$n_checked == 0L & row$n_not_evaluated == 0L))
+  expect_true(all(row$not_run_reason == "no_column"))
+  # The parent table not given: one row of "*" counting nothing, where it counted the hauls
+  # by gear (m112).
+  results <- gpq_check_conformance(
+    fish[c("hauls", "catches")], spec,
+    group_cols = "gear", layers = 4
+  )
+  row <- results$results[
+    results$results$rule_id == "parent_without_children" & results$results$table_name == "hauls"
+  ]
+  expect_equal(c(row$gear, row$not_run_reason), c("*", "no_table"))
+  expect_equal(c(row$n_checked, row$n_not_evaluated, row$n_unchecked), c(0L, 0L, 0L))
+  # A parent whose key is the missing-value code or blank has no holder: no child can name it,
+  # so it isn't evaluated, never childless; with every parent so, nothing is checked (D18.22,
+  # m131).
+  rows <- fish_run(edited("stations", "station_id", 1:2, c("?", "")), layers = 4)$results
+  row <- rows[rows$rule_id == "parent_without_children" & rows$table_name == "hauls"]
+  expect_equal(
+    c(row$n_checked, row$n_fail, row$n_not_evaluated, row$n_unchecked), c(0L, 0L, 2L, 0L)
+  )
+  expect_equal(c(row$status, row$not_run_reason), c("not_run", "none_checked"))
+})
+
 # task 13's fix round (the datatable review's F3): the walk run in CRAN mode too (D18.48)
 test_that("record_unreachable walks the fish toy from its root: a station no haul names fails", {
   # The hauls are the root; a catch is reached through its haul, and a station through a haul
@@ -1176,7 +1290,9 @@ test_that("a record only a table not given could reach is unchecked, by a second
   rows <- results$results[results$results$rule_id == "record_unreachable"]
   stations <- rows[rows$table_name == "stations"]
   expect_equal(c(stations$status, stations$not_run_reason), c("not_run", "none_checked"))
-  expect_equal(c(stations$n_checked, stations$n_not_evaluated), c(0L, 2L))
+  expect_equal(
+    c(stations$n_checked, stations$n_not_evaluated, stations$n_unchecked), c(0L, 0L, 2L)
+  )
 })
 
 # task 13's fix round 2 (D18.66)
@@ -1776,7 +1892,7 @@ test_that("a design candidate without its table or a column is not_run; a \"*\" 
   rows <- results$results[results$results$rule_id == "design_duplicate_signature"]
   star <- rows[rows$water_body == "*"]
   expect_equal(c(star$status, star$not_run_reason), c("not_run", "none_checked"))
-  expect_equal(star$n_not_evaluated, 1L)
+  expect_equal(c(star$n_not_evaluated, star$n_unchecked), c(0L, 1L))
 })
 
 # ---- task 14's fix round 1 ----

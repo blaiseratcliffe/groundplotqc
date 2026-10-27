@@ -5,7 +5,9 @@
 # outcomes, by rule; this file turns them into the results summary and the issues: each rule's
 # severity and whether it is on, from the rule set (D16.6, D16.7); a value that failed an
 # earlier layer masked as not_evaluated (6.2); failures and masked records collapsed into
-# column-level issues (6.3, D16.10); and the run's metadata with its self-test (9.5, 9.7).
+# column-level issues (6.3, D16.10), each issue marked where it reaches another report unit
+# (D20.10); each rule's counts checked to add up to its groups' records (D20.15); and the
+# run's metadata with its self-test (9.5, 9.7).
 
 #' Check tables against a specification: structure, types, missing-value codes, value
 #' domains and keys
@@ -47,7 +49,8 @@
 #'   `design_geometry_inconsistent`, `subplot_label_ambiguous`, `design_duplicate_signature`.
 #'
 #' Two of these write no issue at this version: `parent_without_children` counts, in the
-#' results only, the parent records that no child record names, and
+#' results only, the parent records that no child record names (a parent whose key is missing
+#' or failed an earlier check counts as not evaluated), and
 #' `fk_not_applicable_mismatch` writes only `not_run` rows until a version brings the
 #' applicability matrix. `record_unreachable` runs only when `gpq_read_spec()` was given
 #' `reach`, and the design checks only when their settings name their tables and columns;
@@ -57,7 +60,9 @@
 #' only in letter case or spaces is reported by `column_name_mismatch` and checked as that
 #' attribute. `class_mismatch`, `integer_stored_as_double`,
 #' `undeclared_code_set` and Layer 0's rules count tables or columns, not records, and their
-#' rows have `"*"` in every group column.
+#' rows have `"*"` in every group column. `undeclared_code_set` writes one issue per report
+#' unit, each holding only that unit's values; values from records with no unit go in an issue
+#' of their own, under `"*"`.
 #' A value that failed Layer 1 is not evaluated by Layer 2: its
 #' issue there has status `not_evaluated` and names the earlier issue as its root. A value
 #' that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
@@ -125,17 +130,30 @@
 #'   - `results`: the summary, one row per rule, table, column and group: `run_id`,
 #'     `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`, `severity`, `table_name`,
 #'     `column_name`, the group columns, `n_checked`, `n_fail`, `n_not_evaluated`,
-#'     `reason_code`, `n_distinct_fail_values`, `n_easy_fix`, `examples`, `status` (`pass`,
-#'     `fail` or `not_run`), `not_run_reason` and `message_id`.
+#'     `n_unchecked`, `reason_code`, `n_distinct_fail_values`, `n_easy_fix`, `examples`,
+#'     `status` (`pass`, `fail` or `not_run`), `not_run_reason` and `message_id`. Each record of
+#'     a group counts once in `n_checked`, `n_not_evaluated` or `n_unchecked`, which add up to
+#'     the group's records: `n_checked` the records the rule checked, `n_fail` of them failing;
+#'     `n_not_evaluated` those it reached but didn't evaluate, because an earlier check failed
+#'     on the same value or the rule can't judge it, such as an allowed missing-value code in a
+#'     foreign key; and `n_unchecked` those it never reached, such as every record of a check
+#'     that didn't run. For a rule that checks whole tables or columns, the counts are of
+#'     tables or columns, not records, and `n_unchecked` is NA.
 #'   - `issues`: one row per failing or not-evaluated record, or per column-level issue:
 #'     `issue_id`, `run_id`, `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`,
 #'     `severity`, `reason_code`, `table_name`, `column_name`, `record_pk`, `row_number`,
 #'     `pk_positional`, `level` (`record` or `column`), `n_records`, `value`, `expected`,
 #'     `entity_key`, `visit_keys`, `provider_key`, `provider_key_status`, the group columns,
-#'     the problem unit's key column, `root_issue_id`, `status` (`open` or `not_evaluated`),
-#'     `issue_class`, `class_basis`, `script_file`, `script_block`, `attribution_status`,
-#'     `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and `change_cause`. The
-#'     columns a conformance run doesn't fill are NA.
+#'     the problem unit's key column, `reaches_other_unit`, `root_issue_id`, `status` (`open`
+#'     or `not_evaluated`), `issue_class`, `class_basis`, `script_file`, `script_block`,
+#'     `attribution_status`, `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and
+#'     `change_cause`. The columns a conformance run doesn't fill are NA. `reaches_other_unit`
+#'     is TRUE where the issue holds a value read from a record of another report unit, or
+#'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
+#'     unit's key reached through the keys, a side that `key_incoherent` compared, or one of
+#'     `undeclared_code_set`'s values from records with no unit. For a column-level issue it
+#'     is TRUE when any record it covers is. It is FALSE in a run without group columns, and
+#'     isn't part of the fingerprint.
 #'   - `corrections`: an empty table.
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
@@ -387,13 +405,17 @@ conformance_context <- function(spec, rules, settings, layers) {
 #' A rule's outcome on a table or a column, which it checks as one unit (D16.8)
 #'
 #' `value` and `expected` are its issue's; `examples` its results row's, `value` unless the
-#' rule shows fewer values there than its issue holds (D18.103).
+#' rule shows fewer values there than its issue holds (D18.103). A rule whose value holds
+#' values read from records gives `value` and `n_records` named by report unit, one issue for
+#' each, the values of records whose unit is "*" under "*", and gives its `examples` too
+#' (D18.60, D20.11, D20.14). The names are kept.
 #' @noRd
 unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
                          value = NA_character_, expected = NA_character_, examples = value) {
   list(
     kind = "unit", rule_id = rule_id, table_name = table_name, column_name = column_name,
-    failed = failed, n_records = as.integer(n_records), value = as.character(value),
+    failed = failed, n_records = structure(as.integer(n_records), names = names(n_records)),
+    value = structure(as.character(value), names = names(value)),
     expected = as.character(expected), examples = as.character(examples)
   )
 }
@@ -401,8 +423,10 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
 #' A rule's outcome on a column's records: the rows that fail (row numbers, a vector without
 #' dimensions), each failing value as text (one per failing row), what was expected (one text,
 #' or one per failing row), the rows the rule didn't check, never one that fails (D18.21), the
-#' rows it counts as not evaluated, and the rules of its own layer whose failures mask it
-#' (D18.32)
+#' rows it counts as not evaluated, the rules of its own layer whose failures mask it (D18.32),
+#' and the rows whose values it read from a record of another report unit, or of one whose
+#' unit is "*", which mark their issues reaches_other_unit (key_incoherent's sides, D18.89,
+#' D20.10)
 #'
 #' A `not_evaluated` row counts in n_not_evaluated with no issue row and no root: a value the
 #' rule can't judge without an input it lacks, such as a foreign key's sentinel without a
@@ -414,7 +438,8 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
 #' @noRd
 record_outcome <- function(rule_id, table_name, column_name, fail, value,
                            expected = NA_character_, unchecked = integer(),
-                           not_evaluated = integer(), masked_by = character()) {
+                           not_evaluated = integer(), masked_by = character(),
+                           reaches_other_unit = integer()) {
   is_rows <- function(x) {
     is.numeric(x) && is.null(dim(x)) && !anyNA(x) && all(is.finite(x)) &&
       all(x >= 1L & x <= .Machine$integer.max & x == trunc(x)) && anyDuplicated(x) == 0L
@@ -455,43 +480,72 @@ record_outcome <- function(rule_id, table_name, column_name, fail, value,
   if (!is.character(masked_by) || anyNA(masked_by)) {
     stop("Rule ", rule_id, ": `masked_by` must be rule IDs.", call. = FALSE)
   }
+  if (!is_rows(reaches_other_unit)) {
+    stop(
+      "Rule ", rule_id, ": `reaches_other_unit` must be row numbers, each once: whole numbers ",
+      "from 1 within the integer range.",
+      call. = FALSE
+    )
+  }
   list(
     kind = "record", rule_id = rule_id, table_name = table_name, column_name = column_name,
     fail = as.integer(fail), value = as.character(value), expected = as.character(expected),
     unchecked = as.integer(unchecked), not_evaluated = as.integer(not_evaluated),
-    masked_by = masked_by
+    masked_by = masked_by, reaches_other_unit = as.integer(reaches_other_unit)
   )
 }
 
 #' A rule's outcome where it couldn't run, with the reason (6.2; D7.3, D9.24)
+#'
+#' `counted_table` is the table whose records its not_run row counts, unchecked (D20.15): the
+#' rule's own table, but for a rule that counts another table's rows, as
+#' parent_without_children counts the parent's (D20.16).
 #' @noRd
-not_run_outcome <- function(rule_id, table_name, column_name, reason) {
+not_run_outcome <- function(rule_id, table_name, column_name, reason,
+                            counted_table = table_name) {
   list(
     kind = "not_run", rule_id = rule_id, table_name = table_name, column_name = column_name,
-    reason = reason
+    reason = reason, counted_table = counted_table
   )
 }
 
 #' A rule's count of one table's rows, written as results rows only (D18.10 (4), D18.32)
 #'
 #' The rows are the counted table's, in its groups, under `table_name` and `column_name`;
-#' `fail` gives the counted table's rows that fail, each other row checked and passing. No
-#' issue is written (an information rule, D9.21).
+#' `fail` gives the counted table's rows that fail and `not_evaluated` those the rule can't
+#' evaluate, counted as not evaluated with no issue (D20.16), each other row checked and
+#' passing. No issue is written (an information rule, D9.21).
 #' @noRd
-count_outcome <- function(rule_id, table_name, column_name, counted_table, fail) {
-  rows <- is.numeric(fail) && is.null(dim(fail)) && !anyNA(fail) && all(is.finite(fail)) &&
-    all(fail >= 1L & fail <= .Machine$integer.max & fail == trunc(fail)) &&
-    anyDuplicated(fail) == 0L
-  if (!rows) {
+count_outcome <- function(rule_id, table_name, column_name, counted_table, fail,
+                          not_evaluated = integer()) {
+  is_rows <- function(x) {
+    is.numeric(x) && is.null(dim(x)) && !anyNA(x) && all(is.finite(x)) &&
+      all(x >= 1L & x <= .Machine$integer.max & x == trunc(x)) && anyDuplicated(x) == 0L
+  }
+  if (!is_rows(fail)) {
     stop(
       "Rule ", rule_id, ": `fail` must be row numbers, each once: whole numbers from 1 ",
       "within the integer range.",
       call. = FALSE
     )
   }
+  if (!is_rows(not_evaluated)) {
+    stop(
+      "Rule ", rule_id, ": `not_evaluated` must be row numbers, each once: whole numbers ",
+      "from 1 within the integer range.",
+      call. = FALSE
+    )
+  }
+  if (any(not_evaluated %in% fail)) {
+    stop(
+      "Rule ", rule_id, ": a row can't be not evaluated and also fail or be unchecked.",
+      call. = FALSE
+    )
+  }
   list(
     kind = "count", rule_id = rule_id, table_name = table_name, column_name = column_name,
-    counted_table = counted_table, fail = as.integer(fail)
+    counted_table = counted_table, fail = as.integer(fail),
+    not_evaluated = as.integer(not_evaluated)
   )
 }
 
@@ -553,6 +607,13 @@ outcome_values <- function(rule_id, table_names, column_names, default, context)
 #' A count outcome (count_outcome()) writes results rows only, in its counted table's groups
 #' (record_count()). A rule whose outcome names in `masked_by` a rule that isn't an earlier
 #' rule of its own layer stops the run: a developer's error (D18.32).
+#'
+#' The run's self-test of the counts (D18.71, D20.15): once a record rule's outcome is
+#' written, each group of the table it counts (the outcome's `counted_table`, else its table)
+#' must hold as many records as its results row counts checked, not evaluated and unchecked,
+#' and its not-evaluated ones must be the records of the not_evaluated issues the outcome
+#' wrote there and, beside them, no more than its own not-evaluated rows. A mismatch is an
+#' internal error, which stops the run. A unit rule counts no records and isn't tested.
 #' @noRd
 record_layer <- function(found, layer, input, context, state, run_id) {
   # Worked out before the brackets: `layer` is also a column of the run's rules.
@@ -562,9 +623,71 @@ record_layer <- function(found, layer, input, context, state, run_id) {
     state$results[[length(state$results) + 1L]] <- results_rows(
       run_id, rule, severity, context, outcome$table_name, outcome$column_name,
       star_groups(input),
-      n_checked = 0L, n_fail = 0L, n_not_evaluated = 1L, n_distinct = 0L,
-      examples = NA_character_, status = "not_run", reason = outcome$reason
+      n_checked = 0L, n_fail = 0L, n_not_evaluated = 1L, n_unchecked = NA_integer_,
+      n_distinct = 0L, examples = NA_character_, status = "not_run", reason = outcome$reason
     )
+  }
+  # Each counted table's records per group, counted once for the layer (16.2).
+  sizes <- new.env(parent = emptyenv())
+  # The self-test of one record rule's outcome: its results rows the last written, its issues
+  # those written from `issues_from` on.
+  adds_up <- function(outcome, issues_from) {
+    counted <- if (is.null(outcome$counted_table)) outcome$table_name else outcome$counted_table
+    # A table not given, or "*", has no groups: one row counting nothing is expected.
+    grouping <- input$groups[[counted]]
+    row_group <- if (is.null(grouping)) integer() else grouping$row_group
+    n_groups <- if (is.null(grouping)) 1L else grouping$n
+    if (is.null(sizes[[counted]])) {
+      assign(counted, tabulate(row_group, n_groups), envir = sizes)
+    }
+    in_group <- sizes[[counted]]
+    written <- state$results[[length(state$results)]]
+    n_rows <- max(lengths(written))
+    count <- function(name) rep_len(written[[name]], n_rows)
+    total <- count("n_checked") + count("n_not_evaluated") + count("n_unchecked")
+    # The records of the not_evaluated issues the outcome wrote, by group: a record-level
+    # issue's group read at its row, a column-level one's found by its group values, each
+    # counting its n_records.
+    masked <- integer(n_groups)
+    # Worked out before the brackets.
+    by_columns <- input$group_cols
+    for (piece in state$issues[seq_along(state$issues) >= issues_from]) {
+      n <- length(piece$issue_id)
+      held <- rep_len(piece$status, n) == "not_evaluated"
+      if (!any(held)) {
+        next
+      }
+      whole <- rep_len(piece$level, n) == "column"
+      group <- row_group[rep_len(piece$row_number, n)]
+      at <- which(held & whole)
+      if (length(at) > 0L && is.null(grouping$values)) {
+        group[at] <- 1L
+      } else if (length(at) > 0L) {
+        keys <- as.data.table(lapply(piece[by_columns], function(x) rep_len(x, n)[at]))
+        group[at] <- grouping$values[keys, on = by_columns, which = TRUE, mult = "first"]
+      }
+      weight <- fifelse(whole, rep_len(piece$n_records, n), 1L)
+      masked <- masked + tabulate(rep.int(group[held], weight[held]), n_groups)
+    }
+    own <- tabulate(row_group[outcome$not_evaluated], n_groups)
+    present <- which(in_group > 0L)
+    fits <- if (length(present) == 0L) {
+      n_rows == 1L && total == 0L && sum(masked) == 0L
+    } else {
+      waiting <- count("n_not_evaluated") - masked[present]
+      n_rows == length(present) && all(total == in_group[present]) &&
+        sum(masked[present]) == sum(masked) && all(waiting >= 0L & waiting <= own[present])
+    }
+    if (!isTRUE(fits)) {
+      stop(sprintf(
+        paste(
+          "Internal error: the counts of rule %s on table %s, column %s don't add up to each",
+          "group's records."
+        ),
+        outcome$rule_id, outcome$table_name, outcome$column_name
+      ), call. = FALSE)
+    }
+    invisible(NULL)
   }
   for (k in seq_len(nrow(rules))) {
     rule <- rules[k]
@@ -601,6 +724,7 @@ record_layer <- function(found, layer, input, context, state, run_id) {
     kinds <- vapply(outcomes, function(outcome) as.character(outcome$kind)[1L], "")
     for (i in on) {
       outcome <- outcomes[[i]]
+      issues_from <- length(state$issues) + 1L
       switch(kinds[[i]],
         unit = record_unit(outcome, rule, values$severity[[i]], input, context, state, run_id),
         record = record_records(
@@ -617,6 +741,9 @@ record_layer <- function(found, layer, input, context, state, run_id) {
           rule$rule_id, kinds[[i]]
         ), call. = FALSE)
       )
+      if (!isTRUE(rule$unit) && kinds[[i]] %chin% c("record", "not_run", "count")) {
+        adds_up(outcome, issues_from)
+      }
     }
   }
   invisible(state)
@@ -626,11 +753,12 @@ record_layer <- function(found, layer, input, context, state, run_id) {
 #' columns: the run binds every rule's rows into its results table once (D16.18)
 #'
 #' `groups` is a list of the group columns' values, one per results row (or NULL without
-#' group columns); the counts and texts are one per row, or one for all.
+#' group columns); the counts and texts are one per row, or one for all. `n_unchecked` is NA
+#' for a unit rule's row (D20.15).
 #' @noRd
 results_rows <- function(run_id, rule, severity, context, table_name, column_name, groups,
-                         n_checked, n_fail, n_not_evaluated, n_distinct, examples, status,
-                         reason = NA_character_) {
+                         n_checked, n_fail, n_not_evaluated, n_unchecked, n_distinct, examples,
+                         status, reason = NA_character_) {
   c(
     list(
       run_id = run_id, run_scope = "package", rule_id = rule$rule_id,
@@ -638,7 +766,8 @@ results_rows <- function(run_id, rule, severity, context, table_name, column_nam
       layer = rule$layer, severity = severity, table_name = table_name,
       column_name = column_name, n_checked = as.integer(n_checked),
       n_fail = as.integer(n_fail), n_not_evaluated = as.integer(n_not_evaluated),
-      reason_code = "*", n_distinct_fail_values = as.integer(n_distinct), n_easy_fix = 0L,
+      n_unchecked = as.integer(n_unchecked), reason_code = "*",
+      n_distinct_fail_values = as.integer(n_distinct), n_easy_fix = 0L,
       examples = as.character(examples), status = status, not_run_reason = reason,
       message_id = rule$message_id
     ),
@@ -650,7 +779,8 @@ results_rows <- function(run_id, rule, severity, context, table_name, column_nam
 #' list of columns the run binds into its issues table once (D16.18)
 #'
 #' `fields` holds the columns that vary (record_pk, row_number, pk_positional, level,
-#' n_records, value, expected, root_issue_id, status), each one value per issue or one for
+#' n_records, value, expected, reaches_other_unit, root_issue_id, status), each one value per
+#' issue or one for
 #' all; `groups` the group columns' values and `key` the key column's text, one per row (NULL
 #' without them).
 #' @noRd
@@ -702,39 +832,52 @@ group_values <- function(grouping, at) {
 }
 
 #' A unit outcome recorded: one results row with "*" groups, its examples the outcome's
-#' (D18.103), and one column-level issue when it failed, masking nothing (D16.8, D16.9)
+#' (D18.103) and no n_unchecked, as it counts no records (D20.15); and when it failed one
+#' column-level issue, masking nothing (D16.8, D16.9) and unmarked (D20.10 (d)). A value named
+#' by report unit gives one issue per unit instead, each under its unit with "*" in the other
+#' group columns, the "*" unit's marked reaches_other_unit, as it holds values read from
+#' records with no unit (D18.60, D20.11, D20.14).
 #' @noRd
 record_unit <- function(outcome, rule, severity, input, context, state, run_id) {
   failed <- isTRUE(outcome$failed)
   state$results[[length(state$results) + 1L]] <- results_rows(
     run_id, rule, severity, context, outcome$table_name, outcome$column_name, star_groups(input),
     n_checked = 1L, n_fail = as.integer(failed), n_not_evaluated = 0L,
-    n_distinct = as.integer(failed && !is.na(outcome$value)),
+    n_unchecked = NA_integer_, n_distinct = as.integer(failed && !all(is.na(outcome$value))),
     examples = if (failed) outcome$examples else NA_character_,
     status = if (failed) "fail" else "pass"
   )
-  if (failed) {
-    issue_rows(
-      run_id, rule, severity, context, outcome$table_name, outcome$column_name,
-      list(
-        record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
-        n_records = outcome$n_records, value = outcome$value, expected = outcome$expected,
-        root_issue_id = NA_integer_, status = "open"
-      ),
-      star_groups(input), "*", input, state
-    )
+  if (!failed) {
+    return(invisible(state))
   }
+  units <- names(outcome$value)
+  n <- length(outcome$value)
+  groups <- star_groups(input, n)
+  if (!is.null(units) && !is.null(groups)) {
+    groups[[input$group_cols[[1L]]]] <- units
+  }
+  issue_rows(
+    run_id, rule, severity, context, outcome$table_name, outcome$column_name,
+    list(
+      record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
+      n_records = unname(outcome$n_records), value = unname(outcome$value),
+      expected = outcome$expected,
+      reaches_other_unit = if (is.null(units)) FALSE else units == "*",
+      root_issue_id = NA_integer_, status = "open"
+    ),
+    groups, rep("*", n), input, state
+  )
   invisible(state)
 }
 
-#' A record rule's not_run outcome recorded: one row per group of the table's records, each
-#' counting them as not evaluated; "*" groups and no records where the table wasn't given,
-#' has no rows or the outcome names no table (6.2; D7.3, D9.24). A unit rule's not_run
-#' outcome is written by record_layer() (D16.29).
+#' A record rule's not_run outcome recorded: one row per group of the records of its counted
+#' table (`counted_table`, its own table but for a rule counting another's, D20.16), each
+#' counting them as unchecked, as the rule reached none (D20.15); "*" groups and no records
+#' where that table wasn't given, has no rows or the outcome names no table (6.2; D7.3,
+#' D9.24). A unit rule's not_run outcome is written by record_layer() (D16.29).
 #' @noRd
 record_not_run <- function(outcome, rule, severity, input, context, state, run_id) {
-  table <- outcome$table_name
-  grouping <- input$groups[[table]]
+  grouping <- input$groups[[outcome$counted_table]]
   if (is.null(grouping) || length(grouping$row_group) == 0L) {
     groups <- star_groups(input)
     counts <- 0L
@@ -745,18 +888,20 @@ record_not_run <- function(outcome, rule, severity, input, context, state, run_i
     counts <- in_group[present]
   }
   state$results[[length(state$results) + 1L]] <- results_rows(
-    run_id, rule, severity, context, table, outcome$column_name, groups,
-    n_checked = 0L, n_fail = 0L, n_not_evaluated = counts, n_distinct = 0L,
+    run_id, rule, severity, context, outcome$table_name, outcome$column_name, groups,
+    n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = counts, n_distinct = 0L,
     examples = NA_character_, status = "not_run", reason = outcome$reason
   )
   invisible(state)
 }
 
 #' A count outcome recorded: one results row per group of the counted table's rows, the
-#' counted rows checked and the failing ones failed, no issue (D18.10 (4), D18.32, D18.34)
+#' counted rows checked and the failing ones failed, the rows it can't evaluate not evaluated
+#' (D20.16), no issue (D18.10 (4), D18.32, D18.34)
 #'
 #' A counted table with no rows gives one not_run row with "*" groups, reason no_records
-#' (D18.29, D18.34).
+#' (D18.29, D18.34); a group none of whose rows is checked is not_run, reason none_checked
+#' (D18.22).
 #' @noRd
 record_count <- function(outcome, rule, severity, input, context, state, run_id) {
   grouping <- input$groups[[outcome$counted_table]]
@@ -765,20 +910,25 @@ record_count <- function(outcome, rule, severity, input, context, state, run_id)
     state$results[[length(state$results) + 1L]] <- results_rows(
       run_id, rule, severity, context, outcome$table_name, outcome$column_name,
       star_groups(input),
-      n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_distinct = 0L,
+      n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = 0L, n_distinct = 0L,
       examples = NA_character_, status = "not_run", reason = "no_records"
     )
     return(invisible(state))
   }
   in_group <- tabulate(row_group, grouping$n)
   fail_count <- tabulate(row_group[outcome$fail], grouping$n)
+  waiting_count <- tabulate(row_group[outcome$not_evaluated], grouping$n)
+  checked <- in_group - waiting_count
   present <- which(in_group > 0L)
+  none <- checked[present] == 0L
   state$results[[length(state$results) + 1L]] <- results_rows(
     run_id, rule, severity, context, outcome$table_name, outcome$column_name,
     group_values(grouping, present),
-    n_checked = in_group[present], n_fail = fail_count[present], n_not_evaluated = 0L,
-    n_distinct = 0L, examples = NA_character_,
-    status = fifelse(fail_count[present] > 0L, "fail", "pass")
+    n_checked = checked[present], n_fail = fail_count[present],
+    n_not_evaluated = waiting_count[present], n_unchecked = 0L, n_distinct = 0L,
+    examples = NA_character_,
+    status = fifelse(fail_count[present] > 0L, "fail", fifelse(none, "not_run", "pass")),
+    reason = fifelse(none, "none_checked", NA_character_)
   )
   invisible(state)
 }
@@ -851,8 +1001,11 @@ cascade_masks <- function(state, table, attribute, layer, row_group, masked_by =
 #' rule of its own layer that names it in masked_by (D18.32). Rows the rule counts as not
 #' evaluated count in n_not_evaluated with no issue, a masked one as masked. A table with no
 #' rows gives one not_run row with "*" groups, reason no_records (D16.17, D18.29). Rows the
-#' rule didn't check count in neither n_checked nor n_fail, a masked one as masked; a group that
-#' checked nothing is not_run, reason none_checked, its records not evaluated (D18.21, D18.22).
+#' rule didn't check count in n_unchecked, a masked one as masked (D18.21, D20.15); a group
+#' that checked nothing is not_run, reason none_checked (D18.22). Each issue is marked
+#' reaches_other_unit where its record's mark (conformance_input()) or the rule's for the
+#' record (the outcome's `reaches_other_unit`) is TRUE, a column-level issue where any of its
+#' records' is (D20.10).
 #' @noRd
 record_records <- function(outcome, rule, severity, layer, input, context, state, run_id) {
   table <- outcome$table_name
@@ -862,7 +1015,7 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   if (length(row_group) == 0L) {
     state$results[[length(state$results) + 1L]] <- results_rows(
       run_id, rule, severity, context, table, attribute, star_groups(input),
-      n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_distinct = 0L,
+      n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = 0L, n_distinct = 0L,
       examples = NA_character_, status = "not_run", reason = "no_records"
     )
     return(invisible(state))
@@ -915,9 +1068,9 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   in_group <- tabulate(row_group, n_groups)
   masked_count <- tabulate(row_group[masked_rows], n_groups)
   fail_count <- tabulate(row_group[fail], n_groups)
-  # A row the rule didn't check counts in neither n_checked nor n_fail, and one it counts as
-  # not evaluated in n_not_evaluated, with no issue (D18.21, D18.32); one also masked counts
-  # once, as masked.
+  # A row the rule didn't check counts in n_unchecked, and one it counts as not evaluated in
+  # n_not_evaluated, each with no issue (D18.21, D18.32, D20.15); one also masked counts once,
+  # as masked.
   unchecked <- outcome$unchecked[!outcome$unchecked %in% masked_rows]
   unchecked_count <- tabulate(row_group[unchecked], n_groups)
   waiting <- outcome$not_evaluated[!outcome$not_evaluated %in% masked_rows]
@@ -936,16 +1089,17 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
     examples[as.integer(names(joined))] <- joined
   }
   present <- which(in_group > 0L)
-  # A group that checked nothing never reads "pass": not_run, reason none_checked, its
-  # records not evaluated, masked or unchecked (D18.22).
+  # A group that checked nothing never reads "pass": not_run, reason none_checked (D18.22).
+  # Each record counts once: masked and the rule's own not-evaluated ones in n_not_evaluated,
+  # those the rule never reached in n_unchecked, so a group whose records were all left
+  # unchecked reads 0 not evaluated (D18.71, D20.15).
   none <- checked[present] == 0L
   state$results[[length(state$results) + 1L]] <- results_rows(
     run_id, rule, severity, context, table, attribute, group_values(grouping, present),
     n_checked = checked[present], n_fail = fail_count[present],
-    n_not_evaluated = fifelse(
-      none, in_group[present], masked_count[present] + waiting_count[present]
-    ),
-    n_distinct = n_distinct[present], examples = examples[present],
+    n_not_evaluated = masked_count[present] + waiting_count[present],
+    n_unchecked = unchecked_count[present], n_distinct = n_distinct[present],
+    examples = examples[present],
     status = fifelse(fail_count[present] > 0L, "fail", fifelse(none, "not_run", "pass")),
     reason = fifelse(none, "none_checked", NA_character_)
   )
@@ -953,15 +1107,23 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   # (6.2), but for Layer 3's in a key column, which don't mask Layer 4's there (D18.76), and
   # any rule's mask a later rule of its own layer that names it in masked_by (D18.32).
   # Failures: column-level per group where 6.3 says so, record-level otherwise.
+  # Each record's reaches_other_unit mark (D20.10): its own, from conformance_input(), or the
+  # rule's for it (key_incoherent's sides). A copy is made only where the rule marks rows.
+  other <- grouping$reaches_other_unit
+  if (length(outcome$reaches_other_unit) > 0L) {
+    other[outcome$reaches_other_unit] <- TRUE
+  }
   whole <- which(collapse_column_level(fail_count, checked, context$column_level_min_n))
   if (length(whole) > 0L) {
+    # A column-level issue is marked when any record it covers is (D20.10 (b)).
+    marked <- tabulate(row_group[fail[other[fail]]], n_groups) > 0L
     ids <- issue_rows(
       run_id, rule, severity, context, table, attribute,
       list(
         record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
         n_records = fail_count[whole], value = NA_character_,
         expected = if (length(outcome$expected) == 1L) outcome$expected else NA_character_,
-        root_issue_id = NA_integer_, status = "open"
+        reaches_other_unit = marked[whole], root_issue_id = NA_integer_, status = "open"
       ),
       group_values(grouping, whole), rep("*", length(whole)), input, state
     )
@@ -978,7 +1140,8 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
       list(
         record_pk = pk$record_pk, row_number = rows, pk_positional = pk$positional,
         level = "record", n_records = NA_integer_, value = value[single],
-        expected = expected[single], root_issue_id = NA_integer_, status = "open"
+        expected = expected[single], reaches_other_unit = other[rows],
+        root_issue_id = NA_integer_, status = "open"
       ),
       group_values(grouping, row_group[rows]), key_text(input, table, rows), input, state
     )
@@ -995,23 +1158,31 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
 
 #' A check's masked records recorded as not_evaluated issues, those sharing one root in a
 #' group collapsed into one column-level issue when there are at least column_level_min_n
-#' (D16.10)
+#' (D16.10), each marked reaches_other_unit as record_records() marks its failures (D20.10)
 #' @noRd
 record_masked <- function(masked, outcome, rule, severity, input, context, state, run_id,
                           row_group) {
   table <- outcome$table_name
   attribute <- outcome$column_name
   grouping <- input$groups[[table]]
-  shared <- data.table(group = row_group[masked$row_number], root = masked$root_issue_id)
+  # Each masked record's mark: its own, or the rule's for it (D20.10).
+  marked <- grouping$reaches_other_unit[masked$row_number] |
+    masked$row_number %in% outcome$reaches_other_unit
+  shared <- data.table(
+    group = row_group[masked$row_number], root = masked$root_issue_id, marked = marked
+  )
   sizes <- shared[, list(n = .N), by = c("group", "root")]
   whole <- sizes[collapse_column_level(sizes$n, sizes$n, context$column_level_min_n)]
   if (nrow(whole) > 0L) {
+    # A collapsed issue is marked when any of its records is (D20.10 (b)).
+    flagged <- unique(shared[shared$marked, c("group", "root")])
+    any_marked <- !is.na(flagged[whole, on = c("group", "root"), which = TRUE, mult = "first"])
     issue_rows(
       run_id, rule, severity, context, table, attribute,
       list(
         record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
         n_records = whole$n, value = NA_character_, expected = NA_character_,
-        root_issue_id = whole$root, status = "not_evaluated"
+        reaches_other_unit = any_marked, root_issue_id = whole$root, status = "not_evaluated"
       ),
       group_values(grouping, whole$group), rep("*", nrow(whole)), input, state
     )
@@ -1029,7 +1200,8 @@ record_masked <- function(masked, outcome, rule, severity, input, context, state
         record_pk = pk$record_pk, row_number = rows, pk_positional = pk$positional,
         level = "record", n_records = NA_integer_,
         value = value_text(input$data[[table]][[column]][rows]), expected = NA_character_,
-        root_issue_id = masked$root_issue_id[single], status = "not_evaluated"
+        reaches_other_unit = marked[single], root_issue_id = masked$root_issue_id[single],
+        status = "not_evaluated"
       ),
       group_values(grouping, row_group[rows]), key_text(input, table, rows), input, state
     )

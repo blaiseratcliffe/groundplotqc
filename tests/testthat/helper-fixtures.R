@@ -374,8 +374,9 @@ fx_defect <- function(defect_id, table_name, column_name, record_pk, edit, rule_
 # The answer sheet (18.3): one row per defect block, each a single edit to MAGPlot's clean
 # base (fx_magp_clean()), caught by gpq_check_conformance() with magp_rules() (fx_caught()).
 # A row's record_pk lists every record the block makes fail, "; "-joined: two holders of one
-# value where every holder fails (pk_duplicate, src_id_duplicate, the design candidates); the
-# witness is the first one's value.
+# value where every holder fails (pk_duplicate, src_id_duplicate, the design candidates), and
+# undeclared_code_set's "*" once per contributor, one issue each (D20.11); the witness is the
+# first one's value.
 fx_answer_sheet <- function() {
   data.table::rbindlist(list(
     fx_defect(character(), character(), character(), character(), character(), character()),
@@ -487,7 +488,7 @@ fx_answer_sheet <- function() {
       witness = "1"
     ),
     fx_defect(
-      "undeclared_code_set", "magp_tree_age", "bore_ht", "*",
+      "undeclared_code_set", "magp_tree_age", "bore_ht", "*; *",
       "magp_tree_age$bore_ht all \"B\"", "undeclared_code_set",
       witness = "B"
     ),

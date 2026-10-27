@@ -50,7 +50,8 @@ fx_results <- function() {
     severity = c("warning", "warning", "flag"), table_name = "catches",
     column_name = c("weight", "fish_count", "weight"),
     unit = c("u1", "u1", "*"), area = c("a1", "*", "*"),
-    n_checked = c(8L, 0L, 8L), n_fail = c(3L, 0L, 1L), n_not_evaluated = c(1L, 8L, 0L),
+    n_checked = c(8L, 0L, 8L), n_fail = c(3L, 0L, 1L), n_not_evaluated = c(1L, 0L, 0L),
+    n_unchecked = c(0L, 8L, 0L),
     reason_code = c("*", "*", "value_jump"), n_distinct_fail_values = c(3L, 0L, 1L),
     n_easy_fix = 0L, examples = c(paste(hostile[1:3], collapse = "; "), NA, hostile[[4L]]),
     status = c("fail", "not_run", "fail"), not_run_reason = c(NA, "no_sentinels", NA),
@@ -74,7 +75,7 @@ fx_results <- function() {
     provider_key = c(NA, "tbl.key=7; tbl.no=2", NA, NA, NA),
     provider_key_status = c(NA, "decoded", NA, NA, NA),
     unit = "u1", area = c("a1", "a1", "a1", "a1", "*"), plot = c("p1", "p1", "p2", "p1", "*"),
-    root_issue_id = c(NA, NA, NA, 1L, NA),
+    reaches_other_unit = FALSE, root_issue_id = c(NA, NA, NA, 1L, NA),
     status = c("open", "open", "open", "not_evaluated", "open")
   ), group_cols = c("unit", "area"), key_col = "plot")
   fingerprints <- issue_fingerprint(issues)
