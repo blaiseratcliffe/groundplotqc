@@ -1,15 +1,15 @@
 # Chains of foreign keys in D18.1's " > " notation (D18.1, D18.2, D18.27): from a table, each
 # foreign key followed in turn and the attribute read where the keys end, such as
 # "dataset_id > contributor_id" from a table of sites. One parser and one resolver serve
-# id_bands' key (site_id_out_of_range) and, from Layer 4, key_pairs' sides; reach_column()
-# follows its shortest path with the same resolver.
+# id_bands' key (site_id_out_of_range) and, from Layer 4, key_pairs' sides; walk_fk_paths()
+# follows each route of reach_column() and lineage decoding with the same resolver (D20.51).
 
 #' A chain parsed against the dictionary's keys and attributes
 #'
 #' `chain` is one text of parts joined by " > ": each part but the last a foreign key of the
 #' table reached so far (a `keys` row of type FK naming its parent's PK), the last an
 #' attribute of the table the keys reach; a chain of one part is an attribute of `table`
-#' itself. Returns `steps` (the FK rows followed, in order, as fk_path() gives a path),
+#' itself. Returns `steps` (the FK rows followed, in order, as fk_paths() gives a route),
 #' `table` (the table reached) and `attribute` (read there), or NULL where the chain doesn't
 #' parse: a blank or padded part, a part that isn't such a key, or a last part the table
 #' reached doesn't have.
@@ -48,7 +48,8 @@ parse_chain <- function(chain, table, keys, attributes) {
 
 #' Each row of a table followed along foreign keys: its row in the table the keys reach
 #'
-#' `steps` are FK rows in order (parse_chain()'s `steps`, or fk_path()'s path). Each hop is
+#' `steps` are FK rows in order (parse_chain()'s `steps`, or one of fk_paths()'s routes), and
+#' `rows` the table's rows to follow, NULL for every row (D20.50). Each hop is
 #' one match() of the column as given against its parent's PK (key_values()): a column stored
 #' as plain numbers joins as stored, and against text only the numeric side is written as
 #' text, its sentinels with it (D16.42, m9); NA, NaN, every sentinel of the child's and the
@@ -58,10 +59,17 @@ parse_chain <- function(chain, table, keys, attributes) {
 #' match(), read with %in% in the key's own type rather than in a copy of the column (16.2), as
 #' match()'s `incomparables` isn't always honoured when it holds more than one value (D18.73).
 #' A row whose chain breaks (an NA, blank, sentinel or orphan key on the way, or a table or
-#' column on it not given) gets NA; with no steps every row is its own.
+#' column on it not given) gets NA; with no steps every row is its own. The result, in `rows`'
+#' order, carries the attribute `orphan` (D20.37): TRUE where the break was a key no mask hid
+#' that matched no row of a parent whose table and key column were given, so walk_fk_paths()
+#' can end that record's search, where a masked key moves it on (D20.12).
 #' @noRd
-chain_rows <- function(input, table, steps) {
-  rows <- seq_len(nrow(input$data[[table]]))
+chain_rows <- function(input, table, steps, rows = NULL) {
+  whole <- is.null(rows)
+  if (whole) {
+    rows <- seq_len(nrow(input$data[[table]]))
+  }
+  orphan <- logical(length(rows))
   current <- table
   # The blank values of a text key, read only where they may be blank (16.2). A blank on the
   # parent's side can only meet the same blank on the child's, so the child's suffice.
@@ -76,8 +84,9 @@ chain_rows <- function(input, table, steps) {
     parent <- steps$reference_table[[k]]
     child <- key_values(input, current, steps$attribute_name[[k]])
     parent_keys <- key_values(input, parent, steps$reference_attribute[[k]])
-    # The first step matches the child's column itself, a later one the rows reached (16.2).
-    from <- if (k == 1L) child$value else child$value[rows]
+    # The first step of the whole table matches the child's column itself, any other step the
+    # rows reached or given (16.2).
+    from <- if (k == 1L && whole) child$value else child$value[rows]
     to <- parent_keys$value
     from_open <- child$open
     to_open <- parent_keys$open
@@ -113,10 +122,23 @@ chain_rows <- function(input, table, steps) {
       whole <- is.na(masked) | (masked == trunc(masked) & abs(masked) <= .Machine$integer.max)
       masked <- as.integer(masked[whole])
     }
-    rows[from %in% masked] <- NA_integer_
+    hidden <- from %in% masked
+    rows[hidden] <- NA_integer_
+    # A key no mask hid that matched nothing is an orphan where the parent's table and key
+    # column were given; with either not given it is a break that moves the record on
+    # (D20.12). A row orphaned at an earlier hop stays one, its key NA from then on.
+    at <- which(
+      input$columns$table_name == parent &
+        input$columns$attribute_name == steps$reference_attribute[[k]]
+    )
+    given <- parent %chin% names(input$data) && length(at) == 1L &&
+      !is.na(input$columns$column[[at]])
+    if (given) {
+      orphan <- orphan | (is.na(rows) & !hidden)
+    }
     current <- parent
   }
-  rows
+  structure(rows, orphan = orphan)
 }
 
 #' A chain's value for each row of a table: the attribute where its keys end, as given, NA

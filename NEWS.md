@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9018 (development version)
+# groundplotqc 0.0.0.9019 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -50,3 +50,4 @@
 - `gpq_classify_issues()` reads its evidence for issues whose rule's class is `depends`: `computed`, columns the pipeline computes; `filled`, cells its missing-value fill wrote; and, for code issues, `lineage`, the provider's raw values, with `crosswalk`, each provider code and the code it is translated to. Each settles an issue as harmonization.
 - MAGPlot's configuration gains `pipeline_computed.csv`, the attributes MAGPlot's processing scripts compute for every record, and `crosswalk_provider_columns.csv`, the translation-table columns that hold each jurisdiction's provider codes; the build checks every row of both against the specification before it copies them.
 - The article "Using the engine on your own dataset" ends with the fish survey's issues classed by an override and a `computed` row.
+- A record whose shortest path of keys to a group column breaks on a missing, blank or missing-value-code key or value, or a table not given, tries the next path, shortest first, so fewer records are grouped under "*"; a key that names no parent record still gives "*".

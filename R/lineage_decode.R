@@ -116,7 +116,7 @@ split_src_id <- function(text, separator) {
 #'
 #' `slots` is entry_slots()'s result for `table`, `rows` the records' rows there. A part of a
 #' nested ID reads its conditions on the record's parent in that ID's table, reached by the
-#' shortest path of foreign keys (fk_path(), chain_rows()); a broken path holds none. A
+#' routes of foreign keys (walk_fk_paths(), D20.51); a record no route reaches holds none. A
 #' condition that doesn't parse holds for no record. Returns one character vector per part.
 #' @noRd
 label_parts <- function(input, table, rows, slots, flags) {
@@ -131,12 +131,7 @@ label_parts <- function(input, table, rows, slots, flags) {
     }
     at <- rows
     if (!identical(slot$table, table)) {
-      path <- fk_path(spec$keys, table, slot$table)
-      at <- if (is.null(path)) {
-        rep(NA_integer_, length(rows))
-      } else {
-        chain_rows(input, table, path)[rows]
-      }
+      at <- walk_fk_paths(input, table, slot$table)$rows[rows]
     }
     open <- rep(TRUE, length(rows))
     for (i in conditioned) {
@@ -412,14 +407,14 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     unlabelled <- logical(length(holders))
     if (length(other) > 0L) {
       reached <- reach_column(input, table, key_col)
-      home <- columns$column[which(
-        columns$table_name == reached$home & columns$attribute_name == key_col
-      )]
+      ends <- unique(reached$home[!is.na(reached$home)])
+      home <- columns$column[columns$table_name %chin% ends & columns$attribute_name == key_col]
       if (all(is.na(home)) || all(is.na(reached$rows))) {
         unlabelled[other] <- TRUE
       } else {
+        at <- holders[other]
         key_values[other] <- value_text(reached_values(
-          input, list(home = reached$home, rows = reached$rows[holders[other]]), key_col
+          input, list(home = reached$home[at], rows = reached$rows[at]), key_col
         ))
       }
     }

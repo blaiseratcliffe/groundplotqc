@@ -560,7 +560,10 @@ test_that("a text-typed integer64 key above 2^53 joins exactly, and nothing is l
   )
   keys <- spec$keys
   edge <- keys[keys$table_name == "k" & keys$key_type == "FK"]
-  expect_identical(chain_rows(conformance_input(tables, spec), "k", edge), c(2L, 1L))
+  expect_identical(
+    chain_rows(conformance_input(tables, spec), "k", edge), c(2L, 1L),
+    ignore_attr = "orphan"
+  )
   results <- gpq_check_conformance(tables, spec, layers = 0:4)
   expect_equal(unique(opened(results)$rule_id), "class_mismatch")
   rows <- results$results
@@ -1342,7 +1345,7 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
   )
   input <- conformance_input(tables, spec)
   chain <- parse_chain("p_id > p_id", "k", spec$keys, spec$attributes)
-  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, NA))
+  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, NA), ignore_attr = "orphan")
   expect_equal(pk_holders(input, "p"), c(1L, NA))
   # The parents not given, taken as a root: a child holding NaN holds no key.
   reach <- data.table::data.table(
@@ -1362,7 +1365,10 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
     k = data.table::data.table(k_id = c("a", "b"), p_id = c(1, NaN))
   )
   chain <- parse_chain("p_id > p_id", "k", text_spec$keys, text_spec$attributes)
-  expect_equal(chain_rows(conformance_input(mixed, text_spec), "k", chain$steps), c(1L, NA))
+  expect_equal(
+    chain_rows(conformance_input(mixed, text_spec), "k", chain$steps), c(1L, NA),
+    ignore_attr = "orphan"
+  )
   # The other way round, a child's text "NaN" against a parent's NaN stored as doubles,
   # reaches nothing too, so fk_orphan reports it as given (the minors pass's fix round 2,
   # D18.87).
@@ -1370,7 +1376,10 @@ test_that("a NaN key reaches nothing and holds no key, as key_rows() reads it as
     p = data.table::data.table(p_id = c(1, NaN)),
     k = data.table::data.table(k_id = c("a", "b"), p_id = c("1", "NaN"))
   )
-  expect_equal(chain_rows(conformance_input(back, text_spec), "k", chain$steps), c(1L, NA))
+  expect_equal(
+    chain_rows(conformance_input(back, text_spec), "k", chain$steps), c(1L, NA),
+    ignore_attr = "orphan"
+  )
   orphan <- opened(gpq_check_conformance(back, text_spec, layers = 4), "fk_orphan")
   expect_equal(paste(placed_at(orphan), orphan$value), "k p_id 2 NaN")
   # So that record reaches no parent, and a group column read through its key gives it "*"
@@ -1400,7 +1409,7 @@ test_that("an integer key is masked by its whole codes only: -99.5 isn't -99", {
   )
   input <- conformance_input(tables, spec)
   chain <- parse_chain("p_id > p_id", "k", spec$keys, spec$attributes)
-  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, 3L))
+  expect_equal(chain_rows(input, "k", chain$steps), c(1L, NA, 3L), ignore_attr = "orphan")
   expect_equal(pk_holders(input, "p"), c(1L, NA, 3L))
 })
 

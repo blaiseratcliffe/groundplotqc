@@ -168,8 +168,14 @@ test_that("a class whose stored numbers aren't its values is read as match() rea
     high <- words[c(FALSE, TRUE)]
     as.character(high * 2^32 + ifelse(low < 0, low + 2^32, low))
   })
+  # An NA index gives the class's own NA (stored as -0), as bit64's method gives integer64's:
+  # a record that reaches no row reads its column at NA (D20.12).
   registerS3method("[", "int64_stand_in", function(x, i, ...) {
-    structure(unclass(x)[i], class = oldClass(x))
+    value <- unclass(x)[i]
+    if (is.numeric(i)) {
+      value[is.na(i)] <- -0
+    }
+    structure(value, class = oldClass(x))
   })
   registerS3method("unique", "int64_stand_in", function(x, incomparables = FALSE, ...) {
     x[!duplicated(as.character(x))]
@@ -279,7 +285,7 @@ test_that("a name's Unicode spaces count in a locale that isn't UTF-8 (D16.36, F
   expect_identical(matched$near, c(TRUE, TRUE))
 })
 
-test_that("fk_path walks the shortest path of keys, the dictionary's first key on a tie", {
+test_that("fk_paths lists every route of keys to the targets, shortest first, ties in key order", {
   keys <- data.table::data.table(
     table_name = c("leaf", "leaf", "mid", "side", "top", "leaf"),
     attribute_name = c("mid_id", "side_id", "top_id", "top_id", "top_id", "leaf_id"),
@@ -287,21 +293,152 @@ test_that("fk_path walks the shortest path of keys, the dictionary's first key o
     reference_table = c("mid", "side", "top", "top", NA, NA),
     reference_attribute = c("mid_id", "side_id", "top_id", "top_id", NA, NA)
   )
-  path <- fk_path(keys, "leaf", "top")
-  expect_equal(path$table_name, c("leaf", "mid"))
-  expect_equal(path$reference_table, c("mid", "top"))
-  expect_equal(fk_path(keys, "leaf", "side")$reference_table, "side")
-  expect_null(fk_path(keys, "top", "leaf"))
-  # The shortest path wins over the dictionary's first key: one step by top_id, though the key
-  # to mid comes first.
+  # Two routes of two keys each, through mid first, as the keys list mid_id before side_id.
+  routes <- fk_paths(keys, "leaf", "top")
+  expect_length(routes, 2L)
+  expect_equal(routes[[1L]]$table_name, c("leaf", "mid"))
+  expect_equal(routes[[1L]]$reference_table, c("mid", "top"))
+  expect_equal(routes[[2L]]$reference_table, c("side", "top"))
+  expect_equal(fk_paths(keys, "leaf", "side")[[1L]]$reference_table, "side")
+  expect_length(fk_paths(keys, "top", "leaf"), 0L)
+  # The shortest route comes first, whatever the keys' order: one key by top_id, then two
+  # through mid.
   keys <- data.table::data.table(
     table_name = c("leaf", "leaf", "mid"), attribute_name = c("mid_id", "top_id", "top_id"),
     key_type = "FK", key_part = 1L, reference_table = c("mid", "top", "top"),
     reference_attribute = c("mid_id", "top_id", "top_id")
   )
-  path <- fk_path(keys, "leaf", "top")
-  expect_equal(path$attribute_name, "top_id")
-  expect_equal(path$table_name, "leaf")
+  routes <- fk_paths(keys, "leaf", "top")
+  expect_equal(lapply(routes, `[[`, "attribute_name"), list("top_id", c("mid_id", "top_id")))
+  # A route ends at the first target it reaches: with mid a target too, none goes on through
+  # mid to top.
+  routes <- fk_paths(keys, "leaf", c("mid", "top"))
+  expect_equal(lapply(routes, `[[`, "reference_table"), list("mid", "top"))
+  # A route visits no table twice, so a cycle of keys ends.
+  keys <- data.table::data.table(
+    table_name = c("a", "b", "b"), attribute_name = c("b_id", "a_id", "c_id"), key_type = "FK",
+    key_part = 1L, reference_table = c("b", "a", "c"),
+    reference_attribute = c("b_id", "a_id", "c_id")
+  )
+  routes <- fk_paths(keys, "a", "c")
+  expect_length(routes, 1L)
+  expect_equal(routes[[1L]]$reference_table, c("b", "c"))
+})
+
+test_that("magp_tree_meas reaches magp_contributor_id by D20.22's routes, in order", {
+  spec <- magp_spec()
+  holders <- unique(spec$attributes$table_name[
+    spec$attributes$attribute_name == "magp_contributor_id"
+  ])
+  routes <- fk_paths(spec$keys, "magp_tree_meas", holders)
+  keys <- vapply(routes[1:4], function(route) paste(route$attribute_name, collapse = " > "), "")
+  ends <- vapply(routes[1:4], function(route) route$reference_table[[nrow(route)]], "")
+  expect_equal(keys, c(
+    "magp_frame_id > magp_design_id",
+    "magp_subpmeas_id > magp_plotmeas_id > magp_design_id",
+    "magp_subpmeas_id > magp_frame_id > magp_design_id",
+    "magp_tree_id > magp_site_id > magp_dataset_id"
+  ))
+  expect_equal(ends, c(rep("magp_designs", 3L), "magp_datasets"))
+  # Every later route is longer.
+  expect_true(all(vapply(routes[-(1:4)], nrow, 1L) > 3L))
+})
+
+test_that("a record tries its next route past a masked break and stops at an orphan (D20.12)", {
+  # The fish spec with a second way to a water body: hauls hold water_body too, and catches a
+  # key straight to their station, so a catch reaches water_body through its haul first and
+  # through its station next, both one key long, in the keys' order (D20.22).
+  # Written back to a CSV file, so the spec reads it as fx_fish_spec() reads its file.
+  dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
+  water <- dictionary[dictionary$table == "stations" & dictionary$field == "water_body"]
+  water$table <- "hauls"
+  station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
+  station$table <- "catches"
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(rbind(dictionary, water, station), path)
+  spec <- gpq_read_spec(
+    dictionary = path, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- fx_fish_clean()
+  stations <- fish$stations
+  hauls <- data.table::copy(fish$hauls)
+  catches <- data.table::copy(fish$catches)
+  hauls$water_body <- stations$water_body[match(hauls$station_id, stations$station_id)]
+  catches$station_id <- hauls$station_id[match(catches$haul_id, hauls$haul_id)]
+  # Where the first route ends, a blank, a missing-value code and "*" are no value (D20.12,
+  # D20.6): the catches of hauls 2 to 4 go on to their stations.
+  hauls$water_body[2:4] <- c("", "?", "*")
+  # Catch 1: a masked key on the first route, so through its station. Catch 2: masked on the
+  # first, an orphan on the second, so none. Catch 3: an orphan on the first route ends the
+  # search, though its station would reach a value.
+  catches$haul_id[[1L]] <- NA
+  catches$haul_id[[2L]] <- NA
+  catches$station_id[[2L]] <- "S-none"
+  catches$haul_id[[3L]] <- "H-none"
+  tables <- list(stations = stations, hauls = hauls, catches = catches)
+  reached <- reach_column(conformance_input(tables, spec), "catches", "water_body")
+  by_haul <- match(catches$haul_id, hauls$haul_id)
+  by_station <- match(catches$station_id, stations$station_id)
+  first <- which(by_haul %in% 1L)
+  second <- setdiff(seq_len(nrow(catches)), c(first, 2:3))
+  expect_equal(reached$home[first], rep("hauls", length(first)))
+  expect_equal(reached$rows[first], by_haul[first])
+  expect_true(1L %in% second)
+  expect_equal(reached$home[second], rep("stations", length(second)))
+  expect_equal(reached$rows[second], by_station[second])
+  expect_equal(reached$home[2:3], c(NA_character_, NA_character_))
+  expect_equal(reached$rows[2:3], c(NA_integer_, NA_integer_))
+  # The group values follow: catch 1 takes its station's water body, catches 2 and 3 "*".
+  input <- conformance_input(tables, spec, group_cols = "water_body")
+  values <- input$groups$catches$values$water_body[input$groups$catches$row_group]
+  expect_equal(values[[1L]], stations$water_body[[by_station[[1L]]]])
+  expect_equal(values[2:3], c("*", "*"))
+  # A parent table not given breaks the first route for every catch, so each goes through its
+  # station, catch 3 included; catch 2's orphan station still reaches none.
+  reached <- reach_column(
+    conformance_input(tables[c("stations", "catches")], spec), "catches", "water_body"
+  )
+  expect_equal(reached$rows, by_station)
+  expect_equal(reached$home, ifelse(is.na(by_station), NA_character_, "stations"))
+})
+
+test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {
+  dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
+  station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
+  station$table <- "catches"
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(rbind(dictionary, station), path)
+  spec <- gpq_read_spec(
+    dictionary = path, code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      character = c(missing = "?", not_applicable = "~"),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$station_id <- fish$hauls$station_id[match(catches$haul_id, fish$hauls$haul_id)]
+  # The first route to stations is the catch's own key, the second through its haul: a blank
+  # own key moves catch 1 on to its haul's station.
+  catches$station_id[[1L]] <- ""
+  fish$catches <- catches
+  walked <- walk_fk_paths(conformance_input(fish, spec), "catches", "stations")
+  through_haul <- match(
+    fish$hauls$station_id[match(catches$haul_id, fish$hauls$haul_id)], fish$stations$station_id
+  )
+  expect_equal(
+    walked$rows,
+    c(through_haul[[1L]], match(catches$station_id[-1L], fish$stations$station_id))
+  )
+  expect_equal(walked$home, rep("stations", nrow(catches)))
 })
 
 test_that("conformance_input matches tables and columns and lists what is missing or extra", {

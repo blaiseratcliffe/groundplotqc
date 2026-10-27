@@ -338,8 +338,8 @@ reach_rows <- function(input, reach) {
 
 #' Each record's A2 label (D18.6, D18.37, D18.38)
 #'
-#' The record reaches the last attribute of id_band_columns' key chain by D16.13's shortest
-#' path (reach_column()); that value is looked up in the key's column of the labels sheet
+#' The record reaches the last attribute of id_band_columns' key chain by the routes of
+#' reach_column() (D20.1); that value is looked up in the key's column of the labels sheet
 #' (`labels_sheet` in the code_lists component), and the label is the same row's
 #' `labels_column`, through contributor_labels(). NA where id_band_columns has no row, the
 #' record reaches no value, or the sheet holds no row of it.
@@ -359,16 +359,17 @@ record_labels <- function(input, table) {
   }
   key <- chain$attribute
   reached <- reach_column(input, table, key)
-  if (is.na(reached$home)) {
-    return(rep(NA_character_, n))
+  labels <- rep(NA_character_, n)
+  # Each home table the records reached (R5) written as text and labelled once, then read at
+  # each record's row there, so only the home tables' values are converted (16.2). The labels
+  # sheet is read as decoding reads it (contributor_labels(), D19.49).
+  for (home in unique(reached$home[!is.na(reached$home)])) {
+    here <- which(reached$home == home)
+    whole <- list(home = home, rows = seq_len(nrow(input$data[[home]])))
+    value <- value_text(reached_values(input, whole, key))
+    labels[here] <- contributor_labels(spec, key, value)[reached$rows[here]]
   }
-  # The key's home table written as text and labelled once, then read at each record's row
-  # there, so only the home table's values are converted (16.2).
-  home_n <- if (reached$home %chin% names(input$data)) nrow(input$data[[reached$home]]) else 0L
-  home <- list(home = reached$home, rows = seq_len(home_n))
-  value <- value_text(reached_values(input, home, key))
-  # The labels sheet is read once, as decoding reads it (contributor_labels(), D19.49).
-  contributor_labels(spec, key, value)[reached$rows]
+  labels
 }
 
 #' The rows whose group holds more than one distinct value
