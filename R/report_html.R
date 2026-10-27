@@ -80,8 +80,10 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL, row_class =
     }
   }
   if (!is.null(row_class)) {
+    # Each distinct class checked once: a row_class as long as the issues holds only a few.
+    distinct <- unique(row_class)
     ok <- is.character(row_class) && length(row_class) == nrow(dt) &&
-      all(is.na(row_class) | grepl("^[a-z][a-z0-9-]*$", row_class))
+      all(is.na(distinct) | grepl("^[a-z][a-z0-9-]*$", distinct))
     if (!ok) {
       stop(
         paste(
@@ -440,7 +442,7 @@ page_css <- function() {
     ".cols{display:flex;flex-wrap:wrap;gap:0 2.5rem}",
     ".cols>div{flex:1 1 30rem;min-width:0;max-width:44rem}",
     ".cols>.gpq-table{flex:0 1 auto}",
-    ".cols .bar{grid-template-columns:9rem minmax(8rem,1fr) 3rem}",
+    ".cols .bar{grid-template-columns:9rem minmax(8rem,1fr) 3.75rem}",
     ".guide dt{font-weight:700;color:var(--deep);margin-top:.6rem}",
     ".guide dd{margin:.1rem 0 0;max-width:72ch}",
     "footer{padding:1rem 1.5rem 2rem;color:var(--petrol);font-size:.85rem}",
@@ -450,9 +452,10 @@ page_css <- function() {
     "@media (max-width:56rem){.layout{display:block}",
     ".layout>nav{position:static;max-height:none;border-bottom:1px solid var(--rule)}",
     "main{border-left:0;padding:1rem}",
-    ".bar,.cols .bar{grid-template-columns:7rem minmax(3rem,1fr) 2.5rem}}",
+    ".bar,.cols .bar{grid-template-columns:7rem minmax(3rem,1fr) 3.75rem}}",
     "@media print{body{background:#fff}.layout{display:block}",
-    ".layout>nav,input[data-gpq-filter]{display:none!important}main{border:0;padding:0}",
+    ".layout>nav,input[data-gpq-filter]{display:none!important}",
+    "main{border:0;padding:0;min-height:0}",
     ".masthead,thead th,.sev,.bar-fill{-webkit-print-color-adjust:exact;",
     "print-color-adjust:exact}tr{break-inside:avoid}}",
     sep = "\n"

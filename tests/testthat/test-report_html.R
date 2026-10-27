@@ -158,12 +158,15 @@ test_that("html_page escapes every value it shows, in every place it shows one",
     list(html_section(
       "hostile", script, html_table(dt, script, row_cap = 1L, csv_name = image)
     )),
-    meta
+    meta,
+    subtitle = script
   )
   label <- report_text("report_filter_label")
   contents <- report_text("report_contents")
   expect_match(page, paste0("<title>", shown_script, "</title>"), fixed = TRUE)
   expect_match(page, paste0("<h1>", shown_script, "</h1>"), fixed = TRUE)
+  # The masthead's line under the title, D20.66's subtitle.
+  expect_match(page, paste0("<p>", shown_script, "</p>"), fixed = TRUE)
   expect_match(page, paste0("<a href=\"#hostile\">", shown_script, "</a>"), fixed = TRUE)
   expect_match(page, paste0("<h2>", shown_script, "</h2>"), fixed = TRUE)
   expect_match(page, paste0("<caption>", shown_script, "</caption>"), fixed = TRUE)
@@ -267,8 +270,8 @@ test_that("cut_cell_text cuts delivered text at cell_cap characters, before esca
   expect_identical(cut_cell_text("abc", 0L), ellipsis)
   for (bad in list(NA_integer_, -1L, c(1L, 2L), "100", NULL)) {
     expect_error(
-      cut_cell_text("a", bad), "`cell_cap` must be one non-negative number",
-      info = deparse(bad)
+      cut_cell_text("a", bad), "`cell_cap` must be one non-negative number.",
+      fixed = TRUE, info = deparse(bad)
     )
   }
 })
@@ -276,7 +279,8 @@ test_that("cut_cell_text cuts delivered text at cell_cap characters, before esca
 test_that("html_table right-aligns columns of numbers, header and cells, and nothing else (R4)", {
   dt <- data.table::data.table(
     text = "a", whole = 2L, part = 0.5, day = as.Date("2026-12-15"), kind = factor("k"),
-    flag = TRUE
+    flag = TRUE, iday = data.table::as.IDate("2026-12-16"),
+    time = as.POSIXct("2026-12-15 10:30:00", tz = "UTC")
   )
   out <- html_table(dt, "c")
   for (column in c("whole", "part")) {
@@ -285,7 +289,7 @@ test_that("html_table right-aligns columns of numbers, header and cells, and not
       fixed = TRUE, info = column
     )
   }
-  for (column in c("text", "day", "kind", "flag")) {
+  for (column in c("text", "day", "kind", "flag", "iday", "time")) {
     expect_match(
       out, paste0("<th scope=\"col\" data-gpq-sort>", column, "</th>"),
       fixed = TRUE, info = column
@@ -295,10 +299,15 @@ test_that("html_table right-aligns columns of numbers, header and cells, and not
     out,
     paste0(
       "<tr><td>a</td><td class=\"num\">2</td><td class=\"num\">0.5</td><td>2026-12-15</td>",
-      "<td>k</td><td>TRUE</td></tr>"
+      "<td>k</td><td>TRUE</td><td>2026-12-16</td><td>2026-12-15 10:30:00</td></tr>"
     ),
     fixed = TRUE
   )
+  # A count stored as integer64, as fread() can give one, is a number too.
+  testthat::skip_if_not_installed("bit64")
+  big <- html_table(data.table::data.table(n = bit64::as.integer64("12345678901234")), "c")
+  expect_match(big, "<th scope=\"col\" data-gpq-sort class=\"num\">n</th>", fixed = TRUE)
+  expect_match(big, "<td class=\"num\">12345678901234</td>", fixed = TRUE)
 })
 
 test_that("html_table gives rows a class, a severity a label and a total row the foot (D20.37)", {
@@ -337,13 +346,41 @@ test_that("html_table gives rows a class, a severity a label and a total row the
   expect_match(capped, "Showing 2 of 4 rows; the full list is in rows.csv.", fixed = TRUE)
   expect_match(capped, "<tfoot><tr class=\"total\">", fixed = TRUE)
   expect_false(grepl("Information", capped, fixed = TRUE))
+  # A total row before the cap's boundary: the body still shows the first two other rows, and
+  # the total row stays in the foot.
+  first <- html_table(
+    data.table::data.table(
+      severity = c("Total", "Error", "Warning", "x <y>", "Information"), n = c(7L, 3L, 2L, 1L, 1L)
+    ),
+    "c",
+    row_cap = 2L, csv_name = "rows.csv",
+    row_class = c("total", "sev-error", "sev-warning", NA, "sev-info")
+  )
+  expect_identical(
+    regmatches(first, regexpr("<tbody>.*</tbody>", first)),
+    paste0(
+      "<tbody><tr class=\"sev-error\"><td><span class=\"sev\">Error</span></td>",
+      "<td class=\"num\">3</td></tr><tr class=\"sev-warning\"><td><span class=\"sev\">Warning",
+      "</span></td><td class=\"num\">2</td></tr></tbody>"
+    )
+  )
+  expect_match(
+    first,
+    "<tfoot><tr class=\"total\"><td>Total</td><td class=\"num\">7</td></tr></tfoot>",
+    fixed = TRUE
+  )
+  expect_match(first, "Showing 2 of 4 rows; the full list is in rows.csv.", fixed = TRUE)
   # No row_class: every row plain, as before.
   expect_false(grepl("<tr class=", html_table(dt, "c"), fixed = TRUE))
   wrong <- list(classes[-1L], c(classes[-1L], "Sev Error"), c(classes[-1L], "a\"b"), 1:5)
+  wants <- paste(
+    "`row_class` must be NULL or one class per row of `dt`, each NA or a lower-case name of",
+    "letters, digits and hyphens."
+  )
   for (bad in wrong) {
     expect_error(
-      html_table(dt, "c", row_class = bad), "`row_class` must be NULL or one class per row",
-      info = deparse(bad)
+      html_table(dt, "c", row_class = bad), wants,
+      fixed = TRUE, info = deparse(bad)
     )
   }
 })
@@ -371,8 +408,9 @@ test_that("html_table and html_page look up their words in the run's language (D
   expect_match(html_page("T", sections, lang = "de"), "<html lang=\"de\">", fixed = TRUE)
   for (bad in list("EN", c("en", "fr"), NA_character_, 1)) {
     expect_error(
-      html_page("T", sections, lang = bad), "`lang` must be one language code",
-      info = deparse(bad)
+      html_page("T", sections, lang = bad),
+      "`lang` must be one language code of two or three lower-case letters.",
+      fixed = TRUE, info = deparse(bad)
     )
   }
 })
@@ -387,8 +425,11 @@ test_that("provider-facing builders pass lang and text to every lookup and table
   files <- file.path(root, "R", c("report_html.R", "report_sections.R", "report_csv.R"))
   files <- files[file.exists(files)]
   # The functions whose every call passes the run's language and the caller's text: the
-  # lookup, and the two builders that look words up.
-  checked <- c("report_text", "html_table", "html_page")
+  # lookup, the three helpers that look up the blank text (D14.30), and the two builders that
+  # look words up.
+  checked <- c(
+    "report_text", "fill_placeholders", "quote_value", "blank_as_text", "html_table", "html_page"
+  )
   is_checked <- function(part) is.symbol(part) && as.character(part) %in% checked
   direct <- list()
   handed <- list()
@@ -461,17 +502,23 @@ test_that("html_bar draws one bar per value, as wide as its share of max (11.2, 
   # A max of 0 draws no width; no value draws nothing.
   expect_match(html_bar(0L, 0L, "a"), "width:0.0%", fixed = TRUE)
   expect_identical(html_bar(integer(), 0L, character()), "")
-  expect_error(html_bar(c(1L, NA), 2L, c("a", "b")), "`value` must be numbers")
-  expect_error(html_bar(-1L, 2L, "a"), "`value` must be numbers")
-  expect_error(html_bar("1", 2L, "a"), "`value` must be numbers")
-  expect_error(html_bar(3L, 2L, "a"), "`max` must be one number")
-  expect_error(html_bar(1L, c(2L, 3L), "a"), "`max` must be one number")
+  value_wants <- "`value` must be numbers, none of them NA or below 0."
+  expect_error(html_bar(c(1L, NA), 2L, c("a", "b")), value_wants, fixed = TRUE)
+  expect_error(html_bar(-1L, 2L, "a"), value_wants, fixed = TRUE)
+  expect_error(html_bar("1", 2L, "a"), value_wants, fixed = TRUE)
+  max_wants <- "`max` must be one number, not NA, that no value exceeds."
+  expect_error(html_bar(3L, 2L, "a"), max_wants, fixed = TRUE)
+  expect_error(html_bar(1L, c(2L, 3L), "a"), max_wants, fixed = TRUE)
   expect_error(html_bar(1:2, 2L, "a"), "`label` must be text, one label per value")
-  expect_error(
-    html_bar(1:2, 2L, c("a", "b"), c("sev-error", "sev-info", "sev-flag")),
-    "`bar_class` must be NULL"
+  class_wants <- paste(
+    "`bar_class` must be NULL, one class or one per value, each NA or a lower-case name of",
+    "letters, digits and hyphens."
   )
-  expect_error(html_bar(1L, 2L, "a", "Sev"), "`bar_class` must be NULL")
+  expect_error(
+    html_bar(1:2, 2L, c("a", "b"), c("sev-error", "sev-info", "sev-flag")), class_wants,
+    fixed = TRUE
+  )
+  expect_error(html_bar(1L, 2L, "a", "Sev"), class_wants, fixed = TRUE)
 })
 
 test_that("html_facts lists facts and html_details folds a part, both escaped (D20.37, D20.40)", {
@@ -484,9 +531,10 @@ test_that("html_facts lists facts and html_details folds a part, both escaped (D
   listed <- html_facts(list(Rows = 1e5, Day = as.Date("2026-12-15")))
   expect_match(listed, "<dt>Rows</dt><dd>100000</dd><dt>Day</dt><dd>2026-12-15</dd>", fixed = TRUE)
   expect_identical(html_facts(character()), "")
-  expect_error(html_facts(c("a", "b")), "`values` must be named")
-  expect_error(html_facts(c(a = "1", "2")), "`values` must be named")
-  expect_error(html_facts(list(a = 1:2)), "`values` must be named")
+  facts_wants <- "`values` must be named, with no empty name, and hold one value per name."
+  expect_error(html_facts(c("a", "b")), facts_wants, fixed = TRUE)
+  expect_error(html_facts(c(a = "1", "2")), facts_wants, fixed = TRUE)
+  expect_error(html_facts(list(a = 1:2)), facts_wants, fixed = TRUE)
   folded <- html_details("Settings (2) <x>", c("<p>a</p>", "<p>b</p>"))
   expect_identical(
     folded, "<details><summary>Settings (2) &lt;x&gt;</summary><p>a</p><p>b</p></details>"
@@ -549,6 +597,17 @@ test_that("page_css() sets the template's colours and each severity's once (D20.
   expect_match(css, "@media print{", fixed = TRUE)
   expect_match(css, "@media (max-width:", fixed = TRUE)
   expect_match(css, "font-family:Arial,", fixed = TRUE)
+  # A bar's value column holds a six-digit count in two columns and on a narrow screen, and in
+  # print a short page ends where its content does.
+  expect_match(
+    css, ".cols .bar{grid-template-columns:9rem minmax(8rem,1fr) 3.75rem}",
+    fixed = TRUE
+  )
+  expect_match(
+    css, ".bar,.cols .bar{grid-template-columns:7rem minmax(3rem,1fr) 3.75rem}}",
+    fixed = TRUE
+  )
+  expect_match(css, "main{border:0;padding:0;min-height:0}", fixed = TRUE)
   for (pattern in c("url(", "@import", "//")) {
     expect_false(grepl(pattern, css, fixed = TRUE), info = pattern)
   }
