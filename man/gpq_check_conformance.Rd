@@ -40,7 +40,9 @@ name. A table of the specification the database doesn't have is reported as miss
 (\code{table_missing}).}
 
 \item{group_cols}{\code{NULL}, or the grouping columns, report unit first: results and issues
-carry them under these names.}
+carry them under these names. A blank group value, or the text \code{"*"}, counts as no
+value. A record that reaches only such values is grouped under \code{"*"}; in the report-unit
+column, its records' issues go into no provider's report in a run of several units.}
 
 \item{problem_unit}{\code{NULL}, or \code{list(table, key_col)}: the table and key column of the
 unit problem plots are ranked by; issues carry that key under its name.}

@@ -2,7 +2,9 @@
 # run's ID, the small tables written once each as metadata/<table>.csv in the run folder,
 # their builders, and the self-test that lists declared rules a run didn't report (9.7).
 # M4's gpq_check_conformance() makes a run's metadata with new_metadata(); a run stopped at
-# pre-flight writes only its run and spec_manifest tables beside the pre-flight files.
+# pre-flight writes only its run and spec_manifest tables beside the pre-flight files. The run
+# table's report units are one escaped text, written by join_units() and read back by
+# split_units() (D20.7, D20.48).
 
 # A run ID's form: the UTC start time, then six hex characters (9.1, D15.5).
 run_id_pattern <- "^[0-9]{8}T[0-9]{6}Z_[0-9a-f]{6}$"
@@ -57,10 +59,10 @@ metadata_schema <- function() {
 #' The run table: one row
 #'
 #' `run_start` and `run_end` are times, written as UTC text; `group_cols` the run's group
-#' columns, report unit first (D9.29); `report_units` the report-unit values found in the
-#' run's input (MAGPlot's contributors, D7.12), so a stopped run records them too; both
-#' "; "-joined (the units in the C order, whatever the session's collation), NA when there
-#' are none. `outcome` is `completed` or `stopped_preflight` (D8.16). The package, R,
+#' columns, report unit first (D9.29), "; "-joined, NA when there are none; `report_units` the
+#' report-unit values found in the run's input (MAGPlot's contributors, D7.12), so a stopped
+#' run records them too, as join_units() writes them: escaped, in the C order and joined
+#' (D20.7). `outcome` is `completed` or `stopped_preflight` (D8.16). The package, R,
 #' data.table and sf versions are read here, sf's only when it is installed, and the git
 #' commit when the package runs from a git checkout.
 #' @noRd
@@ -76,10 +78,51 @@ run_metadata <- function(run_id, run_start, run_end, group_cols = character(),
     platform = R.version$platform,
     data_table_version = as.character(utils::packageVersion("data.table")),
     sf_version = if (sf_installed) as.character(utils::packageVersion("sf")) else NA_character_,
-    report_units = joined(sort(unique(report_units), method = "radix")),
+    report_units = join_units(report_units),
     group_cols = joined(group_cols),
     outcome = outcome
   )
+}
+
+#' The report units as the one text run.csv records (D20.7, D20.37)
+#'
+#' The units are taken once each, in the C order whatever the session's collation, so the
+#' same input gives the same run.csv on every machine. Inside each unit a backslash is
+#' written as two backslashes and a semicolon as a backslash and a semicolon; the units are
+#' then joined with "; ", so a unit holding "; " can be split back (split_units()). A unit
+#' holding neither is written as it is, so MAGPlot's IDs read as before. NA when there are
+#' none. The caller leaves out "*", which is no unit (D20.6, gpq_check_conformance()).
+#' @noRd
+join_units <- function(units) {
+  units <- sort(unique(units), method = "radix")
+  if (length(units) == 0L) {
+    return(NA_character_)
+  }
+  # Backslashes first, so the backslash a semicolon gains isn't doubled in turn.
+  escaped <- gsub("\\", "\\\\", units, fixed = TRUE)
+  escaped <- gsub(";", "\\;", escaped, fixed = TRUE)
+  paste(escaped, collapse = "; ")
+}
+
+#' run.csv's report units split back into the units join_units() was given (D20.7, D20.48)
+#'
+#' `x` is one text as join_units() writes it, or NA. A "; " ends a unit only where its ";"
+#' follows an even number of backslashes, none counting as even: each escape pair, a
+#' backslash and the character after it, is matched and passed over, so a ";" in a pair never
+#' splits. Each part is then unescaped in one left-to-right pass, each backslash and the
+#' character after it becoming that character, never two replacements one after the other.
+#' NA, which read_run_csv() reads from an empty field, gives no units; the empty text gives
+#' one empty unit, as join_units("") writes it, though a blank value is never a unit (D9.24).
+#' @noRd
+split_units <- function(x) {
+  if (is.na(x)) {
+    return(character())
+  }
+  # Where each "; " outside every escape pair starts; (?s) lets "." take a line break too.
+  at <- gregexpr("(?s)\\\\.(*SKIP)(*FAIL)|; ", x, perl = TRUE)[[1L]]
+  at <- at[at > 0L]
+  parts <- substring(x, c(1L, at + 2L), c(at - 1L, nchar(x)))
+  gsub("(?s)\\\\(.)", "\\1", parts, perl = TRUE)
 }
 
 #' The git commit of the checkout the package runs from, or NA

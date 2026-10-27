@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9021 (development version)
+# groundplotqc 0.0.0.9022 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -56,3 +56,4 @@
 - `undeclared_code_set` writes one issue per report unit, each holding only that unit's values; values from records with no unit go in a row of their own, under "*" (`rule_version` 2).
 - Issues gain `reaches_other_unit`, TRUE where an issue holds a value read from a record of another report unit, or from a record whose report unit is "*": a group value or the problem unit's key reached through the keys, a side that `key_incoherent` compared, or one of `undeclared_code_set`'s values from records with no unit. It isn't part of the fingerprint. Run folders written by earlier versions lack it and `n_unchecked`, so `gpq_read_results()` can't read them.
 - `gpq_decode_lineage()` shows a record's ID as delivered (status `raw`) when one of its parts or labels holds "; " or "=", so every decoded or partly decoded key splits back into its parts exactly.
+- In `metadata/run.csv`, `report_units` now escapes each report unit before joining the units with "; ": a backslash in a unit is written as two backslashes and a semicolon as a backslash and a semicolon, so a unit holding "; " can be split back exactly. A unit holding neither, such as MAGPlot's contributor IDs, is written as before.

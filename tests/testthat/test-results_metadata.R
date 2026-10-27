@@ -56,6 +56,67 @@ test_that("the run table is one row with the versions, group columns and outcome
   expect_equal(mixed$report_units, "A; B; a; b")
 })
 
+test_that("join_units() escapes backslashes and semicolons inside each unit, in C order (D20.7)", {
+  expect_identical(join_units(character()), NA_character_)
+  # MAGPlot's IDs hold neither, so run.csv reads as it did.
+  expect_identical(join_units(c("220", "100", "220.01", "100")), "100; 220; 220.01")
+  # Inside each unit "\" is written "\\" and ";" is written "\;"; then the units are joined.
+  expect_identical(join_units("a; b"), r"(a\; b)")
+  expect_identical(join_units(c(";", "x")), r"(\;; x)")
+  expect_identical(join_units(c(r"(a\)", "b")), r"(a\\; b)")
+  expect_identical(join_units(r"(\)"), r"(\\)")
+  expect_identical(join_units(r"(a\;b)"), r"(a\\\;b)")
+  expect_identical(join_units(c(r"(x\\)", "y")), r"(x\\\\; y)")
+})
+
+test_that("split_units() splits where a \"; \" isn't escaped, then unescapes once (D20.48)", {
+  expect_identical(split_units(NA_character_), character())
+  expect_identical(split_units("100; 220; 220.01"), c("100", "220", "220.01"))
+  # A ";" after one backslash is inside its unit; after two, or four, the unit before it ends
+  # in a backslash, or two.
+  expect_identical(split_units(r"(a\; b; c)"), c("a; b", "c"))
+  expect_identical(split_units(r"(a\\; b)"), c(r"(a\)", "b"))
+  expect_identical(split_units(r"(x\\\\; y)"), c(r"(x\\)", "y"))
+  # One pass: "\\\;" is a backslash then a semicolon, neither read twice.
+  expect_identical(split_units(r"(a\\\;b)"), r"(a\;b)")
+  # D20.7's units each round-trip alone and together: "; ", ";" alone, a trailing backslash, a
+  # lone one, a backslash then a semicolon, and two backslashes before the next unit.
+  units <- c("a; b", ";", r"(c\)", r"(\)", r"(d\;e)", r"(f\\)", "g")
+  for (unit in units) {
+    expect_identical(split_units(join_units(unit)), unit)
+  }
+  expect_identical(split_units(join_units(units)), sort(units, method = "radix"))
+})
+
+test_that("report units round-trip through run.csv as written and read (D20.7)", {
+  units <- c("a; b", ";", r"(c\)", r"(\)", r"(d\;e)", r"(f\\)", "g", "é; è")
+  run <- run_metadata(
+    "20261008T120000Z_abc123", Sys.time(), Sys.time(),
+    group_cols = "unit", report_units = units
+  )
+  run_dir <- withr::local_tempdir()
+  write_run_metadata(list(run = run), run_dir)
+  path <- file.path(run_dir, "metadata", "run.csv")
+  read <- read_run_csv(path, metadata_schema()$run)
+  expect_identical(read$report_units, run$report_units)
+  expect_identical(split_units(read$report_units), sort(units, method = "radix"))
+  # The file holds the text as joined: the writer adds no backslash of its own.
+  text <- rawToChar(readBin(path, "raw", file.size(path)))
+  Encoding(text) <- "UTF-8"
+  expect_true(grepl(run$report_units, text, fixed = TRUE))
+})
+
+test_that("a group value that is the text \"*\" is no report unit (D20.6)", {
+  stations <- data.table::copy(fx_fish_clean()$stations)
+  stations$water_body[[1L]] <- "*"
+  results <- gpq_check_conformance(
+    list(stations = stations), fx_fish_spec(),
+    group_cols = "water_body", layers = 0
+  )
+  expect_identical(results$metadata$run$report_units, stations$water_body[[2L]])
+  expect_false("*" %in% split_units(results$metadata$run$report_units))
+})
+
 test_that("the git commit is HEAD's in a checkout, NA outside one", {
   folder <- dirname(system.file("DESCRIPTION", package = "groundplotqc"))
   if (file.exists(file.path(folder, ".git"))) {

@@ -118,7 +118,9 @@
 #'   (`table_missing`).
 #' @param spec A specification from [gpq_read_spec()] or [magp_spec()].
 #' @param group_cols `NULL`, or the grouping columns, report unit first: results and issues
-#'   carry them under these names.
+#'   carry them under these names. A blank group value, or the text `"*"`, counts as no
+#'   value. A record that reaches only such values is grouped under `"*"`; in the report-unit
+#'   column, its records' issues go into no provider's report in a run of several units.
 #' @param problem_unit `NULL`, or `list(table, key_col)`: the table and key column of the
 #'   unit problem plots are ranked by; issues carry that key under its name.
 #' @param rules `NULL`, or a rule set such as [magp_rules()] returns.
