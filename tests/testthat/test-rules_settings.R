@@ -10,9 +10,10 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two, M4a's five, M5's and M6's (D16.11, D19.53)", {
+test_that("the declared settings are M3a's two, M4a's five, M5's, M6's and M7a's (D20.39)", {
   expect_named(setting_definitions(), c(
-    "lang", "severity", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
+    "lang", "severity", "example_cap", "row_cap", "cell_cap", "column_level_min_n",
+    "raw_na_policy", "rogue_codes",
     "unknown_codes", "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
@@ -87,7 +88,7 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
   expect_error(check_settings(list("en")), "each named once")
   expect_error(check_settings(list(lang = "en", lang = "fr")), "each named once")
   expect_error(check_settings(data.frame(lang = "en")), "each named once")
-  expect_error(check_settings(list(row_cap = 10)), "doesn't have: row_cap")
+  expect_error(check_settings(list(colour = "red")), "doesn't have: colour")
   # The wrong type is told with the setting's type, once (RR-8).
   expect_error(
     check_settings(rules = lang_rule_set(type = "integer")),
@@ -111,8 +112,9 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
   expect_error(
     check_settings(rules = severity_row),
     paste(
-      "can't give there: severity. A settings row can give only lang, example_cap,",
-      "column_level_min_n, raw_na_policy, rogue_codes, unknown_codes, coordinate_attributes,",
+      "can't give there: severity. A settings row can give only lang, example_cap, row_cap,",
+      "cell_cap, column_level_min_n, raw_na_policy, rogue_codes, unknown_codes,",
+      "coordinate_attributes,",
       "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern,",
       "design_geometry_table, design_geometry_by, design_geometry_columns, subplot_label_table,",
       "subplot_label_columns, design_signature_table, design_signature_by,",
@@ -121,9 +123,9 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
     fixed = TRUE
   )
   unknown_row <- lang_rule_set()
-  unknown_row$settings$setting <- "row_cap"
+  unknown_row$settings$setting <- "colour"
   expect_error(
-    check_settings(rules = unknown_row), "can't give there: row_cap. A settings row can give only",
+    check_settings(rules = unknown_row), "can't give there: colour. A settings row can give only",
     fixed = TRUE
   )
 })
@@ -686,4 +688,49 @@ test_that("fallback_class resolves whole by tier, each class source or harmoniza
     setting_text(c(rule_a = "source", rule_b = "harmonization")),
     "rule_a=source; rule_b=harmonization"
   )
+})
+
+# ---- M7a task 6 ----
+
+test_that("row_cap and cell_cap resolve by tier, each a whole number 0 or more (D4.18, D20.39)", {
+  withr::local_options(groundplotqc.row_cap = NULL, groundplotqc.cell_cap = NULL)
+  expect_equal(resolve_setting("row_cap"), list(value = 500L, tier = "built-in"))
+  expect_equal(resolve_setting("cell_cap"), list(value = 100L, tier = "built-in"))
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("row_cap", "cell_cap"), value = c("20", "0"), type = "integer"
+    )
+  ))
+  expect_equal(resolve_setting("row_cap", rules = rows), list(value = 20, tier = "rule set"))
+  expect_equal(resolve_setting("cell_cap", rules = rows), list(value = 0, tier = "rule set"))
+  withr::local_options(groundplotqc.row_cap = 50, groundplotqc.cell_cap = 200L)
+  expect_equal(resolve_setting("row_cap"), list(value = 50, tier = "option"))
+  expect_equal(
+    resolve_setting("cell_cap", list(cell_cap = 30L), rows), list(value = 30L, tier = "argument")
+  )
+  for (name in c("row_cap", "cell_cap")) {
+    for (bad in list(2.5, -1, NA, c(1, 2), "3", Inf)) {
+      given <- list(bad)
+      names(given) <- name
+      expect_error(
+        resolve_setting(name, given),
+        paste0("Setting ", name, " (argument) must be one whole number, 0 or more."),
+        fixed = TRUE, info = paste(name, deparse(bad))
+      )
+    }
+  }
+  wrong_type <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "cell_cap", value = "100", type = "character")
+  ))
+  expect_error(
+    check_settings(rules = wrong_type), "give the wrong type for cell_cap, which takes integer.",
+    fixed = TRUE
+  )
+  # settings.csv writes each as text, with its tier.
+  written <- settings_metadata(list(row_cap = 10L))
+  at <- match(c("row_cap", "cell_cap"), written$setting)
+  expect_equal(written$value[at], c("10", "200"))
+  expect_equal(written$tier[at], c("argument", "option"))
 })

@@ -319,7 +319,7 @@ test_that("an empty rule set passes all three checks", {
 test_that("gpq_preflight takes rules, settings and text, and stops on a caller's error", {
   spec <- fx_fish_spec()
   expect_error(gpq_preflight(spec, rules = list(meta = data.frame())), "rules component")
-  expect_error(gpq_preflight(spec, settings = list(row_cap = 10)), "row_cap")
+  expect_error(gpq_preflight(spec, settings = list(colour = "red")), "colour")
   expect_error(gpq_preflight(spec, settings = list(lang = "French")), "Setting lang (argument)",
     fixed = TRUE
   )

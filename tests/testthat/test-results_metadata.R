@@ -153,8 +153,9 @@ test_that("settings: each declared setting with its tier, then severity entries 
   plain <- settings_metadata()
   expect_equal(names(plain), c("setting", "value", "tier"))
   declared <- c(
-    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
-    "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
+    "lang", "example_cap", "row_cap", "cell_cap", "column_level_min_n", "raw_na_policy",
+    "rogue_codes", "unknown_codes", "coordinate_attributes", "code_set_max_values",
+    "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
     "design_signature_table", "design_signature_by", "design_signature_columns",
@@ -163,7 +164,10 @@ test_that("settings: each declared setting with its tier, then severity entries 
   expect_equal(plain$setting, declared)
   expect_equal(
     plain$value,
-    c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA, NA, rep(NA, 9L))
+    c(
+      "en", "5", "500", "100", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA,
+      NA, rep(NA, 9L)
+    )
   )
   expect_true(all(plain$tier == "built-in"))
   rule_set <- list(
@@ -240,7 +244,8 @@ test_that("a run's metadata has 9.5's tables in order, checked", {
   expect_equal(metadata$spec_manifest, fx_fish_spec()$manifest)
   expect_true(all(metadata$clashes$rule_id == "spec_clash_resolved"))
   expect_equal(metadata$settings$setting, c(
-    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
+    "lang", "example_cap", "row_cap", "cell_cap", "column_level_min_n", "raw_na_policy",
+    "rogue_codes", "unknown_codes",
     "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",

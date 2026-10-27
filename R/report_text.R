@@ -4,7 +4,9 @@
 # caller or developer are English in the code (D12.37). The engine's table is read once per
 # session. A caller's text table, such as MAGPlot's (R/magp_text.R), overrides the engine's
 # row of the same text_id and lang: a text is looked up in the caller's table in the
-# language, then the engine's, then the caller's English, then the engine's English (D14.8).
+# language, then the engine's, then the caller's English, then the engine's English (D14.8),
+# the blank text a filled slot shows included (D14.30); a text is as long as the values passed
+# (D14.31).
 
 # Slots that take a value read from the specification: quoted at fill time, a blank shown
 # as the blank text (D12.45, D12.55).
@@ -49,12 +51,14 @@ reset_report_texts <- function() {
 
 #' One report text, its placeholders filled
 #'
-#' Vectorised over the `...` values; stops on a missing row or an unfilled placeholder.
-#' The result is plain text, never escaped for HTML. A placeholder that lists several
+#' Vectorised over the `...` values; stops on a missing row or an unfilled placeholder. The
+#' result is as long as the values passed, whether or not the text uses each (D14.31). The
+#' result is plain text, never escaped for HTML. A placeholder that lists several
 #' things for one finding takes one string per finding, already joined. Values are matched
 #' to `...` by name after `text_id` and `lang`, so a placeholder can't be named `text`,
 #' `la` or any other start of those two names: R would match it to them instead. `text`, a
-#' table checked by validate_text_table(), overrides the engine's rows (D14.8).
+#' table checked by validate_text_table(), overrides the engine's rows (D14.8), the blank
+#' text's among them (D14.30).
 #' @noRd
 report_text <- function(text_id, lang = "en", ..., text = NULL) {
   ok <- is.character(text_id) && length(text_id) == 1L && !is.na(text_id) &&
@@ -65,7 +69,10 @@ report_text <- function(text_id, lang = "en", ..., text = NULL) {
   template <- text_template(text_id, lang, text)
   # as.vector() strips the template's `lang` attribute, so the string is plain text; the
   # language of the row it came from goes in separately, from attr(template, "lang").
-  fill_placeholders(as.vector(template), list(...), lang, text_id, attr(template, "lang"))
+  fill_placeholders(
+    as.vector(template), list(...), lang, text_id, attr(template, "lang"),
+    text = text
+  )
 }
 
 #' A text's template, looked up in D14.8's order
@@ -191,18 +198,28 @@ validate_text_table <- function(text) {
 #' A template's {placeholders} filled from named values
 #'
 #' Each value is written as text (numbers in full, D12.45); a slot of quoted_slots is
-#' quoted, a slot of blank_slots shows a blank as the blank text, and any other slot stops
-#' on NA. Every value the template uses has length 1 or one common length. `text_id`, when
-#' given, is named in each stop with `row_lang`, the language of the row the template came
-#' from (the run's `lang` unless a fallback row gave it), so the caller can find the row.
+#' quoted, a slot of blank_slots shows a blank as the blank text, the caller's `text` table's
+#' where it has that row (D14.30), and any other slot stops on NA. Every value the template
+#' uses has length 1 or one common length. The result is as long as the values passed, used
+#' or not, so a caller's row that drops a slot still gives one string per finding, and a
+#' value passed empty gives none (D14.31). `text_id`, when given, is named in each stop with
+#' `row_lang`, the language of the row the template came from (the run's `lang` unless a
+#' fallback row gave it), so the caller can find the row.
 #' @noRd
-fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row_lang = lang) {
+fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row_lang = lang,
+                              text = NULL) {
   # What counts as a slot is also written in text_slots() (R/preflight_config.R), which
   # finds the slots a caller's text adds to the package's row: change the two together; a
   # test holds them to the same slots.
   pieces <- regmatches(template, gregexpr("\\{[a-z0-9_]+\\}", template), invert = NA)[[1L]]
+  # Every value passed sizes the result, a value the template doesn't use too (D14.31 (a)).
+  passed <- lengths(values)
+  size <- max(c(1L, passed))
   if (length(pieces) < 2L) {
-    return(template)
+    if (any(passed == 0L)) {
+      return(character())
+    }
+    return(rep_len(template, size))
   }
   # The words naming the text in a stop.
   which_text <- function() {
@@ -219,6 +236,7 @@ fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row
       "%s needs a value for %s.", which_text(), paste(absent, collapse = ", ")
     ), call. = FALSE)
   }
+  # Only the slots the template uses are held to one common length (D14.31 (a)).
   used <- unique(wanted)
   sizes <- lengths(values[used])
   if (length(unique(sizes[sizes != 1L])) > 1L) {
@@ -227,16 +245,16 @@ fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row
       which_text(), paste0(used, " ", sizes, collapse = ", ")
     ), call. = FALSE)
   }
-  if (any(sizes == 0L)) {
+  if (any(passed == 0L)) {
     return(character())
   }
   filled <- lapply(used, function(name) {
     x <- as_text(values[[name]])
     if (name %in% quoted_slots) {
-      return(quote_value(x, lang))
+      return(quote_value(x, lang, text))
     }
     if (name %in% blank_slots) {
-      return(blank_as_text(x, lang))
+      return(blank_as_text(x, lang, text))
     }
     if (anyNA(x)) {
       stop(sprintf("%s slot {%s} has an NA value.", which_text(), name), call. = FALSE)
@@ -246,24 +264,29 @@ fill_placeholders <- function(template, values, lang = "en", text_id = NULL, row
   names(filled) <- used
   parts <- as.list(pieces)
   parts[slots] <- filled[wanted]
-  do.call(paste0, parts)
+  result <- do.call(paste0, parts)
+  # A text whose slots each took one value is repeated to the values' length; one that took
+  # a longer value keeps that value's length, which only the used slots set.
+  if (length(result) == 1L) rep_len(result, size) else result
 }
 
-#' A value from the specification in straight double quotes, a blank as the blank text
+#' A value from the specification in straight double quotes, a blank as the blank text, the
+#' caller's `text` table's where it has that row (D14.30)
 #' @noRd
-quote_value <- function(x, lang = "en") {
+quote_value <- function(x, lang = "en", text = NULL) {
   quoted <- paste0("\"", x, "\"")
   if (!anyNA(x)) {
     return(quoted)
   }
-  fifelse(is.na(x), report_text("preflight_blank_value", lang), quoted)
+  fifelse(is.na(x), report_text("preflight_blank_value", lang, text = text), quoted)
 }
 
-#' A blank shown as the report text "(blank)"
+#' A blank shown as the report text "(blank)", the caller's `text` table's where it has that
+#' row (D14.30)
 #' @noRd
-blank_as_text <- function(x, lang = "en") {
+blank_as_text <- function(x, lang = "en", text = NULL) {
   if (!anyNA(x)) {
     return(x)
   }
-  fifelse(is.na(x), report_text("preflight_blank_value", lang), x)
+  fifelse(is.na(x), report_text("preflight_blank_value", lang, text = text), x)
 }

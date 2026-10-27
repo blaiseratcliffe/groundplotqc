@@ -33,6 +33,14 @@
 #'   `design_geometry_inconsistent` and `design_duplicate_signature` list in an
 #'   issue's `expected`, which then ends with a count of the rest; at 0,
 #'   `expected` is NA, as `examples` is.
+#' - `groundplotqc.row_cap`: the most rows a table of an HTML report shows. A
+#'   longer table shows that many rows, with a note saying how many of how many
+#'   it shows; where the rows are issues, the note names the issues CSV, which
+#'   holds every row. Built-in: `500`.
+#' - `groundplotqc.cell_cap`: the most characters of delivered text, such as a
+#'   value or a key, that a table cell of an HTML report shows, counted before
+#'   the text is written as HTML. Longer text is cut and ends with an ellipsis;
+#'   the issues CSV is never cut. Built-in: `100`.
 #' - `groundplotqc.column_level_min_n`: the fewest records a column must have in
 #'   a group before a rule that fails on all of them is recorded as one
 #'   column-level issue. Built-in: `10`.
