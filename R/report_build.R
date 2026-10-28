@@ -2,8 +2,9 @@
 # route_unit() gives one report unit its results, issues, corrections and lineage rows from the
 # whole run before any HTML is made (D16.16, D18.60, D18.89, D20.10, D20.11, D20.14, D20.23,
 # D20.24, D20.54, D20.61), and unit_file_name() each unit its file stem (D20.8), clear of the
-# package's own files (package_file_stems, D20.70). The report reads the run's saved tables
-# only, never the data (11.1). M7a task 11 adds gpq_build_reports() to this file.
+# package's own files (package_file_stems, D20.70); gpq_build_reports() builds each listed
+# unit's report and issues CSV from them into a saved run's folder (D20.13). The report reads
+# the run's saved tables only, never the data (11.1).
 
 #' One report unit's results, issues and corrections, routed from the whole run (D16.16,
 #' D18.60, D18.89, D20.10, D20.11, D20.14, D20.23, D20.24, D20.29, D20.48, D20.54)
@@ -215,4 +216,352 @@ unit_file_name <- function(units) {
     ), call. = FALSE)
   }
   stems
+}
+
+#' Build the provider reports and issues CSVs of a saved run
+#'
+#' @description
+#' Builds one HTML report and one issues CSV for each report unit of a run, from its results
+#' and never from its data, and writes them into the run's saved folder:
+#' `reports/<unit>.html` and `tables/<unit>_issues.csv`. Each unit's files hold only what that
+#' unit may see.
+#'
+#' @details
+#' Every issue must have a class before the results are written: run [gpq_classify_issues()],
+#' which needs no evidence, then [gpq_write_results()] to `output_dir`. A run that stopped at
+#' pre-flight is refused, since it has no reports to build. A build first removes the reports
+#' and issues CSVs an earlier build wrote in the run's folder, never `reports/preflight.html`
+#' or the run's own tables. Each file is written under a temporary name and renamed when
+#' complete, so a build that stops leaves no partly written file.
+#'
+#' One report and one CSV is built for each report unit `metadata/run.csv` lists, even a unit
+#' with no issue. An issue goes to its own unit's report. A whole-table or whole-column issue
+#' with `"*"` as its unit goes to every unit, and so does a results row that counts no
+#' records, such as a check that couldn't run because a table wasn't given. An issue or
+#' results row of records with `"*"` as its unit goes to no unit's report, and so does an
+#' issue whose record reaches another unit's records through its keys (`reaches_other_unit`),
+#' unless the run has one unit. A run with no group columns builds one report,
+#' `reports/report.html`, and one CSV, `tables/report_issues.csv`, holding every issue.
+#'
+#' Each provider's file name is its unit value, with every character other than an ASCII
+#' letter, a digit, "-", "_" or "." written as % and its UTF-8 bytes in uppercase hex ("%"
+#' itself as %25). A leading or trailing "." is encoded too, and so is the first character of
+#' a value whose part before its first "." is a Windows reserved name such as CON, NUL or COM1
+#' ("CON" becomes "%43ON"). So is the first character of a value that, whatever its case, is
+#' the name of one of the run's own files ("preflight", "national_summary", "report",
+#' "results", "issues" or "corrections"), so a provider's file never replaces one of them. Any
+#' value then makes a safe file name that decodes back.
+#'
+#' The CSV has one row per issue sent to the unit, open and not evaluated, codes as stored.
+#' Its columns, in order: the group columns and the problem unit's key column; the table,
+#' column, check, severity and class; the check's text in the run language; the key's parts as
+#' `key_<label>` columns, named from the lineage spec's labels and empty where a key can't be
+#' split back exactly (a raw, fallback or no-lineage-spec key); then `provider_key` and
+#' `provider_key_status`; the record ID, value and expected value; `proposed_value` and
+#' `easy_fix`, empty until proposals exist; status, change, fingerprint and record count. Rows
+#' are sorted as the report's tables are. It is UTF-8 with a byte-order mark. In the
+#' provider's CSV, a text cell that starts with =, +, @, a tab or a carriage return, or with -
+#' where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
+#' shows it as text instead of running it as a formula. `reaches_other_unit` isn't written.
+#'
+#' Tables show at most `row_cap` rows and `example_cap` examples per check, and text longer
+#' than `cell_cap` characters is cut and ends with an ellipsis. The issues CSV has every issue,
+#' with its text in full.
+#'
+#' @param results A `gpq_results` object, such as [gpq_check_conformance()] returns, its issues
+#'   classed by [gpq_classify_issues()] and its run written to `output_dir` by
+#'   [gpq_write_results()].
+#' @param output_dir The folder that holds the run's folder, as given to [gpq_write_results()].
+#' @param group_cols `NULL` for the run's own group columns, or the run's report-unit column
+#'   followed by any of its other group columns, which choose the breakdowns the reports show.
+#'   For a run with no group columns, `NULL` or empty. The issues CSVs always hold all the
+#'   run's group columns.
+#' @param lineage `NULL`, or the provider's raw values of the cells the pipeline changed: a
+#'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
+#'   `column_name`, `raw_value` and `raw_source`, as [gpq_classify_issues()] takes it in
+#'   `evidence`. A listed cell's raw value shows beside its issue among the issues to act on,
+#'   in its own unit's report only, and only where the record's key is given and, written as
+#'   text, matches no other record's in its table.
+#' @param lang,row_cap,example_cap,cell_cap The reports' language (`lang`) and caps: the most
+#'   rows a table shows (`row_cap`), examples per check (`example_cap`) and characters of
+#'   delivered text per cell (`cell_cap`). Each `NULL` takes the run's rule set, then the
+#'   option, then the built-in value (see [groundplotqc_options]); a value given here wins.
+#' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
+#'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`.
+#' @return The files written, invisibly: a character vector of their paths, each named by its
+#'   report unit (by the run ID for a run with no group columns). A run with group columns
+#'   whose `metadata/run.csv` lists no unit gets no file, and an empty vector.
+#' @seealso [gpq_write_results()], which saves the run first; [gpq_classify_issues()], which
+#'   gives the issues their classes; [gpq_decode_lineage()], which gives them provider keys.
+#' @examples
+#' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
+#' results <- gpq_check_conformance(
+#'   magp_example, magp_spec(),
+#'   group_cols = c("magp_contributor_id", "jurisdiction", "magp_dataset_id"),
+#'   problem_unit = list("magp_plots", "magp_plot_id"), rules = magp_rules(), layers = 0:2
+#' )
+#' gpq_classify_issues(results$issues, magp_rules())
+#' output <- tempfile("runs")
+#' gpq_write_results(results, output)
+#' files <- gpq_build_reports(results, output)
+#' basename(files)
+#' @export
+gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = NULL,
+                              lang = NULL, text = NULL, row_cap = NULL, example_cap = NULL,
+                              cell_cap = NULL) {
+  if (!inherits(results, "gpq_results")) {
+    stop("`results` must be a gpq_results object.", call. = FALSE)
+  }
+  validate_gpq_results(results)
+  dir_ok <- is.character(output_dir) && length(output_dir) == 1L && !is.na(output_dir) &&
+    !is_blank(output_dir)
+  if (!dir_ok) {
+    stop("`output_dir` must be one folder.", call. = FALSE)
+  }
+  run <- results$metadata$run
+  run_id <- run$run_id
+  run_dir <- file.path(output_dir, run_id)
+  # The run's own saved run.csv (D20.13): its units are read back from it (D20.48).
+  run_file <- file.path(run_dir, "metadata", "run.csv")
+  saved <- if (file.exists(run_file)) read_run_csv(run_file, metadata_schema()$run)
+  if (is.null(saved) || !identical(saved$run_id, run_id)) {
+    # W205
+    stop(sprintf(
+      "`output_dir` holds no saved results of run %s; write them first with gpq_write_results().",
+      run_id
+    ), call. = FALSE)
+  }
+  if (!identical(saved$outcome, "completed")) {
+    # W206
+    stop(
+      sprintf("Run %s stopped at pre-flight, so it has no results to report.", run_id),
+      call. = FALSE
+    )
+  }
+  unclassed <- sum(is.na(results$issues$issue_class))
+  if (unclassed > 0L) {
+    # W212
+    stop(sprintf(
+      paste(
+        "Issues with no class: %d. Classify them first with gpq_classify_issues(issues, rules),",
+        "which needs no evidence."
+      ),
+      unclassed
+    ), call. = FALSE)
+  }
+  run_cols <- split_joined(run$group_cols)
+  if (length(run_cols) == 0L) {
+    if (length(group_cols) > 0L) {
+      # W214
+      stop(sprintf(
+        "Run %s has no group columns, so `group_cols` must be NULL or empty.", run_id
+      ), call. = FALSE)
+    }
+    group_cols <- character()
+  } else if (is.null(group_cols)) {
+    group_cols <- run_cols
+  } else {
+    # The report unit first, then any of the run's other group columns, each once (D20.26).
+    ok <- is.character(group_cols) && length(group_cols) >= 1L && !anyNA(group_cols) &&
+      identical(group_cols[[1L]], run_cols[[1L]]) && !anyDuplicated(group_cols) &&
+      all(group_cols[-1L] %chin% run_cols[-1L])
+    if (!ok && length(run_cols) > 1L) {
+      # W208
+      stop(sprintf(
+        paste(
+          "`group_cols` must start with the run's report-unit column, %s, and may add any of",
+          "its other group columns (%s)."
+        ),
+        run_cols[[1L]], paste(run_cols[-1L], collapse = ", ")
+      ), call. = FALSE)
+    }
+    if (!ok) {
+      # W208b
+      stop(sprintf(
+        paste(
+          "`group_cols` must be %s, the run's report-unit column, since the run has no other",
+          "group columns."
+        ),
+        run_cols[[1L]]
+      ), call. = FALSE)
+    }
+  }
+  # Each setting from the argument, the run's own rule-set rows (its saved settings of tier
+  # "rule set", 3.4, D9.29), the option or the built-in value; a bad value is resolve_setting()'s
+  # caller error naming its tier. Each keeps the tier it came from, for section 1 (D20.120).
+  given <- list(lang = lang, row_cap = row_cap, example_cap = example_cap, cell_cap = cell_cap)
+  given <- given[!vapply(given, is.null, logical(1))]
+  saved_settings <- results$metadata$settings
+  run_rule_set <- list(settings = saved_settings[saved_settings$tier == "rule set"])
+  shown <- c("lang", "row_cap", "example_cap", "cell_cap")
+  resolved <- lapply(
+    structure(shown, names = shown),
+    function(name) resolve_setting(name, given, run_rule_set)
+  )
+  settings <- lapply(resolved, `[[`, "value")
+  # W183's slot: the value the run itself used (D20.52).
+  settings$column_level_min_n <- as.integer(
+    saved_settings$value[saved_settings$setting == "column_level_min_n"]
+  )
+  lang <- settings$lang
+  text <- validate_text_table(text)
+  if (!is.null(lineage)) {
+    # Read and checked as classification reads its lineage evidence (D20.17).
+    lineage <- read_evidence(
+      read_run_inputs(list(lineage = lineage), "lineage", "lineage"), run_cols
+    )$lineage$data
+  }
+  unit_col <- if (length(group_cols) > 0L) group_cols[[1L]] else NULL
+  if (is.null(unit_col)) {
+    # A run with no group columns is a run of one unit, every row its own (D20.29, R3).
+    units <- character()
+    targets <- list(NULL)
+    stems <- "report"
+    labels <- run_id
+  } else {
+    units <- split_units(saved$report_units)
+    found <- unique(c(results$results[[unit_col]], results$issues[[unit_col]]))
+    stray <- setdiff(found, c(units, "*"))
+    if (length(stray) > 0L) {
+      # A caller's error: the results were changed after they were written (D20.114).
+      stop(sprintf(
+        paste(
+          "The results hold report units that metadata/run.csv doesn't list: %s. They have",
+          "changed since they were written; build from the written run, as gpq_read_results()",
+          "reads it back."
+        ),
+        paste(mark_invalid_utf8(stray), collapse = ", ")
+      ), call. = FALSE)
+    }
+    targets <- as.list(units)
+    # Its stops come before any file is removed or written (D20.8).
+    stems <- unit_file_name(units)
+    labels <- units
+  }
+  reports_dir <- file.path(run_dir, "reports")
+  tables_dir <- file.path(run_dir, "tables")
+  # An earlier build's reports and CSVs, and any temporary file a stopped build left (D20.13);
+  # never pre-flight's page or the run's own tables, whose names don't end in "_issues.csv".
+  earlier <- c(
+    setdiff(
+      list.files(reports_dir, pattern = "[.]html$", full.names = TRUE),
+      file.path(reports_dir, "preflight.html")
+    ),
+    list.files(tables_dir, pattern = "_issues[.]csv$", full.names = TRUE),
+    list.files(
+      c(reports_dir, tables_dir),
+      pattern = "^[.]gpq_build_", full.names = TRUE, all.files = TRUE
+    )
+  )
+  unlink(earlier)
+  left <- earlier[file.exists(earlier)]
+  if (length(left) > 0L) {
+    stop(sprintf(
+      "Can't remove %s, which an earlier build wrote; it may be open in another program.",
+      left[[1L]]
+    ), call. = FALSE)
+  }
+  files <- structure(character(), names = character())
+  if (length(targets) == 0L) {
+    # No unit listed, no provider to write for (R1).
+    return(invisible(files))
+  }
+  for (folder in c(reports_dir, tables_dir)) {
+    dir.create(folder, recursive = TRUE, showWarnings = FALSE)
+    if (!dir.exists(folder)) {
+      stop(
+        "Can't create the folder ", folder, " for the run's reports; a file of that name may be ",
+        "in the way.",
+        call. = FALSE
+      )
+    }
+  }
+  # Each file is written under a temporary name in its own folder, then renamed, so a build
+  # that stops leaves no partly written file; one a stop leaves is removed on exit (D20.13).
+  partial <- character()
+  build <- environment()
+  on.exit(unlink(partial), add = TRUE)
+  write_whole <- function(path, write) {
+    temp <- tempfile(".gpq_build_", tmpdir = dirname(path))
+    assign("partial", c(partial, temp), envir = build)
+    write(temp)
+    if (!file.rename(temp, path)) {
+      stop("Can't write ", path, "; it may be open in another program.", call. = FALSE)
+    }
+    assign("partial", setdiff(partial, temp), envir = build)
+  }
+  # What every report shows of the run: its metadata without the list of units (D20.40), the
+  # problem unit's key column (the issues' one column outside the schema and the group columns;
+  # run.csv doesn't record it, D15.40), and the footer's run ID and package version.
+  metadata <- results$metadata
+  metadata$run <- copy(metadata$run)
+  set(metadata$run, j = "report_units", value = NA_character_)
+  # Section 1 shows the settings this build used, each written as the run writes it, with the
+  # tier it came from; only the report's copy changes, never the caller's results (D20.120).
+  metadata$settings <- copy(metadata$settings)
+  at <- match(shown, metadata$settings$setting)
+  kept <- which(!is.na(at))
+  set(
+    metadata$settings,
+    i = at[kept], j = c("value", "tier"),
+    value = list(
+      vapply(resolved[kept], function(one) setting_text(one$value), character(1)),
+      vapply(resolved[kept], `[[`, character(1), "tier")
+    )
+  )
+  key_col <- setdiff(names(results$issues), c(names(results_schema()$issues), run_cols))
+  key_col <- if (length(key_col) == 1L) key_col else NULL
+  meta <- c(run_id, run$package_version)
+  names(meta) <- c(
+    report_text("report_meta_run_id", lang, text = text),
+    report_text("report_meta_package", lang, text = text)
+  )
+  # The masthead's run line (W7; task 6's `subtitle`, D20.66), its time as section 1 shows it.
+  masthead <- report_text(
+    "report_masthead_run", lang,
+    run_id = run_id, run_end = sub("Z$", "", sub("T", " ", run$run_end, fixed = TRUE)),
+    text = text
+  )
+  builders <- list(
+    section_header, section_glance, section_actions, section_harmonization,
+    section_under_review, section_column_level, section_not_evaluated, section_guide
+  )
+  for (k in seq_along(targets)) {
+    unit <- targets[[k]]
+    # The unit's lineage rows are filtered in route_unit(), so no builder sees the whole input
+    # (D20.17, D20.61, D20.65).
+    routed <- route_unit(results, unit, units, lineage)
+    issues <- routed$issues
+    tables <- list(
+      results = routed$results, issues = issues, corrections = routed$corrections,
+      metadata = metadata, unit = unit, group_cols = group_cols, key_col = key_col,
+      lineage = routed$lineage
+    )
+    # The unit's CSV name, which the sections' cap notes and guide name, travels with the
+    # settings (D20.68).
+    unit_settings <- c(settings, list(csv_name = paste0(stems[[k]], "_issues.csv")))
+    title <- if (is.null(unit)) {
+      report_text("report_title_run", lang, run_id = run_id, text = text)
+    } else {
+      report_text("report_title", lang, unit = unit, text = text)
+    }
+    sections <- lapply(builders, function(build) build(tables, text, unit_settings))
+    page <- html_page(
+      title, sections, meta,
+      subtitle = masthead, lang = lang, text = text
+    )
+    html <- file.path(reports_dir, paste0(stems[[k]], ".html"))
+    csv <- file.path(tables_dir, paste0(stems[[k]], "_issues.csv"))
+    write_whole(html, function(path) writeBin(charToRaw(enc2utf8(page)), path))
+    # The run's group columns, all of them, as 11.6 lists them (T2, R7).
+    provider <- provider_csv_table(issues, run_cols, key_col, lang, text)
+    write_whole(csv, function(path) {
+      fwrite(provider, path, bom = TRUE, encoding = "UTF-8", eol = "\n")
+    })
+    files <- c(files, structure(c(html, csv), names = rep(labels[[k]], 2L)))
+    # Once the unit's files are written, its routed tables, page and CSV table are released,
+    # so the next unit's are never held beside them (D20.92).
+    rm(routed, issues, tables, sections, page, provider)
+  }
+  invisible(files)
 }

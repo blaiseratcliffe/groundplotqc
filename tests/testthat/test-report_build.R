@@ -1,7 +1,9 @@
 # Routing a run to its report units before any HTML exists (plan 13; D16.16, D18.60, D18.89,
 # D20.10, D20.11, D20.14, D20.23, D20.24, D20.29, D20.37, D20.48, D20.54), on the hand-made run
-# of two units fx_report_results() (D20.58), and each unit's file name (D20.8, D20.70). Every
-# test runs on CRAN (D20.3).
+# of two units fx_report_results() (D20.58), each unit's file name (D20.8, D20.70), and
+# gpq_build_reports(), which builds each unit's report and issues CSV into a saved run's folder
+# (D20.13, D20.25, D20.26, D20.29, D20.38, D20.48, D20.114, D20.116, D20.120). Every test runs
+# on CRAN (D20.3) but the worst case's size, which is skipped there (D20.38).
 
 test_that("a unit rule's \"*\" row and issue go to every unit (D16.8, D16.16, D20.24)", {
   local_results_registry()
@@ -482,4 +484,417 @@ test_that("unit_file_name() folds letter case in ASCII, whatever the locale's ru
     fixed = TRUE
   )
   expect_error(turkish(c("ID1", "id1")), "Report units ID1 and id1 give", fixed = TRUE)
+})
+
+test_that("gpq_build_reports writes each unit's report and CSV, holding only that unit's own", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  # A raw value on the cell of each unit's source issue and of a marked issue, built here so the
+  # fixture is unchanged (D20.17, D20.61).
+  lineage <- data.frame(
+    table_name = c("hauls", "catches", "catches"), record_pk = c("H1", "C11", "C5"),
+    column_name = c("gear", "species", "haul_id"),
+    raw_value = c("RAW-100-own", "RAW-110-own", "RAW-MARKED"), raw_source = "x"
+  )
+  files <- gpq_build_reports(results, output, lineage = lineage)
+  units <- split_units(results$metadata$run$report_units)
+  stems <- unit_file_name(units)
+  expect_equal(unname(files), as.vector(rbind(
+    file.path(output, results$metadata$run$run_id, "reports", paste0(stems, ".html")),
+    file.path(output, results$metadata$run$run_id, "tables", paste0(stems, "_issues.csv"))
+  )))
+  expect_equal(names(files), rep(units, each = 2L))
+  expect_true(all(file.exists(files)))
+  # Each unit's own planted values appear in its files and never in the other's: record IDs,
+  # values, provider keys, group values, the problem unit's key, results-row examples (D20.23).
+  # The values fx_report_results() lists: each unit's own, and those only "*" rows, marked
+  # issues and a results row's examples hold, which reach neither unit of two.
+  own <- list(
+    "100" = c("AB-secret", "A-100-1", "P-100-1", "P-100-2", "ST-100-1"),
+    "110" = c("BC-secret", "A-110-1", "P-110-1", "ST-110-2")
+  )
+  nowhere <- c(
+    "ZZ-secret", "S-110-secret", "P-110-9", "C-100-5", "P-100-3", "A-ZZ-1", "P-110-2",
+    "ST-110-3", "C-ZZ-13"
+  )
+  # The HTML shows the key column in section 3's "Each issue" table only, so P-100-2, a
+  # harmonization issue's plot, is in 100's CSV alone.
+  shown <- list("100" = setdiff(own[["100"]], "P-100-2"), "110" = own[["110"]])
+  for (unit in units) {
+    at <- which(names(files) == unit)
+    page <- readChar(files[[at[[1L]]]], file.size(files[[at[[1L]]]]), useBytes = TRUE)
+    csv <- readChar(files[[at[[2L]]]], file.size(files[[at[[2L]]]]), useBytes = TRUE)
+    for (value in shown[[unit]]) {
+      expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value, "html"))
+    }
+    for (value in own[[unit]]) {
+      expect_true(grepl(value, csv, fixed = TRUE), info = paste(unit, value, "csv"))
+    }
+    for (value in c(own[[setdiff(units, unit)]], nowhere)) {
+      expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value, "html"))
+      expect_false(grepl(value, csv, fixed = TRUE), info = paste(unit, value, "csv"))
+    }
+    # Its own raw value shows in its report; the other unit's and the marked issue's are in
+    # neither of its files (D20.17, D20.61).
+    raw <- c("100" = "RAW-100-own", "110" = "RAW-110-own")
+    expect_true(grepl(raw[[unit]], page, fixed = TRUE), info = unit)
+    for (value in c(raw[[setdiff(units, unit)]], "RAW-MARKED")) {
+      expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value, "html"))
+      expect_false(grepl(value, csv, fixed = TRUE), info = paste(unit, value, "csv"))
+    }
+  }
+})
+
+test_that("gpq_build_reports writes only into a saved run's folder and rebuilds cleanly", {
+  local_results_registry()
+  results <- fx_report_results()
+  run_id <- results$metadata$run$run_id
+  output <- withr::local_tempdir()
+  # No saved run (W205).
+  expect_error(
+    gpq_build_reports(results, output),
+    sprintf("`output_dir` holds no saved results of run %s", run_id),
+    fixed = TRUE
+  )
+  run_dir <- gpq_write_results(results, output)
+  # Pre-flight's page and the run's own tables stay through a rebuild; a stale report and CSV
+  # of an earlier build, and a temporary file a stopped build left, go.
+  dir.create(file.path(run_dir, "reports"), showWarnings = FALSE)
+  writeLines("pre-flight", file.path(run_dir, "reports", "preflight.html"))
+  stale <- c(
+    file.path(run_dir, "reports", "gone.html"),
+    file.path(run_dir, "tables", "gone_issues.csv"),
+    file.path(run_dir, "tables", ".gpq_build_1a2b")
+  )
+  for (path in stale) writeLines("old", path)
+  files <- gpq_build_reports(results, output)
+  expect_false(any(file.exists(stale)))
+  expect_equal(readLines(file.path(run_dir, "reports", "preflight.html")), "pre-flight")
+  expect_true(all(file.exists(
+    file.path(run_dir, "tables", c("results.csv", "issues.csv", "corrections.csv"))
+  )))
+  # A rebuild writes the same files again, and nothing else.
+  again <- gpq_build_reports(results, output)
+  expect_equal(again, files)
+  expect_setequal(
+    list.files(run_dir, recursive = TRUE, all.files = TRUE),
+    c(
+      "reports/preflight.html", sub(paste0(run_dir, "/"), "", files, fixed = TRUE),
+      "tables/results.csv", "tables/issues.csv", "tables/corrections.csv",
+      file.path("metadata", paste0(names(metadata_schema()), ".csv"))
+    )
+  )
+  # A build that stops part way leaves no temporary file (D20.13 (b)).
+  testthat::local_mocked_bindings(provider_csv_table = function(...) stop("stopped"))
+  expect_error(gpq_build_reports(results, output), "stopped", fixed = TRUE)
+  expect_length(
+    list.files(run_dir, pattern = "^[.]gpq_build_", recursive = TRUE, all.files = TRUE), 0L
+  )
+})
+
+test_that("a run stopped at pre-flight has no reports to build (D20.13, W206)", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  run <- data.table::copy(results$metadata$run)
+  data.table::set(run, j = "outcome", value = "stopped_preflight")
+  write_run_metadata(list(run = run), file.path(output, run$run_id))
+  expect_error(
+    gpq_build_reports(results, output),
+    sprintf("Run %s stopped at pre-flight, so it has no results to report.", run$run_id),
+    fixed = TRUE
+  )
+})
+
+test_that("gpq_build_reports needs classed issues and the run's report unit first", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  unclassed <- data.table::copy(results)
+  unclassed$issues <- data.table::copy(results$issues)
+  data.table::set(unclassed$issues, i = 1:2, j = "issue_class", value = NA_character_)
+  expect_error(
+    gpq_build_reports(unclassed, output),
+    "Issues with no class: 2. Classify them first with gpq_classify_issues(issues, rules)",
+    fixed = TRUE
+  )
+  # The fixture's group columns are c("unit", "area"): the report unit, then a breakdown.
+  cols <- split_joined(results$metadata$run$group_cols)
+  expect_error(
+    gpq_build_reports(results, output, group_cols = rev(cols)),
+    sprintf("`group_cols` must start with the run's report-unit column, %s", cols[[1L]]),
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_build_reports(results, output, group_cols = c(cols[[1L]], "nowhere")),
+    "and may add any of its other group columns",
+    fixed = TRUE
+  )
+  # The report unit alone is a valid choice: no breakdowns (D20.26).
+  expect_silent(gpq_build_reports(results, output, group_cols = cols[[1L]]))
+})
+
+test_that("a run's issues build once classified with no evidence (D20.25)", {
+  fish <- fx_fish_spec()
+  tables <- fx_fish_clean()
+  # A missing column, so the run has an issue to class: column_missing.
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  results <- suppressWarnings(gpq_check_conformance(
+    tables, fish,
+    group_cols = "water_body", layers = 0
+  ))
+  # Classified, then written, then built (D20.116).
+  gpq_classify_issues(results$issues, NULL)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  expect_true(all(file.exists(gpq_build_reports(results, output))))
+  # An issue with no class is refused.
+  unclassed <- data.table::copy(results)
+  unclassed$issues <- data.table::copy(results$issues)
+  data.table::set(unclassed$issues, i = 1L, j = "issue_class", value = NA_character_)
+  expect_error(gpq_build_reports(unclassed, output), "Issues with no class: 1.", fixed = TRUE)
+})
+
+test_that("a Layer 0 run of two units builds both reports, each with the unit-rule rows (D20.48)", {
+  fish <- fx_fish_spec()
+  tables <- fx_fish_clean()
+  # A missing column: Layer 0's unit rule column_missing, a "*" row and a column-level issue.
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  results <- suppressWarnings(gpq_check_conformance(
+    tables, fish,
+    group_cols = "water_body", layers = 0
+  ))
+  gpq_classify_issues(results$issues, NULL)
+  units <- split_units(results$metadata$run$report_units)
+  expect_gt(length(units), 1L)
+  expect_true(all(results$results$water_body == "*"))
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output)
+  expect_equal(unique(names(files)), units)
+  for (csv in files[grepl("_issues[.]csv$", files)]) {
+    expect_true("column_missing" %in% data.table::fread(csv)$rule_id)
+  }
+})
+
+test_that("a run with no group columns builds one report of every issue (D20.29, R3)", {
+  fish <- fx_fish_spec()
+  tables <- fx_fish_clean()
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  results <- suppressWarnings(gpq_check_conformance(tables, fish, layers = 0))
+  gpq_classify_issues(results$issues, NULL)
+  output <- withr::local_tempdir()
+  run_dir <- gpq_write_results(results, output)
+  expect_error(
+    gpq_build_reports(results, output, group_cols = "water_body"),
+    sprintf(
+      "Run %s has no group columns, so `group_cols` must be NULL or empty.",
+      results$metadata$run$run_id
+    ),
+    fixed = TRUE
+  )
+  files <- gpq_build_reports(results, output)
+  expect_equal(
+    unname(files),
+    file.path(run_dir, c("reports/report.html", "tables/report_issues.csv"))
+  )
+  expect_equal(nrow(data.table::fread(files[[2L]])), nrow(results$issues))
+  expect_match(
+    paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n"),
+    paste("Quality report for run", results$metadata$run$run_id),
+    fixed = TRUE
+  )
+})
+
+test_that("reports/ and tables/ hold only units' files and package_file_stems (D20.70, D20.73)", {
+  local_results_registry()
+  output <- withr::local_tempdir()
+  # A pre-flight stop writes its page: a caller's text naming a slot its text lacks.
+  stopped <- file.path(output, "stopped")
+  slot <- data.frame(text_id = "raw_na", lang = "en", text = "{nowhere}")
+  expect_error(
+    gpq_preflight(fx_fish_spec(), text = slot, output_dir = stopped),
+    class = "gpq_preflight_error"
+  )
+  # A completed run of two units written out and built.
+  grouped <- fx_report_results()
+  gpq_write_results(grouped, output)
+  gpq_build_reports(grouped, output)
+  # A run with no group columns written out and built: one report.
+  tables <- fx_fish_clean()
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  plain <- suppressWarnings(gpq_check_conformance(tables, fx_fish_spec(), layers = 0))
+  gpq_classify_issues(plain$issues, NULL)
+  gpq_write_results(plain, output)
+  gpq_build_reports(plain, output)
+  run_dirs <- list.dirs(output, recursive = FALSE)
+  expect_length(run_dirs, 3L)
+  expect_true(file.exists(file.path(stopped, "reports", "preflight.html")))
+  for (run_dir in run_dirs) {
+    run_file <- file.path(run_dir, "metadata", "run.csv")
+    units <- if (file.exists(run_file)) {
+      split_units(read_run_csv(run_file, metadata_schema()$run)$report_units)
+    }
+    stems <- unit_file_name(as.character(units))
+    unit_files <- c(
+      file.path("reports", paste0(stems, ".html")),
+      file.path("tables", paste0(stems, "_issues.csv"))
+    )
+    written <- list.files(run_dir, recursive = TRUE, all.files = TRUE)
+    written <- written[dirname(written) %in% c("reports", "tables")]
+    expect_gt(length(written), 0L)
+    # Every other file is the package's own: <stem>.html, <stem>.csv or report_issues.csv.
+    own <- basename(setdiff(written, unit_files))
+    stem <- sub("^report_issues[.]csv$", "report", own)
+    stem <- sub("[.](html|csv)$", "", stem)
+    expect_true(all(stem %in% package_file_stems), info = paste(own, collapse = ", "))
+  }
+})
+
+test_that(
+  "a unit run.csv doesn't list is refused; a run listing no unit builds none (D20.48, D20.114, R1)",
+  {
+    local_results_registry()
+    results <- fx_report_results()
+    output <- withr::local_tempdir()
+    gpq_write_results(results, output)
+    stray <- data.table::copy(results)
+    stray$issues <- data.table::copy(results$issues)
+    unit_col <- split_joined(results$metadata$run$group_cols)[[1L]]
+    data.table::set(stray$issues, i = 1L, j = unit_col, value = "nowhere")
+    expect_error(
+      gpq_build_reports(stray, output),
+      paste(
+        "The results hold report units that metadata/run.csv doesn't list: nowhere. They have",
+        "changed since they were written; build from the written run, as gpq_read_results()",
+        "reads it back."
+      ),
+      fixed = TRUE
+    )
+    # R1: run.csv lists no unit, as for a run given no table of its spec; nothing is written.
+    empty <- suppressWarnings(gpq_check_conformance(
+      list(other = data.frame(a = 1)), fx_fish_spec(),
+      group_cols = "water_body", layers = 0
+    ))
+    expect_true(is.na(empty$metadata$run$report_units))
+    gpq_classify_issues(empty$issues, NULL)
+    run_dir <- gpq_write_results(empty, output)
+    built <- gpq_build_reports(empty, output)
+    expect_identical(built, structure(character(), names = character()))
+    expect_length(list.files(file.path(run_dir, "reports"), pattern = "[.]html$"), 0L)
+    expect_length(list.files(file.path(run_dir, "tables"), pattern = "_issues[.]csv$"), 0L)
+  }
+)
+
+test_that("gpq_build_reports resolves its caps through the tiers, the rule set being the run's", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  # 100's report has tables of more than two rows, so a cap of one or two shows in it.
+  files <- gpq_build_reports(results, output, row_cap = 1)
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  expect_match(page, "Showing 1 of", fixed = TRUE)
+  withr::local_options(groundplotqc.row_cap = 2L)
+  files <- gpq_build_reports(results, output)
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  expect_match(page, "Showing 2 of", fixed = TRUE)
+  expect_error(
+    gpq_build_reports(results, output, cell_cap = -1),
+    "Setting cell_cap (argument) must be",
+    fixed = TRUE
+  )
+})
+
+test_that("section 1 shows the settings the build used, the run's own unchanged (D20.120)", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  before <- data.table::copy(results$metadata$settings)
+  files <- gpq_build_reports(results, output, row_cap = 50)
+  for (page in files[grepl("[.]html$", files)]) {
+    html <- paste(readLines(page, encoding = "UTF-8"), collapse = "\n")
+    expect_match(html, "<tr><td>row_cap</td><td>50</td><td>argument</td></tr>", fixed = TRUE)
+  }
+  expect_identical(results$metadata$settings, before)
+})
+
+test_that("a report at every cap, each cell at its longest, stays under 10 MB (D20.38)", {
+  testthat::skip_on_cran()
+  # One unit; row_cap + 1 open issues of each class (record level, each its own column, so each
+  # "By check" table has row_cap + 1 rows), row_cap + 1 column-level issues and row_cap + 1
+  # results rows with unchecked records; every delivered-text cell 200 double quotes, which
+  # the cut leaves at cell_cap characters and escaping makes six bytes each (D20.39), and
+  # row_cap + 1 breakdown values for the bars. Built on fx_report_results()'s metadata, its run
+  # listing the one unit.
+  base <- fx_report_results()
+  n <- setting_definitions()$row_cap$built_in + 1L
+  quotes <- strrep("\"", 200L)
+  # Delivered text of 200 characters, distinct by its first five.
+  text_of <- function(k) paste0(sprintf("%05d", k), strrep("\"", 195L))
+  run_id <- base$metadata$run$run_id
+  metadata <- base$metadata
+  metadata$run <- data.table::copy(base$metadata$run)
+  data.table::set(metadata$run, j = "report_units", value = "100")
+  classes <- c("source", "harmonization", "unclassified")
+  k <- seq_len(n)
+  record <- data.table::data.table(
+    class = rep(classes, each = n), column = sprintf("c%04d", rep(k, 3L)), at = rep(k, 3L)
+  )
+  m <- nrow(record) + n
+  level <- c(rep("record", nrow(record)), rep("column", n))
+  issues <- new_issues(list(
+    issue_id = seq_len(m), run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
+    rule_fingerprint = "f1", stage = "conformance", layer = 3L, severity = "error",
+    reason_code = "*", table_name = "catches",
+    column_name = c(record$column, sprintf("w%04d", k)),
+    record_pk = c(text_of(record$at), rep("*", n)),
+    row_number = c(record$at, rep(NA_integer_, n)),
+    pk_positional = ifelse(level == "record", FALSE, NA), level = level,
+    n_records = c(rep(NA_integer_, nrow(record)), rep(9L, n)), value = quotes,
+    expected = quotes, provider_key = c(rep(quotes, nrow(record)), rep(NA, n)),
+    provider_key_status = c(rep("raw", nrow(record)), rep(NA, n)), unit = "100",
+    area = text_of(c(record$at, k)), plot = text_of(c(record$at, k)),
+    reaches_other_unit = FALSE, status = "open",
+    issue_class = c(record$class, rep(classes, length.out = n))
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  results <- new_results(list(
+    run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
+    rule_fingerprint = "f1", stage = "conformance", layer = 3L, severity = "error",
+    table_name = "catches", column_name = sprintf("u%04d", k), unit = "100",
+    area = text_of(k), n_checked = 1L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = 7L,
+    reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L, status = "pass",
+    message_id = "code_not_in_list"
+  ), group_cols = c("unit", "area"))
+  worst <- new_gpq_results(results, issues, new_corrections(), metadata)
+  output <- withr::local_tempdir()
+  gpq_write_results(worst, output)
+  files <- gpq_build_reports(worst, output)
+  page <- files[grepl("[.]html$", files)]
+  size <- file.size(page)
+  expect_lt(size, 10 * 2^20)
+  html <- readChar(page, size, useBytes = TRUE)
+  # Each long cell shows cell_cap characters then the ellipsis, escaped six bytes each.
+  cell <- enc2utf8(paste0(strrep("&quot;", 100L), "\U2026"))
+  expect_true(grepl(cell, html, fixed = TRUE, useBytes = TRUE))
+  # The chart by area, row_cap + 1 values, shows row_cap bars and says the CSV has them all
+  # (D20.90); the chart by table has one bar.
+  bars <- gregexpr("<div class=\"bar\">", html, fixed = TRUE, useBytes = TRUE)[[1L]]
+  expect_identical(length(bars), n)
+  expect_true(grepl(
+    paste(
+      "Showing the", n - 1L, "values with the most open issues. The issues CSV,",
+      "100_issues.csv, has them all."
+    ),
+    html,
+    fixed = TRUE, useBytes = TRUE
+  ))
 })

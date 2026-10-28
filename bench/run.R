@@ -19,7 +19,10 @@
 #   mark_scan  validate_tables(), the scan of the tables for text marked as bytes (m33);
 #   run        gpq_check_conformance() on the tables, which makes the mark scan itself, so
 #              `run` includes the time of `mark_scan`, not the build;
-#   write      gpq_write_results() on the run's result.
+#   write      gpq_write_results() on the run's result;
+#   report     gpq_build_reports() on the written run, whose issues were classified with no
+#              evidence before the write (D20.38, D20.116); its row's `report_mb` is the
+#              largest report's size in MB, which 11.9 holds under 10 at 1x on the defect run.
 # Each run is Layers 0 to 4. Its call, check() below, repeats fx_caught()'s in
 # tests/testthat/helper-fixtures.R (MAGPlot's spec and rule set, the group columns and the
 # problem unit, the pre-flight warning muffled), which takes fixtures only, not paths. A
@@ -67,12 +70,13 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
         gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
       )
     }
-    stage_row <- function(stage, timed, n_rows, results = NULL) {
+    stage_row <- function(stage, timed, n_rows, results = NULL, report_mb = NA_real_) {
       data.table::data.table(
         git_commit = commit[1L], scale = scale, variant = variant, stage = stage,
         seconds = round(timed$seconds, 3), peak_mb = timed$peak_mb, n_rows = n_rows,
         n_results = if (is.null(results)) NA_integer_ else nrow(results$results),
-        n_issues = if (is.null(results)) NA_integer_ else nrow(results$issues)
+        n_issues = if (is.null(results)) NA_integer_ else nrow(results$issues),
+        report_mb = round(report_mb, 3)
       )
     }
     shape <- list(
@@ -98,13 +102,21 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
     data.table::set(csv_row, j = "n_rows", value = n_rows)
     mark_scan <- time_stage(validate_tables(tables))
     run <- time_stage(check(tables))
-    written <- time_stage(gpq_write_results(run$value, tempfile("bench_runs")))
+    # Classified by reference with no evidence before the write, as gpq_build_reports() asks
+    # (D20.25, D20.116), and untimed, so no stage changes what it measures (R89).
+    gpq_classify_issues(run$value$issues, rules)
+    output <- tempfile("bench_runs")
+    written <- time_stage(gpq_write_results(run$value, output))
+    reported <- time_stage(gpq_build_reports(run$value, output))
+    pages <- grep("[.]html$", reported$value, value = TRUE)
+    report_mb <- if (length(pages) > 0L) max(file.size(pages)) / 2^20 else NA_real_
     data.table::rbindlist(list(
       csv_row,
       stage_row("build", built, n_rows),
       stage_row("mark_scan", mark_scan, n_rows),
       stage_row("run", run, n_rows, run$value),
-      stage_row("write", written, n_rows)
+      stage_row("write", written, n_rows),
+      stage_row("report", reported, n_rows, report_mb = report_mb)
     ))
   }
   if (length(args) == 3L) {

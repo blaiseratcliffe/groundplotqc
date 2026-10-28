@@ -198,3 +198,27 @@ checked$issues[, c(
 The other issues keep their rules' classes, with `class_basis` `default`. An issue whose
 rule's class is `depends` and that nothing settles is `unclassified`; the setting
 `fallback_class` gives such a rule a class of its own (see `?groundplotqc_options`).
+
+## Reports
+
+`gpq_build_reports()` builds one report and one issues CSV for each report unit, here each
+water body. It writes them into the run's folder, so the run is written first, with
+`gpq_write_results()`.
+
+```{r}
+output <- tempfile("runs")
+gpq_write_results(checked, output)
+files <- gpq_build_reports(checked, output)
+basename(files)
+```
+
+Each unit's issues CSV lists every issue of its report, one per row. Here are six of its
+columns for the first water body.
+
+```{r, R.options = list(width = 125)}
+csv <- data.table::fread(files[[2L]], encoding = "UTF-8")
+csv[, c("water_body", "table_name", "column_name", "rule_id", "issue_class", "value")]
+```
+
+To read a unit's report, open its `reports/<unit>.html` in the run's folder in a browser.
+Each report is one file that needs no internet connection.

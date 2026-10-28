@@ -6,7 +6,7 @@ description: Measure groundplotqc run time and peak memory on synthetic data at 
 1. Generate synthetic data with `bench/generate.R` at the requested scale. Never use delivered data unless the user has consented for that run.
 2. Dispatch check-runner to run `bench/run.R`; results go to the git-ignored `bench/results/` folder.
 3. Delete `bench/data/` whenever `tests/testthat/helper-bench.R` changes or a run is interrupted: `bench/run.R` reuses any folder there that holds a CSV.
-4. Compare each stage with plan section 16.1 targets and the previous result.
+4. Compare each stage with plan section 16.1 targets and the previous result. On the 1x defect run, the report stage's `report_mb`, the largest report's size in MB, must stay under 10: plan 11.9's gate.
 5. Over budget: profile the stage with `Rprof(memory.profiling = TRUE)` and report the top costs.
 6. Report a table of stage, time, peak memory, target, previous, change. Note in the report that the scaled tables repeat the clean base's few values in each column, so string memory and per-value time may read lower than a real delivery's.
 

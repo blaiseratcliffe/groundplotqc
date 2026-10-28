@@ -420,9 +420,11 @@ test_that("provider-facing builders pass lang and text to every lookup and table
   testthat::skip_if_not(
     file.exists(file.path(root, "R", "report_html.R")), "the source tree isn't here"
   )
-  # The provider-facing builders: the pages and tables, the sections (tasks 9 and 10) and the
-  # issues CSV (task 8), each read once its file exists.
-  files <- file.path(root, "R", c("report_html.R", "report_sections.R", "report_csv.R"))
+  # The provider-facing builders: the pages and tables, the sections (tasks 9 and 10), the
+  # issues CSV (task 8) and the build (task 11), each read once its file exists.
+  files <- file.path(
+    root, "R", c("report_html.R", "report_sections.R", "report_csv.R", "report_build.R")
+  )
   files <- files[file.exists(files)]
   # The functions whose every call passes the run's language and the caller's text: the
   # lookup, the three helpers that look up the blank text (D14.30), and the two builders that

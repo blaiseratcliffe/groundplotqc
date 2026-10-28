@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9023 (development version)
+# groundplotqc 0.0.0.9024 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -60,3 +60,6 @@
 - The pre-flight page, `reports/preflight.html`, has a new look in the colours of the NRCan Dark-green template: its title in a dark green band, a contents list beside the sections, tables with dark header rows and numbers aligned right, and layouts for a narrow screen and for print. What it says is unchanged.
 - Two new settings cap what an HTML report shows: `row_cap`, the rows of a table (500 by default), and `cell_cap`, the characters of delivered text in a table cell (100 by default), longer text being cut and ending with an ellipsis. A CSV is never capped or cut. Each resolves as `example_cap` does, from an argument, the rule set, its option (`groundplotqc.row_cap`, `groundplotqc.cell_cap`) or its default, and every run's `metadata/settings.csv` lists both.
 - In the issues, `pk_positional` is now also TRUE for a record whose primary key, written as text, matches another record's in the same table: a composite key whose parts joined with "|" match, such as ("a|b", "c") and ("a", "b|c"), or two numbers that agree to 15 significant digits. Such a record shows no raw value in the reports.
+- `gpq_build_reports()` builds, from a run's results, one HTML report and one issues CSV for each report unit and writes them into the run's saved folder. Each unit's files hold only what that unit may see: what to act on, what harmonization is fixing, what is under review, issues that cover a whole column, and what wasn't checked, with a guide to reading it. A run with no group columns gets one report of every issue.
+- Each unit's issues CSV holds every issue of its report, open or not evaluated. It splits each provider key into one column per part, `key_<label>`, beside the whole key and its status, and puts an apostrophe before a text cell a spreadsheet would run as a formula.
+- `gpq_check_conformance()` now stops at the run's start if a group or key column is named `message` or `n_not_evaluated_own`, or starts with `key_`: the provider reports and their issues CSVs use those names.
