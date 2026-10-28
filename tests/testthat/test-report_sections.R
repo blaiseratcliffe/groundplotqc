@@ -537,9 +537,8 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
     "provider_key_status", "record_pk", "value", "expected"
   )
   # As section_actions() hands them: the breakdown column and the key column after the fixed
-  # ones, and each cell's raw value.
+  # ones, and each cell's raw value apart (D20.123).
   shown <- issues[, c(columns, "area", "plot"), with = FALSE]
-  data.table::set(shown, j = "raw_value", value = c("Q", NA, NA))
   settings <- list(
     lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
     csv_name = "u1_issues.csv"
@@ -554,7 +553,7 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
       "<table>"
     }
   )
-  issue_records(shown, NULL, settings)
+  issue_records(shown, c("Q", NA, NA), NULL, settings)
   expect_equal(caught$caption, "Each issue")
   # Sorted by severity, check, table, column and key; no expected value anywhere, so no column
   # for it (D20.42); "*" shown as W4; the long value cut (D20.39).
@@ -568,11 +567,12 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
     area = c("(not linked)", "a1", "a2"), plot = c("(not linked)", "p2", "p1")
   ))
   expect_equal(caught$row_class, c("sev-error", "sev-error", "sev-warning"))
+  expect_equal(caught$row_cap, 500L)
   expect_equal(caught$csv_name, "u1_issues.csv") # D20.68
   # No lineage and no key: their columns go; the CSV keeps them all.
   bare <- issues[, columns, with = FALSE]
   data.table::set(bare, j = c("provider_key", "provider_key_status"), value = NA_character_)
-  issue_records(bare, NULL, settings)
+  issue_records(bare, rep(NA_character_, 3L), NULL, settings)
   expect_named(caught$dt, c("Severity", "Check", "Table", "Column", "Record ID", "Value"))
 })
 
@@ -726,7 +726,8 @@ test_that("section_column_level lists each open column-level issue once, sorted 
     fixed = TRUE
   )
   # By severity, then class (source, harmonization, unclassified), table and column; the
-  # record-level and the not-evaluated issues are elsewhere.
+  # record-level and the not-evaluated issues are elsewhere. A unit rule's issue, column_missing's
+  # and undeclared_code_set's, shows no record count (D16.8, D20.122).
   expect_equal(caught$dt, data.table::data.table(
     Severity = c("Error", "Error", "Error", "Warning"),
     Class = c(
@@ -739,7 +740,7 @@ test_that("section_column_level lists each open column-level issue once, sorted 
       report_text("undeclared_code_set")
     ),
     Table = c("catches", "hauls", "catches", "catches"),
-    Column = c("haul_id", "gear", "length", "species"), Records = c(3L, 0L, 5L, 640L),
+    Column = c("haul_id", "gear", "length", "species"), Records = c(3L, NA, 5L, NA),
     Value = c("<h9>", NA, NA, "A; B"), Expected = c(NA, NA, "numeric", NA),
     area = c("a2", "(not linked)", "a1", "(not linked)")
   ))
@@ -1124,7 +1125,7 @@ test_that("the tables and charts sort text marked latin1 as its UTF-8 text, in C
   issue_summary(issues, NULL, settings)
   expect_equal(caught$Column, c("species", "é", "ü"))
   # "Each issue": by column, then provider key, then record ID, each in C order.
-  issue_records(issues, NULL, settings)
+  issue_records(issues, rep(NA_character_, 6L), NULL, settings)
   expect_equal(caught$`Record ID`, c("r4", "r3", "é", "ü", "r2", "r1"))
   # Section 6: column-level issues alike but for their columns.
   whole <- new_issues(list(
@@ -1168,4 +1169,88 @@ test_that("the tables and charts sort text marked latin1 as its UTF-8 text, in C
   glance <- list(results = new_results(group_cols = "unit"), issues = issues, group_cols = "unit")
   withr::with_options(list(datatable.optimize = 0L), section_glance(glance, NULL, settings))
   expect_equal(bars, c("catches", "é", "ü"))
+})
+
+test_that("section 3's raw values: one-record keys only, a column raw_value kept (D20.123)", {
+  run_id <- "20261026T120000Z_abc123"
+  # A group column named raw_value, as a run accepts; the third record's key is positional.
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:3, run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    reason_code = "*", table_name = "catches", column_name = "species",
+    record_pk = c("c1", "c2", "c3"), row_number = 1:3, pk_positional = c(FALSE, FALSE, TRUE),
+    level = "record", value = c("x", "y", "z"), unit = "u1", raw_value = c("g1", "g2", "g3"),
+    plot = c("p1", "p2", "p3"), status = "open", issue_class = "source"
+  ), group_cols = c("unit", "raw_value"), key_col = "plot")
+  # A lineage row on the first record's cell and one on the positional record's (D20.117).
+  lineage <- data.table::data.table(
+    table_name = "catches", record_pk = c("c1", "c3"), column_name = "species",
+    raw_value = c("X1", "X3"), raw_source = "x"
+  )
+  tables <- list(
+    issues = issues, unit = "u1", group_cols = c("unit", "raw_value"), key_col = "plot",
+    lineage = lineage
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught[[caption]] <<- data.table::copy(dt)
+    "<table>"
+  })
+  section_actions(tables, NULL, settings)
+  shown <- caught[["Each issue"]]
+  # The raw value only on the record whose key names one; the group column in its own place.
+  expect_named(shown, c(
+    "Severity", "Check", "Table", "Column", "Record ID", "Value",
+    "Your value before harmonization", "raw_value", "plot"
+  ))
+  expect_equal(shown$`Your value before harmonization`, c("X1", NA, NA))
+  expect_equal(shown$raw_value, c("g1", "g2", "g3"))
+  # With no lineage, no raw value to show, and the group column still there.
+  tables$lineage <- NULL
+  section_actions(tables, NULL, settings)
+  shown <- caught[["Each issue"]]
+  expect_named(shown, c(
+    "Severity", "Check", "Table", "Column", "Record ID", "Value", "raw_value", "plot"
+  ))
+  expect_equal(shown$raw_value, c("g1", "g2", "g3"))
+})
+
+test_that("section 6 shows no record count for a unit rule's issue, in any unit (D20.122)", {
+  local_results_registry()
+  x <- fx_report_results()
+  # whitespace_padding's column-level issue of 110's, unmarked here, so it reaches 110.
+  data.table::set(x$issues, i = 17L, j = "reaches_other_unit", value = FALSE)
+  units <- c("100", "110")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u_issues.csv"
+  )
+  caught <- NULL
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught <<- data.table::copy(dt)
+    "<table>"
+  })
+  shown <- lapply(units, function(unit) {
+    tables <- c(
+      route_unit(x, unit, units),
+      list(unit = unit, group_cols = c("unit", "area"), key_col = "plot")
+    )
+    section_column_level(tables, NULL, settings)
+    caught
+  })
+  # In each unit, the unit rules' issues (table_missing's and class_mismatch's "*" ones and the
+  # unit's undeclared_code_set) with none; a record rule's column-level issue with its count,
+  # blank_string's in 100 and whitespace_padding's in 110.
+  kept <- c("blank_string", "whitespace_padding")
+  for (k in 1:2) {
+    expect_true("class_mismatch" %in% shown[[k]]$Check)
+    unit_rule <- !shown[[k]]$Check %in% kept
+    expect_true(all(is.na(shown[[k]]$Records[unit_rule])))
+    expect_equal(shown[[k]]$Records[!unit_rule], c(3L, 4L)[[k]])
+  }
 })

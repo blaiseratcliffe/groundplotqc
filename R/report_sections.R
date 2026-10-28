@@ -295,24 +295,24 @@ issue_summary <- function(issues, text, settings) {
 #'
 #' `issues` holds the section's record-level issues, with at least `issue_id`, `severity`,
 #' `rule_id`, `table_name`, `column_name`, `provider_key`, `provider_key_status`, `record_pk`,
-#' `value` and `expected`; `raw_value`, the lineage input's raw value of each issue's cell or
-#' NA, where the caller joined it (D20.17); and the columns to show after them, in order, under
-#' their raw names (D20.56): every column that is neither an issues column of results_schema()
-#' nor `raw_value`, such as the breakdown columns and the problem unit's key column. Each row:
-#' severity, check, table, column, provider key and its status, record ID, value, raw value,
-#' expected value, then those columns, "*" in them shown as W4. Delivered text is cut at
-#' `cell_cap` (D20.39). A column empty in every row is left out (D20.42, D20.44); the CSV keeps
-#' every column. Sorted by severity, check, table, column and provider key, then record ID and
-#' issue ID; capped at `row_cap`, the note naming the unit's CSV (D20.68).
+#' `value` and `expected`, and the columns to show after them, in order, under their raw names
+#' (D20.56): every column that isn't an issues column of results_schema(), such as the
+#' breakdown columns and the problem unit's key column, whatever their names. `raw_values` holds
+#' the lineage input's raw value of each issue's cell, one per row of `issues`, NA where it has
+#' none (D20.17); it comes apart from `issues`, so a caller's column of any name keeps its place
+#' (D20.123). Each row: severity, check, table, column, provider key and its status, record ID,
+#' value, raw value, expected value, then those columns, "*" in them shown as W4. Delivered text
+#' is cut at `cell_cap` (D20.39). A column empty in every row is left out (D20.42, D20.44); the
+#' CSV keeps every column. Sorted by severity, check, table, column and provider key, then
+#' record ID and issue ID; capped at `row_cap`, the note naming the unit's CSV (D20.68).
 #' @noRd
-issue_records <- function(issues, text, settings) {
+issue_records <- function(issues, raw_values, text, settings) {
   lang <- settings$lang
   word <- function(text_id) report_text(text_id, lang, text = text)
   cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
   severities <- c("error", "warning", "flag", "info")
   statuses <- c("decoded", "partial", "raw", "fallback_pk", "no_lineage_spec")
-  extra <- setdiff(names(issues), c(names(results_schema()$issues), "raw_value"))
-  raw <- if ("raw_value" %chin% names(issues)) issues$raw_value else rep(NA, nrow(issues))
+  extra <- setdiff(names(issues), names(results_schema()$issues))
   not_linked <- word("report_not_linked")
   linked <- function(x) {
     shown <- cut(x)
@@ -326,7 +326,7 @@ issue_records <- function(issues, text, settings) {
       severity_words[match(issues$severity, severities)], issues$rule_id, issues$table_name,
       issues$column_name, cut(issues$provider_key),
       status_words[match(issues$provider_key_status, statuses)], cut(issues$record_pk),
-      cut(issues$value), cut(as.character(raw)), cut(issues$expected)
+      cut(issues$value), cut(as.character(raw_values)), cut(issues$expected)
     ),
     lapply(extra, function(column) linked(issues[[column]]))
   )
@@ -362,7 +362,8 @@ issue_records <- function(issues, text, settings) {
 #' The opening line; first the count of open column-level source issues, pointing to section
 #' 6 (D20.28), so a whole-column problem isn't passed over; then the record-level ones in
 #' issue_summary()'s "By check" table and issue_records()' "Each issue" table, which shows each
-#' cell's raw value from `tables$lineage`, joined on table, record and column (D20.17), the
+#' cell's raw value from `tables$lineage`, joined on table, record and column for an issue
+#' whose key names one record (D20.17, D20.117) and passed as `raw_values` (D20.123), the
 #' breakdown columns (the group columns after the report unit) and the problem unit's key
 #' column. With no source issue, W101 alone.
 #' @noRd
@@ -399,19 +400,24 @@ section_actions <- function(tables, text, settings) {
       with = FALSE
     ]
     # Each cell's raw value, by one key join on table, record and column (16.2): only cells of
-    # the unit's own issues can meet a lineage row (D20.17).
-    raw <- rep(NA_character_, length(record))
+    # the unit's own issues can meet a lineage row (D20.17), and only an issue whose key names
+    # one record is on a cell (`pk_positional` FALSE, D20.117). The values go to
+    # issue_records() apart, so a caller's column named raw_value keeps its place (D20.123).
+    raw_values <- rep(NA_character_, length(record))
     lineage <- tables$lineage
     if (!is.null(lineage)) {
       cells <- c("table_name", "record_pk", "column_name")
+      keyed <- which(issues$pk_positional[record] %in% FALSE)
       pairs <- key_matches(
-        lapply(cells, function(column) shown[[column]]), seq_along(record), lineage, cells
+        lapply(cells, function(column) shown[[column]][keyed]), keyed, lineage, cells
       )
       pairs <- pairs[!duplicated(pairs$row)]
-      raw[pairs$row] <- lineage$raw_value[pairs$at]
+      raw_values[pairs$row] <- lineage$raw_value[pairs$at]
     }
-    set(shown, j = "raw_value", value = raw)
-    body <- c(body, issue_summary(shown, text, settings), issue_records(shown, text, settings))
+    body <- c(
+      body, issue_summary(shown, text, settings),
+      issue_records(shown, raw_values, text, settings)
+    )
   }
   html_section("actions", title, body)
 }
@@ -496,7 +502,8 @@ section_under_review <- function(tables, text, settings) {
 #' classes in one table (6.3; D16.8, D20.11, D20.44, D20.45)
 #'
 #' One row per issue: severity, class, check, what it means, table, column, the records it
-#' covers (`n_records`), value, expected value and the breakdown columns under their raw names
+#' covers (`n_records`; none for a unit rule's issue, the registry's `unit`, as in section 10,
+#' D16.8, D20.122), value, expected value and the breakdown columns under their raw names
 #' (D20.56), "*" in them shown as W4; delivered text cut at `cell_cap` (D20.39). Sorted by
 #' severity, class (source, harmonization, unclassified), table and column, then check and
 #' issue ID; a column empty in every row left out (D20.44); capped at `row_cap`. It holds the
@@ -530,6 +537,11 @@ section_column_level <- function(tables, text, settings) {
   registry <- rule_registry()
   message_ids <- registry$message_id[match(issues$rule_id[at], registry$rule_id)]
   messages <- vapply(unique(message_ids), word, "")
+  # A unit rule's issue shows no record count, as section 10 shows none: the rule counts a
+  # table or column (D16.8), and its "*" issue goes to every unit, so its count would be the
+  # whole delivery's (D20.122).
+  records <- issues$n_records[at]
+  records[registry$unit[match(issues$rule_id[at], registry$rule_id)] %in% TRUE] <- NA_integer_
   not_linked <- word("report_not_linked")
   breakdowns <- tables$group_cols[-1L]
   severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
@@ -539,7 +551,7 @@ section_column_level <- function(tables, text, settings) {
       severity_words[match(issues$severity[at], severities)],
       class_words[match(issues$issue_class[at], classes)], issues$rule_id[at],
       unname(messages[message_ids]), issues$table_name[at], issues$column_name[at],
-      issues$n_records[at], cut(issues$value[at]), cut(issues$expected[at])
+      records, cut(issues$value[at]), cut(issues$expected[at])
     ),
     lapply(breakdowns, function(column) {
       shown <- cut(issues[[column]][at])
@@ -553,8 +565,10 @@ section_column_level <- function(tables, text, settings) {
     word("report_column_records"), word("report_column_issue_value"),
     word("report_column_expected"), breakdowns
   )
-  # A column empty in every row is left out (D20.44); the CSV keeps every column.
-  kept <- !vapply(columns, function(x) all(is.na(x) | !nzchar(x)), TRUE)
+  # A column empty in every row is left out (D20.44); the CSV keeps every column. Only a text
+  # column can hold "", so nzchar() reads the text columns alone (16.2).
+  empty <- function(x) if (is.character(x)) all(is.na(x) | !nzchar(x)) else all(is.na(x))
+  kept <- !vapply(columns, empty, TRUE)
   shown <- as.data.table(columns[kept])
   setnames(shown, headers[kept])
   html_section("column-level", title, c(
@@ -612,8 +626,15 @@ section_not_evaluated <- function(tables, text, settings) {
     paste0("report_reason_", reasons, recycle0 = TRUE), word, "",
     USE.NAMES = FALSE
   )
+  # The not-evaluated issues by check, table, column and root check, their records summed
+  # (`n_records` for a column-level one, else 1), so each group's reason is filled once (16.2).
   waiting <- which(issues$status %chin% "not_evaluated")
-  roots <- issues$rule_id[match(issues$root_issue_id[waiting], issues$issue_id)]
+  held <- data.table(
+    rule_id = issues$rule_id[waiting], table_name = issues$table_name[waiting],
+    column_name = issues$column_name[waiting],
+    root = issues$rule_id[match(issues$root_issue_id[waiting], issues$issue_id)],
+    n = fifelse(issues$level[waiting] %chin% "column", issues$n_records[waiting], 1L)
+  )[, list(n = sum(n)), by = c("rule_id", "table_name", "column_name", "root")]
   judged <- which(!not_run & own > 0L)
   reached <- which(!not_run & unchecked > 0L)
   rows <- rbindlist(list(
@@ -622,10 +643,10 @@ section_not_evaluated <- function(tables, text, settings) {
       fifelse(unit_rule[stopped], NA_integer_, unchecked[stopped] + own[stopped])
     ),
     part(
-      2L, waiting,
-      report_text("report_reason_not_evaluated", lang, rule_id = roots, text = text),
-      fifelse(issues$level[waiting] %chin% "column", issues$n_records[waiting], 1L),
-      from = issues
+      2L, seq_len(nrow(held)),
+      report_text("report_reason_not_evaluated", lang, rule_id = held$root, text = text),
+      held$n,
+      from = held
     ),
     part(
       3L, judged, rep(word("report_reason_not_evaluated_own"), length(judged)), own[judged]

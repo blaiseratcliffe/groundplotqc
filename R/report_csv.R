@@ -16,14 +16,15 @@
 #' text has a slot); the `key_<label>` columns (split_provider_key()), their tables in C order
 #' and each table's labels in part order (D20.71), then `provider_key` and `provider_key_status`
 #' (D20.75); `record_pk`, `value`, `expected`; `proposed_value` and `easy_fix`, empty until M11
-#' (11.6); `status`, `change`, `fingerprint` and `n_records`. `reaches_other_unit` isn't
-#' written (D20.33). The rows go in the order of the report's "Each issue" tables (D20.42,
-#' issue_records()): severity (error, warning, flag, info), then rule, table, column and
-#' provider key in C order, an issue with no provider key last, then record ID and issue ID
-#' (R65). Every text cell is guarded (guard_csv_text(), D20.36), in the table made here, with
-#' no second copy (D20.92). A caller's column can't be named `message` or start with `key_`
-#' (results_schema(), refused at the run's start, D20.76), so no key part's column meets a
-#' group or key column. Returns a new data.table.
+#' (11.6); `status`, `change`, `fingerprint` and `n_records`, empty on a unit rule's issue (the
+#' registry's `unit`) in every run, as section 6 shows no count for it (D16.8, D20.122, R98).
+#' `reaches_other_unit` isn't written (D20.33). The rows go in the order of the report's "Each
+#' issue" tables (D20.42, issue_records()): severity (error, warning, flag, info), then rule,
+#' table, column and provider key in C order, an issue with no provider key last, then record
+#' ID and issue ID (R65). Every text cell is guarded (guard_csv_text(), D20.36), in the table
+#' made here, with no second copy (D20.92). A caller's column can't be named `message` or start
+#' with `key_` (results_schema(), refused at the run's start, D20.76), so no key part's column
+#' meets a group or key column. Returns a new data.table.
 #' @noRd
 provider_csv_table <- function(issues, group_cols, key_col, lang = "en", text = NULL) {
   # As issue_records() sorts the "Each issue" tables, ties broken by record ID, then issue ID
@@ -75,6 +76,11 @@ provider_csv_table <- function(issues, group_cols, key_col, lang = "en", text = 
   for (column in c("status", "change", "fingerprint", "n_records")) {
     set(csv, j = column, value = sorted(column))
   }
+  # A unit rule's issue has no record count, in every run, as section 6 shows none: the rule
+  # counts a table or column (D16.8), and its "*" issue goes to every unit, so its count would
+  # be the whole delivery's (D20.122, R98).
+  unit_rules <- rules[registry$unit[match(rules, registry$rule_id)] %in% TRUE]
+  set(csv, i = which(rule_id %chin% unit_rules), j = "n_records", value = NA_integer_)
   # Every column here is a new vector, none the issues' own, so the guard works in place.
   guard_csv_text(csv)
   csv

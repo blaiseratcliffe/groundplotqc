@@ -145,6 +145,28 @@ test_that("the CSV holds every routed issue, sorted as the report sorts (D20.32,
   expect_identical(csv$record_pk[csv$rule_id == "value_above_max"], c("C1", "C3"))
 })
 
+test_that("a unit rule's issue has no n_records in any unit's CSV (D16.8, D20.122)", {
+  local_results_registry()
+  x <- fx_report_results()
+  # whitespace_padding's column-level issue of 110's, unmarked here, so it reaches 110.
+  data.table::set(x$issues, i = 17L, j = "reaches_other_unit", value = FALSE)
+  units <- c("100", "110")
+  # The registry's unit rules among the fixture's: their "*" issues reach both units, and
+  # undeclared_code_set's issue of each unit its own (R98: in every run).
+  unit_rules <- c("table_missing", "class_mismatch", "undeclared_code_set")
+  for (unit in units) {
+    csv <- provider_csv_table(route_unit(x, unit, units)$issues, c("unit", "area"), "plot")
+    expect_true("class_mismatch" %in% csv$rule_id, info = unit)
+    expect_true(all(is.na(csv$n_records[csv$rule_id %in% unit_rules])), info = unit)
+  }
+  # The record rule's column-level issue keeps its count.
+  expect_identical(csv$n_records[csv$rule_id == "whitespace_padding"], 4L)
+  # A one-unit run's CSV too.
+  csv <- provider_csv_table(route_unit(x, "100", "100")$issues, c("unit", "area"), "plot")
+  expect_true(all(is.na(csv$n_records[csv$rule_id %in% unit_rules])))
+  expect_identical(csv$n_records[csv$rule_id == "blank_string"], 3L)
+})
+
 test_that("message is the rule's text, and proposals are empty until M11 (11.6; D20.32)", {
   local_results_registry()
   x <- fx_report_results()
