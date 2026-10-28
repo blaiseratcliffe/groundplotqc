@@ -275,59 +275,79 @@ fx_label_frames <- function(tables, spec) {
 # and the dataset. Each site's ID is moved into its contributor's band of site IDs (the
 # band's start plus the old ID, in every table holding the ID), and the ec_* columns follow
 # their DD patterns (D18.26). Then the frames and subplots are labelled alike and the
-# key_pairs copies taken from their parents (D18.41).
-fx_magp_clean <- function() {
-  spec <- magp_spec()
-  tables <- fx_clean_tables(spec)
-  sheet <- spec$datasets
-  sites <- tables$magp_sites
-  datasets <- tables$magp_datasets
-  of_site <- match(sites$magp_dataset_id, sheet$magp_dataset_id)
-  of_dataset <- match(datasets$magp_dataset_id, sheet$magp_dataset_id)
-  data.table::set(sites, j = "jurisdiction", value = sheet$jurisdiction[of_site])
-  data.table::set(
-    datasets,
-    j = "magp_contributor_id", value = sheet$magp_contributor_id[of_dataset]
-  )
-  # The band of each site's contributor: the contributor sheet gives its label.
-  lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
-  ids <- lists[lists$sheet_column == "magp_contributor_id"]
-  names_at <- lists[lists$sheet_column == "abbreviated_name"]
-  contributor <- datasets$magp_contributor_id[
-    match(sites$magp_dataset_id, datasets$magp_dataset_id)
-  ]
-  row_of <- ids$source_row[match(contributor, ids$value)]
-  label <- names_at$value[match(row_of, names_at$source_row)]
-  start <- spec$id_bands$band_start[match(label, spec$id_bands$label)]
-  old <- sites$magp_site_id
-  moved <- as.integer(start + old)
-  holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
-  for (table in holders) {
-    data.table::set(
-      tables[[table]],
-      j = "magp_site_id", value = moved[match(tables[[table]]$magp_site_id, old)]
-    )
+# key_pairs copies taken from their parents (D18.41). Built once per session, on the first call,
+# never when this file is sourced, and handed out as a copy, so a test that changes its copy by
+# reference can't reach the next test's (D20.127, D20.130).
+fx_magp_clean <- local({
+  built <- NULL
+  function() {
+    if (is.null(built)) {
+      spec <- magp_spec()
+      tables <- fx_clean_tables(spec)
+      sheet <- spec$datasets
+      sites <- tables$magp_sites
+      datasets <- tables$magp_datasets
+      of_site <- match(sites$magp_dataset_id, sheet$magp_dataset_id)
+      of_dataset <- match(datasets$magp_dataset_id, sheet$magp_dataset_id)
+      data.table::set(sites, j = "jurisdiction", value = sheet$jurisdiction[of_site])
+      data.table::set(
+        datasets,
+        j = "magp_contributor_id", value = sheet$magp_contributor_id[of_dataset]
+      )
+      # The band of each site's contributor: the contributor sheet gives its label.
+      lists <- spec$code_lists[spec$code_lists$sheet == "contributor"]
+      ids <- lists[lists$sheet_column == "magp_contributor_id"]
+      names_at <- lists[lists$sheet_column == "abbreviated_name"]
+      contributor <- datasets$magp_contributor_id[
+        match(sites$magp_dataset_id, datasets$magp_dataset_id)
+      ]
+      row_of <- ids$source_row[match(contributor, ids$value)]
+      label <- names_at$value[match(row_of, names_at$source_row)]
+      start <- spec$id_bands$band_start[match(label, spec$id_bands$label)]
+      old <- sites$magp_site_id
+      moved <- as.integer(start + old)
+      holders <- spec$attributes$table_name[spec$attributes$attribute_name == "magp_site_id"]
+      for (table in holders) {
+        data.table::set(
+          tables[[table]],
+          j = "magp_site_id", value = moved[match(tables[[table]]$magp_site_id, old)]
+        )
+      }
+      # The ec_* columns by their DD patterns, a value per site (D18.26).
+      i <- seq_len(nrow(sites))
+      zone <- (i - 1L) %% 99L + 1L
+      data.table::set(sites, j = "ec_zone", value = sprintf("%d", zone))
+      data.table::set(sites, j = "ec_province", value = sprintf("%d.1", zone))
+      region <- (i - 1L) %% 999L + 1L
+      data.table::set(sites, j = "ec_region", value = sprintf("%02d.1.%03d", zone, region))
+      data.table::set(
+        sites,
+        j = "ec_district",
+        value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
+      )
+      # The frames and subplots labelled alike, then the copies taken again from their
+      # parents (D18.41). The result goes in the cache, local()'s built, with assign() naming
+      # its environment: lintr refuses <<- in a block that holds parentheses.
+      assign(
+        "built", fx_copy_key_pairs(fx_label_frames(tables, spec), spec),
+        envir = parent.env(environment())
+      )
+    }
+    data.table::copy(built)
   }
-  # The ec_* columns by their DD patterns, a value per site (D18.26).
-  i <- seq_len(nrow(sites))
-  zone <- (i - 1L) %% 99L + 1L
-  data.table::set(sites, j = "ec_zone", value = sprintf("%d", zone))
-  data.table::set(sites, j = "ec_province", value = sprintf("%d.1", zone))
-  region <- (i - 1L) %% 999L + 1L
-  data.table::set(sites, j = "ec_region", value = sprintf("%02d.1.%03d", zone, region))
-  data.table::set(
-    sites,
-    j = "ec_district", value = sprintf("%02d.1.%03d.%04d", zone, region, (i - 1L) %% 9999L + 1L)
-  )
-  # The frames and subplots labelled alike, then the copies taken again from their parents
-  # (D18.41).
-  fx_copy_key_pairs(fx_label_frames(tables, spec), spec)
-}
+})
 
-# The generic clean fixture: the fish survey toy spec's three tables (18.3).
-fx_fish_clean <- function() {
-  fx_clean_tables(fx_fish_spec())
-}
+# The generic clean fixture: the fish survey toy spec's three tables (18.3). Built once per
+# session, on the first call, and handed out as a copy (D20.127, D20.130).
+fx_fish_clean <- local({
+  built <- NULL
+  function() {
+    if (is.null(built)) {
+      built <<- fx_clean_tables(fx_fish_spec())
+    }
+    data.table::copy(built)
+  }
+})
 
 # The fixture marker (D8.21) set on a list of data.tables and on each table; returns the
 # list. The tables are marked by reference but the list only on the copy returned, so use

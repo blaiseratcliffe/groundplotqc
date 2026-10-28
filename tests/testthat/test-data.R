@@ -270,6 +270,28 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
   }, logical(1))))
 })
 
+test_that("a cached fixture builder gives what a fresh build gives (D20.127, D20.130)", {
+  # fx_fish_spec() without arguments, fx_fish_clean() and fx_magp_clean() build once per
+  # session and hand out copies. A cached call is compared with a fresh build, made with the
+  # builder's cache emptied and the cache put back after, so a builder whose output comes to
+  # depend on session state fails here.
+  builders <- list(
+    fx_fish_spec = fx_fish_spec, fx_fish_clean = fx_fish_clean, fx_magp_clean = fx_magp_clean
+  )
+  for (name in names(builders)) {
+    builder <- builders[[name]]
+    builder()
+    cached <- builder()
+    cache <- environment(builder)
+    kept <- cache$built
+    expect_false(is.null(kept), info = name)
+    cache$built <- NULL
+    fresh <- builder()
+    cache$built <- kept
+    expect_identical(cached, fresh, info = name)
+  }
+})
+
 test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
   # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
