@@ -150,7 +150,7 @@ section_glance <- function(tables, text, settings) {
     by_severity, max(by_severity), severity_words,
     bar_class = paste0("sev-", severities)
   )
-  layers <- sort(unique(c(tables$results$layer, layer)))
+  layers <- sort(unique(c(tables$results$layer, unique(layer))))
   counts <- lapply(severities, function(each) {
     n <- tabulate(match(layer[severity == each], layers), length(layers))
     c(n, sum(n))
@@ -247,8 +247,7 @@ section_guide <- function(tables, text, settings) {
   paragraph <- function(x) paste0("<p>", html_escape(x), "</p>")
   results <- tables$results
   issues <- tables$issues
-  open <- issues$status %chin% "open" &
-    issues$issue_class %chin% c("source", "harmonization", "unclassified")
+  open <- issues$status %chin% "open"
   ran <- !results$status %chin% "not_run"
   listed <- any(!ran) || any(issues$status %chin% "not_evaluated") ||
     any(ran & (results$n_unchecked > 0L | results$n_not_evaluated_own > 0L), na.rm = TRUE)

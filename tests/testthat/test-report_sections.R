@@ -84,6 +84,12 @@ test_that("section_header lists the run's facts, then its files and settings fol
     Setting = c("lang", "example_cap", "severity:raw_na"), Value = c("en", "5", "warning"),
     `Set by` = c("built-in", "rule set", "argument")
   ))
+  # Each tier is looked up as a word, so a caller's word takes its place (D14.7).
+  tier_text <- validate_text_table(data.frame(
+    text_id = "report_tier_built_in", lang = "en", text = "default"
+  ))
+  section_header(tables, tier_text, settings)
+  expect_equal(caught[["Settings"]]$`Set by`, c("default", "rule set", "argument"))
   # Never the run's list of units, the files' SHA-256 or the self-test (D20.40).
   everything <- c(names(caught$facts), caught$facts, unlist(caught[-1L]), as.character(section))
   expect_false(any(grepl("u2", everything, fixed = TRUE)))
@@ -202,6 +208,8 @@ test_that("section_glance counts each open issue once, by class, layer and value
   expect_equal(bars[[3L]], list(
     value = c(3L, 2L), max = 3L, label = c("catches", "hauls"), bar_class = NULL
   ))
+  # Below the cap, no capped line.
+  expect_no_match(html, "with the most open issues", fixed = TRUE)
   # D20.90: a chart of more values than row_cap shows the first ones, and says the CSV has them
   # all.
   bars <- list()
@@ -217,6 +225,16 @@ test_that("section_glance counts each open issue once, by class, layer and value
     fixed = TRUE
   )
   expect_equal(bars[[3L]]$label, c("catches", "hauls"))
+  # The line once, for the chart by area only: the chart by table has just 2 values.
+  capped_line <- "with the most open issues"
+  expect_equal(lengths(regmatches(html, gregexpr(capped_line, html, fixed = TRUE))), 1L)
+  # row_cap 0: no bar in either chart, and each chart's line once.
+  bars <- list()
+  settings$row_cap <- 0L
+  html <- as.character(section_glance(tables, NULL, settings))
+  expect_length(bars, 1L)
+  none_shown <- paste("Showing the 0 values", capped_line)
+  expect_equal(lengths(regmatches(html, gregexpr(none_shown, html, fixed = TRUE))), 2L)
   # No open issue: zeros, and no chart by value.
   bars <- list()
   tables$issues <- issues[issues$status == "not_evaluated"]
@@ -290,6 +308,51 @@ test_that("section_guide shows a paragraph only where the report has what it exp
   expect_match(html, "at least 7, the report shows", fixed = TRUE)
   expect_true(shows("report_guide_caps", row_cap = 500L, example_cap = 5L, cell_cap = 100L))
   expect_match(html, "<div class=\"guide\">", fixed = TRUE)
+  # Each condition alone (D20.47), from a Layer 0 row with nothing to explain: which of W178
+  # to W184 show.
+  paragraphs <- c(
+    severities = report_text("report_guide_severities"),
+    classes = report_text("report_guide_classes"),
+    sentinels = report_text("report_guide_sentinels"), keys = report_text("report_guide_keys"),
+    not_evaluated = report_text("report_guide_not_evaluated"),
+    column_level = report_text("report_guide_column_level", min_n = 7L),
+    caps = report_text("report_guide_caps", row_cap = 500L, example_cap = 5L, cell_cap = 100L)
+  )
+  showing <- function(rows, found = issues[0L]) {
+    built <- as.character(section_guide(
+      list(results = rows, issues = found, unit = "u1", group_cols = "unit"), NULL, settings
+    ))
+    names(paragraphs)[vapply(
+      paragraphs, function(x) grepl(html_escape(x), built, fixed = TRUE), TRUE
+    )]
+  }
+  base <- results[1L]
+  expect_equal(showing(base), character())
+  # A Layer 2 row: the missing-value codes only.
+  expect_equal(showing(results[1:2]), "sentinels")
+  # Each kind of section 10 row alone (a check not run, records not reached, records a check
+  # couldn't judge, a not-evaluated issue) brings W182 and the caps, nothing else.
+  unchecked <- results[c(1L, 3L)]
+  data.table::set(unchecked, i = 2L, j = "n_unchecked", value = 2L)
+  unjudged <- results[c(1L, 3L)]
+  data.table::set(unjudged, i = 2L, j = "n_not_evaluated_own", value = 1L)
+  waiting <- issues[1L]
+  data.table::set(waiting, j = "status", value = "not_evaluated")
+  expect_equal(showing(results[c(1L, 4L)]), c("not_evaluated", "caps"))
+  expect_equal(showing(unchecked), c("not_evaluated", "caps"))
+  expect_equal(showing(unjudged), c("not_evaluated", "caps"))
+  expect_equal(showing(base, waiting), c("not_evaluated", "caps"))
+  # An open issue brings the severities, the classes and the caps; the keys only for an open
+  # record-level source issue with a key status, and the column-level paragraph only for an
+  # open column-level issue.
+  harmonized <- issues[1L]
+  data.table::set(harmonized, j = "issue_class", value = "harmonization")
+  unkeyed <- issues[1L]
+  data.table::set(unkeyed, j = "provider_key_status", value = NA_character_)
+  expect_equal(showing(base, issues[1L]), c("severities", "classes", "keys", "caps"))
+  expect_equal(showing(base, harmonized), c("severities", "classes", "caps"))
+  expect_equal(showing(base, unkeyed), c("severities", "classes", "caps"))
+  expect_equal(showing(base, issues[2L]), c("severities", "classes", "column_level", "caps"))
   # A report with nothing to explain but the run: what it is, and Layer 0's line.
   results <- results[1L]
   tables <- list(results = results, issues = issues[0L], unit = "u1", group_cols = "unit")
@@ -309,17 +372,20 @@ test_that("section_guide shows a paragraph only where the report has what it exp
 test_that("sections 1, 2 and 14 escape every value they show, every slot filled (11.1)", {
   run_id <- "20261026T120000Z_abc123"
   schema <- metadata_schema()
-  # Each value a marker <mN> holding markup, so one left unescaped shows as "<m".
+  # Each value, and each group column's name, a marker <mN> holding markup, so one left
+  # unescaped shows as "<m".
+  groups <- c("unit<m15>&", "area<m16>&")
   metadata <- lapply(schema, empty_table)
   metadata$run <- complete_table(list(
     run_id = run_id, run_start = "2026-10-26T12:00:00Z", run_end = "2026-10-26T12:00:05Z",
     package_version = "<m2>", git_commit = "<m3>", r_version = "4.5.2",
     platform = "x86_64-w64-mingw32", data_table_version = "1.18.0", outcome = "completed"
   ), schema$run, "run")
-  metadata$inputs <- complete_table(
-    list(input = "tables:<m4>", file = "<m5>.csv", sha256 = "<m6>", detail = "1 row"),
-    schema$inputs, "inputs"
-  )
+  # A file with its SHA-256, and a table given in memory, shown with its detail (W29).
+  metadata$inputs <- complete_table(list(
+    input = c("tables:<m4>", "tables:<m17>"), file = c("<m5>.csv", "in memory"),
+    sha256 = c("<m6>", NA), detail = c("1 row", "<m18>& rows")
+  ), schema$inputs, "inputs")
   metadata$spec_manifest <- complete_table(
     list(input = "dictionary", file = "<m7>.csv", file_date = "<m8>", sha256 = "x"),
     schema$spec_manifest, "spec_manifest"
@@ -337,36 +403,48 @@ test_that("sections 1, 2 and 14 escape every value they show, every slot filled 
     issue_id = 1L, run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
     rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
     reason_code = "*", table_name = "catches", column_name = "species", record_pk = "c1",
-    row_number = 1L, pk_positional = FALSE, level = "record", value = "x", unit = "<m1>&",
-    area = "<m13>&", plot = "p1", status = "open", issue_class = "source"
-  ), group_cols = c("unit", "area"), key_col = "plot")
+    row_number = 1L, pk_positional = FALSE, level = "record", value = "x",
+    "unit<m15>&" = "<m1>&", "area<m16>&" = "<m13>&", plot = "p1", status = "open",
+    issue_class = "source"
+  ), group_cols = groups, key_col = "plot")
   results <- new_results(list(
     run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
     rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
-    table_name = "catches", column_name = "species", unit = "<m1>&", area = "<m13>&",
-    n_checked = 1L, n_fail = 1L, n_not_evaluated = 0L, n_unchecked = 0L, reason_code = "*",
-    n_distinct_fail_values = 1L, n_easy_fix = 0L, status = "fail",
-    message_id = "code_not_in_list"
-  ), group_cols = c("unit", "area"))
+    table_name = "catches", column_name = "species", "unit<m15>&" = "<m1>&",
+    "area<m16>&" = "<m13>&", n_checked = 1L, n_fail = 1L, n_not_evaluated = 0L,
+    n_unchecked = 0L, reason_code = "*", n_distinct_fail_values = 1L, n_easy_fix = 0L,
+    status = "fail", message_id = "code_not_in_list"
+  ), group_cols = groups)
   data.table::set(results, j = "n_not_evaluated_own", value = 0L)
   tables <- list(
     results = results, issues = issues, metadata = metadata, unit = "<m1>&",
-    group_cols = c("unit", "area"), key_col = "plot"
+    group_cols = groups, key_col = "plot"
   )
   settings <- list(
     lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
     csv_name = "<m14>_issues.csv"
   )
+  # At row_cap 0 each chart shows its capped line, which names the unit's CSV (D20.90).
+  capped <- settings
+  capped$row_cap <- 0L
   html <- c(
     header = as.character(section_header(tables, NULL, settings)),
     glance = as.character(section_glance(tables, NULL, settings)),
+    capped = as.character(section_glance(tables, NULL, capped)),
     guide = as.character(section_guide(tables, NULL, settings))
   )
   expect_false(any(grepl("<m[0-9]", html)))
   expect_match(html[["header"]], "&lt;m1&gt;&amp;", fixed = TRUE)
+  expect_match(html[["header"]], "Report unit (unit&lt;m15&gt;&amp;)", fixed = TRUE)
+  expect_match(html[["header"]], "in memory; &lt;m18&gt;&amp; rows", fixed = TRUE)
   expect_match(html[["header"]], "&lt;m9&gt;&amp;, version &#39;1&#39;", fixed = TRUE)
   expect_match(html[["header"]], "&lt;m12&gt;&amp;&quot;", fixed = TRUE)
   expect_match(html[["glance"]], "&lt;m13&gt;&amp;", fixed = TRUE)
+  expect_match(html[["glance"]], "Open issues by area&lt;m16&gt;&amp;", fixed = TRUE)
+  expect_match(
+    html[["capped"]], "The issues CSV, &lt;m14&gt;_issues.csv, has them all.",
+    fixed = TRUE
+  )
   expect_match(html[["guide"]], "&lt;m14&gt;_issues.csv", fixed = TRUE)
   expect_false(any(grepl("\\{[a-z0-9_]+\\}", html)))
 })
