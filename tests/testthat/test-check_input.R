@@ -893,6 +893,33 @@ test_that("a composite PK's parts are joined with \"|\"", {
   )
 })
 
+test_that("a record whose PK text another record holds is positional (D20.118)", {
+  # Parts holding "|" join to one text: ("a|b", "c") and ("a", "b|c") are both "a|b|c", the
+  # text the lineage input and decoding read, though the parts differ.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = "character"
+  )
+  tables <- list(k = data.table::data.table(
+    a = c("a|b", "a", "x"), b = c("c", "b|c", "y"), v = c("p", "q", "r")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  # Judged over the table's rows, for a row given alone too.
+  expect_true(record_pk_text(input, "k", 2L)$positional)
+  pk <- record_pk_text(input, "k", 1:3)
+  expect_identical(pk$record_pk, c("a|b|c", "a|b|c", "x|y"))
+  expect_identical(pk$positional, c(TRUE, TRUE, FALSE))
+  # A one-column key too: two numbers written as one text, 15 significant digits.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("k_id", "v"), key_type = c("PK", "."),
+    data_type = c("numeric", "character")
+  )
+  tables <- list(k = data.table::data.table(k_id = c(0.1 + 0.2, 0.3, 0.4), v = c("p", "q", "r")))
+  pk <- record_pk_text(conformance_input(tables, gpq_read_spec(dictionary)), "k", 1:3)
+  expect_identical(pk$record_pk, c("0.3", "0.3", "0.4"))
+  expect_identical(pk$positional, c(TRUE, TRUE, FALSE))
+})
+
 test_that("a composite PK's unmarked UTF-8 part is joined as written outside UTF-8 (D16.47, R83)", {
   # Beside a part marked UTF-8, paste() would read an unmarked one in the session's encoding.
   spec <- fx_fish_spec()
