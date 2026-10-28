@@ -545,7 +545,7 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
     } else {
       report_text("report_title", lang, unit = unit, text = text)
     }
-    sections <- lapply(builders, function(build) build(tables, text, unit_settings))
+    sections <- lapply(builders, function(builder) builder(tables, text, unit_settings))
     page <- html_page(
       title, sections, meta,
       subtitle = masthead, lang = lang, text = text

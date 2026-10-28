@@ -526,6 +526,9 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
     at <- which(names(files) == unit)
     page <- readChar(files[[at[[1L]]]], file.size(files[[at[[1L]]]]), useBytes = TRUE)
     csv <- readChar(files[[at[[2L]]]], file.size(files[[at[[2L]]]]), useBytes = TRUE)
+    # The CSV starts with UTF-8's byte-order mark, and the page loads nothing from elsewhere.
+    expect_identical(readBin(files[[at[[2L]]]], "raw", 3L), as.raw(c(0xef, 0xbb, 0xbf)))
+    expect_false(grepl("https?://|src=|<link", page))
     for (value in shown[[unit]]) {
       expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value, "html"))
     }
@@ -552,6 +555,15 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
   results <- fx_report_results()
   run_id <- results$metadata$run$run_id
   output <- withr::local_tempdir()
+  # Not a results object, and not one folder.
+  expect_error(
+    gpq_build_reports(list(), output), "`results` must be a gpq_results object.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_build_reports(results, NA), "`output_dir` must be one folder.",
+    fixed = TRUE
+  )
   # No saved run (W205).
   expect_error(
     gpq_build_reports(results, output),
@@ -559,6 +571,17 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
     fixed = TRUE
   )
   run_dir <- gpq_write_results(results, output)
+  # A file named reports where the reports' folder goes.
+  writeLines("in the way", file.path(run_dir, "reports"))
+  expect_error(
+    gpq_build_reports(results, output),
+    paste0(
+      "Can't create the folder ", file.path(run_dir, "reports"), " for the run's reports; ",
+      "a file of that name may be in the way."
+    ),
+    fixed = TRUE
+  )
+  unlink(file.path(run_dir, "reports"))
   # Pre-flight's page and the run's own tables stay through a rebuild; a stale report and CSV
   # of an earlier build, and a temporary file a stopped build left, go.
   dir.create(file.path(run_dir, "reports"), showWarnings = FALSE)
@@ -586,8 +609,12 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
       file.path("metadata", paste0(names(metadata_schema()), ".csv"))
     )
   )
-  # A build that stops part way leaves no temporary file (D20.13 (b)).
-  testthat::local_mocked_bindings(provider_csv_table = function(...) stop("stopped"))
+  # A build that stops part way leaves no temporary file (D20.13 (b)): the write stops once the
+  # CSV's temporary file is on disk, so only the build's exit can remove it.
+  testthat::local_mocked_bindings(fwrite = function(x, file, ...) {
+    writeLines("part", file)
+    stop("stopped")
+  })
   expect_error(gpq_build_reports(results, output), "stopped", fixed = TRUE)
   expect_length(
     list.files(run_dir, pattern = "^[.]gpq_build_", recursive = TRUE, all.files = TRUE), 0L
@@ -675,6 +702,15 @@ test_that("a Layer 0 run of two units builds both reports, each with the unit-ru
   expect_true(all(results$results$water_body == "*"))
   output <- withr::local_tempdir()
   gpq_write_results(results, output)
+  # Its only group column is the report unit, so `group_cols` may add none (W208b).
+  expect_error(
+    gpq_build_reports(results, output, group_cols = c("water_body", "x")),
+    paste(
+      "`group_cols` must be water_body, the run's report-unit column, since the run has no",
+      "other group columns."
+    ),
+    fixed = TRUE
+  )
   files <- gpq_build_reports(results, output)
   expect_equal(unique(names(files)), units)
   for (csv in files[grepl("_issues[.]csv$", files)]) {
@@ -806,6 +842,19 @@ test_that("gpq_build_reports resolves its caps through the tiers, the rule set b
   files <- gpq_build_reports(results, output)
   page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
   expect_match(page, "Showing 2 of", fixed = TRUE)
+  # The run's own rule-set row wins over the option, and section 1 shows it with its tier.
+  ruled <- data.table::copy(results)
+  ruled$metadata$settings <- data.table::copy(results$metadata$settings)
+  data.table::set(
+    ruled$metadata$settings,
+    i = which(ruled$metadata$settings$setting == "row_cap"), j = c("value", "tier"),
+    value = list("2", "rule set")
+  )
+  withr::local_options(groundplotqc.row_cap = 1L)
+  files <- gpq_build_reports(ruled, output)
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  expect_match(page, "Showing 2 of", fixed = TRUE)
+  expect_match(page, "<tr><td>row_cap</td><td>2</td><td>rule set</td></tr>", fixed = TRUE)
   expect_error(
     gpq_build_reports(results, output, cell_cap = -1),
     "Setting cell_cap (argument) must be",
@@ -818,13 +867,14 @@ test_that("section 1 shows the settings the build used, the run's own unchanged 
   results <- fx_report_results()
   output <- withr::local_tempdir()
   gpq_write_results(results, output)
-  before <- data.table::copy(results$metadata$settings)
+  before <- data.table::copy(results)
   files <- gpq_build_reports(results, output, row_cap = 50)
   for (page in files[grepl("[.]html$", files)]) {
     html <- paste(readLines(page, encoding = "UTF-8"), collapse = "\n")
     expect_match(html, "<tr><td>row_cap</td><td>50</td><td>argument</td></tr>", fixed = TRUE)
   }
-  expect_identical(results$metadata$settings, before)
+  # The caller's results, the run's settings and run table among them, are unchanged.
+  expect_identical(results, before)
 })
 
 test_that("a report at every cap, each cell at its longest, stays under 10 MB (D20.38)", {
@@ -832,9 +882,10 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
   # One unit; row_cap + 1 open issues of each class (record level, each its own column, so each
   # "By check" table has row_cap + 1 rows), row_cap + 1 column-level issues and row_cap + 1
   # results rows with unchecked records; every delivered-text cell 200 double quotes, which
-  # the cut leaves at cell_cap characters and escaping makes six bytes each (D20.39), and
-  # row_cap + 1 breakdown values for the bars. Built on fx_report_results()'s metadata, its run
-  # listing the one unit.
+  # the cut leaves at cell_cap characters and escaping makes six bytes each (D20.39); two
+  # breakdown columns, area and zone, each with row_cap + 1 values for the bars; and a raw value
+  # from the lineage input on every source issue's cell. Built on fx_report_results()'s
+  # metadata, its run listing the one unit and its three group columns.
   base <- fx_report_results()
   n <- setting_definitions()$row_cap$built_in + 1L
   quotes <- strrep("\"", 200L)
@@ -843,7 +894,9 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
   run_id <- base$metadata$run$run_id
   metadata <- base$metadata
   metadata$run <- data.table::copy(base$metadata$run)
-  data.table::set(metadata$run, j = "report_units", value = "100")
+  data.table::set(metadata$run, j = c("report_units", "group_cols"), value = list(
+    "100", "unit; area; zone"
+  ))
   classes <- c("source", "harmonization", "unclassified")
   k <- seq_len(n)
   record <- data.table::data.table(
@@ -862,39 +915,47 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
     n_records = c(rep(NA_integer_, nrow(record)), rep(9L, n)), value = quotes,
     expected = quotes, provider_key = c(rep(quotes, nrow(record)), rep(NA, n)),
     provider_key_status = c(rep("raw", nrow(record)), rep(NA, n)), unit = "100",
-    area = text_of(c(record$at, k)), plot = text_of(c(record$at, k)),
-    reaches_other_unit = FALSE, status = "open",
+    area = text_of(c(record$at, k)), zone = text_of(c(record$at, k)),
+    plot = text_of(c(record$at, k)), reaches_other_unit = FALSE, status = "open",
     issue_class = c(record$class, rep(classes, length.out = n))
-  ), group_cols = c("unit", "area"), key_col = "plot")
+  ), group_cols = c("unit", "area", "zone"), key_col = "plot")
   results <- new_results(list(
     run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
     rule_fingerprint = "f1", stage = "conformance", layer = 3L, severity = "error",
     table_name = "catches", column_name = sprintf("u%04d", k), unit = "100",
-    area = text_of(k), n_checked = 1L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = 7L,
-    reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L, status = "pass",
-    message_id = "code_not_in_list"
-  ), group_cols = c("unit", "area"))
+    area = text_of(k), zone = text_of(k), n_checked = 1L, n_fail = 0L, n_not_evaluated = 0L,
+    n_unchecked = 7L, reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L,
+    status = "pass", message_id = "code_not_in_list"
+  ), group_cols = c("unit", "area", "zone"))
   worst <- new_gpq_results(results, issues, new_corrections(), metadata)
+  # A raw value of 200 characters on each source issue's cell, starting "R" so it can be told
+  # from the other cells once cut.
+  lineage <- data.frame(
+    table_name = "catches", record_pk = text_of(k), column_name = sprintf("c%04d", k),
+    raw_value = paste0("R", strrep("\"", 199L)), raw_source = "x"
+  )
   output <- withr::local_tempdir()
   gpq_write_results(worst, output)
-  files <- gpq_build_reports(worst, output)
+  files <- gpq_build_reports(worst, output, lineage = lineage)
   page <- files[grepl("[.]html$", files)]
   size <- file.size(page)
   expect_lt(size, 10 * 2^20)
   html <- readChar(page, size, useBytes = TRUE)
-  # Each long cell shows cell_cap characters then the ellipsis, escaped six bytes each.
+  # Each long cell shows cell_cap characters then the ellipsis, escaped six bytes each, the raw
+  # values among them.
   cell <- enc2utf8(paste0(strrep("&quot;", 100L), "\U2026"))
   expect_true(grepl(cell, html, fixed = TRUE, useBytes = TRUE))
-  # The chart by area, row_cap + 1 values, shows row_cap bars and says the CSV has them all
-  # (D20.90); the chart by table has one bar.
+  raw <- enc2utf8(paste0("R", strrep("&quot;", 99L), "\U2026"))
+  expect_true(grepl(raw, html, fixed = TRUE, useBytes = TRUE))
+  # The charts by area and by zone, row_cap + 1 values each, show row_cap bars each and say the
+  # CSV has them all (D20.90); the chart by table has one bar.
   bars <- gregexpr("<div class=\"bar\">", html, fixed = TRUE, useBytes = TRUE)[[1L]]
-  expect_identical(length(bars), n)
-  expect_true(grepl(
-    paste(
-      "Showing the", n - 1L, "values with the most open issues. The issues CSV,",
-      "100_issues.csv, has them all."
-    ),
-    html,
-    fixed = TRUE, useBytes = TRUE
-  ))
+  expect_identical(length(bars), 2L * (n - 1L) + 1L)
+  capped <- paste(
+    "Showing the", n - 1L, "values with the most open issues. The issues CSV,",
+    "100_issues.csv, has them all."
+  )
+  expect_identical(
+    length(gregexpr(capped, html, fixed = TRUE, useBytes = TRUE)[[1L]]), 2L
+  )
 })
