@@ -24,26 +24,39 @@ test_that("split_provider_key splits decoded and partial keys, every other key e
   # A blank part is a blank cell, not a missing one.
   expect_identical(parts$key_src_catch.no, c(NA, "", empty))
   # A key marked decoded that still doesn't split exactly is left empty, never guessed
-  # (D20.31 (a)): a part without "=", a value holding "=", a label given twice.
-  odd <- c("src_station.code=S1; 2", "src_station.code=S=1", "a.b=1; a.b=2", "a.b=3")
-  parts <- split_provider_key(odd, rep("decoded", 4L))
+  # (D20.31 (a)): a part without "=", a value holding "=", a label given twice, a part with no
+  # label.
+  odd <- c(
+    "src_station.code=S1; 2", "src_station.code=S=1", "a.b=1; a.b=2", "a.b=3", "=x; a.b=4"
+  )
+  parts <- split_provider_key(odd, rep("decoded", 5L))
   expect_named(parts, "key_a.b")
-  expect_identical(parts$key_a.b, c(NA, NA, NA, "3"))
+  expect_identical(parts$key_a.b, c(NA, NA, NA, "3", NA))
+  # A latin1-marked key splits as its UTF-8 text does.
+  latin <- iconv("a.b=été; c=-1", "UTF-8", "latin1")
+  expect_identical(Encoding(latin), "latin1")
+  parts <- split_provider_key(c(latin, NA), c("decoded", NA))
+  expect_named(parts, c("key_a.b", "key_c"))
+  expect_identical(parts$key_a.b, c("été", NA))
+  expect_identical(parts$key_c, c("-1", NA))
   # No key that splits: no columns.
   expect_identical(ncol(split_provider_key(c("C-77", NA), c("raw", "fallback_pk"))), 0L)
 })
 
 test_that("guard_csv_text guards a cell a spreadsheet would read as a formula, no other (D20.32)", {
+  # The last cell is marked latin1, matched as its UTF-8 text is.
+  latin <- iconv("-café", "UTF-8", "latin1")
+  expect_identical(Encoding(latin), "latin1")
   cells <- c(
     "=1+1", "@SUM(A1)", "-5", "-x", "+1", "\tx", "\rx", "x=1", NA, "", "-", "-1.5e3", "-.5",
-    "-Inf", "-5 ", " =1"
+    "-Inf", "-5 ", " =1", latin
   )
   dt <- data.table::data.table(text = cells, n = seq_along(cells), flag = TRUE)
   before <- data.table::copy(dt)
   guarded <- guard_csv_text(dt)
   expect_identical(guarded$text, c(
     "'=1+1", "'@SUM(A1)", "-5", "'-x", "'+1", "'\tx", "'\rx", "x=1", NA, "", "'-", "-1.5e3",
-    "-.5", "'-Inf", "'-5 ", " =1"
+    "-.5", "'-Inf", "'-5 ", " =1", "'-café"
   ))
   expect_identical(guarded$n, before$n)
   expect_identical(guarded$flag, before$flag)
@@ -97,7 +110,7 @@ test_that("the CSV holds every routed issue, sorted as the report sorts (D20.32,
   expect_identical(nrow(csv), nrow(issues))
   expect_true("not_evaluated" %in% csv$status)
   # Errors, then warnings, each by rule in C order; value_above_max's two by provider key, the
-  # raw "-x_3" before "src_station.code=...".
+  # raw "-ST-100-3" before "src_station.code=...".
   expect_identical(csv$rule_id, c(
     "blank_string", "class_mismatch", "code_not_in_list", "fk_orphan", "raw_na",
     "table_missing", "value_above_max", "value_above_max", "decimals_exceeded",
@@ -112,6 +125,18 @@ test_that("the CSV holds every routed issue, sorted as the report sorts (D20.32,
   tied <- data.table::copy(issues)
   data.table::set(tied, i = which(tied$issue_id == 10L), j = "provider_key", value = "-ST-100-3")
   csv <- provider_csv_table(tied, c("unit", "area"), "plot")
+  expect_identical(csv$record_pk[csv$rule_id == "value_above_max"], c("C1", "C3"))
+  # Keys of one tie group marked differently sort in C order as UTF-8 text (D20.42): issue
+  # 10's "é" marked latin1 before issue 9's "ü" marked UTF-8, though the latin1 byte is the
+  # higher.
+  mixed <- data.table::copy(issues)
+  pair <- match(c(9L, 10L), mixed$issue_id)
+  data.table::set(mixed, i = pair, j = "provider_key", value = c(
+    "ü", iconv("é", "UTF-8", "latin1")
+  ))
+  data.table::set(mixed, i = pair, j = "provider_key_status", value = "raw")
+  expect_identical(Encoding(mixed$provider_key[pair]), c("UTF-8", "latin1"))
+  csv <- provider_csv_table(mixed, c("unit", "area"), "plot")
   expect_identical(csv$record_pk[csv$rule_id == "value_above_max"], c("C1", "C3"))
   # An issue with no provider key comes after those with one.
   at <- which(issues$issue_id == 9L)

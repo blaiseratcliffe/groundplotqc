@@ -27,11 +27,12 @@
 #' @noRd
 provider_csv_table <- function(issues, group_cols, key_col, lang = "en", text = NULL) {
   # As issue_records() sorts the "Each issue" tables, ties broken by record ID, then issue ID
-  # (D20.32, R65).
+  # (D20.32, R65). The text keys are read as UTF-8, so the radix sort's byte order is C order
+  # whatever a key's encoding mark (D20.42).
   order_by <- order(
-    match(issues$severity, c("error", "warning", "flag", "info")), issues$rule_id,
-    issues$table_name, issues$column_name, issues$provider_key, issues$record_pk,
-    issues$issue_id,
+    match(issues$severity, c("error", "warning", "flag", "info")), enc2utf8(issues$rule_id),
+    enc2utf8(issues$table_name), enc2utf8(issues$column_name), enc2utf8(issues$provider_key),
+    enc2utf8(issues$record_pk), issues$issue_id,
     na.last = TRUE, method = "radix"
   )
   # A column of the issues in the CSV's row order.
@@ -53,7 +54,7 @@ provider_csv_table <- function(issues, group_cols, key_col, lang = "en", text = 
   # table and part (D20.71); each key is split once.
   provider_key <- sorted("provider_key")
   status <- sorted("provider_key_status")
-  tables <- csv$table_name
+  tables <- enc2utf8(csv$table_name)
   for (table in sort(unique(tables), method = "radix")) {
     here <- which(tables == table)
     parts <- split_provider_key(provider_key[here], status[here])
@@ -96,27 +97,40 @@ provider_csv_table <- function(issues, group_cols, key_col, lang = "en", text = 
 split_provider_key <- function(provider_key, status) {
   n <- length(provider_key)
   splits <- which(status %chin% c("decoded", "partial") & !is.na(provider_key))
-  pieces <- strsplit(provider_key[splits], "; ", fixed = TRUE)
+  # Each distinct key is split once (a record with several issues repeats its key); each row
+  # of `splits` finds its key by match().
+  given <- provider_key[splits]
+  keys <- unique(given)
+  of_row <- match(given, keys)
+  rm(given)
+  pieces <- strsplit(keys, "; ", fixed = TRUE)
   count <- lengths(pieces)
   flat <- unlist(pieces, use.names = FALSE)
-  row <- rep(splits, count)
+  rm(pieces)
+  # Each part's key, as its place in `keys`.
+  owner <- rep(seq_along(keys), count)
   position <- sequence(count)
   at <- regexpr("=", flat, fixed = TRUE)
   label <- substr(flat, 1L, at - 1L)
   value <- substr(flat, at + 1L, .Machine$integer.max)
+  rm(flat)
   # A key with a part that has no label, more than one "=", or a label given twice keeps all
   # its parts empty.
-  odd <- at < 2L | grepl("=", value, fixed = TRUE) | duplicated(data.table(row, label))
-  kept <- !row %in% row[odd]
-  row <- row[kept]
+  odd <- at < 2L | grepl("=", value, fixed = TRUE) | duplicated(data.table(owner, label))
+  rm(at)
+  kept <- !owner %in% owner[odd]
+  owner <- owner[kept]
   label <- label[kept]
   value <- value[kept]
-  labels <- unique(label[order(position[kept], label, method = "radix")])
+  # The labels read as UTF-8, so the radix sort's byte order is C order whatever their marks.
+  labels <- unique(label[order(position[kept], enc2utf8(label), method = "radix")])
   column <- match(label, labels)
   parts <- lapply(seq_along(labels), function(k) {
-    cells <- rep(NA_character_, n)
     here <- which(column == k)
-    cells[row[here]] <- value[here]
+    by_key <- rep(NA_character_, length(keys))
+    by_key[owner[here]] <- value[here]
+    cells <- rep(NA_character_, n)
+    cells[splits] <- by_key[of_row]
     cells
   })
   setDT(structure(parts, names = sprintf("key_%s", labels)))
