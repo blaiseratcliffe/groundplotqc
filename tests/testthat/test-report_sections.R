@@ -67,8 +67,9 @@ test_that("section_header lists the run's facts, then its files and settings fol
     "Report unit (unit)" = "u<1>", "Run ID" = "20261026T120000Z_abc123",
     "Started (UTC)" = "2026-10-26 12:00:00", "Finished (UTC)" = "2026-10-26 12:00:05",
     "Table: catches" = paste0("catches <&>.csv, SHA-256 ", strrep("c", 64L)),
-    "Table: hauls" = "in memory; 2 rows",
-    "Table: stations" = "DBI connection, not hashed; 4 rows; table st; driver SQLiteConnection",
+    # A table with no file only by how it came: no rows, database table or driver (D20.126).
+    "Table: hauls" = "in memory",
+    "Table: stations" = "DBI connection, not hashed",
     # D20.88: the rule set's name as written, not quoted.
     "Rule set" = "Fish <rules>, version 1.0", "Package version" = "0.0.0.9024",
     "Git commit" = "none (an installed package)", "R version" = "4.5.2"
@@ -353,6 +354,17 @@ test_that("section_guide shows a paragraph only where the report has what it exp
   expect_equal(showing(base, harmonized), c("severities", "classes", "caps"))
   expect_equal(showing(base, unkeyed), c("severities", "classes", "caps"))
   expect_equal(showing(base, issues[2L]), c("severities", "classes", "column_level", "caps"))
+  # A column-level source issue with a key status brings no keys paragraph: it isn't in "Each
+  # issue". A column-level issue not evaluated brings no column-level paragraph, only section
+  # 10's.
+  keyed_column <- issues[2L]
+  data.table::set(keyed_column, j = c("issue_class", "provider_key_status"), value = list(
+    "source", "decoded"
+  ))
+  expect_equal(showing(base, keyed_column), c("severities", "classes", "column_level", "caps"))
+  waiting_column <- issues[2L]
+  data.table::set(waiting_column, j = "status", value = "not_evaluated")
+  expect_equal(showing(base, waiting_column), c("not_evaluated", "caps"))
   # A report with nothing to explain but the run: what it is, and Layer 0's line.
   results <- results[1L]
   tables <- list(results = results, issues = issues[0L], unit = "u1", group_cols = "unit")
@@ -381,7 +393,7 @@ test_that("sections 1, 2 and 14 escape every value they show, every slot filled 
     package_version = "<m2>", git_commit = "<m3>", r_version = "4.5.2",
     platform = "x86_64-w64-mingw32", data_table_version = "1.18.0", outcome = "completed"
   ), schema$run, "run")
-  # A file with its SHA-256, and a table given in memory, shown with its detail (W29).
+  # A file with its SHA-256, and a table given in memory, whose detail isn't shown (D20.126).
   metadata$inputs <- complete_table(list(
     input = c("tables:<m4>", "tables:<m17>"), file = c("<m5>.csv", "in memory"),
     sha256 = c("<m6>", NA), detail = c("1 row", "<m18>& rows")
@@ -436,7 +448,8 @@ test_that("sections 1, 2 and 14 escape every value they show, every slot filled 
   expect_false(any(grepl("<m[0-9]", html)))
   expect_match(html[["header"]], "&lt;m1&gt;&amp;", fixed = TRUE)
   expect_match(html[["header"]], "Report unit (unit&lt;m15&gt;&amp;)", fixed = TRUE)
-  expect_match(html[["header"]], "in memory; &lt;m18&gt;&amp; rows", fixed = TRUE)
+  expect_match(html[["header"]], "<dd>in memory</dd>", fixed = TRUE)
+  expect_false(grepl("m18", html[["header"]], fixed = TRUE))
   expect_match(html[["header"]], "&lt;m9&gt;&amp;, version &#39;1&#39;", fixed = TRUE)
   expect_match(html[["header"]], "&lt;m12&gt;&amp;&quot;", fixed = TRUE)
   expect_match(html[["glance"]], "&lt;m13&gt;&amp;", fixed = TRUE)
@@ -526,11 +539,13 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
     rule_id = c("code_not_in_list", "code_not_in_list", "whitespace_padding"),
     rule_fingerprint = "f", stage = "conformance", layer = c(3L, 3L, 2L),
     severity = c("error", "error", "warning"), reason_code = "*", table_name = "catches",
-    column_name = "species", record_pk = c("c2", "c1", "c3"), row_number = 1:3,
-    pk_positional = FALSE, level = "record", value = c("q", strrep("v", 101L), "x"),
-    provider_key = c("plot=2", "plot=1", NA), provider_key_status = c("decoded", "partial", NA),
-    unit = "u1", area = c("a1", "*", "a2"), plot = c("p2", "*", "p1"), status = "open",
-    issue_class = "source"
+    column_name = "species", record_pk = c("c2", paste0("c1", strrep("r", 100L)), "c3"),
+    row_number = 1:3, pk_positional = FALSE, level = "record",
+    value = c("q", strrep("v", 101L), "x"), expected = c(NA, paste0("e", strrep("x", 100L)), NA),
+    provider_key = c("plot=2", paste0("plot=1", strrep("k", 100L)), NA),
+    provider_key_status = c("decoded", "partial", NA), unit = "u1",
+    area = c("a1", paste0("a", strrep("z", 100L)), "a2"), plot = c("p2", "*", "p1"),
+    status = "open", issue_class = "source"
   ), group_cols = c("unit", "area"), key_col = "plot")
   columns <- c(
     "issue_id", "severity", "rule_id", "table_name", "column_name", "provider_key",
@@ -553,25 +568,33 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
       "<table>"
     }
   )
-  issue_records(shown, c("Q", NA, NA), NULL, settings)
+  issue_records(shown, c("Q", strrep("w", 101L), NA), NULL, settings)
   expect_equal(caught$caption, "Each issue")
-  # Sorted by severity, check, table, column and key; no expected value anywhere, so no column
-  # for it (D20.42); "*" shown as W4; the long value cut (D20.39).
+  # Sorted by severity, check, table, column and key; "*" shown as W4; delivered text cut at
+  # cell_cap (D20.39), each of issue 2's: its key, record ID, value, raw value, expected value
+  # and breakdown.
   expect_equal(caught$dt, data.table::data.table(
     Severity = c("Error", "Error", "Warning"),
     Check = c("code_not_in_list", "code_not_in_list", "whitespace_padding"),
-    Table = "catches", Column = "species", `Your key` = c("plot=1", "plot=2", NA),
-    `Key status` = c("partly decoded", "decoded", NA), `Record ID` = c("c1", "c2", "c3"),
+    Table = "catches", Column = "species",
+    `Your key` = c(paste0("plot=1", strrep("k", 94L), "…"), "plot=2", NA),
+    `Key status` = c("partly decoded", "decoded", NA),
+    `Record ID` = c(paste0("c1", strrep("r", 98L), "…"), "c2", "c3"),
     Value = c(paste0(strrep("v", 100L), "…"), "q", "x"),
-    `Your value before harmonization` = c(NA, "Q", NA),
-    area = c("(not linked)", "a1", "a2"), plot = c("(not linked)", "p2", "p1")
+    `Your value before harmonization` = c(paste0(strrep("w", 100L), "…"), "Q", NA),
+    Expected = c(paste0("e", strrep("x", 99L), "…"), NA, NA),
+    area = c(paste0("a", strrep("z", 99L), "…"), "a1", "a2"),
+    plot = c("(not linked)", "p2", "p1")
   ))
   expect_equal(caught$row_class, c("sev-error", "sev-error", "sev-warning"))
   expect_equal(caught$row_cap, 500L)
   expect_equal(caught$csv_name, "u1_issues.csv") # D20.68
-  # No lineage and no key: their columns go; the CSV keeps them all.
+  # No lineage, no key and no expected value: their columns go (D20.42); the CSV keeps them all.
   bare <- issues[, columns, with = FALSE]
-  data.table::set(bare, j = c("provider_key", "provider_key_status"), value = NA_character_)
+  data.table::set(
+    bare,
+    j = c("provider_key", "provider_key_status", "expected"), value = NA_character_
+  )
   issue_records(bare, rep(NA_character_, 3L), NULL, settings)
   expect_named(caught$dt, c("Severity", "Check", "Table", "Column", "Record ID", "Value"))
 })
@@ -698,9 +721,11 @@ test_that("section_column_level lists each open column-level issue once, sorted 
     record_pk = c("*", "*", "*", "*", "c1", "*"), row_number = c(NA, NA, NA, NA, 1L, NA),
     pk_positional = c(NA, NA, NA, NA, FALSE, NA),
     level = c("column", "column", "column", "column", "record", "column"),
-    n_records = c(5L, 0L, 640L, 3L, NA, 5L), value = c(NA, NA, "A; B", "<h9>", "x", NA),
-    expected = c("numeric", NA, NA, NA, NA, NA),
-    unit = c("u1", "*", "u1", "u1", "u1", "u1"), area = c("a1", "*", "*", "a2", "a1", "a1"),
+    n_records = c(5L, 0L, 640L, 3L, NA, 5L),
+    value = c(NA, NA, "A; B", paste0("<h9>", strrep("h", 100L)), "x", NA),
+    expected = c(paste0("numeric", strrep("n", 100L)), NA, NA, NA, NA, NA),
+    unit = c("u1", "*", "u1", "u1", "u1", "u1"),
+    area = c("a1", "*", "*", paste0("a2", strrep("z", 100L)), "a1", "a1"),
     plot = "*", root_issue_id = c(NA, NA, NA, NA, NA, 1L),
     status = c(rep("open", 5L), "not_evaluated"),
     issue_class = c(
@@ -728,7 +753,8 @@ test_that("section_column_level lists each open column-level issue once, sorted 
   # By severity, then class (source, harmonization, unclassified), table and column; the
   # record-level and the not-evaluated issues are elsewhere. A unit rule's "*" issue,
   # column_missing's, shows no record count (D16.8, D20.122); the unit's own
-  # undeclared_code_set issue keeps its count (D20.124).
+  # undeclared_code_set issue keeps its count (D20.124). A long value, expected value and
+  # breakdown are cut at cell_cap (D20.39).
   expect_equal(caught$dt, data.table::data.table(
     Severity = c("Error", "Error", "Error", "Warning"),
     Class = c(
@@ -742,8 +768,9 @@ test_that("section_column_level lists each open column-level issue once, sorted 
     ),
     Table = c("catches", "hauls", "catches", "catches"),
     Column = c("haul_id", "gear", "length", "species"), Records = c(3L, NA, 5L, 640L),
-    Value = c("<h9>", NA, NA, "A; B"), Expected = c(NA, NA, "numeric", NA),
-    area = c("a2", "(not linked)", "a1", "(not linked)")
+    Value = c(paste0("<h9>", strrep("h", 96L), "…"), NA, NA, "A; B"),
+    Expected = c(NA, NA, paste0("numeric", strrep("n", 93L), "…"), NA),
+    area = c(paste0("a2", strrep("z", 98L), "…"), "(not linked)", "a1", "(not linked)")
   ))
   expect_equal(caught$row_class, c("sev-error", "sev-error", "sev-error", "sev-warning"))
   expect_equal(caught$row_cap, 500L)
@@ -782,18 +809,24 @@ test_that("section_not_evaluated sums records by check and reason over the group
   ), group_cols = c("unit", "area"))
   # As route_unit() works it out (D20.62): the records not evaluated that no issue holds.
   data.table::set(results, j = "n_not_evaluated_own", value = c(1L, 0L, 0L, 1L, 0L, 1L))
+  # Two not-evaluated issues of one check, column and root check, in a1 and a2: issue 4's five
+  # records and issue 6's one are summed, 6.
   issues <- new_issues(list(
     reaches_other_unit = FALSE,
-    issue_id = 1:4, run_id = run_id, run_scope = "package",
-    rule_id = c("coercion_loss", "value_above_max", "coercion_loss", "value_above_max"),
-    rule_fingerprint = "f", stage = "conformance", layer = c(1L, 3L, 1L, 3L),
+    issue_id = 1:6, run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "coercion_loss", "value_above_max", "coercion_loss", "value_above_max", "coercion_loss",
+      "value_above_max"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(1L, 3L, 1L, 3L, 1L, 3L),
     severity = "error", reason_code = "*", table_name = "catches",
-    column_name = c("weight", "weight", "length", "length"),
-    record_pk = c("c1", "c1", "*", "*"), row_number = c(1L, 1L, NA, NA),
-    pk_positional = c(FALSE, FALSE, NA, NA), level = c("record", "record", "column", "column"),
-    n_records = c(NA, NA, 5L, 5L), unit = "u1", area = "a1", plot = "p1",
-    root_issue_id = c(NA, 1L, NA, 3L), status = c("open", "not_evaluated", "open", "not_evaluated"),
-    issue_class = "unclassified"
+    column_name = c("weight", "weight", "length", "length", "length", "length"),
+    record_pk = c("c1", "c1", "*", "*", "c7", "c7"), row_number = c(1L, 1L, NA, NA, 7L, 7L),
+    pk_positional = c(FALSE, FALSE, NA, NA, FALSE, FALSE),
+    level = c("record", "record", "column", "column", "record", "record"),
+    n_records = c(NA, NA, 5L, 5L, NA, NA), unit = "u1", area = rep(c("a1", "a2"), c(4L, 2L)),
+    plot = "p1", root_issue_id = c(NA, 1L, NA, 3L, NA, 5L),
+    status = rep(c("open", "not_evaluated"), 3L), issue_class = "unclassified"
   ), group_cols = c("unit", "area"), key_col = "plot")
   metadata <- lapply(metadata_schema(), empty_table)
   metadata$self_test <- complete_table(list(
@@ -846,14 +879,14 @@ test_that("section_not_evaluated sums records by check and reason over the group
       "Not run: no record could be checked"
     ),
     # Summed over the unit's groups (D20.23); a unit rule counts no records (D16.8).
-    Records = c(1L, 0L, 5L, 1L, 1L, 3L, NA, 3L)
+    Records = c(1L, 0L, 6L, 1L, 1L, 3L, NA, 3L)
   ))
   # D20.91: capped by the section itself, its line naming no file. The rows with the most
-  # records stay, shown in the section's order: 5, 3 and 3, not the first three rows.
+  # records stay, shown in the section's order: 6, 3 and 3, not the first three rows.
   settings$row_cap <- 3L
   html <- as.character(section_not_evaluated(tables, NULL, settings))
   expect_equal(caught$dt$Check, c("value_above_max", "value_above_max", "pk_duplicate"))
-  expect_equal(caught$dt$Records, c(5L, 3L, 3L))
+  expect_equal(caught$dt$Records, c(6L, 3L, 3L))
   expect_null(caught$row_cap)
   expect_match(html, "<p>Showing 3 of 8 rows.</p>", fixed = TRUE)
   # A unit rule's row, which counts no records, ranks as 0, and rows of as many records rank in
@@ -861,7 +894,7 @@ test_that("section_not_evaluated sums records by check and reason over the group
   settings$row_cap <- 7L
   section_not_evaluated(tables, NULL, settings)
   expect_false("column_missing" %in% caught$dt$Check)
-  expect_equal(caught$dt$Records, c(1L, 0L, 5L, 1L, 1L, 3L, 3L))
+  expect_equal(caught$dt$Records, c(1L, 0L, 6L, 1L, 1L, 3L, 3L))
   # Nothing to list: W159, unless the self-test lists rules.
   tables$results <- results[results$status != "not_run"]
   data.table::set(tables$results, j = c("n_unchecked", "n_not_evaluated_own"), value = 0L)

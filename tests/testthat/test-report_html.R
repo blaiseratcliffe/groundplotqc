@@ -511,7 +511,10 @@ test_that("html_bar draws one bar per value, as wide as its share of max (11.2, 
   max_wants <- "`max` must be one number, not NA, that no value exceeds."
   expect_error(html_bar(3L, 2L, "a"), max_wants, fixed = TRUE)
   expect_error(html_bar(1L, c(2L, 3L), "a"), max_wants, fixed = TRUE)
-  expect_error(html_bar(1:2, 2L, "a"), "`label` must be text, one label per value")
+  expect_error(
+    html_bar(1:2, 2L, "a"), "`label` must be text, one label per value.",
+    fixed = TRUE
+  )
   class_wants <- paste(
     "`bar_class` must be NULL, one class or one per value, each NA or a lower-case name of",
     "letters, digits and hyphens."
@@ -542,7 +545,10 @@ test_that("html_facts lists facts and html_details folds a part, both escaped (D
     folded, "<details><summary>Settings (2) &lt;x&gt;</summary><p>a</p><p>b</p></details>"
   )
   for (bad in list(c("a", "b"), NA_character_, 1)) {
-    expect_error(html_details(bad, ""), "`summary` must be one string", info = deparse(bad))
+    expect_error(
+      html_details(bad, ""), "`summary` must be one string.",
+      fixed = TRUE, info = deparse(bad)
+    )
   }
 })
 
@@ -579,8 +585,8 @@ test_that("html_page: a masthead with its line, the contents beside the sections
   )
   for (bad in list(c("a", "b"), NA_character_, 1)) {
     expect_error(
-      html_page("T", sections, subtitle = bad), "`subtitle` must be one string or NULL",
-      info = deparse(bad)
+      html_page("T", sections, subtitle = bad), "`subtitle` must be one string or NULL.",
+      fixed = TRUE, info = deparse(bad)
     )
   }
 })

@@ -152,10 +152,11 @@
 #'     `change_cause`. The columns a conformance run doesn't fill are NA. `reaches_other_unit`
 #'     is TRUE where the issue holds a value read from a record of another report unit, or
 #'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
-#'     unit's key reached through the keys, a side that `key_incoherent` compared, or one of
-#'     `undeclared_code_set`'s values from records with no unit. For a column-level issue it
-#'     is TRUE when any record it covers is. It is FALSE in a run without group columns, and
-#'     isn't part of the fingerprint.
+#'     unit's key reached through the keys, a side that `key_incoherent` compared, one of
+#'     `undeclared_code_set`'s values from records with no unit, or a value
+#'     `design_geometry_inconsistent` compared from a record of another unit or with no unit.
+#'     For a column-level issue it is TRUE when any record it covers is. It is FALSE in a run
+#'     without group columns, and isn't part of the fingerprint.
 #'   - `corrections`: an empty table.
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
@@ -427,8 +428,8 @@ unit_outcome <- function(rule_id, table_name, column_name, failed, n_records,
 #' or one per failing row), the rows the rule didn't check, never one that fails (D18.21), the
 #' rows it counts as not evaluated, the rules of its own layer whose failures mask it (D18.32),
 #' and the rows whose values it read from a record of another report unit, or of one whose
-#' unit is "*", which mark their issues reaches_other_unit (key_incoherent's sides, D18.89,
-#' D20.10)
+#' unit is "*", which mark their issues reaches_other_unit (key_incoherent's sides,
+#' design_geometry_inconsistent's groups; D18.89, D20.10, D20.125)
 #'
 #' A `not_evaluated` row counts in n_not_evaluated with no issue row and no root: a value the
 #' rule can't judge without an input it lacks, such as a foreign key's sentinel without a
@@ -1113,7 +1114,8 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   # any rule's mask a later rule of its own layer that names it in masked_by (D18.32).
   # Failures: column-level per group where 6.3 says so, record-level otherwise.
   # Each record's reaches_other_unit mark (D20.10): its own, from conformance_input(), or the
-  # rule's for it (key_incoherent's sides). A copy is made only where the rule marks rows.
+  # rule's for it (key_incoherent's sides, design_geometry_inconsistent's groups, D20.125). A
+  # copy is made only where the rule marks rows.
   other <- grouping$reaches_other_unit
   if (length(outcome$reaches_other_unit) > 0L) {
     other[outcome$reaches_other_unit] <- TRUE

@@ -311,6 +311,12 @@ test_that("planted vs caught: each block caught by its rule with its witness, it
       hit$value[match(pks[[1L]], hit$record_pk)], row$witness,
       info = row$defect_id
     )
+    # No hit holds a value read from another unit's records (D20.10, D20.125).
+    expect_false(any(hit$reaches_other_unit), info = row$defect_id)
+    # A "*" hit once per contributor (D20.11): two hits, two contributors.
+    if (identical(pks, c("*", "*"))) {
+      expect_equal(anyDuplicated(hit$magp_contributor_id), 0L, info = row$defect_id)
+    }
     cascade <- split_joined(row$cascade_rule_ids)
     allowed <- c(row$rule_id, cascade)
     expect_equal(setdiff(caught$rule_id, allowed), character(), info = row$defect_id)

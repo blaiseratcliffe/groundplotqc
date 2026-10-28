@@ -2516,3 +2516,32 @@ test_that("a repeated name in design_geometry_columns stops pre-flight and the r
     fixed = TRUE
   )
 })
+
+# ---- M7a's final fix wave ----
+
+test_that("design_geometry_inconsistent marks a group's issues where it spans units (D20.125)", {
+  settings <- list(
+    design_geometry_table = "hauls", design_geometry_by = "gear",
+    design_geometry_columns = "minutes"
+  )
+  # Each open issue's record and mark, in a run grouped by water body unless told otherwise.
+  marks <- function(tables, group_cols = "water_body") {
+    results <- gpq_check_conformance(
+      tables, fx_fish_spec(),
+      group_cols = group_cols, settings = settings, layers = 4
+    )
+    found <- opened(results, "design_geometry_inconsistent")
+    paste(found$record_pk, found$reaches_other_unit)
+  }
+  # GN's hauls 1 (LK) and 4 (RV) disagree on minutes: a group of two units, every issue marked.
+  fish <- fx_fish_clean()
+  expect_identical(marks(fish), c("hauls_1 TRUE", "hauls_4 TRUE"))
+  # Without group columns there is no unit, and nothing is marked.
+  expect_identical(marks(fish, NULL), c("hauls_1 FALSE", "hauls_4 FALSE"))
+  # Haul 4 given EF: RV's hauls 3 and 4 disagree, a group of one unit, unmarked.
+  one_unit <- edited("hauls", "gear", 4L, "EF")
+  expect_identical(marks(one_unit), c("hauls_3 FALSE", "hauls_4 FALSE"))
+  # Haul 3 names no station, so its unit is "*": the group holds a record with no unit.
+  starred <- edited("hauls", "station_id", 3L, NA_character_, fish = one_unit)
+  expect_identical(marks(starred), c("hauls_3 TRUE", "hauls_4 TRUE"))
+})

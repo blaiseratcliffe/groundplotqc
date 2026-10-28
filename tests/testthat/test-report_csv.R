@@ -41,6 +41,12 @@ test_that("split_provider_key splits decoded and partial keys, every other key e
   expect_identical(parts$key_c, c("-1", NA))
   # No key that splits: no columns.
   expect_identical(ncol(split_provider_key(c("C-77", NA), c("raw", "fallback_pk"))), 0L)
+  # A key repeated, as for several issues of one record: each row takes its key's parts.
+  repeated <- c("a.b=1; c=2", "a.b=9", "a.b=1; c=2", NA, "a.b=9")
+  parts <- split_provider_key(repeated, c("decoded", "decoded", "decoded", NA, "partial"))
+  expect_named(parts, c("key_a.b", "key_c"))
+  expect_identical(parts$key_a.b, c("1", "9", "1", NA, "9"))
+  expect_identical(parts$key_c, c("2", NA, "2", NA, NA))
 })
 
 test_that("guard_csv_text guards a cell a spreadsheet would read as a formula, no other (D20.32)", {
@@ -242,28 +248,34 @@ test_that("every text column of the CSV is guarded (D20.36)", {
   expect_identical(csv[["key_@a"]], c(NA, "'+1"))
 })
 
-test_that("the CSV reads back cell for cell from fwrite(bom = TRUE), after its BOM (D8.18)", {
+test_that("the CSV gpq_build_reports() writes reads back cell for cell, after its BOM (D8.18)", {
   local_results_registry()
   x <- fx_report_results()
-  issues <- data.table::copy(x$issues)
-  # A value marked latin1, as delivered text can be.
+  x$issues <- data.table::copy(x$issues)
+  # A value marked latin1, as delivered text can be, on table_missing's issue, which goes to
+  # both units.
   latin <- "caf\xe9"
   Encoding(latin) <- "latin1"
-  data.table::set(issues, i = 1L, j = "value", value = latin)
-  csv <- provider_csv_table(issues, c("unit", "area"), "plot")
-  path <- withr::local_tempfile(fileext = ".csv")
-  # As gpq_build_reports() writes it (task 11): UTF-8 whatever a cell's mark, LF line ends.
-  data.table::fwrite(csv, path, bom = TRUE, encoding = "UTF-8", eol = "\n")
-  expect_identical(readBin(path, "raw", 3L), as.raw(c(0xef, 0xbb, 0xbf)))
-  back <- data.table::fread(
-    path,
-    colClasses = "character", na.strings = "", strip.white = FALSE, encoding = "UTF-8"
-  )
-  # fread() keeps a quoted cell's doubled quotes, as gpq_read_results() undoes them.
-  undo_doubled_quotes(back)
-  expect_identical(names(back), names(csv))
-  for (column in names(csv)) {
-    expect_identical(back[[column]], as.character(csv[[column]]), info = column)
+  data.table::set(x$issues, i = 1L, j = "value", value = latin)
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  files <- gpq_build_reports(x, output)
+  units <- c("100", "110")
+  for (unit in units) {
+    path <- files[names(files) == unit][[2L]]
+    csv <- provider_csv_table(route_unit(x, unit, units)$issues, c("unit", "area"), "plot")
+    expect_identical(readBin(path, "raw", 3L), as.raw(c(0xef, 0xbb, 0xbf)), info = unit)
+    back <- data.table::fread(
+      path,
+      colClasses = "character", na.strings = "", strip.white = FALSE, encoding = "UTF-8"
+    )
+    # fread() keeps a quoted cell's doubled quotes, as gpq_read_results() undoes them.
+    undo_doubled_quotes(back)
+    expect_identical(names(back), names(csv), info = unit)
+    for (column in names(csv)) {
+      expect_identical(back[[column]], as.character(csv[[column]]), info = paste(unit, column))
+    }
+    # The latin1 value comes back as its UTF-8 text.
+    expect_true("café" %in% back$value, info = unit)
   }
-  expect_true("café" %in% back$value)
 })

@@ -2,8 +2,9 @@
 # D20.10, D20.11, D20.14, D20.23, D20.24, D20.29, D20.37, D20.48, D20.54), on the hand-made run
 # of two units fx_report_results() (D20.58), each unit's file name (D20.8, D20.70), and
 # gpq_build_reports(), which builds each unit's report and issues CSV into a saved run's folder
-# (D20.13, D20.25, D20.26, D20.29, D20.38, D20.48, D20.114, D20.116, D20.120). Every test runs
-# on CRAN (D20.3) but the worst case's size, which is skipped there (D20.38).
+# (D20.13, D20.25, D20.26, D20.29, D20.38, D20.48, D20.114, D20.116, D20.120, D20.125,
+# D20.126). Every test runs on CRAN (D20.3) but the worst case's size, which is skipped there
+# (D20.38).
 
 test_that("a unit rule's \"*\" row and issue go to every unit (D16.8, D16.16, D20.24)", {
   local_results_registry()
@@ -378,6 +379,10 @@ test_that("group columns named with a join's operators route as any others (16.2
     renamed <- route_unit(y, unit, units)
     expect_identical(renamed$issues$issue_id, routed$issues$issue_id)
     expect_identical(renamed$results$n_not_evaluated_own, routed$results$n_not_evaluated_own)
+    # Every group column after the first is blanked in the results rows, both of the run's
+    # three (D20.77).
+    expect_true(all(is.na(renamed$results[["area==2"]])), info = unit)
+    expect_true(all(is.na(renamed$results[["cells"]])), info = unit)
   }
 })
 
@@ -489,6 +494,22 @@ test_that("unit_file_name() folds letter case in ASCII, whatever the locale's ru
 test_that("gpq_build_reports writes each unit's report and CSV, holding only that unit's own", {
   local_results_registry()
   results <- fx_report_results()
+  # A coordinate on a source issue of each unit, a latitude of 100's and a longitude of 110's,
+  # added here so the fixture's counts are unchanged (D8.19 (2), D20.34).
+  coordinates <- new_issues(list(
+    issue_id = 21:22, run_id = results$metadata$run$run_id, run_scope = "package",
+    rule_id = "coordinate_out_of_bounds", rule_fingerprint = "f1", stage = "conformance",
+    layer = 3L, severity = "error", reason_code = "*", table_name = "stations",
+    column_name = c("latitude", "longitude"), record_pk = c("ST1", "ST2"), row_number = 1:2,
+    pk_positional = FALSE, level = "record", value = c("51.0447331", "-114.0718829"),
+    unit = c("100", "110"), area = c("A-100-1", "A-110-1"), plot = c("P-100-1", "P-110-1"),
+    reaches_other_unit = FALSE, status = "open", issue_class = "source",
+    class_basis = "override"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  fingerprints <- issue_fingerprint(coordinates)
+  data.table::set(coordinates, j = "fingerprint", value = fingerprints$fingerprint)
+  data.table::set(coordinates, j = "fingerprint_pk", value = fingerprints$fingerprint_pk)
+  results$issues <- rbind(results$issues, coordinates)
   output <- withr::local_tempdir()
   gpq_write_results(results, output)
   # A raw value on the cell of each unit's source issue and of a marked issue, built here so the
@@ -508,12 +529,13 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
   expect_equal(names(files), rep(units, each = 2L))
   expect_true(all(file.exists(files)))
   # Each unit's own planted values appear in its files and never in the other's: record IDs,
-  # values, provider keys, group values, the problem unit's key, results-row examples (D20.23).
-  # The values fx_report_results() lists: each unit's own, and those only "*" rows, marked
-  # issues and a results row's examples hold, which reach neither unit of two.
+  # values, coordinates, provider keys, group values, the problem unit's key, results-row
+  # examples (D20.23). The values fx_report_results() lists, with the coordinates planted
+  # above: each unit's own, and those only "*" rows, marked issues and a results row's examples
+  # hold, which reach neither unit of two.
   own <- list(
-    "100" = c("AB-secret", "A-100-1", "P-100-1", "P-100-2", "ST-100-1"),
-    "110" = c("BC-secret", "A-110-1", "P-110-1", "ST-110-2")
+    "100" = c("AB-secret", "A-100-1", "P-100-1", "P-100-2", "ST-100-1", "51.0447331"),
+    "110" = c("BC-secret", "A-110-1", "P-110-1", "ST-110-2", "114.0718829")
   )
   nowhere <- c(
     "ZZ-secret", "S-110-secret", "P-110-9", "C-100-5", "P-100-3", "A-ZZ-1", "P-110-2",
@@ -529,6 +551,11 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
     # The CSV starts with UTF-8's byte-order mark, and the page loads nothing from elsewhere.
     expect_identical(readBin(files[[at[[2L]]]], "raw", 3L), as.raw(c(0xef, 0xbb, 0xbf)))
     expect_false(grepl("https?://|src=|<link", page))
+    # The assembled page escapes what it shows: 110's under-review issue holds "<script>&".
+    expect_false(grepl("<script>&", page, fixed = TRUE), info = unit)
+    if (unit == "110") {
+      expect_true(grepl("&lt;script&gt;&amp;", page, fixed = TRUE))
+    }
     for (value in shown[[unit]]) {
       expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value, "html"))
     }
@@ -715,6 +742,57 @@ test_that("a Layer 0 run of two units builds both reports, each with the unit-ru
   expect_equal(unique(names(files)), units)
   for (csv in files[grepl("_issues[.]csv$", files)]) {
     expect_true("column_missing" %in% data.table::fread(csv)$rule_id)
+  }
+  # Section 1 shows how each table given in memory came, never the run's count of its rows,
+  # the whole delivery's (D20.126).
+  for (page in files[grepl("[.]html$", files)]) {
+    html <- readChar(page, file.size(page), useBytes = TRUE)
+    for (table in names(tables)) {
+      expect_match(
+        html, sprintf("<dt>Table: %s</dt><dd>in memory</dd>", table),
+        fixed = TRUE
+      )
+    }
+    expect_false(grepl("in memory; ", html, fixed = TRUE))
+  }
+})
+
+test_that("a design group spanning two units reaches neither unit's report or CSV (D20.125)", {
+  fish <- fx_fish_clean()
+  # Hauls 5 (LK) and 6 (RV) copy hauls 2 and 3 with dates of their own. By gear: GN holds LK's
+  # haul 1 and RV's haul 4, TN LK's hauls 2 and 5, and EF RV's hauls 3 and 6, each group's
+  # dates disagreeing.
+  more <- fish$hauls[2:3]
+  data.table::set(more, j = c("haul_id", "haul_date"), value = list(
+    c("hauls_5", "hauls_6"), c("2020-07-15", "2020-08-21")
+  ))
+  fish$hauls <- rbind(fish$hauls, more)
+  settings <- list(
+    design_geometry_table = "hauls", design_geometry_by = "gear",
+    design_geometry_columns = "haul_date"
+  )
+  results <- gpq_check_conformance(
+    fish, fx_fish_spec(),
+    group_cols = "water_body", settings = settings, layers = 4
+  )
+  gpq_classify_issues(results$issues, NULL)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output)
+  # Each unit's own dates, compared in a group of its own, are in its files; the other unit's,
+  # and GN's two, whose issues are marked, are in neither unit's.
+  own <- list(LK = c("2020-06-02", "2020-07-15"), RV = c("2020-06-03", "2020-08-21"))
+  spanning <- c("2020-06-01", "2020-06-04")
+  for (unit in names(own)) {
+    for (path in files[names(files) == unit]) {
+      text <- readChar(path, file.size(path), useBytes = TRUE)
+      for (value in own[[unit]]) {
+        expect_true(grepl(value, text, fixed = TRUE), info = paste(unit, value, path))
+      }
+      for (value in c(own[[setdiff(names(own), unit)]], spanning)) {
+        expect_false(grepl(value, text, fixed = TRUE), info = paste(unit, value, path))
+      }
+    }
   }
 })
 
@@ -942,11 +1020,15 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
   expect_lt(size, 10 * 2^20)
   html <- readChar(page, size, useBytes = TRUE)
   # Each long cell shows cell_cap characters then the ellipsis, escaped six bytes each, the raw
-  # values among them.
+  # values among them, and no cell is left uncut: no run of more than cell_cap quotes.
   cell <- enc2utf8(paste0(strrep("&quot;", 100L), "\U2026"))
   expect_true(grepl(cell, html, fixed = TRUE, useBytes = TRUE))
+  expect_false(grepl(strrep("&quot;", 101L), html, fixed = TRUE))
+  # The "Each issue" table's row_cap rows each show their raw value, cut.
   raw <- enc2utf8(paste0("R", strrep("&quot;", 99L), "\U2026"))
-  expect_true(grepl(raw, html, fixed = TRUE, useBytes = TRUE))
+  expect_equal(
+    lengths(regmatches(html, gregexpr(raw, html, fixed = TRUE, useBytes = TRUE))), n - 1L
+  )
   # The charts by area and by zone, row_cap + 1 values each, show row_cap bars each and say the
   # CSV has them all (D20.90); the chart by table has one bar.
   bars <- gregexpr("<div class=\"bar\">", html, fixed = TRUE, useBytes = TRUE)[[1L]]

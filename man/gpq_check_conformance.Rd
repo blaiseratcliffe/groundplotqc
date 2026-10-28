@@ -82,10 +82,11 @@ or \code{not_evaluated}), \code{issue_class}, \code{class_basis}, \code{script_f
 \code{change_cause}. The columns a conformance run doesn't fill are NA. \code{reaches_other_unit}
 is TRUE where the issue holds a value read from a record of another report unit, or
 from a record whose report unit is \code{"*"}. Such a value is a group value or the problem
-unit's key reached through the keys, a side that \code{key_incoherent} compared, or one of
-\code{undeclared_code_set}'s values from records with no unit. For a column-level issue it
-is TRUE when any record it covers is. It is FALSE in a run without group columns, and
-isn't part of the fingerprint.
+unit's key reached through the keys, a side that \code{key_incoherent} compared, one of
+\code{undeclared_code_set}'s values from records with no unit, or a value
+\code{design_geometry_inconsistent} compared from a record of another unit or with no unit.
+For a column-level issue it is TRUE when any record it covers is. It is FALSE in a run
+without group columns, and isn't part of the fingerprint.
 \item \code{corrections}: an empty table.
 \item \code{metadata}: the tables of \verb{metadata/} in a run folder.
 }

@@ -16,13 +16,13 @@
 #'
 #' The facts, as a list: the report unit with its column (none without group columns, D20.29),
 #' the run ID, its start and finish in UTC, one row per input table with its file and SHA-256
-#' or, for a table given in memory or read from a connection, how it came and what the run
-#' recorded of it, the rule set's name and version (none without a rule set), the package
-#' version, the git commit (or that there is none) and the R version. Then the specification
-#' files the run read from a file (file and date) and the resolved settings (value and the tier
-#' each came from; only the settings setting_definitions() names, a severity entry by its part
-#' before the colon, D20.68), each in a part folded until clicked. Never the run's list of
-#' units, its pre-flight, its clashes or the specification files' SHA-256 (D20.40).
+#' or, for a table given in memory or read from a connection, only how it came (D20.126), the
+#' rule set's name and version (none without a rule set), the package version, the git commit
+#' (or that there is none) and the R version. Then the specification files the run read from a
+#' file (file and date) and the resolved settings (value and the tier each came from; only the
+#' settings setting_definitions() names, a severity entry by its part before the colon,
+#' D20.68), each in a part folded until clicked. Never the run's list of units, its pre-flight,
+#' its clashes or the specification files' SHA-256 (D20.40).
 #' @noRd
 section_header <- function(tables, text, settings) {
   lang <- settings$lang
@@ -39,13 +39,11 @@ section_header <- function(tables, text, settings) {
   )
   facts <- c(tables$unit, run$run_id, utc(run$run_start), utc(run$run_end))
   # Each input table, recorded as "tables:<name>" (R/check_conformance.R): a file's name and
-  # SHA-256, else how the table came ("in memory" or a connection) with what the run recorded
-  # of it, its rows and, for a connection, the database's table and the driver.
+  # SHA-256, else only how the table came ("in memory" or a connection), never what else the
+  # run recorded of it, such as its rows, the whole delivery's, or a connection's database table
+  # and driver (D20.126).
   inputs <- metadata$inputs
   hashed <- !is.na(inputs$sha256)
-  how <- fifelse(
-    is.na(inputs$detail), inputs$file, paste(inputs$file, inputs$detail, sep = "; ")
-  )
   shown <- character(nrow(inputs))
   shown[hashed] <- report_text(
     "report_header_input_file", lang,
@@ -53,7 +51,7 @@ section_header <- function(tables, text, settings) {
   )
   shown[!hashed] <- report_text(
     "report_header_input_detail", lang,
-    detail = how[!hashed], text = text
+    detail = inputs$file[!hashed], text = text
   )
   terms <- c(terms, report_text(
     "report_header_table", lang,

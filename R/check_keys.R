@@ -441,10 +441,12 @@ disagreeing_rows <- function(groups, value) {
 #' `subplot_label_columns` or `design_signature_columns`, D18.90), one not_run row (no_input)
 #' without them: `design_geometry_inconsistent` per compared column, every record of a
 #' `design_geometry_by` group holding more than one distinct value, expected the group's values
-#' as given; `subplot_label_ambiguous` on the last of `subplot_label_columns`, every record
-#' whose values there a record of another PK holds, the key compared by its parts as
-#' pk_duplicate compares them (D18.104), a record whose key is NA, blank or a missing-value
-#' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
+#' as given, each record of a group that holds records of more than one report unit, or one
+#' whose unit is "*", marked reaches_other_unit (D18.89, D20.125); `subplot_label_ambiguous` on
+#' the last of `subplot_label_columns`, every record whose values there a record of another PK
+#' holds, the key compared by its parts as pk_duplicate compares them (D18.104), a record whose
+#' key is NA, blank or a missing-value code a key can't hold not grouped (R45), not_run
+#' (no_column) without a column of the key;
 #' `design_duplicate_signature` on the parent key `design_signature_by` names: every parent
 #' record that has the same rows in the table as another parent record of its report unit, each
 #' row read by its `design_signature_columns` values written as text and the rows sorted,
@@ -965,6 +967,21 @@ check_keys <- function(input, context) {
             fail <- disagreeing_rows(groups, as_compared(x, row))
             text <- value_text(x[fail])
             at <- groups[fail]
+            # Every record of a failing group fails, so its failing records are the group. A
+            # group holding records of more than one report unit, or one whose unit is "*",
+            # marks each of its records reaches_other_unit, since its expected lists their
+            # values (D18.89, D20.125); none without group columns. Each failing record's unit
+            # is read by its group, the failing records only (16.2).
+            spanning <- integer()
+            if (length(input$group_cols) > 0L && length(fail) > 0L) {
+              held <- input$groups[[table]]
+              unit <- held$values[[input$group_cols[[1L]]]][held$row_group[fail]]
+              seen <- setDT(list(group = at, unit = unit))
+              seen <- seen[!duplicated(seen)]
+              mixed <- tabulate(seen$group, max(at)) > 1L
+              mixed[seen$group[seen$unit %chin% "*"]] <- TRUE
+              spanning <- fail[mixed[at]]
+            }
             pairs <- setDT(list(group = at, value = text))
             distinct <- pairs[!duplicated(pairs)]
             distinct_text <- distinct$value
@@ -993,7 +1010,8 @@ check_keys <- function(input, context) {
             listed <- with_rest(unname(shown), count - pmin(count, most))
             record_outcome(
               "design_geometry_inconsistent", table, attribute, fail, text,
-              listed[match(at, as.integer(names(by_group)))]
+              listed[match(at, as.integer(names(by_group)))],
+              reaches_other_unit = spanning
             )
           }
         )
