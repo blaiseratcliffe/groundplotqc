@@ -35,8 +35,10 @@
 #' Corrections: those of the routed issues. Lineage (D20.17, D20.61, D20.65): `lineage` is NULL
 #' or the lineage input as gpq_build_reports() reads it (`table_name`, `record_pk`,
 #' `column_name`, `raw_value`, ...); only its rows whose table, record and column are a routed
-#' issue's cell are kept, so a builder never sees the whole input. An issue whose `record_pk`
-#' is NA names no cell and takes none. Returns
+#' issue's cell are kept, each once and in the input's order, so a builder never sees the whole
+#' input. Only a record-level issue whose key names one record (`pk_positional` FALSE) is on a
+#' cell: a column-level issue, and one whose key is missing or repeats, takes none (D20.117).
+#' Returns
 #' `list(results, issues, corrections, lineage)`, new data.tables, `lineage` NULL when none is
 #' given.
 #' @noRd
@@ -47,15 +49,20 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   cells <- c("rule_id", "table_name", "column_name", group_cols, "reason_code")
   # The records the not-evaluated issues hold, summed per results cell over the whole run
   # (one grouped sum), then met with the results rows by one key join (key_matches(), whose
-  # own column names keep a caller's group column clear of the join's syntax) (16.2).
+  # own column names keep a caller's group column clear of the join's syntax) (16.2). The
+  # cells are renamed first, so no caller's group column (one named cells, say) meets a name
+  # of the grouping's own.
   held <- which(issues$status == "not_evaluated")
   counted <- issues[held, cells, with = FALSE]
+  cell_names <- sprintf("cell_%d", seq_along(cells))
+  setnames(counted, cells, cell_names)
   set(counted, j = "n_records", value = fifelse(
     issues$level[held] == "column", issues$n_records[held], 1L
   ))
-  counted <- counted[, lapply(.SD, sum), by = cells, .SDcols = "n_records"]
+  counted <- counted[, lapply(.SD, sum), by = cell_names, .SDcols = "n_records"]
   pairs <- key_matches(
-    lapply(cells, function(column) results[[column]]), seq_len(nrow(results)), counted, cells
+    lapply(cells, function(column) results[[column]]), seq_len(nrow(results)), counted,
+    cell_names
   )
   accounted <- integer(nrow(results))
   accounted[pairs$row] <- counted$n_records[pairs$at]
@@ -81,17 +88,21 @@ route_unit <- function(x, unit, units, lineage = NULL) {
     registry <- rule_registry()
     unit_rule <- function(rule_id) registry$unit[match(rule_id, registry$rule_id)] %in% TRUE
     none <- function(count) fcoalesce(count, 0L) == 0L
+    # A "*" row's case is read on the "*" rows only (16.2).
     value <- results[[unit_col]]
-    counts_none <- none(results$n_checked) & none(results$n_not_evaluated) &
-      none(results$n_unchecked)
-    take_results <- value == unit |
-      (value == "*" & (one | unit_rule(results$rule_id) | counts_none))
+    take_results <- value == unit
+    star <- which(value == "*")
+    counts_none <- none(results$n_checked[star]) & none(results$n_not_evaluated[star]) &
+      none(results$n_unchecked[star])
+    take_results[star] <- one | unit_rule(results$rule_id[star]) | counts_none
     value <- issues[[unit_col]]
-    take_issues <- if (one) {
-      value %chin% c(unit, "*")
+    if (one) {
+      take_issues <- value %chin% c(unit, "*")
     } else {
-      issues$reaches_other_unit %in% FALSE &
-        (value == unit | (value == "*" & unit_rule(issues$rule_id)))
+      take_issues <- value == unit
+      star <- which(value == "*")
+      take_issues[star] <- unit_rule(issues$rule_id[star])
+      take_issues <- take_issues & issues$reaches_other_unit %in% FALSE
     }
   }
   routed <- results[take_results]
@@ -103,16 +114,20 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   routed_issues <- issues[take_issues]
   take_corrections <- x$corrections$issue_id %in% routed_issues$issue_id
   # A raw value goes only to the report of a unit whose issue is on its cell (D20.17, D20.61).
+  # Only a record-level issue whose key names one record (`pk_positional` FALSE) is on a cell:
+  # a column-level issue's "*", a missing key and a key that repeats could each pair it with
+  # another unit's raw value (D20.117). The cells are met by one key join (key_matches(), which
+  # matches no NA), and only the matched rows are copied, in the input's order (16.2).
   routed_lineage <- NULL
   if (!is.null(lineage)) {
     cell_columns <- c("table_name", "record_pk", "column_name")
-    # A record with no key names no cell, so its issue takes no lineage row: the join would
-    # pair its NA with every blank record_pk, another unit's among them (D20.61).
-    keyed <- which(!is.na(routed_issues$record_pk))
-    routed_lineage <- as.data.table(lineage)[
-      unique(routed_issues[keyed, cell_columns, with = FALSE]),
-      on = cell_columns, nomatch = NULL
-    ]
+    keyed <- which(routed_issues$level == "record" & routed_issues$pk_positional %in% FALSE)
+    pairs <- key_matches(
+      lapply(cell_columns, function(column) lineage[[column]]), seq_len(nrow(lineage)),
+      unique(routed_issues[keyed, cell_columns, with = FALSE]), cell_columns
+    )
+    rows <- sort(pairs$row)
+    routed_lineage <- setDT(lapply(lineage, function(column) column[rows]))
   }
   list(
     results = routed, issues = routed_issues, corrections = x$corrections[take_corrections],

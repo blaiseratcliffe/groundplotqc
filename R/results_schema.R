@@ -96,7 +96,7 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
   }
   # The provider issues CSV names each part of a provider key key_<label> (D20.31), so a
   # caller's column can't start with key_ (D20.76), which has its own error (D20.95).
-  prefixed <- grep("^key_", c(group_cols, key_col), value = TRUE)
+  prefixed <- grep("^key_", unique(c(group_cols, key_col)), value = TRUE)
   if (length(prefixed) > 0L) {
     stop(sprintf(
       paste(

@@ -38,6 +38,11 @@ test_that("a caller's column named like a fixed one, repeated or blank is refuse
   expect_error(results_schema(key_col = "n_not_evaluated_own"), "have the names")
   expect_error(results_schema("key_jurisdiction"), "start with \"key_\"", fixed = TRUE)
   expect_error(results_schema(key_col = "key_plot"), "key_plot start with", fixed = TRUE)
+  # A key column that is also a group column is named once.
+  expect_error(
+    results_schema(c("unit", "key_site"), "key_site"), "columns key_site start with",
+    fixed = TRUE
+  )
   expect_no_error(results_schema(c("plot_key", "keyed")))
   expect_error(results_schema(c("unit", "unit")), "each given once")
   expect_error(results_schema(c("unit", " ")), "each given once")

@@ -140,33 +140,77 @@ test_that("route_unit keeps only the lineage rows of its unit's routed cells (D2
   x <- fx_report_results()
   units <- c("100", "110")
   # A raw value on the cell of two of 100's issues (7 and 10), one of 110's (18), one of D18.89's
-  # (A), marked (13), and one on a cell no issue holds; built here, so the fixture is unchanged.
+  # (A), marked (13), one on a cell no issue holds, and one on the cell two of 100's issues
+  # share (8 and 9); built here, so the fixture is unchanged.
   lineage <- data.table::data.table(
-    table_name = c("hauls", "catches", "catches", "catches", "stations"),
-    record_pk = c("H1", "C1", "C11", "C5", "S-none"),
-    column_name = c("gear", "weight", "species", "haul_id", "depth"),
-    raw_value = c("RAW-100-a", "RAW-100-b", "RAW-110", "RAW-MARKED", "RAW-NONE"),
+    table_name = c("hauls", "catches", "catches", "catches", "stations", "catches"),
+    record_pk = c("H1", "C1", "C11", "C5", "S-none", "C3"),
+    column_name = c("gear", "weight", "species", "haul_id", "depth", "weight"),
+    raw_value = c("RAW-100-a", "RAW-100-b", "RAW-110", "RAW-MARKED", "RAW-NONE", "RAW-100-c"),
     raw_source = "x"
   )
   before <- data.table::copy(lineage)
   raw <- function(unit, units) route_unit(x, unit, units, lineage)$lineage$raw_value
-  expect_setequal(raw("100", units), c("RAW-100-a", "RAW-100-b"))
+  # Each row once, the shared cell's too.
+  expect_identical(sort(raw("100", units)), c("RAW-100-a", "RAW-100-b", "RAW-100-c"))
   expect_identical(raw("110", units), "RAW-110")
   # A run of one unit takes the marked issue, and its cell's raw value with it.
-  expect_setequal(raw("100", "100"), c("RAW-100-a", "RAW-100-b", "RAW-MARKED"))
+  expect_setequal(raw("100", "100"), c("RAW-100-a", "RAW-100-b", "RAW-100-c", "RAW-MARKED"))
   # No lineage given: none routed. The input is left as it was.
   expect_null(route_unit(x, "100", units)$lineage)
   expect_identical(lineage, before)
-  # A record with no key names no cell: a lineage row whose record_pk is blank goes to no unit,
-  # though a routed issue's record_pk is NA too (D20.61).
+})
+
+test_that("route_unit gives lineage rows only to an issue whose key names one record (D20.117)", {
+  local_results_registry()
+  x <- fx_report_results()
+  units <- c("100", "110")
+  raw <- function(y, unit, units, lineage) route_unit(y, unit, units, lineage)$lineage$raw_value
+  # A record with no key names no cell: its issue is positional, and a lineage row whose
+  # record_pk is blank goes to no unit, though the issue's record_pk is NA too (D20.61).
   y <- x
   y$issues <- data.table::copy(x$issues)
-  data.table::set(y$issues, i = 10L, j = "record_pk", value = NA_character_)
+  data.table::set(
+    y$issues,
+    i = 10L, j = c("record_pk", "pk_positional"), value = list(NA_character_, TRUE)
+  )
   blank <- data.table::data.table(
     table_name = "catches", record_pk = NA_character_, column_name = "weight",
     raw_value = "RAW-NO-PK", raw_source = "x"
   )
-  expect_identical(nrow(route_unit(y, "100", units, blank)$lineage), 0L)
+  expect_length(raw(y, "100", units, blank), 0L)
+  # A key repeated on records of 100 and 110 (pk_duplicate's case) names neither: issues 10
+  # (100's) and 19 (110's) both on catches C1's weight, positional, in any run.
+  y <- x
+  y$issues <- data.table::copy(x$issues)
+  data.table::set(
+    y$issues,
+    i = c(10L, 19L), j = c("record_pk", "pk_positional"), value = list("C1", TRUE)
+  )
+  repeated <- data.table::data.table(
+    table_name = "catches", record_pk = "C1", column_name = "weight",
+    raw_value = "RAW-REPEATED", raw_source = "x"
+  )
+  for (unit in units) {
+    expect_length(raw(y, unit, units, repeated), 0L)
+    expect_length(raw(y, unit, unit, repeated), 0L)
+  }
+  # A record whose key is the text "*": 100's issue 11 on it, moved to catches' fish_count. The
+  # column-level "*" issue on that column (class_mismatch's, issue 2, every unit's) takes no
+  # lineage row; the record's own issue still does.
+  y <- x
+  y$issues <- data.table::copy(x$issues)
+  data.table::set(
+    y$issues,
+    i = 11L, j = c("record_pk", "column_name"), value = list("*", "fish_count")
+  )
+  star <- data.table::data.table(
+    table_name = "catches", record_pk = "*", column_name = "fish_count",
+    raw_value = "RAW-STAR", raw_source = "x"
+  )
+  expect_true(2L %in% route_unit(y, "110", units)$issues$issue_id)
+  expect_length(raw(y, "110", units, star), 0L)
+  expect_identical(raw(y, "100", units, star), "RAW-STAR")
 })
 
 test_that("corrections follow their issues", {
@@ -287,14 +331,18 @@ test_that("group columns named with a join's operators route as any others (16.2
   local_results_registry()
   x <- fx_report_results()
   units <- c("100", "110")
-  # Names a data.table join's `on` would read as operators (key_matches() keeps them clear).
+  # Names a data.table join's `on` would read as operators (key_matches() keeps them clear), and
+  # a third, named cells, holding the areas again, which a grouping `by = cells` would read as
+  # its one column.
   y <- x
   y$results <- data.table::copy(x$results)
   y$issues <- data.table::copy(x$issues)
   y$metadata$run <- data.table::copy(x$metadata$run)
   data.table::setnames(y$results, c("unit", "area"), c("unit<1", "area==2"))
   data.table::setnames(y$issues, c("unit", "area"), c("unit<1", "area==2"))
-  data.table::set(y$metadata$run, j = "group_cols", value = "unit<1; area==2")
+  data.table::set(y$results, j = "cells", value = y$results[["area==2"]])
+  data.table::set(y$issues, j = "cells", value = y$issues[["area==2"]])
+  data.table::set(y$metadata$run, j = "group_cols", value = "unit<1; area==2; cells")
   for (unit in units) {
     routed <- route_unit(x, unit, units)
     renamed <- route_unit(y, unit, units)
@@ -303,17 +351,27 @@ test_that("group columns named with a join's operators route as any others (16.2
   }
 })
 
-test_that("route_unit leaves the run as it was and shares no column with it", {
+test_that("route_unit leaves the run and the lineage as they were and shares no column", {
   local_results_registry()
   x <- fx_report_results()
+  # A raw value on the cell of 100's issue 7.
+  lineage <- data.table::data.table(
+    table_name = "hauls", record_pk = "H1", column_name = "gear", raw_value = "RAW-100-a",
+    raw_source = "x"
+  )
   before <- lapply(x[c("results", "issues", "corrections")], data.table::copy)
-  routed <- route_unit(x, "100", c("100", "110"))
+  before_lineage <- data.table::copy(lineage)
+  routed <- route_unit(x, "100", c("100", "110"), lineage)
   expect_identical(x[c("results", "issues", "corrections")], before)
-  # A change by reference to a routed table doesn't reach the run.
+  expect_identical(lineage, before_lineage)
+  expect_identical(routed$lineage$raw_value, "RAW-100-a")
+  # A change by reference to a routed table doesn't reach the run or the lineage.
   data.table::set(routed$issues, j = "value", value = "changed")
   data.table::set(routed$results, j = "n_checked", value = 0L)
   data.table::set(routed$corrections, j = "proposed_value", value = "changed")
+  data.table::set(routed$lineage, j = "raw_value", value = "changed")
   expect_identical(x[c("results", "issues", "corrections")], before)
+  expect_identical(lineage, before_lineage)
 })
 
 test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX (D20.8)", {
