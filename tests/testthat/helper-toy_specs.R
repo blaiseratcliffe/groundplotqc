@@ -25,6 +25,7 @@ fx_fish_spec <- local({
   function(code_lists = fx_fish_code_lists(), ...) {
     if (nargs() == 0L) {
       if (is.null(built)) {
+        # An argument, so this call reads the files.
         built <<- fx_fish_spec(code_lists = code_lists)
       }
       return(data.table::copy(built))

@@ -272,9 +272,9 @@ test_that("magp_example is the clean base, marked as synthetic (D15.10)", {
 
 test_that("a cached fixture builder gives what a fresh build gives (D20.127, D20.130)", {
   # fx_fish_spec() without arguments, fx_fish_clean() and fx_magp_clean() build once per
-  # session and hand out copies. A cached call is compared with a fresh build, made with the
-  # builder's cache emptied and the cache put back after, so a builder whose output comes to
-  # depend on session state fails here.
+  # session and hand out copies. A cached call is compared with a fresh build made now, with
+  # the builder's cache emptied and the cache put back after, so a cached call that differs
+  # from a fresh build made now fails here.
   builders <- list(
     fx_fish_spec = fx_fish_spec, fx_fish_clean = fx_fish_clean, fx_magp_clean = fx_magp_clean
   )
