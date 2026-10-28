@@ -726,8 +726,9 @@ test_that("section_column_level lists each open column-level issue once, sorted 
     fixed = TRUE
   )
   # By severity, then class (source, harmonization, unclassified), table and column; the
-  # record-level and the not-evaluated issues are elsewhere. A unit rule's issue, column_missing's
-  # and undeclared_code_set's, shows no record count (D16.8, D20.122).
+  # record-level and the not-evaluated issues are elsewhere. A unit rule's "*" issue,
+  # column_missing's, shows no record count (D16.8, D20.122); the unit's own
+  # undeclared_code_set issue keeps its count (D20.124).
   expect_equal(caught$dt, data.table::data.table(
     Severity = c("Error", "Error", "Error", "Warning"),
     Class = c(
@@ -740,7 +741,7 @@ test_that("section_column_level lists each open column-level issue once, sorted 
       report_text("undeclared_code_set")
     ),
     Table = c("catches", "hauls", "catches", "catches"),
-    Column = c("haul_id", "gear", "length", "species"), Records = c(3L, NA, 5L, NA),
+    Column = c("haul_id", "gear", "length", "species"), Records = c(3L, NA, 5L, 640L),
     Value = c("<h9>", NA, NA, "A; B"), Expected = c(NA, NA, "numeric", NA),
     area = c("a2", "(not linked)", "a1", "(not linked)")
   ))
@@ -1220,7 +1221,7 @@ test_that("section 3's raw values: one-record keys only, a column raw_value kept
   expect_equal(shown$raw_value, c("g1", "g2", "g3"))
 })
 
-test_that("section 6 shows no record count for a unit rule's issue, in any unit (D20.122)", {
+test_that("section 6 shows no count for a unit rule's \"*\" issue, any unit (D20.122, D20.124)", {
   local_results_registry()
   x <- fx_report_results()
   # whitespace_padding's column-level issue of 110's, unmarked here, so it reaches 110.
@@ -1243,14 +1244,30 @@ test_that("section 6 shows no record count for a unit rule's issue, in any unit 
     section_column_level(tables, NULL, settings)
     caught
   })
-  # In each unit, the unit rules' issues (table_missing's and class_mismatch's "*" ones and the
-  # unit's undeclared_code_set) with none; a record rule's column-level issue with its count,
-  # blank_string's in 100 and whitespace_padding's in 110.
-  kept <- c("blank_string", "whitespace_padding")
+  # In each unit, the unit rules' "*" issues (table_missing's and class_mismatch's) with none;
+  # the unit's own undeclared_code_set issue (D20.124) and a record rule's column-level issue
+  # with their counts: 2 and blank_string's 3 in 100, 1 and whitespace_padding's 4 in 110.
+  star <- c("table_missing", "class_mismatch")
+  counts <- list(
+    c(undeclared_code_set = 2L, blank_string = 3L),
+    c(undeclared_code_set = 1L, whitespace_padding = 4L)
+  )
   for (k in 1:2) {
     expect_true("class_mismatch" %in% shown[[k]]$Check)
-    unit_rule <- !shown[[k]]$Check %in% kept
-    expect_true(all(is.na(shown[[k]]$Records[unit_rule])))
-    expect_equal(shown[[k]]$Records[!unit_rule], c(3L, 4L)[[k]])
+    expect_true(all(is.na(shown[[k]]$Records[shown[[k]]$Check %in% star])))
+    expect_equal(
+      shown[[k]]$Records[match(names(counts[[k]]), shown[[k]]$Check)], unname(counts[[k]])
+    )
   }
+  # A run with no group columns has no "*" unit: a unit rule's issue keeps its count.
+  alone <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1L, run_id = "20261026T120000Z_abc123", run_scope = "package",
+    rule_id = "class_mismatch", rule_fingerprint = "f", stage = "conformance", layer = 1L,
+    severity = "error", reason_code = "*", table_name = "catches", column_name = "fish_count",
+    record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
+    n_records = 9L, status = "open", issue_class = "harmonization"
+  ))
+  section_column_level(list(issues = alone, group_cols = character()), NULL, settings)
+  expect_equal(caught$Records, 9L)
 })

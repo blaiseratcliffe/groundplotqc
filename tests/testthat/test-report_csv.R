@@ -145,26 +145,46 @@ test_that("the CSV holds every routed issue, sorted as the report sorts (D20.32,
   expect_identical(csv$record_pk[csv$rule_id == "value_above_max"], c("C1", "C3"))
 })
 
-test_that("a unit rule's issue has no n_records in any unit's CSV (D16.8, D20.122)", {
+test_that("a unit rule's \"*\" issue has no n_records in any unit's CSV (D20.122, D20.124)", {
   local_results_registry()
   x <- fx_report_results()
   # whitespace_padding's column-level issue of 110's, unmarked here, so it reaches 110.
   data.table::set(x$issues, i = 17L, j = "reaches_other_unit", value = FALSE)
   units <- c("100", "110")
-  # The registry's unit rules among the fixture's: their "*" issues reach both units, and
-  # undeclared_code_set's issue of each unit its own (R98: in every run).
+  # The registry's unit rules among the fixture's: table_missing's and class_mismatch's "*"
+  # issues reach both units, undeclared_code_set's issue of each unit only its own, which
+  # keeps its count (D20.124), 2 in 100 and 1 in 110.
   unit_rules <- c("table_missing", "class_mismatch", "undeclared_code_set")
+  own <- c("100" = 2L, "110" = 1L)
   for (unit in units) {
     csv <- provider_csv_table(route_unit(x, unit, units)$issues, c("unit", "area"), "plot")
-    expect_true("class_mismatch" %in% csv$rule_id, info = unit)
-    expect_true(all(is.na(csv$n_records[csv$rule_id %in% unit_rules])), info = unit)
+    star <- csv$rule_id %in% unit_rules & csv$unit == "*"
+    expect_true("class_mismatch" %in% csv$rule_id[star], info = unit)
+    expect_true(all(is.na(csv$n_records[star])), info = unit)
+    expect_identical(
+      csv$n_records[csv$rule_id == "undeclared_code_set"], own[[unit]],
+      info = unit
+    )
   }
   # The record rule's column-level issue keeps its count.
   expect_identical(csv$n_records[csv$rule_id == "whitespace_padding"], 4L)
-  # A one-unit run's CSV too.
+  # A one-unit run's CSV too: undeclared_code_set's marked "*" issue empty, 100's own kept.
   csv <- provider_csv_table(route_unit(x, "100", "100")$issues, c("unit", "area"), "plot")
-  expect_true(all(is.na(csv$n_records[csv$rule_id %in% unit_rules])))
+  star <- csv$rule_id %in% unit_rules & csv$unit == "*"
+  expect_true("undeclared_code_set" %in% csv$rule_id[star])
+  expect_true(all(is.na(csv$n_records[star])))
+  expect_identical(csv$n_records[csv$rule_id == "undeclared_code_set" & csv$unit == "100"], 2L)
   expect_identical(csv$n_records[csv$rule_id == "blank_string"], 3L)
+  # A run with no group columns has no "*" unit: a unit rule's issue keeps its count.
+  alone <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1L, run_id = "20261026T120000Z_abc123", run_scope = "package",
+    rule_id = "class_mismatch", rule_fingerprint = "f", stage = "conformance", layer = 1L,
+    severity = "error", reason_code = "*", table_name = "catches", column_name = "fish_count",
+    record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
+    n_records = 9L, status = "open", issue_class = "harmonization"
+  ))
+  expect_identical(provider_csv_table(alone, character(), NULL)$n_records, 9L)
 })
 
 test_that("message is the rule's text, and proposals are empty until M11 (11.6; D20.32)", {

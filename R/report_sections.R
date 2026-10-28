@@ -502,13 +502,14 @@ section_under_review <- function(tables, text, settings) {
 #' classes in one table (6.3; D16.8, D20.11, D20.44, D20.45)
 #'
 #' One row per issue: severity, class, check, what it means, table, column, the records it
-#' covers (`n_records`; none for a unit rule's issue, the registry's `unit`, as in section 10,
-#' D16.8, D20.122), value, expected value and the breakdown columns under their raw names
-#' (D20.56), "*" in them shown as W4; delivered text cut at `cell_cap` (D20.39). Sorted by
-#' severity, class (source, harmonization, unclassified), table and column, then check and
-#' issue ID; a column empty in every row left out (D20.44); capped at `row_cap`. It holds the
-#' unit rules' "*" issues (D16.8) and the unit's own undeclared_code_set issue (D20.11). With
-#' none, W133 alone.
+#' covers (`n_records`; none for a unit rule's "*" issue, the registry's `unit` and the report
+#' unit's column "*", as in section 10, D16.8, D20.122; a unit's own issue and every issue of a
+#' run with no group columns keep theirs, D20.124), value, expected value and the breakdown
+#' columns under their raw names (D20.56), "*" in them shown as W4; delivered text cut at
+#' `cell_cap` (D20.39). Sorted by severity, class (source, harmonization, unclassified), table
+#' and column, then check and issue ID; a column empty in every row left out (D20.44); capped
+#' at `row_cap`. It holds the unit rules' "*" issues (D16.8) and the unit's own
+#' undeclared_code_set issue (D20.11). With none, W133 alone.
 #' @noRd
 section_column_level <- function(tables, text, settings) {
   lang <- settings$lang
@@ -537,11 +538,17 @@ section_column_level <- function(tables, text, settings) {
   registry <- rule_registry()
   message_ids <- registry$message_id[match(issues$rule_id[at], registry$rule_id)]
   messages <- vapply(unique(message_ids), word, "")
-  # A unit rule's issue shows no record count, as section 10 shows none: the rule counts a
-  # table or column (D16.8), and its "*" issue goes to every unit, so its count would be the
-  # whole delivery's (D20.122).
+  # A unit rule's "*" issue shows no record count, as section 10 shows none: the rule counts a
+  # table or column (D16.8), and the issue goes to every unit, so its count would be the whole
+  # delivery's (D20.122). A unit's own issue, such as its undeclared_code_set issue, keeps its
+  # count, and so does every issue of a run with no group columns, which has no "*" unit
+  # (D20.124).
   records <- issues$n_records[at]
-  records[registry$unit[match(issues$rule_id[at], registry$rule_id)] %in% TRUE] <- NA_integer_
+  if (length(tables$group_cols) > 0L) {
+    star <- issues[[tables$group_cols[[1L]]]][at] %chin% "*"
+    unit_rule <- registry$unit[match(issues$rule_id[at], registry$rule_id)] %in% TRUE
+    records[star & unit_rule] <- NA_integer_
+  }
   not_linked <- word("report_not_linked")
   breakdowns <- tables$group_cols[-1L]
   severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
