@@ -13,7 +13,9 @@
 #' `provider_key_status` and before `reaches_other_unit` (9.2, 9.3; D20.18). Each caller column
 #' is character. A caller column that
 #' repeats, is blank, or has the name of a fixed column is a caller error, and so is a group
-#' column whose name holds "; " (D15.39, D15.40).
+#' column whose name holds "; " (D15.39, D15.40). So is one named like a column a report adds,
+#' `message` or `n_not_evaluated_own`, or starting with `key_`, the provider CSV's key parts
+#' (D20.76).
 #' @noRd
 results_schema <- function(group_cols = character(), key_col = NULL) {
   chr <- "character"
@@ -44,8 +46,11 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
     reason_code = chr, support = chr, support_n = int, support_d = int, evidence = chr,
     fixed_value_passes = lgl, easy_fix = lgl, easy_fix_blocked_by = chr
   )
+  # A report's routed results add n_not_evaluated_own (route_unit()) and the provider's CSV
+  # message (provider_csv_table()), so a caller's column can't take either name (D20.76).
+  report <- c("message", "n_not_evaluated_own")
   validate_caller_columns(
-    group_cols, key_col, unique(c(names(results), names(issues), names(corrections)))
+    group_cols, key_col, unique(c(names(results), names(issues), names(corrections), report))
   )
   caller <- function(columns) structure(rep(chr, length(columns)), names = columns)
   list(
@@ -87,6 +92,18 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
     stop(sprintf(
       "The caller's columns %s have the names of columns the results already have.",
       paste(clash, collapse = ", ")
+    ), call. = FALSE)
+  }
+  # The provider issues CSV names each part of a provider key key_<label> (D20.31), so a
+  # caller's column can't start with key_ (D20.76), which has its own error (D20.95).
+  prefixed <- grep("^key_", c(group_cols, key_col), value = TRUE)
+  if (length(prefixed) > 0L) {
+    stop(sprintf(
+      paste(
+        "The caller's columns %s start with \"key_\", which the provider issues CSV uses for",
+        "the parts of each provider key."
+      ),
+      paste(prefixed, collapse = ", ")
     ), call. = FALSE)
   }
   invisible(NULL)

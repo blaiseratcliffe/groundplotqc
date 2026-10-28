@@ -66,6 +66,26 @@ test_that("gpq_check_conformance refuses arguments it can't run on", {
   }
 })
 
+test_that("the run refuses a group column a report would overwrite, at its start (D20.76)", {
+  # MAGPlot's compiled spec, quick to load; the run stops before it reads a table.
+  spec <- magp_spec()
+  # The provider CSV's message column, by the clash error; a key part's prefix by its own
+  # (D20.95).
+  expect_error(
+    gpq_check_conformance(magp_example, spec, group_cols = "message"),
+    "The caller's columns message have the names of columns the results already have.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(magp_example, spec, group_cols = "key_jurisdiction"),
+    paste(
+      "The caller's columns key_jurisdiction start with \"key_\", which the provider issues CSV",
+      "uses for the parts of each provider key."
+    ),
+    fixed = TRUE
+  )
+})
+
 test_that("pre-flight runs first: a stop stops the run, a warning reaches the caller (D16.3)", {
   testthat::skip_on_cran()
   fish <- fx_fish_clean()

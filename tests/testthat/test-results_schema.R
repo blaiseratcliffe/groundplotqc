@@ -32,6 +32,13 @@ test_that("results_schema() puts the caller's columns in their places, as text (
 test_that("a caller's column named like a fixed one, repeated or blank is refused", {
   expect_error(results_schema("status"), "have the names of columns the results already have")
   expect_error(results_schema(key_col = "fingerprint"), "have the names")
+  # Nor a name a report adds: the routed results' remainder, the provider CSV's message, or
+  # one starting with key_, the CSV's key parts (D20.76), which has its own error (D20.95).
+  expect_error(results_schema("message"), "have the names")
+  expect_error(results_schema(key_col = "n_not_evaluated_own"), "have the names")
+  expect_error(results_schema("key_jurisdiction"), "start with \"key_\"", fixed = TRUE)
+  expect_error(results_schema(key_col = "key_plot"), "key_plot start with", fixed = TRUE)
+  expect_no_error(results_schema(c("plot_key", "keyed")))
   expect_error(results_schema(c("unit", "unit")), "each given once")
   expect_error(results_schema(c("unit", " ")), "each given once")
   expect_error(results_schema(NA_character_), "each given once")
