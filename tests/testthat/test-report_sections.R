@@ -458,3 +458,714 @@ test_that("each layer of a registered data rule has its name and its guide line 
     expect_no_error(report_text(paste0("report_guide_layer_", layer)))
   }
 })
+
+test_that("issue_summary: a row per check, sorted, its examples cut as one cell (D20.39, D20.42)", {
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:11, run_id = run_id, run_scope = "package",
+    rule_id = c(rep("code_not_in_list", 5L), "raw_na", rep("value_above_max", 5L)),
+    rule_fingerprint = "f", stage = "conformance", layer = c(rep(3L, 5L), 2L, rep(3L, 5L)),
+    severity = c(rep("warning", 5L), "error", rep("warning", 5L)), reason_code = "*",
+    table_name = c(rep("catches", 5L), "hauls", rep("catches", 5L)),
+    column_name = c(rep("species", 5L), "minutes", "weight", "weight", rep("length", 3L)),
+    record_pk = paste0("r", 1:11), row_number = 1:11, pk_positional = FALSE, level = "record",
+    value = c("b", "a", "b", NA, "c", NA, strrep("p", 60L), strrep("q", 60L), "x", "y", "z"),
+    unit = "u1", area = "a1", plot = "p1", status = "open", issue_class = "harmonization"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 2L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, row_cap = NULL, csv_name = NULL, row_class = NULL, ...) {
+      caught <<- list(
+        dt = data.table::copy(dt), caption = caption, row_cap = row_cap, csv_name = csv_name,
+        row_class = row_class
+      )
+      "<table>"
+    }
+  )
+  # The rows in another order than their issue IDs: the examples still follow the IDs.
+  issue_summary(issues[11:1], NULL, settings)
+  expect_equal(caught$caption, "By check")
+  expect_equal(caught$dt, data.table::data.table(
+    Severity = c("Error", "Warning", "Warning", "Warning"),
+    Check = c("raw_na", "code_not_in_list", "value_above_max", "value_above_max"),
+    `What it means` = c(
+      report_text("raw_na"), report_text("code_not_in_list"), report_text("value_above_max"),
+      report_text("value_above_max")
+    ),
+    Table = c("hauls", "catches", "catches", "catches"),
+    Column = c("minutes", "species", "length", "weight"), Issues = c(1L, 5L, 3L, 2L),
+    # Distinct values, NA left out, the first two by issue ID; the two long ones joined and
+    # cut as one cell at 100 characters.
+    Examples = c(
+      NA, "b; a", "x; y", paste0(strrep("p", 60L), "; ", strrep("q", 38L), "…")
+    )
+  ))
+  expect_equal(caught$row_cap, 500L)
+  expect_equal(caught$csv_name, "u1_issues.csv") # D20.68
+  expect_equal(caught$row_class, c("sev-error", rep("sev-warning", 3L)))
+  # A caller's text in the run's language, the package's English where it has none (D14.7).
+  text <- validate_text_table(data.frame(
+    text_id = "report_summary_caption", lang = "fr", text = "Par controle"
+  ))
+  settings$lang <- "fr"
+  issue_summary(issues, text, settings)
+  expect_equal(caught$caption, "Par controle")
+  expect_equal(names(caught$dt)[[1L]], "Severity")
+})
+
+test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17, D20.42, D20.56)", {
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:3, run_id = run_id, run_scope = "package",
+    rule_id = c("code_not_in_list", "code_not_in_list", "whitespace_padding"),
+    rule_fingerprint = "f", stage = "conformance", layer = c(3L, 3L, 2L),
+    severity = c("error", "error", "warning"), reason_code = "*", table_name = "catches",
+    column_name = "species", record_pk = c("c2", "c1", "c3"), row_number = 1:3,
+    pk_positional = FALSE, level = "record", value = c("q", strrep("v", 101L), "x"),
+    provider_key = c("plot=2", "plot=1", NA), provider_key_status = c("decoded", "partial", NA),
+    unit = "u1", area = c("a1", "*", "a2"), plot = c("p2", "*", "p1"), status = "open",
+    issue_class = "source"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  columns <- c(
+    "issue_id", "severity", "rule_id", "table_name", "column_name", "provider_key",
+    "provider_key_status", "record_pk", "value", "expected"
+  )
+  # As section_actions() hands them: the breakdown column and the key column after the fixed
+  # ones, and each cell's raw value.
+  shown <- issues[, c(columns, "area", "plot"), with = FALSE]
+  data.table::set(shown, j = "raw_value", value = c("Q", NA, NA))
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, row_cap = NULL, csv_name = NULL, row_class = NULL, ...) {
+      caught <<- list(
+        dt = data.table::copy(dt), caption = caption, row_cap = row_cap, csv_name = csv_name,
+        row_class = row_class
+      )
+      "<table>"
+    }
+  )
+  issue_records(shown, NULL, settings)
+  expect_equal(caught$caption, "Each issue")
+  # Sorted by severity, check, table, column and key; no expected value anywhere, so no column
+  # for it (D20.42); "*" shown as W4; the long value cut (D20.39).
+  expect_equal(caught$dt, data.table::data.table(
+    Severity = c("Error", "Error", "Warning"),
+    Check = c("code_not_in_list", "code_not_in_list", "whitespace_padding"),
+    Table = "catches", Column = "species", `Your key` = c("plot=1", "plot=2", NA),
+    `Key status` = c("partly decoded", "decoded", NA), `Record ID` = c("c1", "c2", "c3"),
+    Value = c(paste0(strrep("v", 100L), "…"), "q", "x"),
+    `Your value before harmonization` = c(NA, "Q", NA),
+    area = c("(not linked)", "a1", "a2"), plot = c("(not linked)", "p2", "p1")
+  ))
+  expect_equal(caught$row_class, c("sev-error", "sev-error", "sev-warning"))
+  expect_equal(caught$csv_name, "u1_issues.csv") # D20.68
+  # No lineage and no key: their columns go; the CSV keeps them all.
+  bare <- issues[, columns, with = FALSE]
+  data.table::set(bare, j = c("provider_key", "provider_key_status"), value = NA_character_)
+  issue_records(bare, NULL, settings)
+  expect_named(caught$dt, c("Severity", "Check", "Table", "Column", "Record ID", "Value"))
+})
+
+test_that("sections 3 to 5 hold their class's record issues, pointing to section 6 (D20.28)", {
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:7, run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "code_not_in_list", "fk_orphan", "raw_na", "column_missing", "value_above_max",
+      "code_not_in_list", "code_not_in_list"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(3L, 4L, 2L, 0L, 3L, 3L, 3L),
+    severity = c("error", "error", "warning", "error", "warning", "error", "error"),
+    reason_code = "*",
+    table_name = c("catches", "catches", "hauls", "hauls", "catches", "catches", "catches"),
+    column_name = c("species", "haul_id", "minutes", "gear", "weight", "species", "species"),
+    record_pk = c("c1", "*", "h1", "*", "c3", "c4", "c9"),
+    row_number = c(1L, NA, 1L, NA, 3L, 4L, 9L),
+    pk_positional = c(FALSE, NA, FALSE, NA, FALSE, FALSE, FALSE),
+    level = c("record", "column", "record", "column", "record", "record", "record"),
+    n_records = c(NA, 4L, NA, 0L, NA, NA, NA),
+    value = c("<s1>", "<s2>", "<h1>", NA, "<r1>", "<s4>", "<s9>"),
+    unit = c("u1", "u1", "u1", "*", "u1", "u1", "u2"),
+    area = c("a1", "a1", "a2", "*", "*", "a1", "b1"),
+    plot = c("p1", "*", "p2", "*", "*", "p4", "p9"),
+    root_issue_id = c(NA, NA, NA, NA, NA, 1L, NA),
+    status = c(rep("open", 5L), "not_evaluated", "open"),
+    issue_class = c(
+      "source", "source", "harmonization", "harmonization", "unclassified", "source", "source"
+    )
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  # A raw value for the unit's cell and one for another unit's (D20.17).
+  lineage <- data.table::data.table(
+    table_name = "catches", record_pk = c("c1", "c9"), column_name = "species",
+    raw_value = c("<raw1>&\"'", "<raw9>"), raw_source = "x"
+  )
+  tables <- list(
+    issues = issues[issues$unit != "u2"], unit = "u1", group_cols = c("unit", "area"),
+    key_col = "plot", lineage = lineage
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      paste0("<table ", caption, ">")
+    }
+  )
+  pointer <- paste0(
+    "<p>Issues of this class that cover a whole column: 1, listed in ",
+    "<a href=\"#column-level\">Issues that cover a whole column</a>.</p>"
+  )
+  actions <- as.character(section_actions(tables, NULL, settings))
+  expect_equal(attr(section_actions(tables, NULL, settings), "gpq_section")[["id"]], "actions")
+  expect_match(actions, html_escape(report_text("report_actions_intro")), fixed = TRUE)
+  # The column-level line first, then "By check" and "Each issue" (D20.28, D20.42).
+  at <- vapply(
+    c(pointer, "<table By check>", "<table Each issue>"),
+    function(piece) regexpr(piece, actions, fixed = TRUE), integer(1)
+  )
+  expect_true(all(at > 0L))
+  expect_false(is.unsorted(at))
+  expect_equal(caught[["By check"]]$Examples, "<s1>")
+  expect_equal(caught[["Each issue"]]$`Record ID`, "c1")
+  # Only the unit's cell meets a lineage row.
+  expect_equal(caught[["Each issue"]]$`Your value before harmonization`, "<raw1>&\"'")
+  expect_equal(caught[["Each issue"]]$area, "a1")
+  expect_equal(caught[["Each issue"]]$plot, "p1")
+  caught <- list()
+  harmonization <- as.character(section_harmonization(tables, NULL, settings))
+  expect_match(
+    harmonization,
+    paste0("<p class=\"note\">", html_escape(report_text("report_harmonization_intro")), "</p>"),
+    fixed = TRUE
+  )
+  # The summary only (D20.43), then the line pointing to section 6.
+  expect_equal(names(caught), "By check")
+  expect_equal(caught[["By check"]]$Examples, "<h1>")
+  expect_gt(
+    regexpr(pointer, harmonization, fixed = TRUE),
+    regexpr("<table By check>", harmonization, fixed = TRUE)
+  )
+  caught <- list()
+  review <- as.character(section_under_review(tables, NULL, settings))
+  expect_match(review, html_escape(report_text("report_under_review_intro")), fixed = TRUE)
+  expect_equal(caught[["By check"]]$Examples, "<r1>")
+  expect_false(grepl("listed in", review, fixed = TRUE))
+  # Column-level source issues only: the line, no table.
+  tables$issues <- issues[2L]
+  actions <- as.character(section_actions(tables, NULL, settings))
+  expect_match(actions, pointer, fixed = TRUE)
+  expect_false(grepl("<table", actions, fixed = TRUE))
+  # None: each section's line alone.
+  tables$issues <- issues[0L]
+  for (built in list(
+    list(section_actions, "report_actions_empty"),
+    list(section_harmonization, "report_harmonization_empty"),
+    list(section_under_review, "report_under_review_empty")
+  )) {
+    html <- as.character(built[[1L]](tables, NULL, settings))
+    expect_match(html, paste0("<p>", html_escape(report_text(built[[2L]])), "</p>"), fixed = TRUE)
+    expect_false(grepl("<table", html, fixed = TRUE))
+  }
+})
+
+test_that("section_column_level lists each open column-level issue once, sorted (D20.45)", {
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:6, run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "coercion_loss", "column_missing", "undeclared_code_set", "fk_orphan", "code_not_in_list",
+      "value_above_max"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(1L, 0L, 3L, 4L, 3L, 3L),
+    severity = c("error", "error", "warning", "error", "error", "warning"), reason_code = "*",
+    table_name = c("catches", "hauls", "catches", "catches", "catches", "catches"),
+    column_name = c("length", "gear", "species", "haul_id", "species", "length"),
+    record_pk = c("*", "*", "*", "*", "c1", "*"), row_number = c(NA, NA, NA, NA, 1L, NA),
+    pk_positional = c(NA, NA, NA, NA, FALSE, NA),
+    level = c("column", "column", "column", "column", "record", "column"),
+    n_records = c(5L, 0L, 640L, 3L, NA, 5L), value = c(NA, NA, "A; B", "<h9>", "x", NA),
+    expected = c("numeric", NA, NA, NA, NA, NA),
+    unit = c("u1", "*", "u1", "u1", "u1", "u1"), area = c("a1", "*", "*", "a2", "a1", "a1"),
+    plot = "*", root_issue_id = c(NA, NA, NA, NA, NA, 1L),
+    status = c(rep("open", 5L), "not_evaluated"),
+    issue_class = c(
+      "unclassified", "harmonization", "harmonization", "source", "source", "unclassified"
+    )
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  tables <- list(issues = issues, unit = "u1", group_cols = c("unit", "area"), key_col = "plot")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, row_cap = NULL, csv_name = NULL, row_class = NULL, ...) {
+      caught <<- list(dt = data.table::copy(dt), row_class = row_class, row_cap = row_cap)
+      "<table>"
+    }
+  )
+  section <- section_column_level(tables, NULL, settings)
+  expect_equal(attr(section, "gpq_section")[["id"]], "column-level")
+  expect_match(
+    as.character(section), html_escape(report_text("report_column_level_intro")),
+    fixed = TRUE
+  )
+  # By severity, then class (source, harmonization, unclassified), table and column; the
+  # record-level and the not-evaluated issues are elsewhere.
+  expect_equal(caught$dt, data.table::data.table(
+    Severity = c("Error", "Error", "Error", "Warning"),
+    Class = c(
+      "For you to act on", "Being fixed in harmonization", "Under review",
+      "Being fixed in harmonization"
+    ),
+    Check = c("fk_orphan", "column_missing", "coercion_loss", "undeclared_code_set"),
+    `What it means` = c(
+      report_text("fk_orphan"), report_text("column_missing"), report_text("coercion_loss"),
+      report_text("undeclared_code_set")
+    ),
+    Table = c("catches", "hauls", "catches", "catches"),
+    Column = c("haul_id", "gear", "length", "species"), Records = c(3L, 0L, 5L, 640L),
+    Value = c("<h9>", NA, NA, "A; B"), Expected = c(NA, NA, "numeric", NA),
+    area = c("a2", "(not linked)", "a1", "(not linked)")
+  ))
+  expect_equal(caught$row_class, c("sev-error", "sev-error", "sev-error", "sev-warning"))
+  expect_equal(caught$row_cap, 500L)
+  # A column empty in every row goes (D20.44).
+  tables$issues <- issues[-1L]
+  section_column_level(tables, NULL, settings)
+  expect_false("Expected" %in% names(caught$dt))
+  # None: W133 alone.
+  tables$issues <- issues[5:6]
+  html <- as.character(section_column_level(tables, NULL, settings))
+  expect_match(html, html_escape(report_text("report_column_level_empty")), fixed = TRUE)
+})
+
+test_that("section_not_evaluated sums records by check and reason over the groups (D20.46)", {
+  run_id <- "20261026T120000Z_abc123"
+  results <- new_results(list(
+    run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "value_above_max", "value_above_max", "key_incoherent", "column_missing", "pk_duplicate",
+      "fk_orphan"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(3L, 3L, 4L, 0L, 4L, 4L),
+    severity = "error",
+    table_name = c("catches", "catches", "catches", "hauls", "hauls", "catches"),
+    column_name = c("weight", "weight", "haul_id", "gear", "haul_id", "haul_id"),
+    unit = c("u1", "u1", "u1", "*", "u1", "u1"), area = c("a1", "a2", "*", "*", "a1", "a1"),
+    n_checked = c(4L, 3L, 0L, 0L, 0L, 5L), n_fail = c(0L, 0L, 0L, 0L, 0L, 1L),
+    n_not_evaluated = c(2L, 0L, 0L, 1L, 0L, 1L), n_unchecked = c(1L, 2L, 0L, NA, 3L, 0L),
+    reason_code = "*", n_distinct_fail_values = c(0L, 0L, 0L, 0L, 0L, 1L), n_easy_fix = 0L,
+    status = c("pass", "pass", "not_run", "not_run", "not_run", "fail"),
+    not_run_reason = c(NA, NA, "no_input", "no_table", "none_checked", NA),
+    message_id = c(
+      "value_above_max", "value_above_max", "key_incoherent", "column_missing", "pk_duplicate",
+      "fk_orphan"
+    )
+  ), group_cols = c("unit", "area"))
+  # As route_unit() works it out (D20.62): the records not evaluated that no issue holds.
+  data.table::set(results, j = "n_not_evaluated_own", value = c(1L, 0L, 0L, 1L, 0L, 1L))
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:4, run_id = run_id, run_scope = "package",
+    rule_id = c("coercion_loss", "value_above_max", "coercion_loss", "value_above_max"),
+    rule_fingerprint = "f", stage = "conformance", layer = c(1L, 3L, 1L, 3L),
+    severity = "error", reason_code = "*", table_name = "catches",
+    column_name = c("weight", "weight", "length", "length"),
+    record_pk = c("c1", "c1", "*", "*"), row_number = c(1L, 1L, NA, NA),
+    pk_positional = c(FALSE, FALSE, NA, NA), level = c("record", "record", "column", "column"),
+    n_records = c(NA, NA, 5L, 5L), unit = "u1", area = "a1", plot = "p1",
+    root_issue_id = c(NA, 1L, NA, 3L), status = c("open", "not_evaluated", "open", "not_evaluated"),
+    issue_class = "unclassified"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  metadata <- lapply(metadata_schema(), empty_table)
+  metadata$self_test <- complete_table(list(
+    rule_id = c("design_geometry_inconsistent", "subplot_label_ambiguous"),
+    stage = "conformance", layer = 4L
+  ), metadata_schema()$self_test, "self_test")
+  tables <- list(results = results, issues = issues, metadata = metadata, unit = "u1")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, row_cap = NULL, csv_name = NULL, ...) {
+      caught <<- list(dt = data.table::copy(dt), caption = caption, row_cap = row_cap)
+      "<table>"
+    }
+  )
+  section <- section_not_evaluated(tables, NULL, settings)
+  html <- as.character(section)
+  expect_equal(attr(section, "gpq_section")[["id"]], "not-evaluated")
+  expect_equal(
+    attr(section, "gpq_section")[["title"]],
+    "Checks not run, and records not evaluated or not reached"
+  )
+  expect_match(
+    html,
+    paste(
+      "This run is incomplete. These checks reported nothing:",
+      "design_geometry_inconsistent, subplot_label_ambiguous."
+    ),
+    fixed = TRUE
+  )
+  expect_equal(caught$caption, "By check and reason")
+  expect_equal(caught$dt, data.table::data.table(
+    Table = c(rep("catches", 6L), "hauls", "hauls"),
+    Column = c("haul_id", "haul_id", "length", "weight", "weight", "weight", "gear", "haul_id"),
+    Check = c(
+      "fk_orphan", "key_incoherent", "value_above_max", "value_above_max", "value_above_max",
+      "value_above_max", "column_missing", "pk_duplicate"
+    ),
+    Reason = c(
+      "Not evaluated: this check can't judge the value",
+      "Not run: a setting or input it needs wasn't given",
+      "Not evaluated: coercion_loss failed on the same value first",
+      "Not evaluated: coercion_loss failed on the same value first",
+      "Not evaluated: this check can't judge the value",
+      "Not reached through the keys",
+      "Not run: a table it needs wasn't delivered",
+      "Not run: no record could be checked"
+    ),
+    # Summed over the unit's groups (D20.23); a unit rule counts no records (D16.8).
+    Records = c(1L, 0L, 5L, 1L, 1L, 3L, NA, 3L)
+  ))
+  # D20.91: capped by the section itself, its line naming no file. The rows with the most
+  # records stay, shown in the section's order: 5, 3 and 3, not the first three rows.
+  settings$row_cap <- 3L
+  html <- as.character(section_not_evaluated(tables, NULL, settings))
+  expect_equal(caught$dt$Check, c("value_above_max", "value_above_max", "pk_duplicate"))
+  expect_equal(caught$dt$Records, c(5L, 3L, 3L))
+  expect_null(caught$row_cap)
+  expect_match(html, "<p>Showing 3 of 8 rows.</p>", fixed = TRUE)
+  # A unit rule's row, which counts no records, ranks as 0, and rows of as many records rank in
+  # the section's order (D20.94, R73): the 0 row comes first, so it stays.
+  settings$row_cap <- 7L
+  section_not_evaluated(tables, NULL, settings)
+  expect_false("column_missing" %in% caught$dt$Check)
+  expect_equal(caught$dt$Records, c(1L, 0L, 5L, 1L, 1L, 3L, 3L))
+  # Nothing to list: W159, unless the self-test lists rules.
+  tables$results <- results[results$status != "not_run"]
+  data.table::set(tables$results, j = c("n_unchecked", "n_not_evaluated_own"), value = 0L)
+  tables$issues <- issues[issues$status == "open"]
+  html <- as.character(section_not_evaluated(tables, NULL, settings))
+  expect_match(html, "This run is incomplete.", fixed = TRUE)
+  expect_false(grepl("Every check ran", html, fixed = TRUE))
+  tables$metadata$self_test <- empty_table(metadata_schema()$self_test)
+  html <- as.character(section_not_evaluated(tables, NULL, settings))
+  expect_match(html, "<p>Every check ran and evaluated every record.</p>", fixed = TRUE)
+})
+
+test_that("every section builds for a unit with no results row and no issue", {
+  schema <- metadata_schema()
+  metadata <- lapply(schema, empty_table)
+  metadata$run <- complete_table(list(
+    run_id = "20261026T120000Z_abc123", run_start = "2026-10-26T12:00:00Z",
+    run_end = "2026-10-26T12:00:05Z", package_version = "0.0.0.9024", r_version = "4.5.2",
+    platform = "x86_64-w64-mingw32", data_table_version = "1.18.0", outcome = "completed"
+  ), schema$run, "run")
+  results <- new_results(group_cols = c("unit", "area"))
+  data.table::set(results, j = "n_not_evaluated_own", value = integer())
+  tables <- list(
+    results = results, issues = new_issues(group_cols = c("unit", "area"), key_col = "plot"),
+    corrections = new_corrections(), metadata = metadata, unit = "u1",
+    group_cols = c("unit", "area"), key_col = "plot", lineage = NULL
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  builders <- list(
+    section_header, section_glance, section_actions, section_harmonization,
+    section_under_review, section_column_level, section_not_evaluated, section_guide
+  )
+  html <- vapply(builders, function(build) as.character(build(tables, NULL, settings)), "")
+  expect_match(html[[2L]], "Open issues: 0.", fixed = TRUE)
+  expect_match(html[[3L]], "No issues for you to act on.", fixed = TRUE)
+  expect_match(html[[7L]], "Every check ran and evaluated every record.", fixed = TRUE)
+  expect_false(any(grepl("\\{[a-z0-9_]+\\}", html)))
+})
+
+test_that("every not-run reason the results schema allows has a section 10 text (D20.53)", {
+  # The reasons as validate_schema() lists them, read from its code, so a reason added there
+  # without a text fails here.
+  code <- paste(deparse(body(validate_schema)), collapse = " ")
+  listed <- regmatches(code, regexpr("not_run_reason = c\\([^)]*\\)", code))
+  allowed <- eval(parse(text = sub("^not_run_reason = ", "", listed)))
+  expect_gte(length(allowed), 13L)
+  results <- new_results(list(
+    run_id = "20261026T120000Z_abc123", run_scope = "package", rule_id = "value_above_max",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    table_name = "catches", column_name = paste0("c", seq_along(allowed)), unit = "u1",
+    n_checked = 0L, n_fail = 0L, n_not_evaluated = 0L, n_unchecked = 0L, reason_code = "*",
+    n_distinct_fail_values = 0L, n_easy_fix = 0L, status = "not_run",
+    not_run_reason = allowed, message_id = "value_above_max"
+  ), group_cols = "unit")
+  data.table::set(results, j = "n_not_evaluated_own", value = 0L)
+  tables <- list(
+    results = results,
+    issues = new_issues(group_cols = "unit"),
+    metadata = lapply(metadata_schema(), empty_table), unit = "u1"
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- NULL
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught <<- data.table::copy(dt)
+    "<table>"
+  })
+  section_not_evaluated(tables, NULL, settings)
+  expect_equal(nrow(caught), length(allowed))
+  expect_setequal(
+    caught$Reason,
+    vapply(paste0("report_reason_", allowed), report_text, "", USE.NAMES = FALSE)
+  )
+  expect_true(all(startsWith(caught$Reason, "Not run: ")))
+})
+
+test_that("two units' sections: fixed ids, one section per issue, escaped, each its own (D20.28)", {
+  run_id <- "20261026T120000Z_abc123"
+  hostile <- fx_hostile_text()
+  # Each issue's value is its own marker, holding markup.
+  values <- sprintf("<v%d>&\"", 1:9)
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:9, run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "code_not_in_list", "code_not_in_list", "fk_orphan", "raw_na", "column_missing",
+      "value_above_max", "coercion_loss", "value_above_max", "code_not_in_list"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(3L, 3L, 4L, 2L, 0L, 3L, 1L, 3L, 3L),
+    severity = c(
+      "error", "error", "error", "warning", "error", "warning", "error", "warning", "error"
+    ),
+    reason_code = "*",
+    table_name = c(
+      "catches", "catches", "catches", "hauls", "hauls", "catches", "catches", "catches",
+      "catches"
+    ),
+    column_name = c(
+      "species", "species", "haul_id", "minutes", "gear", "weight", "length", "length",
+      "species"
+    ),
+    record_pk = c("c<1>", "c2", "*", "h1", "*", "c3", "*", "c4", "c9"),
+    row_number = c(1L, 2L, NA, 1L, NA, 3L, NA, 4L, 9L),
+    pk_positional = c(FALSE, FALSE, NA, FALSE, NA, FALSE, NA, FALSE, FALSE),
+    level = c(
+      "record", "record", "column", "record", "column", "record", "column", "record", "record"
+    ),
+    n_records = c(NA, NA, 12L, NA, 0L, NA, 5L, NA, NA), value = values,
+    expected = c(hostile[[3L]], hostile[[4L]], rep(NA, 7L)),
+    provider_key = c("<script>&", "plot=2", rep(NA, 7L)),
+    provider_key_status = c("raw", "decoded", rep(NA, 7L)),
+    unit = c("u1", "u1", "u1", "u1", "*", "u1", "u1", "u1", "u2"),
+    area = c(hostile[[5L]], "a2", "a1", "a2", "*", "*", "a1", "a1", "b1"),
+    plot = c("<p&1>", "p2", "*", "p3", "*", "*", "*", "p4", "p9"),
+    root_issue_id = c(rep(NA, 7L), 7L, NA),
+    status = c(rep("open", 7L), "not_evaluated", "open"),
+    issue_class = c(
+      "source", "source", "source", "harmonization", "harmonization", "unclassified",
+      "unclassified", "unclassified", "source"
+    )
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  # A results row's examples and a group value of another unit, never shown (D20.23).
+  results <- new_results(list(
+    run_id = run_id, run_scope = "package",
+    rule_id = c(
+      "column_missing", "coercion_loss", "raw_na", "code_not_in_list", "value_above_max",
+      "value_above_max", "fk_orphan", "key_incoherent", "code_not_in_list"
+    ),
+    rule_fingerprint = "f", stage = "conformance", layer = c(0L, 1L, 2L, 3L, 3L, 3L, 4L, 4L, 3L),
+    severity = c(
+      "error", "error", "warning", "error", "warning", "warning", "error", "error", "error"
+    ),
+    table_name = c(
+      "hauls", "catches", "hauls", "catches", "catches", "catches", "catches", "catches",
+      "catches"
+    ),
+    column_name = c(
+      "gear", "length", "minutes", "species", "weight", "length", "haul_id", "haul_id",
+      "species"
+    ),
+    unit = c("*", "u1", "u1", "u1", "u1", "u1", "u1", "*", "u2"),
+    area = c("*", "a1", "a2", "zz-other", "*", "a1", "a1", "*", "b1"),
+    n_checked = c(1L, 5L, 3L, 4L, 4L, 4L, 12L, 0L, 3L),
+    n_fail = c(1L, 5L, 1L, 2L, 1L, 0L, 12L, 0L, 1L),
+    n_not_evaluated = c(0L, 0L, 0L, 0L, 0L, 1L, 0L, 0L, 0L),
+    n_unchecked = c(NA, 0L, 0L, 0L, 2L, 0L, 0L, 0L, 0L), reason_code = "*",
+    n_distinct_fail_values = c(1L, 1L, 1L, 2L, 1L, 0L, 1L, 0L, 1L), n_easy_fix = 0L,
+    examples = c(NA, NA, NA, "secret-example", NA, NA, NA, NA, values[[9L]]),
+    status = c("fail", "fail", "fail", "fail", "fail", "pass", "fail", "not_run", "fail"),
+    not_run_reason = c(rep(NA, 7L), "no_input", NA),
+    message_id = c(
+      "column_missing", "coercion_loss", "raw_na", "code_not_in_list", "value_above_max",
+      "value_above_max", "fk_orphan", "key_incoherent", "code_not_in_list"
+    )
+  ), group_cols = c("unit", "area"))
+  schema <- metadata_schema()
+  metadata <- lapply(schema, empty_table)
+  metadata$run <- complete_table(list(
+    run_id = run_id, run_start = "2026-10-26T12:00:00Z", run_end = "2026-10-26T12:00:05Z",
+    package_version = "0.0.0.9024", r_version = "4.5.2", platform = "x86_64-w64-mingw32",
+    data_table_version = "1.18.0", group_cols = "unit; area", outcome = "completed"
+  ), schema$run, "run")
+  metadata$inputs <- complete_table(
+    list(input = "tables:catches", file = "in memory", detail = "9 rows"), schema$inputs, "inputs"
+  )
+  run <- list(
+    results = results, issues = issues, corrections = new_corrections(), metadata = metadata
+  )
+  lineage <- data.table::data.table(
+    table_name = "catches", record_pk = c("c<1>", "c9"), column_name = "species",
+    raw_value = c("<raw1>&\"'", "<raw9>&"), raw_source = "x"
+  )
+  builders <- list(
+    section_header, section_glance, section_actions, section_harmonization,
+    section_under_review, section_column_level, section_not_evaluated, section_guide
+  )
+  # One unit's sections as gpq_build_reports() builds them from route_unit()'s tables (task 7),
+  # the lineage rows filtered there (D20.61, D20.65).
+  report <- function(unit, text = NULL, lang = "en") {
+    tables <- c(route_unit(run, unit, c("u1", "u2"), lineage), list(
+      metadata = metadata, unit = unit, group_cols = c("unit", "area"), key_col = "plot"
+    ))
+    settings <- list(
+      lang = lang, row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+      csv_name = paste0(unit, "_issues.csv")
+    )
+    lapply(builders, function(build) build(tables, text, settings))
+  }
+  mine <- report("u1")
+  # D20.30: each builder's id, fixed and unique.
+  ids <- vapply(mine, function(section) attr(section, "gpq_section")[["id"]], "")
+  expect_equal(ids, c(
+    "header", "glance", "actions", "harmonization", "under-review", "column-level",
+    "not-evaluated", "guide"
+  ))
+  html <- vapply(mine, as.character, "")
+  # D20.28: each open issue of the unit in exactly one section; the not-evaluated one counted
+  # in section 10, its value in none.
+  holding <- vapply(values, function(value) sum(grepl(html_escape(value), html, fixed = TRUE)), 1L)
+  expect_equal(unname(holding), c(rep(1L, 7L), 0L, 0L))
+  expect_match(
+    html[[7L]], "Not evaluated: coercion_loss failed on the same value first",
+    fixed = TRUE
+  )
+  # 11.1: nothing reaches the page unescaped; the hostile text shows escaped.
+  expect_false(any(grepl("<v[0-9]|<script>|<raw|<p&1>|c<1>", html)))
+  expect_match(html[[3L]], html_escape("<raw1>&\"'"), fixed = TRUE)
+  expect_match(html[[3L]], "&lt;script&gt;&amp;", fixed = TRUE)
+  expect_match(html[[3L]], html_escape(hostile[[3L]]), fixed = TRUE)
+  expect_match(html[[2L]], hostile[[5L]], fixed = TRUE)
+  # Every slot filled (the text rows' slots).
+  expect_false(any(grepl("\\{[a-z0-9_]+\\}", html)))
+  # D20.23: no results row's examples or group values.
+  expect_false(any(grepl("secret-example|zz-other", html)))
+  # D20.17: a raw value only in its own unit's report.
+  theirs <- vapply(report("u2"), as.character, "")
+  expect_false(any(grepl("raw1", theirs, fixed = TRUE)))
+  expect_match(theirs[[3L]], html_escape("<raw9>&"), fixed = TRUE)
+  expect_false(any(grepl("raw9", html, fixed = TRUE)))
+  expect_false(any(grepl(html_escape(values[[1L]]), theirs, fixed = TRUE)))
+  # The caller's text in the run's language reaches the sections (D14.7, D14.30).
+  text <- validate_text_table(data.frame(
+    text_id = "report_section_guide", lang = "fr", text = "Guide <b>"
+  ))
+  french <- report("u1", text, "fr")
+  expect_equal(attr(french[[8L]], "gpq_section")[["title"]], "Guide <b>")
+  expect_match(as.character(french[[8L]]), "<h2>Guide &lt;b&gt;</h2>", fixed = TRUE)
+})
+
+test_that("the tables and charts sort text marked latin1 as its UTF-8 text, in C order (D20.42)", {
+  run_id <- "20261026T120000Z_abc123"
+  # One text marked UTF-8 and one marked latin1: read as UTF-8, "é" comes before "ü" in C
+  # order, though its latin1 byte is the higher, so a sort on the bytes as marked puts it last.
+  marked <- c("ü", iconv("é", "UTF-8", "latin1"))
+  expect_identical(Encoding(marked), c("UTF-8", "latin1"))
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- NULL
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught <<- data.table::copy(dt)
+    "<table>"
+  })
+  # Record-level issues alike but for their columns, provider keys or record IDs.
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:6, run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    reason_code = "*", table_name = "catches", column_name = c(marked, rep("species", 4L)),
+    record_pk = c("r1", "r2", "r3", "r4", marked), row_number = 1:6, pk_positional = FALSE,
+    level = "record", value = "x", provider_key = c("k", "k", marked, NA, NA),
+    provider_key_status = c("raw", "raw", "raw", "raw", NA, NA), unit = "u1", status = "open",
+    issue_class = "source"
+  ), group_cols = "unit")
+  # "By check": the four on species first, as the most issues, then "é" before "ü".
+  issue_summary(issues, NULL, settings)
+  expect_equal(caught$Column, c("species", "é", "ü"))
+  # "Each issue": by column, then provider key, then record ID, each in C order.
+  issue_records(issues, NULL, settings)
+  expect_equal(caught$`Record ID`, c("r4", "r3", "é", "ü", "r2", "r1"))
+  # Section 6: column-level issues alike but for their columns.
+  whole <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:2, run_id = run_id, run_scope = "package", rule_id = "value_above_max",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    reason_code = "*", table_name = "catches", column_name = marked, record_pk = "*",
+    row_number = NA_integer_, pk_positional = NA, level = "column", n_records = 12L,
+    unit = "u1", status = "open", issue_class = "source"
+  ), group_cols = "unit")
+  section_column_level(list(issues = whole, group_cols = "unit"), NULL, settings)
+  expect_equal(caught$Column, c("é", "ü"))
+  # Section 10: checks not run alike but for their columns.
+  results <- new_results(list(
+    run_id = run_id, run_scope = "package", rule_id = "value_above_max",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    table_name = "catches", column_name = marked, unit = "u1", n_checked = 0L, n_fail = 0L,
+    n_not_evaluated = 0L, n_unchecked = 2L, reason_code = "*", n_distinct_fail_values = 0L,
+    n_easy_fix = 0L, status = "not_run", not_run_reason = "no_input",
+    message_id = "value_above_max"
+  ), group_cols = "unit")
+  data.table::set(results, j = "n_not_evaluated_own", value = 0L)
+  tables <- list(
+    results = results, issues = new_issues(group_cols = "unit"),
+    metadata = lapply(metadata_schema(), empty_table), unit = "u1"
+  )
+  # With data.table's optimisation off, so the sort is base R's order() and not data.table's
+  # own, which reads text as UTF-8 by itself.
+  withr::with_options(
+    list(datatable.optimize = 0L),
+    section_not_evaluated(tables, NULL, settings)
+  )
+  expect_equal(caught$Column, c("é", "ü"))
+  # Section 2's chart by table, its values of as many issues by value, the same way.
+  bars <- NULL
+  testthat::local_mocked_bindings(html_bar = function(value, max, label, bar_class = NULL) {
+    bars <<- label
+    "<bars>"
+  })
+  data.table::set(issues, j = "table_name", value = c(marked, rep("catches", 4L)))
+  glance <- list(results = new_results(group_cols = "unit"), issues = issues, group_cols = "unit")
+  withr::with_options(list(datatable.optimize = 0L), section_glance(glance, NULL, settings))
+  expect_equal(bars, c("catches", "é", "ü"))
+})
