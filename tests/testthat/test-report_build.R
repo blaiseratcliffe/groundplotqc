@@ -157,6 +157,16 @@ test_that("route_unit keeps only the lineage rows of its unit's routed cells (D2
   # No lineage given: none routed. The input is left as it was.
   expect_null(route_unit(x, "100", units)$lineage)
   expect_identical(lineage, before)
+  # A record with no key names no cell: a lineage row whose record_pk is blank goes to no unit,
+  # though a routed issue's record_pk is NA too (D20.61).
+  y <- x
+  y$issues <- data.table::copy(x$issues)
+  data.table::set(y$issues, i = 10L, j = "record_pk", value = NA_character_)
+  blank <- data.table::data.table(
+    table_name = "catches", record_pk = NA_character_, column_name = "weight",
+    raw_value = "RAW-NO-PK", raw_source = "x"
+  )
+  expect_identical(nrow(route_unit(y, "100", units, blank)$lineage), 0L)
 })
 
 test_that("corrections follow their issues", {

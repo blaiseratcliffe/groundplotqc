@@ -35,7 +35,8 @@
 #' Corrections: those of the routed issues. Lineage (D20.17, D20.61, D20.65): `lineage` is NULL
 #' or the lineage input as gpq_build_reports() reads it (`table_name`, `record_pk`,
 #' `column_name`, `raw_value`, ...); only its rows whose table, record and column are a routed
-#' issue's cell are kept, so a builder never sees the whole input. Returns
+#' issue's cell are kept, so a builder never sees the whole input. An issue whose `record_pk`
+#' is NA names no cell and takes none. Returns
 #' `list(results, issues, corrections, lineage)`, new data.tables, `lineage` NULL when none is
 #' given.
 #' @noRd
@@ -105,8 +106,11 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   routed_lineage <- NULL
   if (!is.null(lineage)) {
     cell_columns <- c("table_name", "record_pk", "column_name")
+    # A record with no key names no cell, so its issue takes no lineage row: the join would
+    # pair its NA with every blank record_pk, another unit's among them (D20.61).
+    keyed <- which(!is.na(routed_issues$record_pk))
     routed_lineage <- as.data.table(lineage)[
-      unique(routed_issues[, cell_columns, with = FALSE]),
+      unique(routed_issues[keyed, cell_columns, with = FALSE]),
       on = cell_columns, nomatch = NULL
     ]
   }
