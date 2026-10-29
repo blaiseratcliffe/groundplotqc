@@ -153,7 +153,7 @@
 #'     is TRUE where the issue holds a value read from a record of another report unit, or
 #'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
 #'     unit's key reached through the keys, any side of `key_incoherent`'s key pairs on the
-#'     record, compared or not, one of `undeclared_code_set`'s values from records with no
+#'     record (compared or not), one of `undeclared_code_set`'s values from records with no
 #'     unit, or a value `design_geometry_inconsistent` compared from a record of another unit
 #'     or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
 #'     FALSE in a run without group columns, and isn't part of the fingerprint.
