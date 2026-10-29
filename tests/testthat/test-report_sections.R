@@ -649,7 +649,7 @@ test_that("sections 3 to 5 hold their class's record issues, pointing to section
     }
   )
   pointer <- paste0(
-    "<p>Issues of this class that cover a whole column: 1, listed in ",
+    "<p>Issues of the same kind that cover a whole column: 1, listed in ",
     "<a href=\"#column-level\">Issues that cover a whole column</a>.</p>"
   )
   actions <- as.character(section_actions(tables, NULL, settings))
@@ -901,10 +901,10 @@ test_that("section_not_evaluated sums records by check and reason over the group
   tables$issues <- issues[issues$status == "open"]
   html <- as.character(section_not_evaluated(tables, NULL, settings))
   expect_match(html, "This run is incomplete.", fixed = TRUE)
-  expect_false(grepl("Every check ran", html, fixed = TRUE))
+  expect_false(grepl("Every check this run ran", html, fixed = TRUE))
   tables$metadata$self_test <- empty_table(metadata_schema()$self_test)
   html <- as.character(section_not_evaluated(tables, NULL, settings))
-  expect_match(html, "<p>Every check ran and evaluated every record.</p>", fixed = TRUE)
+  expect_match(html, "<p>Every check this run ran evaluated every record.</p>", fixed = TRUE)
 })
 
 test_that("every section builds for a unit with no results row and no issue", {
@@ -933,7 +933,7 @@ test_that("every section builds for a unit with no results row and no issue", {
   html <- vapply(builders, function(build) as.character(build(tables, NULL, settings)), "")
   expect_match(html[[2L]], "Open issues: 0.", fixed = TRUE)
   expect_match(html[[3L]], "No issues for you to act on.", fixed = TRUE)
-  expect_match(html[[7L]], "Every check ran and evaluated every record.", fixed = TRUE)
+  expect_match(html[[7L]], "Every check this run ran evaluated every record.", fixed = TRUE)
   expect_false(any(grepl("\\{[a-z0-9_]+\\}", html)))
 })
 

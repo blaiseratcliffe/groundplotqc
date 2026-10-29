@@ -235,13 +235,15 @@ unit_file_name <- function(units) {
 #' complete, so a build that stops leaves no partly written file.
 #'
 #' One report and one CSV is built for each report unit `metadata/run.csv` lists, even a unit
-#' with no issue. An issue goes to its own unit's report. A whole-table or whole-column issue
-#' with `"*"` as its unit goes to every unit, and so does a results row that counts no
-#' records, such as a check that couldn't run because a table wasn't given. An issue or
-#' results row of records with `"*"` as its unit goes to no unit's report, and so does an
-#' issue whose record reaches another unit's records through its keys (`reaches_other_unit`),
-#' unless the run has one unit. A run with no group columns builds one report,
-#' `reports/report.html`, and one CSV, `tables/report_issues.csv`, holding every issue.
+#' with no issue. An issue goes to its own unit's report. An issue of a check that checks whole
+#' tables or columns, with `"*"` as its unit and not marked `reaches_other_unit`, goes to every
+#' unit, and so does a results row that counts no records, such as a check that couldn't run
+#' because a table wasn't given. Any other issue or results row with `"*"` as its unit, a
+#' whole-column issue of records included, goes to no unit's report, and so does an issue the
+#' run marks `reaches_other_unit` (one holding a value read from another unit's records or from
+#' records with no unit). In a run of one unit, all of these go to that unit's report. A run
+#' with no group columns builds one report, `reports/report.html`, and one CSV,
+#' `tables/report_issues.csv`, holding every issue.
 #'
 #' Each provider's file name is its unit value, with every character other than an ASCII
 #' letter, a digit, "-", "_" or "." written as % and its UTF-8 bytes in uppercase hex ("%"

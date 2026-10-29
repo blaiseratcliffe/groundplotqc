@@ -82,11 +82,11 @@
 #'
 #' A record's group values are read from its own table or, through the foreign keys, from a
 #' table that holds the column, shortest route first. Where a key on the way is missing, blank
-#' or a missing-value code, or the value found is blank, missing or `"*"`, the next route is
-#' tried. A record no route reaches, or whose key on the way names no parent record, has `"*"`
-#' there. A group value marked latin1 is converted to UTF-8 and runs; one whose bytes aren't
-#' valid UTF-8 stops the run, naming the column, the table it is read from and its first such
-#' row.
+#' or a missing-value code, a table or column on the way isn't given, or the value found is
+#' blank, missing, a missing-value code or `"*"`, the next route is tried. A record no route
+#' reaches, or whose key on the way names no parent record, has `"*"` there. A group value
+#' marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
+#' run, naming the column, the table it is read from and its first such row.
 #'
 #' Settings (each from the argument, the rule set, the option, or the built-in value, see
 #' [groundplotqc_options]): `raw_na_policy`, `rogue_codes`, `unknown_codes`,
@@ -152,11 +152,11 @@
 #'     `change_cause`. The columns a conformance run doesn't fill are NA. `reaches_other_unit`
 #'     is TRUE where the issue holds a value read from a record of another report unit, or
 #'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
-#'     unit's key reached through the keys, a side that `key_incoherent` compared, one of
-#'     `undeclared_code_set`'s values from records with no unit, or a value
-#'     `design_geometry_inconsistent` compared from a record of another unit or with no unit.
-#'     For a column-level issue it is TRUE when any record it covers is. It is FALSE in a run
-#'     without group columns, and isn't part of the fingerprint.
+#'     unit's key reached through the keys, any side of `key_incoherent`'s key pairs on the
+#'     record, compared or not, one of `undeclared_code_set`'s values from records with no
+#'     unit, or a value `design_geometry_inconsistent` compared from a record of another unit
+#'     or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
+#'     FALSE in a run without group columns, and isn't part of the fingerprint.
 #'   - `corrections`: an empty table.
 #'   - `metadata`: the tables of `metadata/` in a run folder.
 #'
