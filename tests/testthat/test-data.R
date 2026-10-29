@@ -416,13 +416,15 @@ test_that("a fresh build under each state the tests set gives the cached build (
     }
     build()
   }
-  # The builder's cache emptied, as the test above empties it, and put back on return.
+  # The builder's cache emptied, as the test above empties it, and put back on return; the
+  # fresh build is returned with what the cache held just after it.
   fresh_build <- function(builder, state) {
     cache <- environment(builder)
     kept <- cache$built
     withr::defer(assign("built", kept, envir = cache))
     assign("built", NULL, envir = cache)
-    state(builder)
+    value <- state(builder)
+    list(value = value, built = cache$built)
   }
   for (name in names(builders)) {
     builder <- builders[[name]]
@@ -431,8 +433,14 @@ test_that("a fresh build under each state the tests set gives the cached build (
     for (state in setdiff(names(states), unset)) {
       info <- paste(name, "under", state)
       fresh <- tryCatch(fresh_build(builder, states[[state]]), error = function(e) e)
+      if (!inherits(fresh, "error")) {
+        # The fresh build filled the emptied cache, as the test above checks.
+        expect_false(is.null(fresh$built), info = info)
+        fresh <- fresh$value
+      }
       if (state == no_files) {
-        # A builder that reads a file stops there, so nothing built under it is cached.
+        # A builder that reads a file stops there, so nothing built under it is cached
+        # (D20.141).
         expect_true(inherits(fresh, "error") || identical(cached, fresh), info = info)
       } else {
         expect_identical(cached, fresh, info = info)

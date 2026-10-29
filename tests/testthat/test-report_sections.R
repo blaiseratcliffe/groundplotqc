@@ -901,7 +901,7 @@ test_that("section_not_evaluated sums records by check and reason over the group
   tables$issues <- issues[issues$status == "open"]
   html <- as.character(section_not_evaluated(tables, NULL, settings))
   expect_match(html, "This run is incomplete.", fixed = TRUE)
-  expect_false(grepl("Every check this run ran", html, fixed = TRUE))
+  expect_false(grepl(html_escape(report_text("report_not_evaluated_empty")), html, fixed = TRUE))
   tables$metadata$self_test <- empty_table(metadata_schema()$self_test)
   html <- as.character(section_not_evaluated(tables, NULL, settings))
   expect_match(html, "<p>Every check this run ran evaluated every record.</p>", fixed = TRUE)
