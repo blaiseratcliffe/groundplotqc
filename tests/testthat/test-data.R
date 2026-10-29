@@ -292,6 +292,156 @@ test_that("a cached fixture builder gives what a fresh build gives (D20.127, D20
   }
 })
 
+test_that("a fresh build under each state the tests set gives the cached build (D20.138)", {
+  testthat::skip_on_cran()
+  # The test above makes its fresh build in this test's own state. Here each builder's fresh
+  # build is made under each of the 20 session states other tests set (D20.127's probe), so a
+  # builder whose output came to depend on state another test sets fails here: a cache filled
+  # while a test held that state would hand every later test a build its own state doesn't
+  # make. Each state is set in a local function and restored when it returns; each builder's
+  # cache and the text cache are put back as they were. Off CRAN, as it mocks base
+  # system.file() when the package is installed (R145, D20.130).
+  builders <- list(
+    fx_fish_spec = fx_fish_spec, fx_fish_clean = fx_fish_clean, fx_magp_clean = fx_magp_clean
+  )
+  # The locales test-check_keys.R and test-check_types.R set, found as they find them; a state
+  # whose locale the platform lacks is left out, and the test skips after the others.
+  sorts_lower_first <- function(locale) {
+    withr::local_collate(locale)
+    identical(sort(c("NOP", "aaa")), c("aaa", "NOP"))
+  }
+  english <- Find(
+    function(locale) isTRUE(suppressWarnings(sorts_lower_first(locale))),
+    c("en_US.UTF-8", "English_United States.utf8", "en_GB.UTF-8")
+  )
+  takes_time <- function(locale) {
+    old <- Sys.getlocale("LC_TIME")
+    withr::defer(Sys.setlocale("LC_TIME", old))
+    nzchar(suppressWarnings(Sys.setlocale("LC_TIME", locale)))
+  }
+  malay <- Find(takes_time, c("ms-MY", "ms_MY.UTF-8", "ms_MY.utf8"))
+  unset <- c(
+    if (is.null(english)) "an English collation", if (is.null(malay)) "a Malay LC_TIME"
+  )
+  with_options <- function(...) {
+    values <- list(...)
+    function(build) {
+      withr::local_options(values)
+      build()
+    }
+  }
+  with_language <- function(value) {
+    function(build) {
+      withr::local_envvar(LANGUAGE = value)
+      build()
+    }
+  }
+  no_files <- "system.file() mocked to \"\""
+  states <- list(
+    "options(warn = 2)" = with_options(warn = 2),
+    "datatable.optimize = 0" = with_options(datatable.optimize = 0L),
+    "data.table's verbose and progress output, captured" = function(build) {
+      withr::local_options(datatable.verbose = TRUE, datatable.showProgress = TRUE)
+      value <- NULL
+      utils::capture.output(value <- build())
+      value
+    },
+    "datatable.fwrite.sep with datatable.logical01" = with_options(
+      datatable.fwrite.sep = ";", datatable.logical01 = TRUE
+    ),
+    "LANGUAGE fr" = with_language("fr"),
+    "LANGUAGE de" = with_language("de"),
+    "LANGUAGE unset" = with_language(NA),
+    "LC_CTYPE C" = function(build) {
+      withr::local_locale(c(LC_CTYPE = "C"))
+      build()
+    },
+    "an English collation" = function(build) {
+      withr::local_collate(english)
+      build()
+    },
+    "LC_COLLATE \"\"" = function(build) {
+      withr::local_collate("")
+      build()
+    },
+    "a Malay LC_TIME" = function(build) {
+      withr::local_locale(c(LC_TIME = malay))
+      build()
+    },
+    "groundplotqc.lang" = with_options(groundplotqc.lang = "fr"),
+    "groundplotqc.severity" = with_options(groundplotqc.severity = c(value_odd = "error")),
+    "groundplotqc.row_cap" = with_options(groundplotqc.row_cap = 2L),
+    "groundplotqc.coordinate_attributes" = with_options(
+      groundplotqc.coordinate_attributes = "kind"
+    ),
+    "groundplotqc.unknown_codes" = with_options(groundplotqc.unknown_codes = c(colour = "red")),
+    "groundplotqc.fallback_class" = with_options(
+      groundplotqc.fallback_class = c(value_odd = "source")
+    ),
+    "the text cache with French rows" = function(build) {
+      kept <- as.list(text_cache, all.names = TRUE)
+      withr::defer({
+        reset_report_texts()
+        list2env(kept, envir = text_cache)
+      })
+      reset_report_texts()
+      text_cache$engine <- rbind(data.table::copy(report_texts()), data.table::data.table(
+        text_id = c("preflight_title", "preflight_intro"), lang = "fr",
+        text = c("Moteur", "Moteur, introduction")
+      ))
+      build()
+    },
+    "another rule_registry()" = function(build) {
+      registry <- data.table::copy(rule_registry())
+      data.table::set(registry, j = "rule_version", value = registry$rule_version + 1L)
+      registry <- rbind(registry, data.table::data.table(
+        rule_id = c("value_odd", "value_jump"), stage = c("conformance", "plausibility"),
+        layer = c(2L, 7L), check_type = "test", default_severity = c("warning", "flag"),
+        default_class = c("harmonization", "depends"),
+        inputs = c("attributes; sentinels; settings:lang; settings:severity", "codes"),
+        strategy = "none", message_id = "preflight_title", rule_version = 2L, unit = FALSE
+      ))
+      testthat::local_mocked_bindings(rule_registry = function() registry)
+      build()
+    }
+  )
+  # As test-results_metadata.R mocks it: pkgload's system.file() under load_all(), base's when
+  # installed.
+  imports <- parent.env(environment(example_file))
+  states[[no_files]] <- function(build) {
+    if (exists("system.file", envir = imports, inherits = FALSE)) {
+      testthat::local_mocked_bindings(system.file = function(...) "")
+    } else {
+      testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
+    }
+    build()
+  }
+  # The builder's cache emptied, as the test above empties it, and put back on return.
+  fresh_build <- function(builder, state) {
+    cache <- environment(builder)
+    kept <- cache$built
+    withr::defer(assign("built", kept, envir = cache))
+    assign("built", NULL, envir = cache)
+    state(builder)
+  }
+  for (name in names(builders)) {
+    builder <- builders[[name]]
+    builder()
+    cached <- builder()
+    for (state in setdiff(names(states), unset)) {
+      info <- paste(name, "under", state)
+      fresh <- tryCatch(fresh_build(builder, states[[state]]), error = function(e) e)
+      if (state == no_files) {
+        # A builder that reads a file stops there, so nothing built under it is cached.
+        expect_true(inherits(fresh, "error") || identical(cached, fresh), info = info)
+      } else {
+        expect_identical(cached, fresh, info = info)
+      }
+    }
+  }
+  testthat::skip_if(length(unset) > 0L, paste("needs", paste(unset, collapse = " and ")))
+})
+
 test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
   # A full MAGPlot run, about 2 s since M4b cut the run's fixed cost (D16.18, D16.50).
   testthat::skip_on_cran()
