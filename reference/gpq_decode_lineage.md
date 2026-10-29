@@ -85,7 +85,9 @@ lineage spec gives an entry.
 
 - `raw`: the ID as delivered: it doesn't split into the expected parts
   (a value holding the separator), its entry has labelled alternatives,
-  or there is no separator.
+  there is no separator, or one of its parts or labels holds "; " or
+  "=". The last case keeps every `decoded` or `partial` key splitting
+  back into its parts exactly.
 
 - `no_lineage_spec`: the ID as delivered: the record's contributor has
   no entry for it.

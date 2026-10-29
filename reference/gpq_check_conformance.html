@@ -15,7 +15,7 @@ on every record of a column in a group."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9024</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -102,7 +102,9 @@ name. A table of the specification the database doesn't have is reported as miss
 
 <dt id="arg-group-cols">group_cols<a class="anchor" aria-label="anchor" href="#arg-group-cols"></a></dt>
 <dd><p><code>NULL</code>, or the grouping columns, report unit first: results and issues
-carry them under these names.</p></dd>
+carry them under these names. A blank group value, or the text <code>"*"</code>, counts as no
+value. A record that reaches only such values is grouped under <code>"*"</code>; in the report-unit
+column, its records' issues go into no provider's report in a run of several units.</p></dd>
 
 
 <dt id="arg-problem-unit">problem_unit<a class="anchor" aria-label="anchor" href="#arg-problem-unit"></a></dt>
@@ -132,17 +134,31 @@ unit problem plots are ranked by; issues carry that key under its name.</p></dd>
     <p>An object of class <code>gpq_results</code>, a list of three tables and the run metadata:</p><ul><li><p><code>results</code>: the summary, one row per rule, table, column and group: <code>run_id</code>,
 <code>run_scope</code>, <code>rule_id</code>, <code>rule_fingerprint</code>, <code>stage</code>, <code>layer</code>, <code>severity</code>, <code>table_name</code>,
 <code>column_name</code>, the group columns, <code>n_checked</code>, <code>n_fail</code>, <code>n_not_evaluated</code>,
-<code>reason_code</code>, <code>n_distinct_fail_values</code>, <code>n_easy_fix</code>, <code>examples</code>, <code>status</code> (<code>pass</code>,
-<code>fail</code> or <code>not_run</code>), <code>not_run_reason</code> and <code>message_id</code>.</p></li>
+<code>n_unchecked</code>, <code>reason_code</code>, <code>n_distinct_fail_values</code>, <code>n_easy_fix</code>, <code>examples</code>,
+<code>status</code> (<code>pass</code>, <code>fail</code> or <code>not_run</code>), <code>not_run_reason</code> and <code>message_id</code>. Each record of
+a group counts once in <code>n_checked</code>, <code>n_not_evaluated</code> or <code>n_unchecked</code>, which add up to
+the group's records: <code>n_checked</code> the records the rule checked, <code>n_fail</code> of them failing;
+<code>n_not_evaluated</code> those it reached but didn't evaluate, because an earlier check failed
+on the same value or the rule can't judge it, such as an allowed missing-value code in a
+foreign key; and <code>n_unchecked</code> those it never reached, such as every record of a check
+that didn't run. For a rule that checks whole tables or columns, the counts are of
+tables or columns, not records, and <code>n_unchecked</code> is NA.</p></li>
 <li><p><code>issues</code>: one row per failing or not-evaluated record, or per column-level issue:
 <code>issue_id</code>, <code>run_id</code>, <code>run_scope</code>, <code>rule_id</code>, <code>rule_fingerprint</code>, <code>stage</code>, <code>layer</code>,
 <code>severity</code>, <code>reason_code</code>, <code>table_name</code>, <code>column_name</code>, <code>record_pk</code>, <code>row_number</code>,
 <code>pk_positional</code>, <code>level</code> (<code>record</code> or <code>column</code>), <code>n_records</code>, <code>value</code>, <code>expected</code>,
 <code>entity_key</code>, <code>visit_keys</code>, <code>provider_key</code>, <code>provider_key_status</code>, the group columns,
-the problem unit's key column, <code>root_issue_id</code>, <code>status</code> (<code>open</code> or <code>not_evaluated</code>),
-<code>issue_class</code>, <code>class_basis</code>, <code>script_file</code>, <code>script_block</code>, <code>attribution_status</code>,
-<code>fingerprint</code>, <code>fingerprint_pk</code>, <code>first_seen_run</code>, <code>change</code> and <code>change_cause</code>. The
-columns a conformance run doesn't fill are NA.</p></li>
+the problem unit's key column, <code>reaches_other_unit</code>, <code>root_issue_id</code>, <code>status</code> (<code>open</code>
+or <code>not_evaluated</code>), <code>issue_class</code>, <code>class_basis</code>, <code>script_file</code>, <code>script_block</code>,
+<code>attribution_status</code>, <code>fingerprint</code>, <code>fingerprint_pk</code>, <code>first_seen_run</code>, <code>change</code> and
+<code>change_cause</code>. The columns a conformance run doesn't fill are NA. <code>reaches_other_unit</code>
+is TRUE where the issue holds a value read from a record of another report unit, or
+from a record whose report unit is <code>"*"</code>. Such a value is a group value or the problem
+unit's key reached through the keys, any side of <code>key_incoherent</code>'s key pairs on the
+record (compared or not), one of <code>undeclared_code_set</code>'s values from records with no
+unit, or a value <code>design_geometry_inconsistent</code> compared from a record of another unit
+or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
+FALSE in a run without group columns, and isn't part of the fingerprint.</p></li>
 <li><p><code>corrections</code>: an empty table.</p></li>
 <li><p><code>metadata</code>: the tables of <code>metadata/</code> in a run folder.</p></li>
 </ul><p>Write it with <code><a href="gpq_write_results.html">gpq_write_results()</a></code>.</p>
@@ -174,7 +190,8 @@ many values were read as Windows-1252. A table read from a DBI connection is rec
 <code>src_id_duplicate</code>, <code>key_incoherent</code>, <code>record_unreachable</code>, <code>parent_without_children</code>,
 <code>design_geometry_inconsistent</code>, <code>subplot_label_ambiguous</code>, <code>design_duplicate_signature</code>.</p></li>
 </ul><p>Two of these write no issue at this version: <code>parent_without_children</code> counts, in the
-results only, the parent records that no child record names, and
+results only, the parent records that no child record names (a parent whose key is missing,
+blank, a missing-value code or a value Layer 1 can't read counts as not evaluated), and
 <code>fk_not_applicable_mismatch</code> writes only <code>not_run</code> rows until a version brings the
 applicability matrix. <code>record_unreachable</code> runs only when <code><a href="gpq_read_spec.html">gpq_read_spec()</a></code> was given
 <code>reach</code>, and the design checks only when their settings name their tables and columns;
@@ -183,7 +200,9 @@ otherwise each writes one <code>not_run</code> row (<code>no_input</code>).</p>
 only in letter case or spaces is reported by <code>column_name_mismatch</code> and checked as that
 attribute. <code>class_mismatch</code>, <code>integer_stored_as_double</code>,
 <code>undeclared_code_set</code> and Layer 0's rules count tables or columns, not records, and their
-rows have <code>"*"</code> in every group column.
+rows have <code>"*"</code> in every group column. <code>undeclared_code_set</code> writes one issue per report
+unit, each holding only that unit's values; values from records with no unit go in an issue
+of their own, under <code>"*"</code>.
 A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status <code>not_evaluated</code> and names the earlier issue as its root. A value
 that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
@@ -200,9 +219,11 @@ the key is a number), and doesn't evaluate <code>record_unreachable</code> on a 
 reports. When a rule fails on every checked record of a column in a group, and at least
 <code>column_level_min_n</code> records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.</p>
-<p>A record's group values are read from its own table, or from the nearest table that holds
-the column, through the foreign keys; a record that can't reach one, whose keys on the way
-don't match, or whose value there is blank or missing, has <code>"*"</code> there. A group value
+<p>A record's group values are read from its own table or, through the foreign keys, from a
+table that holds the column, shortest route first. Where a key on the way is missing, blank
+or a missing-value code, a table or column on the way isn't given, or the value found is
+blank, missing, a missing-value code or <code>"*"</code>, the next route is tried. A record no route
+reaches, or whose key on the way names no parent record, has <code>"*"</code> there. A group value
 marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
 run, naming the column, the table it is read from and its first such row.</p>
 <p>Settings (each from the argument, the rule set, the option, or the built-in value, see

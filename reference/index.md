@@ -15,6 +15,8 @@
 
 ## Generic engine: checks and results
 
+- [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  : Build the provider reports and issues CSVs of a saved run
 - [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
   : Check tables against a specification: structure, types,
   missing-value codes, value domains and keys

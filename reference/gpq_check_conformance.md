@@ -60,7 +60,10 @@ gpq_check_conformance(
 - group_cols:
 
   `NULL`, or the grouping columns, report unit first: results and issues
-  carry them under these names.
+  carry them under these names. A blank group value, or the text `"*"`,
+  counts as no value. A record that reaches only such values is grouped
+  under `"*"`; in the report-unit column, its records' issues go into no
+  provider's report in a run of several units.
 
 - problem_unit:
 
@@ -96,9 +99,18 @@ metadata:
 - `results`: the summary, one row per rule, table, column and group:
   `run_id`, `run_scope`, `rule_id`, `rule_fingerprint`, `stage`,
   `layer`, `severity`, `table_name`, `column_name`, the group columns,
-  `n_checked`, `n_fail`, `n_not_evaluated`, `reason_code`,
-  `n_distinct_fail_values`, `n_easy_fix`, `examples`, `status` (`pass`,
-  `fail` or `not_run`), `not_run_reason` and `message_id`.
+  `n_checked`, `n_fail`, `n_not_evaluated`, `n_unchecked`,
+  `reason_code`, `n_distinct_fail_values`, `n_easy_fix`, `examples`,
+  `status` (`pass`, `fail` or `not_run`), `not_run_reason` and
+  `message_id`. Each record of a group counts once in `n_checked`,
+  `n_not_evaluated` or `n_unchecked`, which add up to the group's
+  records: `n_checked` the records the rule checked, `n_fail` of them
+  failing; `n_not_evaluated` those it reached but didn't evaluate,
+  because an earlier check failed on the same value or the rule can't
+  judge it, such as an allowed missing-value code in a foreign key; and
+  `n_unchecked` those it never reached, such as every record of a check
+  that didn't run. For a rule that checks whole tables or columns, the
+  counts are of tables or columns, not records, and `n_unchecked` is NA.
 
 - `issues`: one row per failing or not-evaluated record, or per
   column-level issue: `issue_id`, `run_id`, `run_scope`, `rule_id`,
@@ -107,11 +119,20 @@ metadata:
   `pk_positional`, `level` (`record` or `column`), `n_records`, `value`,
   `expected`, `entity_key`, `visit_keys`, `provider_key`,
   `provider_key_status`, the group columns, the problem unit's key
-  column, `root_issue_id`, `status` (`open` or `not_evaluated`),
-  `issue_class`, `class_basis`, `script_file`, `script_block`,
-  `attribution_status`, `fingerprint`, `fingerprint_pk`,
+  column, `reaches_other_unit`, `root_issue_id`, `status` (`open` or
+  `not_evaluated`), `issue_class`, `class_basis`, `script_file`,
+  `script_block`, `attribution_status`, `fingerprint`, `fingerprint_pk`,
   `first_seen_run`, `change` and `change_cause`. The columns a
-  conformance run doesn't fill are NA.
+  conformance run doesn't fill are NA. `reaches_other_unit` is TRUE
+  where the issue holds a value read from a record of another report
+  unit, or from a record whose report unit is `"*"`. Such a value is a
+  group value or the problem unit's key reached through the keys, any
+  side of `key_incoherent`'s key pairs on the record (compared or not),
+  one of `undeclared_code_set`'s values from records with no unit, or a
+  value `design_geometry_inconsistent` compared from a record of another
+  unit or with no unit. For a column-level issue it is TRUE when any
+  record it covers is. It is FALSE in a run without group columns, and
+  isn't part of the fingerprint.
 
 - `corrections`: an empty table.
 
@@ -167,9 +188,10 @@ Layers and the rules they can raise:
 
 Two of these write no issue at this version: `parent_without_children`
 counts, in the results only, the parent records that no child record
-names, and `fk_not_applicable_mismatch` writes only `not_run` rows until
-a version brings the applicability matrix. `record_unreachable` runs
-only when
+names (a parent whose key is missing, blank, a missing-value code or a
+value Layer 1 can't read counts as not evaluated), and
+`fk_not_applicable_mismatch` writes only `not_run` rows until a version
+brings the applicability matrix. `record_unreachable` runs only when
 [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
 was given `reach`, and the design checks only when their settings name
 their tables and columns; otherwise each writes one `not_run` row
@@ -180,33 +202,38 @@ dictionary attribute's only in letter case or spaces is reported by
 `column_name_mismatch` and checked as that attribute. `class_mismatch`,
 `integer_stored_as_double`, `undeclared_code_set` and Layer 0's rules
 count tables or columns, not records, and their rows have `"*"` in every
-group column. A value that failed Layer 1 is not evaluated by Layer 2:
-its issue there has status `not_evaluated` and names the earlier issue
-as its root. A value that failed Layer 1 or 2 is not evaluated by Layer
-3's record rules, which leave a missing value, a blank, a missing-value
-code and an unknown code to Layer 2. A value that failed Layer 1 or 2 is
-not evaluated by Layer 4. Nor is one that failed Layer 3, unless it is
-in a primary or foreign key column: such a value still joins, so Layer 4
-checks it as a key. Masking applies only to a record's own values:
-`key_incoherent` and the design checks still use values they read from
-other records, even ones that failed an earlier layer in those records.
-Layer 4 leaves a key that is missing, blank or a missing-value code the
-key can't hold to `pk_missing` and `fk_unassigned`, counts a foreign
-key's missing-value code that it may hold as not evaluated in
-`fk_orphan` (and warns of it in `fk_sentinel_unverified` where the key
-is a number), and doesn't evaluate `record_unreachable` on a record
-`pk_missing` reports. When a rule fails on every checked record of a
-column in a group, and at least `column_level_min_n` records were
-checked, the run records one column-level issue; masked records sharing
-one root collapse the same way.
+group column. `undeclared_code_set` writes one issue per report unit,
+each holding only that unit's values; values from records with no unit
+go in an issue of their own, under `"*"`. A value that failed Layer 1 is
+not evaluated by Layer 2: its issue there has status `not_evaluated` and
+names the earlier issue as its root. A value that failed Layer 1 or 2 is
+not evaluated by Layer 3's record rules, which leave a missing value, a
+blank, a missing-value code and an unknown code to Layer 2. A value that
+failed Layer 1 or 2 is not evaluated by Layer 4. Nor is one that failed
+Layer 3, unless it is in a primary or foreign key column: such a value
+still joins, so Layer 4 checks it as a key. Masking applies only to a
+record's own values: `key_incoherent` and the design checks still use
+values they read from other records, even ones that failed an earlier
+layer in those records. Layer 4 leaves a key that is missing, blank or a
+missing-value code the key can't hold to `pk_missing` and
+`fk_unassigned`, counts a foreign key's missing-value code that it may
+hold as not evaluated in `fk_orphan` (and warns of it in
+`fk_sentinel_unverified` where the key is a number), and doesn't
+evaluate `record_unreachable` on a record `pk_missing` reports. When a
+rule fails on every checked record of a column in a group, and at least
+`column_level_min_n` records were checked, the run records one
+column-level issue; masked records sharing one root collapse the same
+way.
 
-A record's group values are read from its own table, or from the nearest
-table that holds the column, through the foreign keys; a record that
-can't reach one, whose keys on the way don't match, or whose value there
-is blank or missing, has `"*"` there. A group value marked latin1 is
-converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops
-the run, naming the column, the table it is read from and its first such
-row.
+A record's group values are read from its own table or, through the
+foreign keys, from a table that holds the column, shortest route first.
+Where a key on the way is missing, blank or a missing-value code, a
+table or column on the way isn't given, or the value found is blank,
+missing, a missing-value code or `"*"`, the next route is tried. A
+record no route reaches, or whose key on the way names no parent record,
+has `"*"` there. A group value marked latin1 is converted to UTF-8 and
+runs; one whose bytes aren't valid UTF-8 stops the run, naming the
+column, the table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the
 built-in value, see

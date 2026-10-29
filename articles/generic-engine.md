@@ -262,3 +262,41 @@ The other issues keep their rules’ classes, with `class_basis`
 settles is `unclassified`; the setting `fallback_class` gives such a
 rule a class of its own (see
 [`?groundplotqc_options`](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md)).
+
+## Reports
+
+[`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+builds one report and one issues CSV for each report unit, here each
+water body. It writes them into the run’s folder, so the run is written
+first, with
+[`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md).
+
+``` r
+
+output <- tempfile("runs")
+gpq_write_results(checked, output)
+files <- gpq_build_reports(checked, output)
+basename(files)
+#> [1] "LK.html"       "LK_issues.csv" "RV.html"       "RV_issues.csv"
+```
+
+Each unit’s issues CSV lists every issue of its report, one per row.
+Here are six of its columns for the first water body.
+
+``` r
+
+csv <- data.table::fread(files[[2L]], encoding = "UTF-8")
+csv[, c("water_body", "table_name", "column_name", "rule_id", "issue_class", "value")]
+#>    water_body table_name column_name            rule_id   issue_class  value
+#>        <char>     <char>      <char>             <char>        <char> <char>
+#> 1:         LK      hauls        gear   code_not_in_list  unclassified     TN
+#> 2:         LK    catches      weight             raw_na harmonization       
+#> 3:         LK    catches      weight    value_above_max  unclassified       
+#> 4:         LK    catches      weight    value_below_min  unclassified       
+#> 5:         LK    catches      weight  decimals_exceeded  unclassified       
+#> 6:         LK      hauls        gear whitespace_padding harmonization     TN
+```
+
+To read a unit’s report, open its `reports/<unit>.html` in the run’s
+folder in a browser. Each report is one file that needs no internet
+connection.

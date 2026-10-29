@@ -1,6 +1,6 @@
 # Changelog
 
-## groundplotqc 0.0.0.9018 (development version)
+## groundplotqc 0.0.0.9024 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint
   configuration, continuous integration on Windows, macOS and Linux, and
@@ -304,6 +304,11 @@
   one scope two classes (`override_scope_conflict`) and on an override
   naming a rule, table or column it doesn’t know
   (`override_unknown_name`).
+- [`gpq_preflight()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_preflight.md)
+  now matches an override’s table and column names to the dictionary’s
+  exactly, so it warns (`override_unknown_name`) on an override whose
+  table name holds a carriage return, or that names “NA” beside a
+  dictionary row with no attribute name.
 - The setting `fallback_class` (option `groundplotqc.fallback_class`)
   gives, by rule, the class of an issue whose rule’s class is `depends`
   when nothing else settles it. The tier that gives it gives all of it,
@@ -331,3 +336,77 @@
   both against the specification before it copies them.
 - The article “Using the engine on your own dataset” ends with the fish
   survey’s issues classed by an override and a `computed` row.
+- A record whose shortest path of keys to a group column breaks on a
+  missing, blank or missing-value-code key, on a table or column not
+  given, or on a value that is blank, missing, a missing-value code or
+  “\*” where the column is held, tries the next path, shortest first, so
+  fewer records are grouped under “\*”; a key that names no parent
+  record still gives “\*”. The problem unit’s key in the issues, the
+  record labels `src_id_duplicate` reads and the IDs
+  [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  reads through the keys follow the same paths.
+- Results gain `n_unchecked`, the records a rule never reached;
+  `n_not_evaluated` now counts only records a rule reached but didn’t
+  evaluate.
+- `parent_without_children`’s not-run row now counts the parent table’s
+  rows when the parent’s key column, or the child’s table or key column,
+  isn’t given, and no records when the parent table isn’t given. A
+  parent whose key is missing, blank, a missing-value code or a value
+  Layer 1 can’t read counts as not evaluated (`rule_version` 2).
+- `undeclared_code_set` writes one issue per report unit, each holding
+  only that unit’s values; values from records with no unit go in a row
+  of their own, under “\*” (`rule_version` 2).
+- Issues gain `reaches_other_unit`, TRUE where an issue holds a value
+  read from a record of another report unit, or from a record whose
+  report unit is “\*“: a group value or the problem unit’s key reached
+  through the keys, any side of `key_incoherent`’s key pairs on the
+  record (compared or not), one of `undeclared_code_set`’s values from
+  records with no unit, or a value `design_geometry_inconsistent`
+  compared from a record of another unit or with no unit. It isn’t part
+  of the fingerprint. Run folders written by earlier versions lack it
+  and `n_unchecked`, so
+  [`gpq_read_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_results.md)
+  can’t read them.
+- [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  shows a record’s ID as delivered (status `raw`) when one of its parts
+  or labels holds “;” or “=”, so every decoded or partly decoded key
+  splits back into its parts exactly.
+- In `metadata/run.csv`, `report_units` now escapes each report unit
+  before joining the units with “;”: a backslash in a unit is written as
+  two backslashes and a semicolon as a backslash and a semicolon, so a
+  unit holding “;” can be split back exactly. A unit holding neither,
+  such as MAGPlot’s contributor IDs, is written as before.
+- The pre-flight page, `reports/preflight.html`, has a new look in the
+  colours of the NRCan Dark-green template: its title in a dark green
+  band, a contents list beside the sections, tables with dark header
+  rows and numbers aligned right, and layouts for a narrow screen and
+  for print. What it says is unchanged.
+- Two new settings cap what a report
+  [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  writes shows: `row_cap`, the rows of a table (500 by default), and
+  `cell_cap`, the characters of delivered text in a table cell (100 by
+  default), longer text being cut and ending with an ellipsis. A CSV is
+  never capped or cut. Each resolves as `example_cap` does, from an
+  argument, the rule set, its option (`groundplotqc.row_cap`,
+  `groundplotqc.cell_cap`) or its default, and every run’s
+  `metadata/settings.csv` lists both.
+- In the issues, `pk_positional` is now also TRUE for a record whose
+  primary key, written as text, matches another record’s in the same
+  table: a composite key whose parts joined with “\|” match, such as
+  (“a\|b”, “c”) and (“a”, “b\|c”), or two numbers that agree to 15
+  significant digits. Such a record shows no raw value in the reports.
+- [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  builds, from a run’s results, one HTML report and one issues CSV for
+  each report unit and writes them into the run’s saved folder. Each
+  unit’s files hold only what that unit may see: what to act on, what
+  harmonization is fixing, what is under review, issues that cover a
+  whole column, and what wasn’t checked, with a guide to reading it. A
+  run with no group columns gets one report of every issue.
+- Each unit’s issues CSV holds every issue of its report, open or not
+  evaluated. It splits each provider key into one column per part,
+  `key_<label>`, beside the whole key and its status, and puts an
+  apostrophe before a text cell a spreadsheet would run as a formula.
+- [`gpq_check_conformance()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_check_conformance.md)
+  now stops at the run’s start if a group or key column is named
+  `message` or `n_not_evaluated_own`, or starts with `key_`: the
+  provider reports and their issues CSVs use those names.

@@ -9,7 +9,7 @@ set and R options. This page lists the R options."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9024</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -82,6 +82,15 @@ shows in its <code>examples</code> column. Built-in: <code>5</code>. It also cap
 <code>design_geometry_inconsistent</code> and <code>design_duplicate_signature</code> list in an
 issue's <code>expected</code>, which then ends with a count of the rest; at 0,
 <code>expected</code> is NA, as <code>examples</code> is.</p></li>
+<li><p><code>groundplotqc.row_cap</code>: the most rows a table of a report
+<code><a href="gpq_build_reports.html">gpq_build_reports()</a></code> writes shows. A longer table shows that many rows,
+with a note saying how many of how many it shows; where the rows are
+issues, the note names the issues CSV, which holds every row. Built-in:
+<code>500</code>.</p></li>
+<li><p><code>groundplotqc.cell_cap</code>: the most characters of delivered text, such as a
+value or a key, that a table cell shows in a report <code><a href="gpq_build_reports.html">gpq_build_reports()</a></code>
+writes, counted before the text is written as HTML. Longer text is cut and
+ends with an ellipsis; the issues CSV is never cut. Built-in: <code>100</code>.</p></li>
 <li><p><code>groundplotqc.column_level_min_n</code>: the fewest records a column must have in
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: <code>10</code>.</p></li>

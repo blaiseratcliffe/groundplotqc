@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9024</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -302,6 +302,36 @@ class is <code>depends</code> and that nothing settles is
 <code>unclassified</code>; the setting <code>fallback_class</code> gives
 such a rule a class of its own (see
 <code><a href="../reference/groundplotqc_options.html">?groundplotqc_options</a></code>).</p>
+</div>
+<div class="section level2">
+<h2 id="reports">Reports<a class="anchor" aria-label="anchor" href="#reports"></a>
+</h2>
+<p><code><a href="../reference/gpq_build_reports.html">gpq_build_reports()</a></code> builds one report and one issues CSV
+for each report unit, here each water body. It writes them into the
+run’s folder, so the run is written first, with
+<code><a href="../reference/gpq_write_results.html">gpq_write_results()</a></code>.</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">output</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span><span class="st">"runs"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/gpq_write_results.html">gpq_write_results</a></span><span class="op">(</span><span class="va">checked</span>, <span class="va">output</span><span class="op">)</span></span>
+<span><span class="va">files</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/gpq_build_reports.html">gpq_build_reports</a></span><span class="op">(</span><span class="va">checked</span>, <span class="va">output</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/basename.html" class="external-link">basename</a></span><span class="op">(</span><span class="va">files</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "LK.html"       "LK_issues.csv" "RV.html"       "RV_issues.csv"</span></span></code></pre></div>
+<p>Each unit’s issues CSV lists every issue of its report, one per row.
+Here are six of its columns for the first water body.</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">csv</span> <span class="op">&lt;-</span> <span class="fu">data.table</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/data.table/man/fread.html" class="external-link">fread</a></span><span class="op">(</span><span class="va">files</span><span class="op">[[</span><span class="fl">2L</span><span class="op">]</span><span class="op">]</span>, encoding <span class="op">=</span> <span class="st">"UTF-8"</span><span class="op">)</span></span>
+<span><span class="va">csv</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"water_body"</span>, <span class="st">"table_name"</span>, <span class="st">"column_name"</span>, <span class="st">"rule_id"</span>, <span class="st">"issue_class"</span>, <span class="st">"value"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;    water_body table_name column_name            rule_id   issue_class  value</span></span>
+<span><span class="co">#&gt;        &lt;char&gt;     &lt;char&gt;      &lt;char&gt;             &lt;char&gt;        &lt;char&gt; &lt;char&gt;</span></span>
+<span><span class="co">#&gt; 1:         LK      hauls        gear   code_not_in_list  unclassified     TN</span></span>
+<span><span class="co">#&gt; 2:         LK    catches      weight             raw_na harmonization       </span></span>
+<span><span class="co">#&gt; 3:         LK    catches      weight    value_above_max  unclassified       </span></span>
+<span><span class="co">#&gt; 4:         LK    catches      weight    value_below_min  unclassified       </span></span>
+<span><span class="co">#&gt; 5:         LK    catches      weight  decimals_exceeded  unclassified       </span></span>
+<span><span class="co">#&gt; 6:         LK      hauls        gear whitespace_padding harmonization     TN</span></span></code></pre></div>
+<p>To read a unit’s report, open its
+<code>reports/&lt;unit&gt;.html</code> in the run’s folder in a browser.
+Each report is one file that needs no internet connection.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

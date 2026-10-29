@@ -15,7 +15,7 @@ reference."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9018</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9024</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -116,7 +116,9 @@ that the lineage spec gives an entry.</p>
 joined by "; ". An ID of one part isn't split.</p></li>
 <li><p><code>partial</code>: as <code>decoded</code>, but a part is blank or a missing-value code.</p></li>
 <li><p><code>raw</code>: the ID as delivered: it doesn't split into the expected parts (a value holding the
-separator), its entry has labelled alternatives, or there is no separator.</p></li>
+separator), its entry has labelled alternatives, there is no separator, or one of its
+parts or labels holds "; " or "=". The last case keeps every <code>decoded</code> or <code>partial</code> key
+splitting back into its parts exactly.</p></li>
 <li><p><code>no_lineage_spec</code>: the ID as delivered: the record's contributor has no entry for it.</p></li>
 <li><p><code>fallback_pk</code>: no key: a column-level issue, a table with no ID to decode, an ID that is
 missing, blank or a missing-value code, or an entry that says the contributor has no ID.</p></li>
