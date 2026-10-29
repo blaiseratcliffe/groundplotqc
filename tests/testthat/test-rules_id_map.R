@@ -69,6 +69,9 @@ test_that("a new rule ID belongs to one old rule ID, once: no merge in effect (D
 })
 
 test_that("rule_id_map() stops on a file missing, one not read cleanly, one that breaks a rule", {
+  # Installed, as R CMD check runs it, the test mocks base system.file(), which no CRAN check
+  # may change (R145, D20.85).
+  testthat::skip_on_cran()
   # system.file() stands in for the package's file, for the test only. Under load_all() the
   # package calls pkgload's own system.file(), found among its imports; an installed
   # package, as R CMD check runs it, calls base's.

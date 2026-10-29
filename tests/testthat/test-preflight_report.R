@@ -39,7 +39,7 @@ test_that("the page shows outcomes and reasons as text, the CSV keeps their code
   )
   expect_match(page, "<td>Stop</td>", fixed = TRUE)
   expect_match(
-    page, "<td>Not run</td><td></td><td>Its input wasn&#39;t given.</td>",
+    page, "<td>Not run</td><td class=\"num\"></td><td>Its input wasn&#39;t given.</td>",
     fixed = TRUE
   )
   expect_false(grepl("<td>not_run</td>", page, fixed = TRUE))
@@ -409,4 +409,26 @@ test_that("findings with a comma, a line break, an accent and formula text read 
   path <- withr::local_tempfile(fileext = ".csv")
   writeBin(compiled_bytes(planted), path)
   expect_identical(read_run_csv(path, preflight_columns())$detail, planted$detail)
+})
+
+# ---- M7a task 6 ----
+
+test_that("the pre-flight page takes the reports' look, its content unchanged (D20.49)", {
+  spec <- fx_fish_spec()
+  page <- preflight_html(preflight_checks(spec), spec)
+  # The title in the masthead with no line under it, in English.
+  expect_match(page, "<html lang=\"en\">", fixed = TRUE)
+  expect_match(
+    page, "<header class=\"masthead\"><h1>Pre-flight report</h1></header>",
+    fixed = TRUE
+  )
+  # The contents beside the sections, linking to the summary and the rows.
+  expect_match(page, "<div class=\"layout\">\n<nav aria-label=\"Contents\">", fixed = TRUE)
+  expect_match(page, "<a href=\"#summary\">", fixed = TRUE)
+  expect_match(page, "<a href=\"#rows\">", fixed = TRUE)
+  # The findings' count is a number, right-aligned; no row is coloured.
+  expect_match(page, "<th scope=\"col\" data-gpq-sort class=\"num\">Findings</th>", fixed = TRUE)
+  expect_false(grepl("<tr class=", page, fixed = TRUE))
+  # The footer keeps its facts, each a term and its value.
+  expect_match(page, "<div><dt>Package version</dt><dd>", fixed = TRUE)
 })

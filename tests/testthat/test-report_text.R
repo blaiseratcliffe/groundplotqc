@@ -422,3 +422,61 @@ test_that("a blank rule_id shows as (blank), as the other names do (D12.55)", {
     c("a: x", "(blank): x")
   )
 })
+
+# ---- M7a task 6 ----
+
+test_that("a caller's (blank) row and a French row are both used inside a text (D14.30)", {
+  text <- validate_text_table(data.frame(
+    text_id = c("preflight_blank_value", "preflight_blank_value", "preflight_stop_line"),
+    lang = c("en", "fr", "fr"),
+    text = c("(empty)", "(vide)", "{rule_id} : {detail}")
+  ))
+  # A name slot and a quoted slot each show the caller's blank text, in the run's language.
+  expect_equal(
+    report_text("preflight_stop_line", rule_id = c("a", NA), detail = "x", text = text),
+    c("a: x", "(empty): x")
+  )
+  expect_equal(
+    report_text("preflight_stop_line", "fr", rule_id = c("a", NA), detail = "x", text = text),
+    c("a : x", "(vide) : x")
+  )
+  expect_equal(
+    report_text(
+      "preflight_detail_dd_type_unknown", "fr",
+      table_name = NA, attribute_name = "a", data_type = NA, text = text
+    ),
+    "(vide).a has type (vide), which the type map doesn't list."
+  )
+  # Without a caller's table, the engine's blank text.
+  expect_equal(report_text("preflight_stop_line", "fr", rule_id = NA, detail = "x"), "(blank): x")
+  # The helpers take the table themselves.
+  expect_equal(quote_value(c("v", NA), "fr", text), c("\"v\"", "(vide)"))
+  expect_equal(blank_as_text(c("v", NA), "en", text), c("v", "(empty)"))
+})
+
+test_that("a text is as long as the values passed, those it doesn't use included (D14.31)", {
+  # A caller's row that drops the per-finding slot still gives one string per finding.
+  text <- validate_text_table(data.frame(
+    text_id = "preflight_stop_line", lang = "en", text = "A check stopped: {detail}"
+  ))
+  expect_equal(
+    report_text("preflight_stop_line", rule_id = c("a", "b", "c"), detail = "x", text = text),
+    rep("A check stopped: x", 3L)
+  )
+  # A value passed empty gives none, used or not.
+  expect_equal(
+    report_text("preflight_stop_line", rule_id = character(), detail = "x", text = text),
+    character()
+  )
+  expect_equal(fill_placeholders("Plain.", list(n = 1:3)), rep("Plain.", 3L))
+  expect_equal(fill_placeholders("Plain.", list(n = integer())), character())
+  expect_equal(fill_placeholders("Plain.", list()), "Plain.")
+  # Only the slots the text uses are held to one common length; a used slot's length wins.
+  expect_equal(
+    fill_placeholders("Row {row}.", list(row = 1L, sheet = c("a", "b"))), c("Row 1.", "Row 1.")
+  )
+  expect_equal(
+    fill_placeholders("Row {row}.", list(row = 1:2, sheet = c("a", "b", "c"))),
+    c("Row 1.", "Row 2.")
+  )
+})

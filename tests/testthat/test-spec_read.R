@@ -111,6 +111,8 @@ test_that("read_input_table marks each blank header, and a CSV's of spaces is V<
 })
 
 test_that("reading a workbook without readxl is a classed error naming the package", {
+  # The test mocks base requireNamespace(), which no CRAN check may change (R145, D20.83).
+  testthat::skip_on_cran()
   # base::requireNamespace() stands in for a library without readxl, for this test only.
   testthat::local_mocked_bindings(requireNamespace = function(...) FALSE, .package = "base")
   expect_error(

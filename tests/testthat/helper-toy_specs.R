@@ -17,19 +17,32 @@ fx_fish_code_lists <- function() {
   )
 }
 
-fx_fish_spec <- function(code_lists = fx_fish_code_lists(), ...) {
-  gpq_read_spec(
-    dictionary = example_file("fish_dictionary.csv"), code_lists = code_lists,
-    column_map = fx_fish_column_map(),
-    type_map = gpq_type_map(example_file("fish_types.csv")),
-    sentinels = gpq_sentinels(
-      numeric = c(missing = -99, not_applicable = -88),
-      character = c(missing = "?", not_applicable = "~"),
-      date = c(missing = "?", not_applicable = "~")
-    ),
-    ...
-  )
-}
+# The fish spec. A call with no arguments reads its five files once per session, on its first
+# call, and hands out a copy, so a test that changes its copy by reference can't reach the next
+# test's; a call with any argument reads them again (D20.127, D20.130).
+fx_fish_spec <- local({
+  built <- NULL
+  function(code_lists = fx_fish_code_lists(), ...) {
+    if (nargs() == 0L) {
+      if (is.null(built)) {
+        # An argument, so this call reads the files.
+        built <<- fx_fish_spec(code_lists = code_lists)
+      }
+      return(data.table::copy(built))
+    }
+    gpq_read_spec(
+      dictionary = example_file("fish_dictionary.csv"), code_lists = code_lists,
+      column_map = fx_fish_column_map(),
+      type_map = gpq_type_map(example_file("fish_types.csv")),
+      sentinels = gpq_sentinels(
+        numeric = c(missing = -99, not_applicable = -88),
+        character = c(missing = "?", not_applicable = "~"),
+        date = c(missing = "?", not_applicable = "~")
+      ),
+      ...
+    )
+  }
+})
 
 # The fish spec with the `gear` code list holding "GN" twice: the one defect that only
 # warns (code_list_duplicate_code), so pre-flight signals one warning and no stop (D12.68).

@@ -223,14 +223,17 @@ override_unknown_names <- function(spec, read, registry) {
   delivered <- rule %chin% c("table_unexpected", "column_unexpected")
   known_table <- !is.na(table) & (table %chin% a$table_name | delivered)
   known_column <- column %chin% "*" | delivered
-  pairs <- paste(a$table_name, a$attribute_name, sep = "\r")
+  # Each row's attribute in the dictionary, found on its table and column together by one join
+  # (16.2; M6 m59, D20.86); NA where the row's table has no such column.
+  attribute_row <- a[
+    data,
+    on = c(table_name = "table_name", attribute_name = "column_name"), mult = "first",
+    which = TRUE
+  ]
   cases <- list(
     rule = which(!is.na(rule) & !rule %chin% known_rules),
     table = which(!is.na(table) & !known_table),
-    attribute = which(
-      !is.na(column) & !known_column & known_table &
-        !paste(table, column, sep = "\r") %chin% pairs
-    ),
+    attribute = which(!is.na(column) & !known_column & known_table & is.na(attribute_row)),
     any = which(
       !is.na(column) & !known_column & is.na(table) & !column %chin% a$attribute_name
     )

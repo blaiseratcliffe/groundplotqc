@@ -336,36 +336,77 @@ match_columns <- function(given, attributes) {
   list(column = column, near = near, extra = left)
 }
 
-#' The shortest path of foreign keys from a table to one of `targets` (D16.13)
+#' Every route of foreign keys from a table to the tables in `targets`, shortest first (D16.13,
+#' D20.22)
 #'
-#' A breadth-first walk of the spec's foreign keys (`keys` rows of type FK that name their
-#' parent's PK), each table's keys in the dictionary's order, so a tie goes to the first key.
-#' Returns the path's key rows in order, or NULL when no target is reached.
+#' A route follows the spec's foreign keys (`keys` rows of type FK that name their parent's
+#' PK), visits no table twice and ends at the first table of `targets` it reaches, never
+#' passing through one. Routes of one length come in the dictionary's key order, compared key
+#' by key, so the first route is the one D16.13's breadth-first walk took. Returns a list of
+#' routes, each its key rows in order; empty when no target is reached.
 #' @noRd
-fk_path <- function(keys, from, targets) {
+fk_paths <- function(keys, from, targets) {
   is_edge <- keys$key_type == "FK" & !is.na(keys$reference_table) &
     !is.na(keys$reference_attribute)
   edges <- keys[is_edge]
-  paths <- list()
-  paths[[from]] <- integer()
-  queue <- from
+  routes <- list()
+  # Partial routes, as their edges, extended breadth first: each is extended by its last
+  # table's keys in order, so the routes of each length are found in the keys' order.
+  queue <- list(integer())
   while (length(queue) > 0L) {
-    node <- queue[[1L]]
+    route <- queue[[1L]]
     queue <- queue[-1L]
-    for (edge in which(edges$table_name == node)) {
+    on_route <- c(from, edges$reference_table[route])
+    for (edge in which(edges$table_name == on_route[[length(on_route)]])) {
       parent <- edges$reference_table[[edge]]
-      if (!is.null(paths[[parent]])) {
+      if (parent %chin% on_route) {
         next
       }
-      path <- c(paths[[node]], edge)
+      longer <- c(route, edge)
       if (parent %chin% targets) {
-        return(edges[path])
+        routes[[length(routes) + 1L]] <- edges[longer]
+      } else {
+        queue[[length(queue) + 1L]] <- longer
       }
-      paths[[parent]] <- path
-      queue <- c(queue, parent)
     }
   }
-  NULL
+  routes
+}
+
+#' Each record's table and row along the routes of foreign keys to `targets` (D20.1, D20.12,
+#' D20.22, D20.51)
+#'
+#' The routes are fk_paths()'s, tried in order, the list made once per call. Every record of
+#' `table` follows the first; a record whose route breaks on a masked key (NA, blank, a
+#' missing-value code, or a table or key column not given) or ends at a row `usable` refuses
+#' tries the next, and only those records join again (chain_rows()'s `rows`, D20.50). A record
+#' whose key names no parent row (chain_rows()'s `orphan`) ends its search with none.
+#' `usable(home, rows)` says, for rows of the route's last table `home`, whether each may be
+#' taken; NULL takes every row reached. Returns `home`, each record's table (NA where it
+#' reaches none), and `rows`, its row there (NA likewise).
+#' @noRd
+walk_fk_paths <- function(input, table, targets, usable = NULL) {
+  n <- nrow(input$data[[table]])
+  home <- rep(NA_character_, n)
+  rows <- rep(NA_integer_, n)
+  open <- seq_len(n)
+  for (route in fk_paths(input$spec$keys, table, targets)) {
+    if (length(open) == 0L) {
+      break
+    }
+    end <- route$reference_table[[nrow(route)]]
+    # While every record is open the whole table is followed, so the first hop reads the key
+    # column itself (16.2).
+    reached <- chain_rows(input, table, route, rows = if (length(open) < n) open)
+    took <- !is.na(reached)
+    if (!is.null(usable) && any(took)) {
+      took[took] <- usable(end, reached[took])
+    }
+    home[open[took]] <- end
+    rows[open[took]] <- reached[took]
+    open <- open[!took & !attr(reached, "orphan")]
+  }
+  list(home = home, rows = rows)
 }
 
 #' The run's input matched to the spec
@@ -385,10 +426,13 @@ fk_path <- function(keys, from, targets) {
 #'   `column`);
 #' - `n_rows`; `groups`, per given spec table: `row_group` (each row's group, an index into
 #'   `values`) and `values` (one row per group, the group columns as text, "*" where a
-#'   record can't reach a column, D9.24, D16.13), ordered by their text, and `n`, the number
-#'   of groups, 1 without group columns; `key_rows`, per table, the home table and each row's
-#'   row there for the key column;
-#' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill.
+#'   record can't reach a column, D9.24, D16.13, D20.1), ordered by their text, and `n`, the
+#'   number of groups, 1 without group columns; `key_rows`, per table, each row's home table
+#'   and its row there for the key column (reach_column(), R5);
+#' - `group_cols`, `key_col`, and `cache`, an environment the PK helpers fill;
+#' - in each table's `groups`, also `reaches_other_unit`, one per row: TRUE where a group value
+#'   or the problem unit's key was read from a record of another report unit than the row's
+#'   own, or of one whose unit is "*" (D18.89, D20.10).
 #' @noRd
 conformance_input <- function(tables, spec, group_cols = character(), key_col = NULL,
                               text_tables = character()) {
@@ -444,6 +488,37 @@ conformance_input <- function(tables, spec, group_cols = character(), key_col = 
   } else {
     structure(lapply(present, function(table) reach_column(input, table, key_col)), names = present)
   }
+  # Each record's reaches_other_unit mark (D18.89, D20.10): TRUE where a group value, or the
+  # problem unit's key (D20.81), was read through the keys from a record whose own report unit
+  # is another than the record's, or "*". A value read in the record's own table is its own
+  # unit's, and a record that reached no value has "*" there, read from no record, so neither
+  # sets it. The report unit's value is read where the unit is that value, so only the other
+  # group columns are walked, a second time, as group_index() keeps no route; the key's rows
+  # are key_rows'. FALSE throughout without group columns.
+  for (table in present) {
+    grouping <- input$groups[[table]]
+    marked <- logical(length(grouping$row_group))
+    walked <- group_cols[-1L]
+    if (length(group_cols) > 0L && !is.null(key_col) && !key_col %chin% group_cols) {
+      walked <- c(walked, key_col)
+    }
+    for (column_name in walked) {
+      reached <- if (column_name %chin% group_cols) {
+        reach_column(input, table, column_name)
+      } else {
+        input$key_rows[[table]]
+      }
+      # Each table the records read the value in (R5), but their own.
+      for (home in setdiff(unique(reached$home[!is.na(reached$home)]), table)) {
+        here <- which(reached$home == home)
+        held <- input$groups[[home]]
+        theirs <- held$values[[group_cols[[1L]]]][held$row_group[reached$rows[here]]]
+        own <- grouping$values[[group_cols[[1L]]]][grouping$row_group[here]]
+        marked[here] <- marked[here] | theirs == "*" | theirs != own
+      }
+    }
+    input$groups[[table]]$reaches_other_unit <- marked
+  }
   input
 }
 
@@ -496,44 +571,75 @@ key_values <- function(input, table, attribute) {
   list(value = value, open = open)
 }
 
-#' The table a record reaches a column in, and each record's row there (D16.13)
+#' The table each record reaches a column in, and its row there (D16.13, D20.1, D20.12)
 #'
-#' A table holding the column uses its own rows; otherwise the shortest path of foreign keys
-#' to a table holding it (fk_path()). A record whose path breaks (an NA, blank, sentinel or
-#' orphan key on the way, or a table or column on it not given) gets NA. `home` is NA when no
-#' table holding the column is reachable.
+#' A table holding the column uses its own rows. Otherwise each record walks the routes of
+#' foreign keys to the tables holding it (walk_fk_paths(), one key join per hop as a key_pairs
+#' side or the bands' key is, D18.27). A route ending on a value that is blank, NA, a
+#' missing-value code of the column's type or the text "*" (D20.6), or on a column not given,
+#' counts as broken, so the record tries its next route; a record whose key names no parent
+#' row reaches none. Returns `home`, each record's table (NA where it reaches none, R5), and
+#' `rows`, its row there.
 #' @noRd
 reach_column <- function(input, table, column_name) {
   n <- nrow(input$data[[table]])
   columns <- input$columns
   holders <- unique(columns$table_name[columns$attribute_name == column_name])
   if (table %chin% holders) {
-    return(list(home = table, rows = seq_len(n)))
+    return(list(home = rep(table, n), rows = seq_len(n)))
   }
-  path <- fk_path(input$spec$keys, table, holders)
-  if (is.null(path)) {
-    return(list(home = NA_character_, rows = rep(NA_integer_, n)))
+  sentinels <- input$spec$sentinels
+  # A value at the route's end that reads as no value moves the record on (D20.12): each
+  # distinct row reached is read once (16.2).
+  usable <- function(home, rows) {
+    at <- which(columns$table_name == home & columns$attribute_name == column_name)
+    if (length(at) != 1L || is.na(columns$column[[at]])) {
+      return(rep(FALSE, length(rows)))
+    }
+    distinct <- unique(rows)
+    text <- value_text(input$data[[home]][[columns$column[[at]]]][distinct])
+    codes <- sentinels$value[sentinels$data_type == columns$family[[at]]]
+    ok <- !is.na(text) & !is_blank(text) & !text %chin% c(codes, "*")
+    ok[match(rows, distinct)]
   }
-  # The path followed one key join per hop, as a key_pairs side or the bands' key is
-  # (chain_rows(), D18.27).
-  list(home = path$reference_table[[nrow(path)]], rows = chain_rows(input, table, path))
+  walk_fk_paths(input, table, holders, usable)
 }
 
-#' The values of a column in its home table at the rows a record reached, as given; NA where
-#' the record reached none or the column wasn't given
+#' The values of a column at the rows records reached, as given; NA where a record reached none
+#' or the column wasn't given
+#'
+#' `reached$home` is one table for every row (chain_values()) or each record's own
+#' (reach_column(), R5). Where the records reached several tables, each table's values are
+#' written as text (value_text()), since their classes may differ; where they reached one, the
+#' values are as given.
 #' @noRd
 reached_values <- function(input, reached, column_name) {
-  if (is.na(reached$home)) {
-    return(rep(NA, length(reached$rows)))
+  rows <- reached$rows
+  home <- reached$home
+  # One table's column at some of its rows, as given; NA where the column wasn't given.
+  read <- function(table, at) {
+    k <- which(input$columns$table_name == table & input$columns$attribute_name == column_name)
+    if (length(k) != 1L || is.na(input$columns$column[[k]])) {
+      return(rep(NA, length(at)))
+    }
+    input$data[[table]][[input$columns$column[[k]]]][at]
   }
-  at <- which(
-    input$columns$table_name == reached$home & input$columns$attribute_name == column_name
-  )
-  column <- input$columns$column[at]
-  if (is.na(column)) {
-    return(rep(NA, length(reached$rows)))
+  tables <- unique(home[!is.na(home)])
+  if (length(tables) == 0L) {
+    return(rep(NA, length(rows)))
   }
-  input$data[[reached$home]][[column]][reached$rows]
+  if (length(tables) == 1L) {
+    return(read(tables, rows))
+  }
+  value <- rep(NA_character_, length(rows))
+  for (table in tables) {
+    here <- which(home == table)
+    # Each distinct row reached is written as text once (16.2).
+    at <- rows[here]
+    distinct <- unique(at)
+    value[here] <- value_text(read(table, distinct))[match(at, distinct)]
+  }
+  value
 }
 
 #' Each row's group in a table, and the groups' values as text (D7.5, D9.24, D16.13)
@@ -577,20 +683,24 @@ group_index <- function(input, table) {
     convert <- which(!bytes & (mark == "latin1" | !valid))
     text[convert] <- enc2utf8(text[convert])
     if (any(bytes) || !all(validUTF8(text))) {
-      at <- which(
-        input$columns$table_name == reached$home & input$columns$attribute_name == column_name
-      )
-      whole <- value_text(input$data[[reached$home]][[input$columns$column[[at]]]])
-      marked <- Encoding(whole) == "bytes"
-      # Only the values that aren't valid UTF-8 as given are converted (16.2).
-      odd <- marked | !validUTF8(utf8_converted(whole))
-      stop(sprintf(
-        paste0(
-          "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
-          "the table may have been read with the wrong encoding."
-        ),
-        mark_invalid_utf8(column_name), mark_invalid_utf8(reached$home), which(odd)[[1L]]
-      ), call. = FALSE)
+      # The records may reach the column in several tables (R5): the first of them holding such
+      # a value is named.
+      for (home in unique(reached$home[!is.na(reached$home)])) {
+        at <- which(input$columns$table_name == home & input$columns$attribute_name == column_name)
+        whole <- value_text(input$data[[home]][[input$columns$column[[at]]]])
+        marked <- Encoding(whole) == "bytes"
+        # Only the values that aren't valid UTF-8 as given are converted (16.2).
+        odd <- marked | !validUTF8(utf8_converted(whole))
+        if (any(odd)) {
+          stop(sprintf(
+            paste0(
+              "Group column %s of table %s holds text that isn't valid UTF-8, first in row %d; ",
+              "the table may have been read with the wrong encoding."
+            ),
+            mark_invalid_utf8(column_name), mark_invalid_utf8(home), which(odd)[[1L]]
+          ), call. = FALSE)
+        }
+      }
     }
     text[is.na(text) | is_blank(text)] <- "*"
     labels[[column_name]] <- unique(text)
@@ -631,7 +741,7 @@ key_text <- function(input, table, rows) {
   }
   reached <- input$key_rows[[table]]
   text <- value_text(reached_values(
-    input, list(home = reached$home, rows = reached$rows[rows]), input$key_col
+    input, list(home = reached$home[rows], rows = reached$rows[rows]), input$key_col
   ))
   text[is.na(text) | is_blank(text)] <- "*"
   text
@@ -640,9 +750,11 @@ key_text <- function(input, table, rows) {
 #' Each given row's PK as text and whether it is positional (9.3, 9.6; D8.16, D15.9)
 #'
 #' A composite PK's parts are joined with "|" in key_part order. A PK with a part missing
-#' (NA, blank, or its column not given) is NA; a row is positional when its PK is missing or
-#' the PK repeats in the table. The repeats are found once per table and kept in the cache.
-#' Returns `record_pk` and `positional` for `rows`.
+#' (NA, blank, or its column not given) is NA; a row is positional when its PK is missing, the
+#' PK repeats in the table, or its text does: parts holding "|" can join to another record's
+#' text, which the lineage input and decoding read (D20.118). The repeats are found once per
+#' table, over all its rows, and kept in the cache. Returns `record_pk` and `positional` for
+#' `rows`.
 #' @noRd
 record_pk_text <- function(input, table, rows) {
   keys <- input$spec$keys
@@ -658,21 +770,35 @@ record_pk_text <- function(input, table, rows) {
   )
   pk_columns <- columns$column[at]
   data <- input$data[[table]]
-  parts <- lapply(pk_columns, function(column) {
-    if (is.na(column)) rep(NA_character_, length(rows)) else value_text(data[[column]][rows])
-  })
-  if (length(parts) == 0L) {
+  if (length(pk_columns) == 0L) {
     return(list(record_pk = rep(NA_character_, length(rows)), positional = rep(TRUE, length(rows))))
   }
-  missing <- Reduce(`|`, lapply(parts, function(part) is.na(part) | is_blank(part)))
-  # A composite PK's parts that are valid UTF-8 left unmarked are marked UTF-8 before they are
-  # joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the PK
-  # is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
-  if (length(parts) > 1L) {
-    parts <- lapply(parts, utf8_marked)
+  # The PK's text at `rows`, or at every row when `rows` is NULL, read from the caller's
+  # columns where they are: NA where a part is missing.
+  pk_text <- function(rows) {
+    n <- if (is.null(rows)) nrow(data) else length(rows)
+    parts <- lapply(pk_columns, function(column) {
+      if (is.na(column)) {
+        rep(NA_character_, n)
+      } else if (is.null(rows)) {
+        value_text(data[[column]])
+      } else {
+        value_text(data[[column]][rows])
+      }
+    })
+    missing <- Reduce(`|`, lapply(parts, function(part) is.na(part) | is_blank(part)))
+    # A composite PK's parts that are valid UTF-8 left unmarked are marked UTF-8 before they
+    # are joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the
+    # PK is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
+    if (length(parts) > 1L) {
+      parts <- lapply(parts, utf8_marked)
+    }
+    text <- do.call(paste, c(parts, sep = "|"))
+    text[missing] <- NA_character_
+    text
   }
-  record_pk <- do.call(paste, c(parts, sep = "|"))
-  record_pk[missing] <- NA_character_
+  record_pk <- pk_text(rows)
+  missing <- is.na(record_pk)
   name <- paste("pk_repeats", table, sep = "\r")
   repeats <- input$cache[[name]]
   if (is.null(repeats)) {
@@ -694,6 +820,14 @@ record_pk_text <- function(input, table, rows) {
       rounding <- setNumericRounding(0L)
       on.exit(setNumericRounding(rounding), add = TRUE)
       repeats <- duplicated(keyed) | duplicated(keyed, fromLast = TRUE)
+      # The text's repeats too, over every row (D20.118): ("a|b", "c") and ("a", "b|c") are
+      # both "a|b|c", and a number is written to 15 digits. A one-column PK stored as text is
+      # its own text, so its repeats are the ones just found. An NA text is a missing PK,
+      # positional already.
+      if (!is.character(keyed)) {
+        text <- pk_text(NULL)
+        repeats <- repeats | duplicated(text) | duplicated(text, fromLast = TRUE)
+      }
     }
     assign(name, repeats, envir = input$cache)
   }

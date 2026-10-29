@@ -30,7 +30,7 @@ fx_class_issues <- function() {
     value = c("XXX", "PW", "900", "H3", "2020-13-01", NA, "ZZ", "QQ"),
     water_body = c("LK", "RV", "LK", "RV", "LK", "LK", "LK", "LK"),
     station_id = c("S1", "S2", "S1", "S2", "S1", "S1", "S1", "S1"),
-    status = "open"
+    reaches_other_unit = FALSE, status = "open"
   ), group_cols = c("water_body", "station_id"))
   fingerprints <- issue_fingerprint(issues)
   data.table::set(issues, j = "fingerprint", value = fingerprints$fingerprint)

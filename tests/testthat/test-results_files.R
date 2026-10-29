@@ -28,6 +28,8 @@ test_that("a run written and read back is identical (18.4)", {
   data.table::set(issues, j = "unit", value = "Québec \"QC\", x")
   data.table::set(issues, i = 1:3, j = "plot", value = c("p\n1", "p\n1", " p 2 "))
   data.table::set(issues, i = 2L, j = "provider_key", value = "tbl.key=<7>&; tbl.no=\"2\"")
+  # reaches_other_unit TRUE beside FALSE (D20.18).
+  data.table::set(issues, i = 3L, j = "reaches_other_unit", value = TRUE)
   object$issues <- issues
   results <- data.table::copy(object$results)
   data.table::set(results, i = 1L, j = "unit", value = "Québec \"QC\", x")

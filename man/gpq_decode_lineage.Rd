@@ -56,7 +56,9 @@ that the lineage spec gives an entry.
 joined by "; ". An ID of one part isn't split.
 \item \code{partial}: as \code{decoded}, but a part is blank or a missing-value code.
 \item \code{raw}: the ID as delivered: it doesn't split into the expected parts (a value holding the
-separator), its entry has labelled alternatives, or there is no separator.
+separator), its entry has labelled alternatives, there is no separator, or one of its
+parts or labels holds "; " or "=". The last case keeps every \code{decoded} or \code{partial} key
+splitting back into its parts exactly.
 \item \code{no_lineage_spec}: the ID as delivered: the record's contributor has no entry for it.
 \item \code{fallback_pk}: no key: a column-level issue, a table with no ID to decode, an ID that is
 missing, blank or a missing-value code, or an entry that says the contributor has no ID.

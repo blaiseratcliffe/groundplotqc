@@ -40,7 +40,9 @@ name. A table of the specification the database doesn't have is reported as miss
 (\code{table_missing}).}
 
 \item{group_cols}{\code{NULL}, or the grouping columns, report unit first: results and issues
-carry them under these names.}
+carry them under these names. A blank group value, or the text \code{"*"}, counts as no
+value. A record that reaches only such values is grouped under \code{"*"}; in the report-unit
+column, its records' issues go into no provider's report in a run of several units.}
 
 \item{problem_unit}{\code{NULL}, or \code{list(table, key_col)}: the table and key column of the
 unit problem plots are ranked by; issues carry that key under its name.}
@@ -60,17 +62,31 @@ An object of class \code{gpq_results}, a list of three tables and the run metada
 \item \code{results}: the summary, one row per rule, table, column and group: \code{run_id},
 \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer}, \code{severity}, \code{table_name},
 \code{column_name}, the group columns, \code{n_checked}, \code{n_fail}, \code{n_not_evaluated},
-\code{reason_code}, \code{n_distinct_fail_values}, \code{n_easy_fix}, \code{examples}, \code{status} (\code{pass},
-\code{fail} or \code{not_run}), \code{not_run_reason} and \code{message_id}.
+\code{n_unchecked}, \code{reason_code}, \code{n_distinct_fail_values}, \code{n_easy_fix}, \code{examples},
+\code{status} (\code{pass}, \code{fail} or \code{not_run}), \code{not_run_reason} and \code{message_id}. Each record of
+a group counts once in \code{n_checked}, \code{n_not_evaluated} or \code{n_unchecked}, which add up to
+the group's records: \code{n_checked} the records the rule checked, \code{n_fail} of them failing;
+\code{n_not_evaluated} those it reached but didn't evaluate, because an earlier check failed
+on the same value or the rule can't judge it, such as an allowed missing-value code in a
+foreign key; and \code{n_unchecked} those it never reached, such as every record of a check
+that didn't run. For a rule that checks whole tables or columns, the counts are of
+tables or columns, not records, and \code{n_unchecked} is NA.
 \item \code{issues}: one row per failing or not-evaluated record, or per column-level issue:
 \code{issue_id}, \code{run_id}, \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer},
 \code{severity}, \code{reason_code}, \code{table_name}, \code{column_name}, \code{record_pk}, \code{row_number},
 \code{pk_positional}, \code{level} (\code{record} or \code{column}), \code{n_records}, \code{value}, \code{expected},
 \code{entity_key}, \code{visit_keys}, \code{provider_key}, \code{provider_key_status}, the group columns,
-the problem unit's key column, \code{root_issue_id}, \code{status} (\code{open} or \code{not_evaluated}),
-\code{issue_class}, \code{class_basis}, \code{script_file}, \code{script_block}, \code{attribution_status},
-\code{fingerprint}, \code{fingerprint_pk}, \code{first_seen_run}, \code{change} and \code{change_cause}. The
-columns a conformance run doesn't fill are NA.
+the problem unit's key column, \code{reaches_other_unit}, \code{root_issue_id}, \code{status} (\code{open}
+or \code{not_evaluated}), \code{issue_class}, \code{class_basis}, \code{script_file}, \code{script_block},
+\code{attribution_status}, \code{fingerprint}, \code{fingerprint_pk}, \code{first_seen_run}, \code{change} and
+\code{change_cause}. The columns a conformance run doesn't fill are NA. \code{reaches_other_unit}
+is TRUE where the issue holds a value read from a record of another report unit, or
+from a record whose report unit is \code{"*"}. Such a value is a group value or the problem
+unit's key reached through the keys, any side of \code{key_incoherent}'s key pairs on the
+record (compared or not), one of \code{undeclared_code_set}'s values from records with no
+unit, or a value \code{design_geometry_inconsistent} compared from a record of another unit
+or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
+FALSE in a run without group columns, and isn't part of the fingerprint.
 \item \code{corrections}: an empty table.
 \item \code{metadata}: the tables of \verb{metadata/} in a run folder.
 }
@@ -116,7 +132,8 @@ Layers and the rules they can raise:
 }
 
 Two of these write no issue at this version: \code{parent_without_children} counts, in the
-results only, the parent records that no child record names, and
+results only, the parent records that no child record names (a parent whose key is missing,
+blank, a missing-value code or a value Layer 1 can't read counts as not evaluated), and
 \code{fk_not_applicable_mismatch} writes only \code{not_run} rows until a version brings the
 applicability matrix. \code{record_unreachable} runs only when \code{gpq_read_spec()} was given
 \code{reach}, and the design checks only when their settings name their tables and columns;
@@ -126,7 +143,9 @@ Layer 5 has no rules yet. A column whose name differs from its dictionary attrib
 only in letter case or spaces is reported by \code{column_name_mismatch} and checked as that
 attribute. \code{class_mismatch}, \code{integer_stored_as_double},
 \code{undeclared_code_set} and Layer 0's rules count tables or columns, not records, and their
-rows have \code{"*"} in every group column.
+rows have \code{"*"} in every group column. \code{undeclared_code_set} writes one issue per report
+unit, each holding only that unit's values; values from records with no unit go in an issue
+of their own, under \code{"*"}.
 A value that failed Layer 1 is not evaluated by Layer 2: its
 issue there has status \code{not_evaluated} and names the earlier issue as its root. A value
 that failed Layer 1 or 2 is not evaluated by Layer 3's record rules, which leave a missing
@@ -144,9 +163,11 @@ reports. When a rule fails on every checked record of a column in a group, and a
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.
 
-A record's group values are read from its own table, or from the nearest table that holds
-the column, through the foreign keys; a record that can't reach one, whose keys on the way
-don't match, or whose value there is blank or missing, has \code{"*"} there. A group value
+A record's group values are read from its own table or, through the foreign keys, from a
+table that holds the column, shortest route first. Where a key on the way is missing, blank
+or a missing-value code, a table or column on the way isn't given, or the value found is
+blank, missing, a missing-value code or \code{"*"}, the next route is tried. A record no route
+reaches, or whose key on the way names no parent record, has \code{"*"} there. A group value
 marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
 run, naming the column, the table it is read from and its first such row.
 

@@ -207,6 +207,8 @@ reach_rows <- function(input, reach) {
     rows <- input$cache[[name]]
     if (is.null(rows)) {
       rows <- chain_rows(input, edge$table_name, edge)
+      # Only walk_fk_paths() reads the orphan mark, so the rows are kept without it.
+      attr(rows, "orphan") <- NULL
       if (keep) {
         assign(name, rows, envir = input$cache)
       }
@@ -338,8 +340,8 @@ reach_rows <- function(input, reach) {
 
 #' Each record's A2 label (D18.6, D18.37, D18.38)
 #'
-#' The record reaches the last attribute of id_band_columns' key chain by D16.13's shortest
-#' path (reach_column()); that value is looked up in the key's column of the labels sheet
+#' The record reaches the last attribute of id_band_columns' key chain by the routes of
+#' reach_column() (D20.1); that value is looked up in the key's column of the labels sheet
 #' (`labels_sheet` in the code_lists component), and the label is the same row's
 #' `labels_column`, through contributor_labels(). NA where id_band_columns has no row, the
 #' record reaches no value, or the sheet holds no row of it.
@@ -359,16 +361,17 @@ record_labels <- function(input, table) {
   }
   key <- chain$attribute
   reached <- reach_column(input, table, key)
-  if (is.na(reached$home)) {
-    return(rep(NA_character_, n))
+  labels <- rep(NA_character_, n)
+  # Each home table the records reached (R5) written as text and labelled once, then read at
+  # each record's row there, so only the home tables' values are converted (16.2). The labels
+  # sheet is read as decoding reads it (contributor_labels(), D19.49).
+  for (home in unique(reached$home[!is.na(reached$home)])) {
+    here <- which(reached$home == home)
+    whole <- list(home = home, rows = seq_len(nrow(input$data[[home]])))
+    value <- value_text(reached_values(input, whole, key))
+    labels[here] <- contributor_labels(spec, key, value)[reached$rows[here]]
   }
-  # The key's home table written as text and labelled once, then read at each record's row
-  # there, so only the home table's values are converted (16.2).
-  home_n <- if (reached$home %chin% names(input$data)) nrow(input$data[[reached$home]]) else 0L
-  home <- list(home = reached$home, rows = seq_len(home_n))
-  value <- value_text(reached_values(input, home, key))
-  # The labels sheet is read once, as decoding reads it (contributor_labels(), D19.49).
-  contributor_labels(spec, key, value)[reached$rows]
+  labels
 }
 
 #' The rows whose group holds more than one distinct value
@@ -418,7 +421,9 @@ disagreeing_rows <- function(groups, value) {
 #' differ, as written (D18.101); its value and expected the failing pairs' sides labelled by
 #' the left side's last attribute; a side whose chain breaks, or whose value is NA, blank or a
 #' sentinel, isn't compared, and a record none of whose pairs was compared isn't checked
-#' (D18.1, D18.40). `record_unreachable` per table the `reach` input walks: a row no link
+#' (D18.1, D18.40); a record a side of which is read from a record of another report unit, or
+#' of one whose unit is "*", is marked reaches_other_unit (D18.89, D20.10).
+#' `record_unreachable` per table the `reach` input walks: a row no link
 #' reaches, on its PK's first part; a table with a `from_parent` link leaves its unreached rows
 #' unchecked, each left to the FK rules or under an unreached parent; a row only a linked table
 #' or a link's key column not given could reach, found by a second walk taking each such table
@@ -426,17 +431,22 @@ disagreeing_rows <- function(groups, value) {
 #' there; not_run (no_table) where a root table wasn't given (D18.4, D18.14, D18.43, D18.66,
 #' D18.68).
 #' `parent_without_children` per foreign key to a parent's PK: the parent rows no child row
-#' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34). The
+#' names, counted in the parent rows' own groups, with no issue (D18.10 (4), D18.34); a parent
+#' with no holder (pk_holders()) not evaluated, and where the rule can't run for want of the
+#' child's or the parent's table or key column, a not_run outcome counting the parent's rows,
+#' none where the parent table isn't given (D20.16). The
 #' candidates read their tables and columns from the settings, each name the dictionary's
 #' (pre-flight stops on an argument's or the rule set's unknown name and conformance_context()
 #' drops an option's, D18.45, D18.47, and with it every name of `design_geometry_by`,
 #' `subplot_label_columns` or `design_signature_columns`, D18.90), one not_run row (no_input)
 #' without them: `design_geometry_inconsistent` per compared column, every record of a
 #' `design_geometry_by` group holding more than one distinct value, expected the group's values
-#' as given; `subplot_label_ambiguous` on the last of `subplot_label_columns`, every record
-#' whose values there a record of another PK holds, the key compared by its parts as
-#' pk_duplicate compares them (D18.104), a record whose key is NA, blank or a missing-value
-#' code a key can't hold not grouped (R45), not_run (no_column) without a column of the key;
+#' as given, each record of a group that holds records of more than one report unit, or one
+#' whose unit is "*", marked reaches_other_unit (D18.89, D20.125); `subplot_label_ambiguous` on
+#' the last of `subplot_label_columns`, every record whose values there a record of another PK
+#' holds, the key compared by its parts as pk_duplicate compares them (D18.104), a record whose
+#' key is NA, blank or a missing-value code a key can't hold not grouped (R45), not_run
+#' (no_column) without a column of the key;
 #' `design_duplicate_signature` on the parent key `design_signature_by` names: every parent
 #' record that has the same rows in the table as another parent record of its report unit, each
 #' row read by its `design_signature_columns` values written as text and the rows sorted,
@@ -496,7 +506,10 @@ check_keys <- function(input, context) {
   parent_rows <- function(edge) {
     name <- paste(edge$table_name, edge$attribute_name, sep = "\r")
     if (is.null(joined[[name]])) {
-      assign(name, chain_rows(input, edge$table_name, edge), envir = joined)
+      rows <- chain_rows(input, edge$table_name, edge)
+      # Only walk_fk_paths() reads the orphan mark, so the rows are kept without it.
+      attr(rows, "orphan") <- NULL
+      assign(name, rows, envir = joined)
     }
     joined[[name]]
   }
@@ -718,6 +731,28 @@ check_keys <- function(input, context) {
           left_values <- list()
           right_values <- list()
           any_compared <- logical(n)
+          # The rows a side of which is read from a record of another report unit than the
+          # row's own, or of one whose unit is "*" (D18.89, D20.10); none without group columns.
+          # The rows' own units are read at the first side through keys, and each reached
+          # record's unit is found by its group before any text is read (16.2).
+          own <- NULL
+          other <- logical(n)
+          # A side's value at the row its chain reaches, as chain_values() reads it; a side
+          # through keys marks the rows whose reached record's unit isn't theirs.
+          through <- function(chain) {
+            at <- chain_rows(input, table, chain$steps)
+            reached <- which(!is.na(at))
+            grouped <- length(input$group_cols) > 0L
+            if (grouped && nrow(chain$steps) > 0L && length(reached) > 0L) {
+              if (is.null(own)) {
+                own <<- units_of(table, n)
+              }
+              held <- input$groups[[chain$table]]
+              theirs <- held$values[[input$group_cols[[1L]]]][held$row_group[at[reached]]]
+              other[reached[theirs == "*" | theirs != own[reached]]] <<- TRUE
+            }
+            reached_values(input, list(home = chain$table, rows = at), chain$attribute)
+          }
           for (k in mine) {
             left <- parse_chain(pairs$left[[k]], table, keys, spec$attributes)
             right <- parse_chain(pairs$right[[k]], table, keys, spec$attributes)
@@ -727,10 +762,10 @@ check_keys <- function(input, context) {
             }
             # A side of one attribute is the column as given, read where it is (16.2): the
             # left one is `x` itself.
-            lv <- if (nrow(left$steps) == 0L) x else chain_values(input, table, left)
+            lv <- if (nrow(left$steps) == 0L) x else through(left)
             rv <- if (nrow(right$steps) == 0L) data_of(table, right$attribute)
             if (is.null(rv)) {
-              rv <- chain_values(input, table, right)
+              rv <- through(right)
             }
             # A side whose chain breaks gives NA; NA, blanks and sentinels of the side's own
             # attribute's type aren't compared (D18.1).
@@ -793,7 +828,7 @@ check_keys <- function(input, context) {
           }
           record_outcome(
             "key_incoherent", table, attribute, fail, value, expected,
-            unchecked = which(!any_compared)
+            unchecked = which(!any_compared), reaches_other_unit = which(other)
           )
         }
       )
@@ -876,24 +911,41 @@ check_keys <- function(input, context) {
         })
       }
     }),
-    parent_without_children = rule_outcomes(
-      "parent_without_children", rows_of(edges$table_name, edges$attribute_name), input,
-      function(table, attribute, x, row) {
-        edge <- edge_of(table, attribute)
-        reason <- parent_missing(edge)
-        if (!is.null(reason)) {
-          return(not_run_outcome("parent_without_children", table, attribute, reason))
-        }
-        holders <- pk_holders(input, edge$reference_table)
-        named <- logical(length(holders))
-        pointed <- parent_rows(edge)
-        named[pointed[!is.na(pointed)]] <- TRUE
-        count_outcome(
-          "parent_without_children", table, attribute, edge$reference_table,
-          which(!named[holders] %in% TRUE)
-        )
+    # The rule counts the parent's rows (D18.34). Where it can't run, for want of the child's
+    # table or key column or the parent's, its not_run row counts the parent's rows as
+    # unchecked, one row per parent group, or none, one row of "*", where the parent table
+    # isn't given (D9.24, D20.16). So the child's side is read here, not by rule_outcomes().
+    parent_without_children = lapply(seq_len(nrow(edges)), function(k) {
+      edge <- edges[k]
+      table <- edge$table_name
+      attribute <- edge$attribute_name
+      reason <- if (!table %chin% supplied) {
+        "no_table"
+      } else if (is.null(data_of(table, attribute))) {
+        "no_column"
+      } else {
+        parent_missing(edge)
       }
-    ),
+      if (!is.null(reason)) {
+        return(not_run_outcome(
+          "parent_without_children", table, attribute, reason,
+          counted_table = edge$reference_table
+        ))
+      }
+      holders <- pk_holders(input, edge$reference_table)
+      named <- logical(length(holders))
+      pointed <- parent_rows(edge)
+      named[pointed[!is.na(pointed)]] <- TRUE
+      # A parent with no holder (its key NA, NaN, blank, a missing-value code or a value
+      # Layer 1 loses, pk_holders()) can't be named by a child: not evaluated, with no issue
+      # (D20.16, M5 m131).
+      unheld <- is.na(holders)
+      count_outcome(
+        "parent_without_children", table, attribute, edge$reference_table,
+        which(!unheld & !named[holders]),
+        not_evaluated = which(unheld)
+      )
+    }),
     design_geometry_inconsistent = local({
       table <- context$design_geometry_table
       by <- context$design_geometry_by
@@ -915,6 +967,21 @@ check_keys <- function(input, context) {
             fail <- disagreeing_rows(groups, as_compared(x, row))
             text <- value_text(x[fail])
             at <- groups[fail]
+            # Every record of a failing group fails, so its failing records are the group. A
+            # group holding records of more than one report unit, or one whose unit is "*",
+            # marks each of its records reaches_other_unit, since its expected lists their
+            # values (D18.89, D20.125); none without group columns. Each failing record's unit
+            # is read by its group, the failing records only (16.2).
+            spanning <- integer()
+            if (length(input$group_cols) > 0L && length(fail) > 0L) {
+              held <- input$groups[[table]]
+              unit <- held$values[[input$group_cols[[1L]]]][held$row_group[fail]]
+              seen <- setDT(list(group = at, unit = unit))
+              seen <- seen[!duplicated(seen)]
+              mixed <- tabulate(seen$group, max(at)) > 1L
+              mixed[seen$group[seen$unit %chin% "*"]] <- TRUE
+              spanning <- fail[mixed[at]]
+            }
             pairs <- setDT(list(group = at, value = text))
             distinct <- pairs[!duplicated(pairs)]
             distinct_text <- distinct$value
@@ -943,7 +1010,8 @@ check_keys <- function(input, context) {
             listed <- with_rest(unname(shown), count - pmin(count, most))
             record_outcome(
               "design_geometry_inconsistent", table, attribute, fail, text,
-              listed[match(at, as.integer(names(by_group)))]
+              listed[match(at, as.integer(names(by_group)))],
+              reaches_other_unit = spanning
             )
           }
         )

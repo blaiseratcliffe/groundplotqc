@@ -57,19 +57,25 @@ test_that("chain_rows() gives each row its row where the keys end, NA where they
   input <- conformance_input(fish, spec)
   # Hauls 1 and 2 are station 1's, 3 and 4 station 2's; each catch is a haul's in turn.
   up <- steps("station_id > water_body", "hauls")
-  expect_equal(chain_rows(input, "hauls", up), c(1L, 1L, 2L, 2L))
+  expect_equal(chain_rows(input, "hauls", up), c(1L, 1L, 2L, 2L), ignore_attr = "orphan")
   through <- steps("haul_id > station_id > water_body", "catches")
-  expect_equal(chain_rows(input, "catches", through), rep(1:2, each = 4L))
+  expect_equal(chain_rows(input, "catches", through), rep(1:2, each = 4L), ignore_attr = "orphan")
   # With no steps, every row is its own.
-  expect_equal(chain_rows(input, "stations", steps("water_body", "stations")), 1:2)
+  expect_equal(
+    chain_rows(input, "stations", steps("water_body", "stations")), 1:2,
+    ignore_attr = "orphan"
+  )
   # NA, a sentinel and an orphan key break the chain, for the rows after them too.
   hauls <- data.table::copy(fish$hauls)
   data.table::set(hauls, i = 1:3, j = "station_id", value = c(NA, "?", "stations_9"))
   broken <- fish
   broken$hauls <- hauls
   input <- conformance_input(broken, spec)
-  expect_equal(chain_rows(input, "hauls", up), c(NA, NA, NA, 2L))
-  expect_equal(chain_rows(input, "catches", through), c(rep(NA, 6L), 2L, 2L))
+  expect_equal(chain_rows(input, "hauls", up), c(NA, NA, NA, 2L), ignore_attr = "orphan")
+  expect_equal(
+    chain_rows(input, "catches", through), c(rep(NA, 6L), 2L, 2L),
+    ignore_attr = "orphan"
+  )
   # A key stored as numbers joins the parent's text as text (D16.42, m9).
   numbered <- fish
   numbered$stations <- data.table::copy(fish$stations)
@@ -77,7 +83,7 @@ test_that("chain_rows() gives each row its row where the keys end, NA where they
   data.table::set(numbered$stations, j = "station_id", value = c("1", "2"))
   data.table::set(numbered$hauls, j = "station_id", value = c(1L, 1L, 2L, 2L))
   input <- conformance_input(numbered, spec)
-  expect_equal(chain_rows(input, "hauls", up), c(1L, 1L, 2L, 2L))
+  expect_equal(chain_rows(input, "hauls", up), c(1L, 1L, 2L, 2L), ignore_attr = "orphan")
 })
 
 test_that("chain_values() reads the attribute where the chain ends, NA where it breaks", {
@@ -108,7 +114,10 @@ test_that("a blank key matches nothing, so no record reaches a parent through it
     data.table::set(fish$stations, i = 1L, j = "station_id", value = blank)
     data.table::set(fish$hauls, i = 1:2, j = "station_id", value = blank)
     input <- conformance_input(fish, spec, "water_body")
-    expect_equal(chain_rows(input, "hauls", steps), c(NA, NA, 2L, 2L), info = blank)
+    expect_equal(
+      chain_rows(input, "hauls", steps), c(NA, NA, 2L, 2L),
+      ignore_attr = "orphan", info = blank
+    )
     # So hauls 1 and 2 have no group value, where they had station 1's.
     groups <- input$groups$hauls
     expect_equal(
@@ -148,9 +157,12 @@ test_that("a missing-value code matches nothing, whatever codes the parent's key
   steps <- parse_chain("station_id > water_body", "hauls", spec$keys, spec$attributes)$steps
   # Haul 1's "Z" doesn't reach the station keyed "Z", although "X" comes before it, so neither
   # do its catches.
-  expect_equal(chain_rows(input, "hauls", steps), c(NA, 1L, 2L, 2L))
+  expect_equal(chain_rows(input, "hauls", steps), c(NA, 1L, 2L, 2L), ignore_attr = "orphan")
   through <- parse_chain("haul_id > station_id > water_body", "catches", spec$keys, spec$attributes)
-  expect_equal(chain_rows(input, "catches", through$steps), c(NA, NA, 1L, 1L, 2L, 2L, 2L, 2L))
+  expect_equal(
+    chain_rows(input, "catches", through$steps), c(NA, NA, 1L, 1L, 2L, 2L, 2L, 2L),
+    ignore_attr = "orphan"
+  )
   # So haul 1 has no group value, where it took the station keyed "Z"'s (reach_column()).
   groups <- input$groups$hauls
   expect_equal(groups$values$water_body[groups$row_group], c("*", "LK", "RV", "RV"))
@@ -183,4 +195,45 @@ test_that("parse_chain() passes over a dictionary row with no table or attribute
   through <- parse("cid > pid > name", "g")
   expect_equal(through$steps$table_name, c("g", "c"))
   expect_equal(through[c("table", "attribute")], list(table = "p", attribute = "name"))
+})
+
+test_that("chain_rows() follows the rows given and marks orphans apart from masked keys (D20.50)", {
+  spec <- fx_fish_spec()
+  fish <- fx_fish_clean()
+  steps <- function(chain, table) parse_chain(chain, table, spec$keys, spec$attributes)$steps
+  hauls <- data.table::copy(fish$hauls)
+  # Haul 1's key is NA and haul 2's the missing-value code, both masked; haul 3's names no
+  # station, an orphan.
+  hauls$station_id[1:3] <- c(NA, "?", "S-none")
+  fish$hauls <- hauls
+  input <- conformance_input(fish, spec)
+  up <- steps("station_id > water_body", "hauls")
+  whole <- chain_rows(input, "hauls", up)
+  expect_equal(whole, c(NA, NA, NA, 2L), ignore_attr = "orphan")
+  expect_identical(attr(whole, "orphan"), c(FALSE, FALSE, TRUE, FALSE))
+  # Some rows only, in the order given.
+  some <- chain_rows(input, "hauls", up, rows = c(4L, 3L))
+  expect_equal(some, c(2L, NA), ignore_attr = "orphan")
+  expect_identical(attr(some, "orphan"), c(FALSE, TRUE))
+  # An orphan at a later hop is marked, and one at the first hop stays marked through the next:
+  # catches of haul 3, and a catch naming no haul.
+  catches <- data.table::copy(fish$catches)
+  catches$haul_id[[1L]] <- "H-none"
+  fish$catches <- catches
+  input <- conformance_input(fish, spec)
+  through <- steps("haul_id > station_id > water_body", "catches")
+  expect_identical(
+    attr(chain_rows(input, "catches", through), "orphan"),
+    seq_len(nrow(catches)) == 1L | catches$haul_id %in% hauls$haul_id[[3L]]
+  )
+  # A parent table not given breaks every row without making an orphan.
+  input <- conformance_input(fish[c("hauls", "catches")], spec)
+  expect_false(any(attr(chain_rows(input, "hauls", up), "orphan")))
+  # So does a parent's key column not given: haul 3's key, an orphan above, is only a break.
+  stations <- data.table::copy(fish$stations)
+  data.table::set(stations, j = "station_id", value = NULL)
+  fish$stations <- stations
+  no_key <- chain_rows(conformance_input(fish, spec), "hauls", up)
+  expect_equal(no_key, rep(NA_integer_, nrow(hauls)), ignore_attr = "orphan")
+  expect_false(any(attr(no_key, "orphan")))
 })

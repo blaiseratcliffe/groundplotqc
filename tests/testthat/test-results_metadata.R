@@ -56,19 +56,96 @@ test_that("the run table is one row with the versions, group columns and outcome
   expect_equal(mixed$report_units, "A; B; a; b")
 })
 
+test_that("join_units() escapes backslashes and semicolons inside each unit, in C order (D20.7)", {
+  expect_identical(join_units(character()), NA_character_)
+  # MAGPlot's IDs hold neither, so run.csv reads as it did.
+  expect_identical(join_units(c("220", "100", "220.01", "100")), "100; 220; 220.01")
+  # Inside each unit "\" is written "\\" and ";" is written "\;"; then the units are joined.
+  expect_identical(join_units("a; b"), r"(a\; b)")
+  expect_identical(join_units(c(";", "x")), r"(\;; x)")
+  expect_identical(join_units(c(r"(a\)", "b")), r"(a\\; b)")
+  expect_identical(join_units(r"(\)"), r"(\\)")
+  expect_identical(join_units(r"(a\;b)"), r"(a\\\;b)")
+  expect_identical(join_units(c(r"(x\\)", "y")), r"(x\\\\; y)")
+})
+
+test_that("split_units() splits where a \"; \" isn't escaped, then unescapes once (D20.48)", {
+  expect_identical(split_units(NA_character_), character())
+  expect_identical(split_units("100; 220; 220.01"), c("100", "220", "220.01"))
+  # A ";" after one backslash is inside its unit; after two, or four, the unit before it ends
+  # in a backslash, or two.
+  expect_identical(split_units(r"(a\; b; c)"), c("a; b", "c"))
+  expect_identical(split_units(r"(a\\; b)"), c(r"(a\)", "b"))
+  expect_identical(split_units(r"(x\\\\; y)"), c(r"(x\\)", "y"))
+  # One pass: "\\\;" is a backslash then a semicolon, neither read twice.
+  expect_identical(split_units(r"(a\\\;b)"), r"(a\;b)")
+  # D20.7's units each round-trip alone and together: "; ", ";" alone, a trailing backslash, a
+  # lone one, a backslash then a semicolon, and two backslashes before the next unit.
+  units <- c("a; b", ";", r"(c\)", r"(\)", r"(d\;e)", r"(f\\)", "g")
+  for (unit in units) {
+    expect_identical(split_units(join_units(unit)), unit)
+  }
+  expect_identical(split_units(join_units(units)), sort(units, method = "radix"))
+})
+
+test_that("report units round-trip through run.csv as written and read (D20.7)", {
+  units <- c("a; b", ";", r"(c\)", r"(\)", r"(d\;e)", r"(f\\)", "g", "é; è")
+  run <- run_metadata(
+    "20261008T120000Z_abc123", Sys.time(), Sys.time(),
+    group_cols = "unit", report_units = units
+  )
+  run_dir <- withr::local_tempdir()
+  write_run_metadata(list(run = run), run_dir)
+  path <- file.path(run_dir, "metadata", "run.csv")
+  read <- read_run_csv(path, metadata_schema()$run)
+  expect_identical(read$report_units, run$report_units)
+  expect_identical(split_units(read$report_units), sort(units, method = "radix"))
+  # The file holds the text as joined: the writer adds no backslash of its own.
+  text <- rawToChar(readBin(path, "raw", file.size(path)))
+  Encoding(text) <- "UTF-8"
+  expect_true(grepl(run$report_units, text, fixed = TRUE))
+  # A field that ends in a backslash, just before its closing quote, is written and read back
+  # as joined too.
+  ends <- data.table::copy(run)
+  data.table::set(ends, j = "report_units", value = join_units(c("100", r"(b\)")))
+  ends_dir <- withr::local_tempdir()
+  write_run_metadata(list(run = ends), ends_dir)
+  ends_path <- file.path(ends_dir, "metadata", "run.csv")
+  back <- read_run_csv(ends_path, metadata_schema()$run)
+  expect_identical(back$report_units, r"(100; b\\)")
+  expect_identical(split_units(back$report_units), c("100", r"(b\)"))
+  ends_text <- rawToChar(readBin(ends_path, "raw", file.size(ends_path)))
+  expect_true(grepl(r"("100; b\\",)", ends_text, fixed = TRUE))
+})
+
+test_that("a group value that is the text \"*\" is no report unit (D20.6)", {
+  stations <- data.table::copy(fx_fish_clean()$stations)
+  data.table::set(stations, 1L, "water_body", "*")
+  results <- gpq_check_conformance(
+    list(stations = stations), fx_fish_spec(),
+    group_cols = "water_body", layers = 0
+  )
+  expect_identical(results$metadata$run$report_units, stations$water_body[[2L]])
+  expect_false("*" %in% split_units(results$metadata$run$report_units))
+})
+
 test_that("the git commit is HEAD's in a checkout, NA outside one", {
-  # Loaded from a checkout, as devtools::test() runs, the commit is HEAD's.
   folder <- dirname(system.file("DESCRIPTION", package = "groundplotqc"))
-  if (file.exists(file.path(folder, ".git")) && nzchar(Sys.which("git"))) {
-    expect_match(package_git_commit(), "^[0-9a-f]{40}$")
+  if (file.exists(file.path(folder, ".git"))) {
+    # Loaded from a checkout, as devtools::test() runs, the commit is HEAD's. Then system.file()
+    # is mocked to find no .git, as in an installed package; the mock is made only here, so an
+    # installed run, as R CMD check and CRAN make, rebinds nothing (R145, D20.85).
+    if (nzchar(Sys.which("git"))) {
+      expect_match(package_git_commit(), "^[0-9a-f]{40}$")
+    }
+    imports <- parent.env(environment(package_git_commit))
+    if (exists("system.file", envir = imports, inherits = FALSE)) {
+      testthat::local_mocked_bindings(system.file = function(...) "")
+    } else {
+      testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
+    }
   }
-  # An installed package has no .git, so system.file() finds none.
-  imports <- parent.env(environment(package_git_commit))
-  if (exists("system.file", envir = imports, inherits = FALSE)) {
-    testthat::local_mocked_bindings(system.file = function(...) "")
-  } else {
-    testthat::local_mocked_bindings(system.file = function(...) "", .package = "base")
-  }
+  # An installed package has no .git, so the commit is NA, with nothing mocked there.
   expect_true(is.na(package_git_commit()))
 })
 
@@ -76,8 +153,9 @@ test_that("settings: each declared setting with its tier, then severity entries 
   plain <- settings_metadata()
   expect_equal(names(plain), c("setting", "value", "tier"))
   declared <- c(
-    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
-    "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
+    "lang", "example_cap", "row_cap", "cell_cap", "column_level_min_n", "raw_na_policy",
+    "rogue_codes", "unknown_codes", "coordinate_attributes", "code_set_max_values",
+    "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",
     "design_signature_table", "design_signature_by", "design_signature_columns",
@@ -86,7 +164,10 @@ test_that("settings: each declared setting with its tier, then severity entries 
   expect_equal(plain$setting, declared)
   expect_equal(
     plain$value,
-    c("en", "5", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA, NA, rep(NA, 9L))
+    c(
+      "en", "5", "500", "100", "10", "when_sentinels", "-999; UNK; NA; N/A", NA, NA, "25", NA,
+      NA, rep(NA, 9L)
+    )
   )
   expect_true(all(plain$tier == "built-in"))
   rule_set <- list(
@@ -163,7 +244,8 @@ test_that("a run's metadata has 9.5's tables in order, checked", {
   expect_equal(metadata$spec_manifest, fx_fish_spec()$manifest)
   expect_true(all(metadata$clashes$rule_id == "spec_clash_resolved"))
   expect_equal(metadata$settings$setting, c(
-    "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes", "unknown_codes",
+    "lang", "example_cap", "row_cap", "cell_cap", "column_level_min_n", "raw_na_policy",
+    "rogue_codes", "unknown_codes",
     "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
     "design_geometry_columns", "subplot_label_table", "subplot_label_columns",

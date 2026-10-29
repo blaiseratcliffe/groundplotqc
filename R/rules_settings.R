@@ -4,10 +4,11 @@
 # and severity from M3a; example_cap, column_level_min_n, raw_na_policy, rogue_codes and
 # unknown_codes from M4a, read by the conformance checks; coordinate_attributes,
 # code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
-# Layer 3 (D18.9, D18.20), the design candidates' eight, read by Layer 4 (D18.39), and from M6
-# fallback_class, read by gpq_classify_issues() and resolved whole like unknown_codes (D19.53). A
-# rule-set row gives a setting as text: a whole number for type "integer", several values
-# "; "-joined, a named value as "name=value" (D16.12).
+# Layer 3 (D18.9, D18.20), the design candidates' eight, read by Layer 4 (D18.39), from M6
+# fallback_class, read by gpq_classify_issues() and resolved whole like unknown_codes (D19.53),
+# and from M7a row_cap and cell_cap, the HTML reports' caps (D4.18, D20.39). A rule-set row
+# gives a setting as text: a whole number for type "integer", several values "; "-joined, a
+# named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value, what the test wants, and how a rule-set row's text becomes a value
@@ -103,6 +104,17 @@ setting_definitions <- function() {
     ),
     example_cap = list(
       type = "integer", built_in = 5L, valid = function(x) whole(x, 0),
+      wants = "one whole number, 0 or more", from_text = as_whole
+    ),
+    # The HTML reports' caps (D4.18, D20.39): the rows a table shows, the rest in the issues
+    # CSV, and the characters of delivered text a cell shows, counted before escaping; the CSV
+    # is never cut.
+    row_cap = list(
+      type = "integer", built_in = 500L, valid = function(x) whole(x, 0),
+      wants = "one whole number, 0 or more", from_text = as_whole
+    ),
+    cell_cap = list(
+      type = "integer", built_in = 100L, valid = function(x) whole(x, 0),
       wants = "one whole number, 0 or more", from_text = as_whole
     ),
     column_level_min_n = list(

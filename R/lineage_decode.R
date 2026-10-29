@@ -116,7 +116,7 @@ split_src_id <- function(text, separator) {
 #'
 #' `slots` is entry_slots()'s result for `table`, `rows` the records' rows there. A part of a
 #' nested ID reads its conditions on the record's parent in that ID's table, reached by the
-#' shortest path of foreign keys (fk_path(), chain_rows()); a broken path holds none. A
+#' routes of foreign keys (walk_fk_paths(), D20.51); a record no route reaches holds none. A
 #' condition that doesn't parse holds for no record. Returns one character vector per part.
 #' @noRd
 label_parts <- function(input, table, rows, slots, flags) {
@@ -131,12 +131,7 @@ label_parts <- function(input, table, rows, slots, flags) {
     }
     at <- rows
     if (!identical(slot$table, table)) {
-      path <- fk_path(spec$keys, table, slot$table)
-      at <- if (is.null(path)) {
-        rep(NA_integer_, length(rows))
-      } else {
-        chain_rows(input, table, path)[rows]
-      }
+      at <- walk_fk_paths(input, table, slot$table)$rows[rows]
     }
     open <- rep(TRUE, length(rows))
     for (i in conditioned) {
@@ -155,7 +150,7 @@ label_parts <- function(input, table, rows, slots, flags) {
 }
 
 #' Some records of a table decoded: each one's provider key and its status (9.3; D19.13,
-#' D19.15, D19.16, D19.47, D19.48; R4 to R7)
+#' D19.15, D19.16, D19.47, D19.48, D20.35; R4 to R7)
 #'
 #' `rows` are rows of `table`, `labels` each record's A2 label (contributor_labels()). In order:
 #' `fallback_pk`, no key, where the table has no ID attribute to decode (source_id_attribute())
@@ -164,11 +159,12 @@ label_parts <- function(input, table, rows, slots, flags) {
 #' `no_lineage_spec`, the ID as delivered, where the record has no label, its label no entry,
 #' or the entry is unparseable; `raw`, the ID as delivered, where the entry has labelled
 #' alternatives (D19.48), a nested ID can't expand, there is no separator to split a composite
-#' by, or the ID doesn't split into the expected number of parts; otherwise `decoded`, each
-#' part as `<label>=<value>` joined by "; ", a source part labelled with its provider's
-#' `table.column` and a derived one with its bare attribute name (D19.47), or `partial`, so
-#' written, where a part is blank or any missing-value code the spec has, of any type (R5). A
-#' single ID isn't split (D19.13). Returns `list(provider_key, status)`.
+#' by, the ID doesn't split into the expected number of parts, or a part or its label holds
+#' "; " or "=", which would keep the key from splitting back into its parts exactly (D20.35);
+#' otherwise `decoded`, each part as `<label>=<value>` joined by "; ", a source part labelled
+#' with its provider's `table.column` and a derived one with its bare attribute name (D19.47),
+#' or `partial`, so written, where a part is blank or any missing-value code the spec has, of
+#' any type (R5). A single ID isn't split (D19.13). Returns `list(provider_key, status)`.
 #' @noRd
 decode_records <- function(input, table, rows, labels, flags) {
   spec <- input$spec
@@ -190,6 +186,11 @@ decode_records <- function(input, table, rows, labels, flags) {
   codes <- sentinels$value[sentinels$data_type == columns$family[[at]]]
   usable <- !is.na(text) & !space_padding(text)$blank & !text %chin% codes
   any_code <- unique(sentinels$value)
+  # Text holding what joins a key, "; " between its parts or "=" in each, looked for in the
+  # bytes, as both are ASCII (D20.35).
+  holds_joiner <- function(x) {
+    grepl("; ", x, fixed = TRUE, useBytes = TRUE) | grepl("=", x, fixed = TRUE, useBytes = TRUE)
+  }
   # A record with no label, or whose label the lineage spec gives no id entry for this
   # attribute, has no lineage spec: set in one step, so the loop below runs over the spec's
   # contributors only (16.2).
@@ -239,7 +240,12 @@ decode_records <- function(input, table, rows, labels, flags) {
     missing_part <- Reduce(`|`, lapply(parts, function(part) {
       space_padding(part)$blank | part %chin% any_code
     }))
-    status[ok] <- fifelse(missing_part, "partial", "decoded")
+    # A part or a label holding "; " or "=" would split back from the key otherwise than it
+    # was joined, so the record is shown as delivered, raw (D20.31 (a), D20.35).
+    unsplittable <- Reduce(`|`, lapply(seq_along(slots), function(k) {
+      holds_joiner(parts[[k]]) | holds_joiner(part_labels[[k]])
+    }))
+    status[ok] <- fifelse(unsplittable, "raw", fifelse(missing_part, "partial", "decoded"))
   }
   # A record shown as delivered keeps its ID's text as its key.
   delivered <- status %chin% c("no_lineage_spec", "raw")
@@ -369,15 +375,19 @@ issues_match_tables <- function(issues, input) {
   invisible(NULL)
 }
 
-#' Which issues' provider keys another record of their table holds too (D19.15, D19.76)
+#' Which issues' provider keys another record of their table holds too (9.6; D19.15, D19.76,
+#' D20.107)
 #'
-#' Counted over the table's records of every contributor in `tables`: only the records whose ID
-#' an issue's record shares are decoded again, found by duplicated() on the ID column (16.2),
-#' each labelled as the run labelled it: an issue's record by its issue's key_col value, any
-#' other record by its key_col value in `tables`. Where `tables` reach key_col for no record of
-#' the table (a table or column on the way not given), they can't label a record with no issue:
-#' it counts as holding the key of each issue sharing its ID, so those keep the pk: form.
-#' Returns one logical per issue.
+#' Counted over the table's records of every contributor in `tables`, found by key: only the
+#' records that could hold an issue's key are decoded again. They are the records whose ID an
+#' issue's record shares, found by duplicated() on the ID column (16.2), and, where an ID of a
+#' column held as text holds "=", the records whose ID is spelled as an issue's decoded key or
+#' is the values of an issue's delivered key joined by a separator of the table's entries,
+#' found by %chin% (D20.107). Each is labelled as the run labelled it: an issue's record by its
+#' issue's key_col value, any other record by its key_col value in `tables`. Where `tables`
+#' reach key_col for no record of the table (a table or column on the way not given), they
+#' can't label a record with no issue: it counts as holding the key of each issue that shares
+#' its ID or found it by key, so those keep the pk: form. Returns one logical per issue.
 #' @noRd
 shared_provider_keys <- function(issues, input, key_col, flags) {
   shared <- logical(nrow(issues))
@@ -385,6 +395,7 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
   record <- which(!is.na(issues$row_number))
   spec <- input$spec
   columns <- input$columns
+  lineage <- spec$lineage_spec
   for (table in unique(issues$table_name[keyed])) {
     at <- keyed[issues$table_name[keyed] == table]
     attribute <- source_id_attribute(spec, table)
@@ -396,13 +407,52 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     # setNumericRounding(), so the reset record_pk_text() makes is left out on purpose (R59).
     ids <- if (inherits(x, "integer64")) setDT(list(x)) else x
     repeats <- duplicated(ids) | duplicated(ids, fromLast = TRUE)
-    candidate <- at[repeats[issues$row_number[at]]]
+    # A record with another ID can hold an issue's key too (9.6, D20.107): its ID spelled as
+    # the issue's decoded key, so raw or no_lineage_spec, or the values of the issue's
+    # delivered key joined by a separator of the table's entries, as a decoded key's ID is.
+    # Either way an ID holds "=" (a key's, or the delivered key's own), so a column not held
+    # as text, or with no ID holding "=", is passed by after one grepl() (16.2).
+    spelled <- character()
+    spelled_by <- integer()
+    found <- integer()
+    by_key <- integer()
+    text <- stored_text(x)
+    if (!is.null(text) && any(grepl("=", text, fixed = TRUE, useBytes = TRUE))) {
+      key <- issues$provider_key[at]
+      decoded <- issues$provider_key_status[at] %chin% c("decoded", "partial")
+      delivered <- which(!decoded & grepl("=", key, fixed = TRUE, useBytes = TRUE))
+      # A latin1 key is read as UTF-8; one that still isn't valid UTF-8 no pattern can read.
+      readable <- utf8_marked(utf8_converted(key[delivered]))
+      valid <- validUTF8(readable)
+      delivered <- delivered[valid]
+      # The values: the first "<label>=" dropped, and each "; <label>=" after it made the
+      # separator, taken as fixed text.
+      values <- sub("^[^=]*=", "", readable[valid])
+      is_entry <- lineage$spec_type %chin% "id" & lineage$table_name %chin% table &
+        lineage$attribute_name %chin% attribute
+      separators <- unique(lineage$separator[is_entry])
+      separators <- separators[!is.na(separators)]
+      joined <- lapply(separators, function(separator) {
+        gsub("; [^=]*=", gsub("\\", "\\\\", separator, fixed = TRUE), values)
+      })
+      # With no separator, only a one-part entry decodes: its ID is the value alone.
+      if (length(joined) == 0L) {
+        joined <- list(values)
+      }
+      spelled <- c(key[decoded], unlist(joined, use.names = FALSE))
+      spelled_by <- c(which(decoded), rep(delivered, length(joined)))
+      found <- which(text %chin% spelled)
+      by_key <- spelled_by[spelled %chin% text[found]]
+    }
+    candidate <- at[repeats[issues$row_number[at]] | seq_along(at) %in% by_key]
     if (length(candidate) == 0L) {
       next
     }
     # Matched on the repeated rows only, so a classed column isn't written as text whole.
     repeated <- which(repeats)
     holders <- repeated[x[repeated] %in% x[issues$row_number[candidate]]]
+    # The issues' own records too, as one found by key may share no ID.
+    holders <- sort(unique(c(holders, found, issues$row_number[candidate])))
     # A holder that is an issue's record takes that issue's key_col value, as the run gave it
     # (D19.76); the table's other holders are read from `tables`.
     on_table <- record[issues$table_name[record] == table]
@@ -412,14 +462,14 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     unlabelled <- logical(length(holders))
     if (length(other) > 0L) {
       reached <- reach_column(input, table, key_col)
-      home <- columns$column[which(
-        columns$table_name == reached$home & columns$attribute_name == key_col
-      )]
+      ends <- unique(reached$home[!is.na(reached$home)])
+      home <- columns$column[columns$table_name %chin% ends & columns$attribute_name == key_col]
       if (all(is.na(home)) || all(is.na(reached$rows))) {
         unlabelled[other] <- TRUE
       } else {
+        other_rows <- holders[other]
         key_values[other] <- value_text(reached_values(
-          input, list(home = reached$home, rows = reached$rows[holders[other]]), key_col
+          input, list(home = reached$home[other_rows], rows = reached$rows[other_rows]), key_col
         ))
       }
     }
@@ -434,10 +484,12 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
     held <- held[!is.na(held)]
     twice <- unique(held[duplicated(held)])
     # A holder `tables` can't label holds, for all decoding can tell, the key of each issue
-    # sharing its ID (D19.76).
+    # sharing its ID or finding it by key (D19.76, D20.107).
     rows <- issues$row_number[candidate]
+    loose <- holders[unlabelled]
+    by_loose <- if (length(spelled) > 0L) at[spelled_by[spelled %chin% text[loose]]]
     shared[candidate] <- issues$provider_key[candidate] %in% twice |
-      x[rows] %in% x[holders[unlabelled]]
+      x[rows] %in% x[loose] | candidate %in% by_loose
   }
   shared
 }
@@ -463,7 +515,9 @@ shared_provider_keys <- function(issues, input, key_col, flags) {
 #'   joined by "; ". An ID of one part isn't split.
 #' - `partial`: as `decoded`, but a part is blank or a missing-value code.
 #' - `raw`: the ID as delivered: it doesn't split into the expected parts (a value holding the
-#'   separator), its entry has labelled alternatives, or there is no separator.
+#'   separator), its entry has labelled alternatives, there is no separator, or one of its
+#'   parts or labels holds "; " or "=". The last case keeps every `decoded` or `partial` key
+#'   splitting back into its parts exactly.
 #' - `no_lineage_spec`: the ID as delivered: the record's contributor has no entry for it.
 #' - `fallback_pk`: no key: a column-level issue, a table with no ID to decode, an ID that is
 #'   missing, blank or a missing-value code, or an entry that says the contributor has no ID.

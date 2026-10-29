@@ -10,9 +10,12 @@
 #'
 #' Results carry the group columns after `column_name`; issues carry the group columns,
 #' then the problem unit's key column unless it is one of them, after
-#' `provider_key_status` (9.2, 9.3). Each caller column is character. A caller column that
+#' `provider_key_status` and before `reaches_other_unit` (9.2, 9.3; D20.18). Each caller column
+#' is character. A caller column that
 #' repeats, is blank, or has the name of a fixed column is a caller error, and so is a group
-#' column whose name holds "; " (D15.39, D15.40).
+#' column whose name holds "; " (D15.39, D15.40). So is one named like a column a report adds,
+#' `message` or `n_not_evaluated_own`, or starting with `key_`, the provider CSV's key parts
+#' (D20.76).
 #' @noRd
 results_schema <- function(group_cols = character(), key_col = NULL) {
   chr <- "character"
@@ -21,15 +24,17 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
   results <- c(
     run_id = chr, run_scope = chr, rule_id = chr, rule_fingerprint = chr, stage = chr,
     layer = int, severity = chr, table_name = chr, column_name = chr, n_checked = int,
-    n_fail = int, n_not_evaluated = int, reason_code = chr, n_distinct_fail_values = int,
-    n_easy_fix = int, examples = chr, status = chr, not_run_reason = chr, message_id = chr
+    n_fail = int, n_not_evaluated = int, n_unchecked = int, reason_code = chr,
+    n_distinct_fail_values = int, n_easy_fix = int, examples = chr, status = chr,
+    not_run_reason = chr, message_id = chr
   )
   issues <- c(
     issue_id = int, run_id = chr, run_scope = chr, rule_id = chr, rule_fingerprint = chr,
     stage = chr, layer = int, severity = chr, reason_code = chr, table_name = chr,
     column_name = chr, record_pk = chr, row_number = int, pk_positional = lgl, level = chr,
     n_records = int, value = chr, expected = chr, entity_key = chr, visit_keys = chr,
-    provider_key = chr, provider_key_status = chr, root_issue_id = int, status = chr,
+    provider_key = chr, provider_key_status = chr, reaches_other_unit = lgl,
+    root_issue_id = int, status = chr,
     issue_class = chr, class_basis = chr, script_file = chr, script_block = chr,
     attribution_status = chr, fingerprint = chr, fingerprint_pk = chr, first_seen_run = chr,
     change = chr, change_cause = chr
@@ -41,8 +46,11 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
     reason_code = chr, support = chr, support_n = int, support_d = int, evidence = chr,
     fixed_value_passes = lgl, easy_fix = lgl, easy_fix_blocked_by = chr
   )
+  # A report's routed results add n_not_evaluated_own (route_unit()) and the provider's CSV
+  # message (provider_csv_table()), so a caller's column can't take either name (D20.76).
+  report <- c("message", "n_not_evaluated_own")
   validate_caller_columns(
-    group_cols, key_col, unique(c(names(results), names(issues), names(corrections)))
+    group_cols, key_col, unique(c(names(results), names(issues), names(corrections), report))
   )
   caller <- function(columns) structure(rep(chr, length(columns)), names = columns)
   list(
@@ -84,6 +92,18 @@ validate_caller_columns <- function(group_cols, key_col, fixed) {
     stop(sprintf(
       "The caller's columns %s have the names of columns the results already have.",
       paste(clash, collapse = ", ")
+    ), call. = FALSE)
+  }
+  # The provider issues CSV names each part of a provider key key_<label> (D20.31), so a
+  # caller's column can't start with key_ (D20.76), which has its own error (D20.95).
+  prefixed <- grep("^key_", unique(c(group_cols, key_col)), value = TRUE)
+  if (length(prefixed) > 0L) {
+    stop(sprintf(
+      paste(
+        "The caller's columns %s start with \"key_\", which the provider issues CSV uses for",
+        "the parts of each provider key."
+      ),
+      paste(prefixed, collapse = ", ")
     ), call. = FALSE)
   }
   invisible(NULL)
@@ -162,8 +182,9 @@ new_corrections <- function(x = NULL) {
 #' settings tables (9.5): the columns that must hold a value hold one, a text one never
 #' empty; coded columns hold their values only; and each table's rules between columns. Results and
 #' issues name only rules the registry declares that aren't pre-flight checks, with the
-#' registry's stage and layer (9.7), and a conformance row's reason code is "*" (R3). A problem
-#' is a developer error naming the table.
+#' registry's stage and layer (9.7), a conformance row's reason code is "*" (R3), and a results
+#' row has `n_unchecked` unless its rule is a unit rule (D20.15). A problem is a developer
+#' error naming the table.
 #' @noRd
 validate_schema <- function(x, name, schema, registry = rule_registry()) {
   if (!is.data.table(x)) {
@@ -194,7 +215,8 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
     ),
     issues = c(
       "issue_id", "run_id", "run_scope", "rule_id", "rule_fingerprint", "stage", "layer",
-      "severity", "reason_code", "table_name", "column_name", "level", caller, "status"
+      "severity", "reason_code", "table_name", "column_name", "level", caller,
+      "reaches_other_unit", "status"
     ),
     corrections = c(
       "correction_id", "run_id", "issue_id", "table_name", "column_name", "proposed_value",
@@ -261,6 +283,14 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
     if (any(x$stage == "conformance" & x$reason_code != "*")) {
       fail("gives a conformance row a reason code other than \"*\"")
     }
+    # A rule that checks a table or a column as one unit counts no records, so its rows have no
+    # n_unchecked, and every other rule's rows have one (D20.15).
+    if (name == "results" && any(is.na(x$n_unchecked) != (data_rules$unit[at] %in% TRUE))) {
+      fail(paste(
+        "gives n_unchecked to the row of a rule that checks whole tables or columns, or leaves",
+        "it NA on another rule's row"
+      ))
+    }
   }
   switch(name,
     results = check_results_rows(x, caller, fail),
@@ -274,15 +304,19 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
 
 #' The results table's rules between columns (9.2; D7.3)
 #'
-#' Counts never negative; no more failures than records checked, and no more easy fixes or
+#' Counts never negative, `n_unchecked` NA on a unit rule's row (D20.15); no more failures than
+#' records checked, and no more easy fixes or
 #' distinct failing values than failures (m24, D16.8: a table or column rule counts tables
 #' or columns, so the bounds hold for it too); a pass has no failures, a fail some; a
 #' not_run row has a not-run reason, no records checked and no failures, and only it has a
 #' reason; one row per rule, table, column, group and reason code.
 #' @noRd
 check_results_rows <- function(x, caller, fail) {
-  counts <- c("n_checked", "n_fail", "n_not_evaluated", "n_distinct_fail_values", "n_easy_fix")
-  if (any(vapply(counts, function(column) any(x[[column]] < 0L), logical(1)))) {
+  counts <- c(
+    "n_checked", "n_fail", "n_not_evaluated", "n_unchecked", "n_distinct_fail_values",
+    "n_easy_fix"
+  )
+  if (any(vapply(counts, function(column) any(x[[column]] < 0L, na.rm = TRUE), logical(1)))) {
     fail("has negative counts")
   }
   if (any(x$n_fail > x$n_checked)) {

@@ -66,6 +66,26 @@ test_that("gpq_check_conformance refuses arguments it can't run on", {
   }
 })
 
+test_that("the run refuses a group column a report would overwrite, at its start (D20.76)", {
+  # MAGPlot's compiled spec, quick to load; the run stops before it reads a table.
+  spec <- magp_spec()
+  # The provider CSV's message column, by the clash error; a key part's prefix by its own
+  # (D20.95).
+  expect_error(
+    gpq_check_conformance(magp_example, spec, group_cols = "message"),
+    "The caller's columns message have the names of columns the results already have.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_check_conformance(magp_example, spec, group_cols = "key_jurisdiction"),
+    paste(
+      "The caller's columns key_jurisdiction start with \"key_\", which the provider issues CSV",
+      "uses for the parts of each provider key."
+    ),
+    fixed = TRUE
+  )
+})
+
 test_that("pre-flight runs first: a stop stops the run, a warning reaches the caller (D16.3)", {
   testthat::skip_on_cran()
   fish <- fx_fish_clean()
@@ -190,9 +210,13 @@ test_that("a unit rule records its not_run outcomes as units, others by group (D
   unit <- done$results[done$results$rule_id == "test_cast" & done$results$status == "not_run"]
   expect_equal(unit$gear, c("*", "*"))
   expect_equal(unit$n_not_evaluated, c(1L, 1L))
+  # A unit rule counts no records, so it has no n_unchecked (D20.15).
+  expect_equal(unit$n_unchecked, c(NA_integer_, NA_integer_))
   expect_equal(unit$not_run_reason, c("no_column", "no_table"))
   grouped <- done$results[done$results$rule_id == "test_spell" & done$results$status == "not_run"]
-  expect_equal(grouped$n_not_evaluated, as.vector(table(run$input$groups$hauls$row_group)))
+  # A record rule that didn't run reached none of its records: each is unchecked (D20.15).
+  expect_equal(grouped$n_unchecked, as.vector(table(run$input$groups$hauls$row_group)))
+  expect_true(all(grouped$n_not_evaluated == 0L))
   expect_no_error(new_results(done$results, "gear", rule_registry()))
   # A unit rule none of whose outcomes ran still writes one "*" row per column (D16.30 gone).
   only <- assembly(group_cols = "gear")
@@ -606,7 +630,8 @@ test_that("an empty table is one not_run row, no_records; not_run counts by grou
   expect_equal(empty$n_checked, 0L)
   not_run <- done$results[done$results$table_name == "hauls"]
   hauls <- run$input$groups$hauls
-  expect_equal(not_run$n_not_evaluated, as.vector(table(hauls$row_group)))
+  expect_equal(not_run$n_unchecked, as.vector(table(hauls$row_group)))
+  expect_true(all(not_run$n_not_evaluated == 0L))
   expect_true(all(not_run$status == "not_run" & not_run$not_run_reason == "no_column"))
 })
 
@@ -675,6 +700,7 @@ test_that("rows a rule didn't check count in neither n_checked nor n_fail (D18.2
   # Rows 1 and 2 are masked by Layer 1, row 2 counted once, as masked; rows 4 and 5 weren't
   # checked; row 3 fails.
   expect_equal(c(spell$n_checked, spell$n_fail, spell$n_not_evaluated), c(n - 4L, 1L, 2L))
+  expect_equal(spell$n_unchecked, 2L)
   expect_equal(spell$status, "fail")
   expect_true(is.na(spell$not_run_reason))
   issues <- done$issues[done$issues$rule_id == "test_spell"]
@@ -702,15 +728,16 @@ test_that("a group in which the rule checked nothing is not_run, none_checked (D
   expect_equal(rows$gear, grouping$values$gear)
   expect_equal(rows$status, c("not_run", rep("pass", others)))
   expect_equal(rows$not_run_reason, c("none_checked", rep(NA_character_, others)))
-  # Its records are counted as not evaluated, and none is checked or fails.
+  # Its records are unchecked, so it reads 0 not evaluated, and none is checked or fails
+  # (D20.15).
   expect_equal(rows$n_checked[[1L]], 0L)
   expect_equal(rows$n_fail[[1L]], 0L)
-  expect_equal(rows$n_not_evaluated[[1L]], length(first_group))
-  expect_equal(rows$n_not_evaluated[-1L], rep(0L, others))
+  expect_equal(rows$n_not_evaluated, rep(0L, others + 1L))
+  expect_equal(rows$n_unchecked, c(length(first_group), rep(0L, others)))
   expect_equal(nrow(done$issues), 0L)
   expect_no_error(new_results(rows, group_cols = "gear", registry = rule_registry()))
   # A group masked in part and unchecked in the rest checked nothing too: not_run, its
-  # records counted once each.
+  # records counted once each, the masked one not evaluated and the rest unchecked.
   run <- assembly(group_cols = "gear")
   record_layer(list(test_cast = list(record_outcome(
     "test_cast", "catches", "weight", first_group[[1L]], "x"
@@ -723,7 +750,8 @@ test_that("a group in which the rule checked nothing is not_run, none_checked (D
   spell <- spell[spell$rule_id == "test_spell"]
   expect_equal(spell$status[[1L]], "not_run")
   expect_equal(spell$not_run_reason[[1L]], "none_checked")
-  expect_equal(spell$n_not_evaluated[[1L]], length(first_group))
+  expect_equal(spell$n_not_evaluated[[1L]], 1L)
+  expect_equal(spell$n_unchecked[[1L]], length(first_group) - 1L)
 })
 
 test_that("every checked row failing collapses into one issue, unchecked rows aside (D18.21)", {
@@ -739,6 +767,7 @@ test_that("every checked row failing collapses into one issue, unchecked rows as
   done <- recorded(run$state)
   expect_equal(c(done$results$n_checked, done$results$n_fail), c(n - 2L, n - 2L))
   expect_equal(done$results$n_not_evaluated, 0L)
+  expect_equal(done$results$n_unchecked, 2L)
   expect_equal(done$results$status, "fail")
   expect_equal(done$issues$level, "column")
   expect_equal(done$issues$n_records, n - 2L)
@@ -998,4 +1027,219 @@ test_that("problem_unit naming a column the spec lacks stops so beside a row wit
     "`problem_unit` names t.nope, which the specification doesn't have.",
     fixed = TRUE
   )
+})
+
+# M7a task 3 (D18.71, D20.15 (b))
+test_that("a rule's counts that don't add up to its records stop the run (D20.15)", {
+  local_stand_in_rules()
+  stops <- paste(
+    "Internal error: the counts of rule test_spell on table catches, column weight",
+    "don't add up"
+  )
+  # A record masked by an earlier layer and counted as not evaluated, with no not_evaluated
+  # issue written for it.
+  run <- assembly(settings = list(column_level_min_n = 100L))
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "catches", "weight", 1L, "x"
+  ))), 1L, run$input, run$context, run$state, run_id)
+  testthat::local_mocked_bindings(record_masked = function(...) invisible(NULL))
+  expect_error(
+    record_layer(list(test_spell = list(record_outcome(
+      "test_spell", "catches", "weight", integer(), character()
+    ))), 2L, run$input, run$context, run$state, run_id),
+    stops,
+    fixed = TRUE
+  )
+  # A not_run row counting the child's records where the rule counts the parent's (M5 m112's
+  # shape).
+  run <- assembly(group_cols = "gear")
+  real <- record_not_run
+  testthat::local_mocked_bindings(record_not_run = function(outcome, ...) {
+    outcome$counted_table <- outcome$table_name
+    real(outcome, ...)
+  })
+  expect_error(
+    record_layer(list(test_spell = list(not_run_outcome(
+      "test_spell", "catches", "weight", "no_column",
+      counted_table = "hauls"
+    ))), 2L, run$input, run$context, run$state, run_id),
+    stops,
+    fixed = TRUE
+  )
+})
+
+# M7a task 3 (D20.15, D20.16, M5 m112, m131)
+test_that("a not_run row counts its counted table's records unchecked (D20.15, D20.16)", {
+  local_stand_in_rules()
+  run <- assembly(group_cols = "gear")
+  hauls <- run$input$groups$hauls
+  record_layer(list(test_cast = list(
+    not_run_outcome("test_cast", "catches", "haul_id", "no_column", counted_table = "hauls"),
+    not_run_outcome("test_cast", "catches", "weight", "no_input", counted_table = "nowhere")
+  )), 1L, run$input, run$context, run$state, run_id)
+  rows <- recorded(run$state)$results
+  # One row per gear of the hauls, under the catches' haul_id, each haul unchecked (D20.16).
+  counted <- rows[rows$column_name == "haul_id"]
+  expect_equal(counted$gear, hauls$values$gear)
+  expect_equal(counted$n_unchecked, tabulate(hauls$row_group, hauls$n))
+  expect_true(all(counted$n_checked == 0L & counted$n_not_evaluated == 0L))
+  # A counted table not given: one row of "*" counting nothing.
+  none <- rows[rows$column_name == "weight"]
+  expect_equal(none$gear, "*")
+  expect_equal(c(none$n_unchecked, none$n_not_evaluated), c(0L, 0L))
+  # A count's rows it can't evaluate are not evaluated, with no issue; a group of them alone
+  # checked nothing: not_run, none_checked (D18.22).
+  run <- assembly(group_cols = "gear")
+  first <- which(hauls$row_group == 1L)
+  record_layer(list(test_cast = list(count_outcome(
+    "test_cast", "catches", "haul_id", "hauls", integer(),
+    not_evaluated = first
+  ))), 1L, run$input, run$context, run$state, run_id)
+  rows <- recorded(run$state)$results
+  expect_equal(rows$n_not_evaluated, c(length(first), rep(0L, hauls$n - 1L)))
+  expect_equal(rows$n_checked + rows$n_not_evaluated, tabulate(hauls$row_group, hauls$n))
+  expect_equal(c(rows$status[[1L]], rows$not_run_reason[[1L]]), c("not_run", "none_checked"))
+  expect_true(all(rows$n_unchecked == 0L))
+  expect_equal(length(run$state$issues), 0L)
+  expect_error(
+    count_outcome("r", "t", "c", "p", 1L, not_evaluated = 1L),
+    "Rule r: a row can't be not evaluated and also fail or be unchecked.",
+    fixed = TRUE
+  )
+})
+
+# M7a task 3's review (D20.10, D20.16)
+test_that("the outcomes refuse marked or not-evaluated rows that aren't row numbers", {
+  for (rows in list(c(2L, 2L), 0L, NA_integer_, 1.5, matrix(2L), "2")) {
+    expect_error(
+      record_outcome("r", "t", "c", 1L, "a", reaches_other_unit = rows),
+      paste(
+        "Rule r: `reaches_other_unit` must be row numbers, each once: whole numbers from 1",
+        "within the integer range."
+      ),
+      fixed = TRUE, info = deparse(rows)
+    )
+    expect_error(
+      count_outcome("r", "t", "c", "p", 1L, not_evaluated = rows),
+      paste(
+        "Rule r: `not_evaluated` must be row numbers, each once: whole numbers from 1 within",
+        "the integer range."
+      ),
+      fixed = TRUE, info = deparse(rows)
+    )
+  }
+  # None given is none; rows given are kept as integers.
+  expect_identical(record_outcome("r", "t", "c", 1L, "a")$reaches_other_unit, integer())
+  expect_identical(
+    record_outcome("r", "t", "c", 1L, "a", reaches_other_unit = c(3, 2))$reaches_other_unit,
+    c(3L, 2L)
+  )
+  expect_identical(count_outcome("r", "t", "c", "p", 1L)$not_evaluated, integer())
+})
+
+# M7a task 3 (D18.89, D20.10, D20.14): sites hold each record's unit and area; a measurement
+# reaches its unit through its design first and its area through its site, and an observation
+# reaches the problem unit's key, plot_id, through its measurement.
+test_that("reaches_other_unit marks a record whose values come from another unit's record", {
+  dictionary <- data.frame(
+    table_name = c(
+      rep("sites", 3L), rep("designs", 2L), rep("plots", 2L), rep("meas", 5L), rep("obs", 3L)
+    ),
+    attribute_name = c(
+      "site_id", "unit", "area", "design_id", "unit", "plot_id", "site_id", "meas_id",
+      "design_id", "site_id", "plot_id", "note", "obs_id", "design_id", "meas_id"
+    ),
+    key_type = c(
+      "PK", NA, NA, "PK", NA, "PK", "FK", "PK", "FK", "FK", "FK", NA, "PK", "FK", "FK"
+    ),
+    reference_table = c(
+      NA, NA, NA, NA, NA, NA, "sites", NA, "designs", "sites", "plots", NA, NA, "designs",
+      "meas"
+    ),
+    data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary, key_pairs = data.frame(
+    table_name = "meas", left = "site_id", right = "plot_id > site_id", note = NA
+  ))
+  # Site 3 has no unit, so its records' unit is "*"; measurement 8 has no design. Measurements
+  # 9 and 10 name a plot of another site than their own, as measurement 7 does.
+  tables <- list(
+    sites = data.table::data.table(
+      site_id = c("s1", "s2", "s3", "s4"), unit = c("u1", "u2", NA, "u2"),
+      area = c("a1", "a2", "a3", "a1")
+    ),
+    designs = data.table::data.table(design_id = c("d1", "d2"), unit = c("u1", "u2")),
+    plots = data.table::data.table(
+      plot_id = c("p1", "p2", "p3", "p4"), site_id = c("s1", "s2", "s3", "s4")
+    ),
+    meas = data.table::data.table(
+      meas_id = paste0("m", 1:10),
+      design_id = c("d1", "d1", "d2", "d2", "d1", "d2", "d1", NA, "d2", "d1"),
+      site_id = c("s1", "s1", "s1", "s2", "s3", "s4", "s1", "s3", "s2", "s1"),
+      plot_id = c("p1", "p1", "p1", "p2", "p3", "p4", "p2", "p3", "p4", "p3"),
+      note = c("x", "y", "y", "z", "x", "z", "x", "w", "y", "w")
+    ),
+    obs = data.table::data.table(
+      obs_id = c("o1", "o2"), design_id = "d1", meas_id = c("m3", "m1")
+    )
+  )
+  marks <- function(group_cols, key_col = NULL) {
+    input <- conformance_input(tables, spec, group_cols, key_col)
+    lapply(input$groups, `[[`, "reaches_other_unit")
+  }
+  grouped <- marks(c("unit", "area"))
+  # D18.89's (B): measurement 3 is unit u2's through its design but reads its area from a site
+  # of u1. Measurement 5 and plot 3 read their area from site 3, whose unit is "*", and so
+  # does measurement 8, its own unit "*" (D20.10 (a)). A value read in the record's own table,
+  # or from a record of its own unit, marks nothing.
+  expect_equal(
+    grouped$meas, c(FALSE, FALSE, TRUE, FALSE, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE)
+  )
+  expect_equal(grouped$plots, c(FALSE, FALSE, TRUE, FALSE))
+  expect_false(any(c(grouped$sites, grouped$designs, grouped$obs)))
+  # The problem unit's key read from another unit's record marks it too (D20.81): observation 1
+  # reads plot_id from measurement 3, of unit u2.
+  expect_equal(marks("unit", "plot_id")$obs, c(TRUE, FALSE))
+  # A run without group columns marks nothing.
+  expect_false(any(unlist(marks(character()))))
+  # Issues take the marks: key_incoherent fails measurement 7, whose plot is site 2's, of unit
+  # u2, though its group values are its own unit's (D18.89's (A)); fk_unassigned fails
+  # measurement 8, marked by its area. key_incoherent also fails measurement 9, whose plot is
+  # site 4's, of its own unit u2, so unmarked, and measurement 10, whose plot is site 3's,
+  # whose unit is "*", so marked (D20.10 (a)).
+  results <- gpq_check_conformance(tables, spec, group_cols = c("unit", "area"), layers = 4)
+  open <- results$issues[results$issues$status == "open"]
+  expect_equal(
+    paste(open$rule_id, open$row_number),
+    c("fk_unassigned 8", "key_incoherent 7", "key_incoherent 9", "key_incoherent 10")
+  )
+  expect_equal(open$reaches_other_unit, c(TRUE, TRUE, FALSE, TRUE))
+  # A column-level issue is marked when any record it covers is (D20.10 (b)): every
+  # measurement fails a stand-in rule, so the group (u1, a1), measurements 1, 2, 7 and 10,
+  # gives one unmarked issue, the group (u2, a1), measurements 3 and 6, one marked, and the
+  # group (u2, a2), measurements 4 and 9, one unmarked; a later layer's records masked by them
+  # collapse alike.
+  local_stand_in_rules()
+  settings <- list(column_level_min_n = 2L)
+  input <- conformance_input(tables, spec, c("unit", "area"))
+  context <- conformance_context(spec, NULL, settings, 0:2)
+  state <- new_run_state()
+  notes <- tables$meas$note
+  record_layer(list(test_cast = list(record_outcome(
+    "test_cast", "meas", "note", seq_along(notes), notes
+  ))), 1L, input, context, state, run_id)
+  record_layer(list(test_spell = list(record_outcome(
+    "test_spell", "meas", "note", integer(), character()
+  ))), 2L, input, context, state, run_id)
+  issues <- recorded(state)$issues
+  whole <- issues[issues$level == "column"]
+  expect_equal(
+    paste(whole$status, whole$unit, whole$area, whole$reaches_other_unit),
+    c(
+      "open u1 a1 FALSE", "open u2 a1 TRUE", "open u2 a2 FALSE", "not_evaluated u1 a1 FALSE",
+      "not_evaluated u2 a1 TRUE", "not_evaluated u2 a2 FALSE"
+    )
+  )
+  single <- issues[issues$level == "record"]
+  expect_equal(single$row_number[single$reaches_other_unit], c(5L, 8L, 5L, 8L))
 })

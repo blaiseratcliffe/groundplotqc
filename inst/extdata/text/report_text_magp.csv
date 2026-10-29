@@ -2,3 +2,8 @@
 "src_id_duplicate","en","A source ID is held by more than one record of its table in one report unit."
 "design_geometry_inconsistent","en","Records of one design and subplot disagree on a value that describes the plot, such as its area or a size limit."
 "design_duplicate_signature","en","Designs of one report unit have the same frames, so one may repeat another."
+"report_title","en","Quality report for contributor {unit}"
+"report_harmonization_intro","en","MAGPlot is fixing these; no action is needed."
+"report_under_review_intro","en","These issues could come from your data or from harmonization. They are under review, and MAGPlot will tell you if any needs your action."
+"report_guide_classes","en","Each issue has a class. Issues for you to act on come from the data as delivered. Issues being fixed in harmonization arise when your data is converted to the national model, and are fixed there. Issues under review could be either, and are being reviewed."
+"report_guide_keys","en","Where it can, each issue shows your own key for the record, decoded from the national ID. Its status says how: decoded; partly decoded; as delivered (your ID, unchanged); record ID only (no decoding was possible); or no key map (no decoding is defined for your data)."

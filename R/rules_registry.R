@@ -255,6 +255,7 @@ build_rule_registry <- function() {
       )
     ),
     # ---- M5: Appendix E's candidate (D8.24, D9.26; class proposed in the PR, Y6) ----
+    # Version 2 (M7a): one issue per report unit, each holding that unit's own values (D20.11).
     conformance(
       "undeclared_code_set", 3L, "warning", "harmonization",
       paste(
@@ -262,7 +263,7 @@ build_rule_registry <- function() {
         "settings:code_set_skip_attributes; settings:code_set_skip_pattern;",
         "settings:unknown_codes"
       ),
-      unit = TRUE
+      unit = TRUE, rule_version = 2L
     ),
     # ---- M5: Layer 4, keys and relationships (6.1; D7.3, D7.9, D16.2, D18.10, D18.33) ----
     # Each record rule reads the keys and the sentinels' allowed_in_pk and allowed_in_fk (3.5).
@@ -302,8 +303,11 @@ build_rule_registry <- function() {
       "record_unreachable", 4L, "error", "harmonization",
       "attributes; keys; type_map; sentinels; reach; settings:column_level_min_n"
     ),
+    # Version 2 (M7a): its not_run rows count the parent's rows, and a parent with no key
+    # holder counts as not evaluated (D20.16).
     conformance(
-      "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels"
+      "parent_without_children", 4L, "info", "none", "attributes; keys; type_map; sentinels",
+      rule_version = 2L
     ),
     # ---- M5: Appendix E's design candidates (K1, K8, K10; D8.24, D9.26, D18.39) ----
     # design_geometry_inconsistent and design_duplicate_signature show the first example_cap
