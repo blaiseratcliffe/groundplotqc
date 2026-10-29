@@ -82,6 +82,10 @@ chain_rows <- function(input, table, steps, rows = NULL) {
   }
   for (k in seq_len(nrow(steps))) {
     parent <- steps$reference_table[[k]]
+    # A key that doesn't read as its column's type, such as "12a" in an integer key of a
+    # table read as text, is NA here, as key_values() reads such a key for every join: the
+    # mask below hides it, so the record moves on to its next route, while a key naming no
+    # parent row ends its search (D20.12, D20.131).
     child <- key_values(input, current, steps$attribute_name[[k]])
     parent_keys <- key_values(input, parent, steps$reference_attribute[[k]])
     # The first step of the whole table matches the child's column itself, any other step the
