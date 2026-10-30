@@ -308,16 +308,23 @@ match_columns <- function(given, attributes) {
   column <- given[match(attributes, given)]
   near <- logical(length(attributes))
   left <- given[!given %chin% column]
+  # Letter case is folded in ASCII with chartr(), whatever the session's locale: in a Turkish
+  # or Azeri locale on Linux, tolower() gives "I" a dotless i, so "ID" and "id" wouldn't meet
+  # (D20.108). A name that isn't plain ASCII then has its other letters folded by tolower(),
+  # its ASCII letters already lower case.
+  upper <- paste(LETTERS, collapse = "")
+  lower <- paste(letters, collapse = "")
   squeeze <- function(x) {
     out <- rep(NA_character_, length(x))
     ok <- validUTF8(x)
     wide <- ok & grepl("[^\001-\177]", x, useBytes = TRUE)
     narrow <- ok & !wide
-    out[narrow] <- tolower(gsub("[[:space:]]", "", x[narrow]))
+    out[narrow] <- chartr(upper, lower, gsub("[[:space:]]", "", x[narrow]))
     # A name that isn't plain ASCII is read as UTF-8, marked so on a copy where it is
     # unmarked, as fread() leaves it, since a Unicode pattern reads unmarked text byte by byte
     # outside a UTF-8 locale (D16.36).
-    out[wide] <- tolower(gsub("(*UCP)\\s", "", utf8_marked(x[wide]), perl = TRUE))
+    compact <- gsub("(*UCP)\\s", "", utf8_marked(x[wide]), perl = TRUE)
+    out[wide] <- tolower(chartr(upper, lower, compact))
     out
   }
   for (i in which(is.na(column))) {
@@ -571,26 +578,25 @@ key_values <- function(input, table, attribute) {
   list(value = value, open = open)
 }
 
-#' The table each record reaches a column in, and its row there (D16.13, D20.1, D20.12)
+#' The table each record reaches a column in, and its row there (D16.13, D20.1, D20.12,
+#' D21.16, D21.20)
 #'
-#' A table holding the column uses its own rows. Otherwise each record walks the routes of
-#' foreign keys to the tables holding it (walk_fk_paths(), one key join per hop as a key_pairs
-#' side or the bands' key is, D18.27). A route ending on a value that is blank, NA, a
-#' missing-value code of the column's type or the text "*" (D20.6), or on a column not given,
-#' counts as broken, so the record tries its next route; a record whose key names no parent
-#' row reaches none. Returns `home`, each record's table (NA where it reaches none, R5), and
-#' `rows`, its row there.
+#' A record of a table holding the column uses its own row where its value there is one.
+#' Every other record walks the routes of foreign keys to the tables holding it
+#' (walk_fk_paths(), one key join per hop as a key_pairs side or the bands' key is, D18.27),
+#' none leading back to its own table. A value that is blank, NA, a missing-value code of the
+#' column's type or the text "*" (D20.6), or in a column not given, is no value, in the
+#' record's own row as at a route's end: a route ending on one counts as broken, so the record
+#' tries its next route; a record whose key names no parent row reaches none. Returns `home`,
+#' each record's table (NA where it reaches none, R5), and `rows`, its row there.
 #' @noRd
 reach_column <- function(input, table, column_name) {
   n <- nrow(input$data[[table]])
   columns <- input$columns
   holders <- unique(columns$table_name[columns$attribute_name == column_name])
-  if (table %chin% holders) {
-    return(list(home = rep(table, n), rows = seq_len(n)))
-  }
   sentinels <- input$spec$sentinels
-  # A value at the route's end that reads as no value moves the record on (D20.12): each
-  # distinct row reached is read once (16.2).
+  # A value that reads as no value moves the record on, at a route's end or in the record's
+  # own row (D20.12, D21.20): each distinct row reached is read once (16.2).
   usable <- function(home, rows) {
     at <- which(columns$table_name == home & columns$attribute_name == column_name)
     if (length(at) != 1L || is.na(columns$column[[at]])) {
@@ -599,10 +605,42 @@ reach_column <- function(input, table, column_name) {
     distinct <- unique(rows)
     text <- value_text(input$data[[home]][[columns$column[[at]]]][distinct])
     codes <- sentinels$value[sentinels$data_type == columns$family[[at]]]
-    ok <- !is.na(text) & !is_blank(text) & !text %chin% c(codes, "*")
+    # %in%, not %chin%, which stops on text marked as bytes: a holding table's own value is
+    # read here before group_index() names such a value in its caller error (D16.36), the
+    # second line behind validate_tables() (D16.38).
+    ok <- !is.na(text) & !is_blank(text) & !text %in% c(codes, "*")
     ok[match(rows, distinct)]
   }
-  walk_fk_paths(input, table, holders, usable)
+  if (!table %chin% holders) {
+    return(walk_fk_paths(input, table, holders, usable))
+  }
+  # A record's own value is read as a route's end is, usable() taking one row of each distinct
+  # value, each row matched back to it: text by match(), which reads text marked as bytes or
+  # not valid UTF-8 where frankv() stops, and any other class by its dense rank, so each
+  # distinct value is written as text once (16.2, D21.16). A column not given holds no value
+  # (D21.33).
+  own <- logical(n)
+  at <- which(columns$table_name == table & columns$attribute_name == column_name)
+  if (length(at) == 1L && !is.na(columns$column[[at]])) {
+    x <- input$data[[table]][[columns$column[[at]]]]
+    group <- if (is.character(x)) {
+      match(x, x[!duplicated(x)])
+    } else {
+      frankv(x, ties.method = "dense", na.last = TRUE)
+    }
+    own <- usable(table, match(seq_len(max(c(0L, group))), group))[group]
+  }
+  if (all(own)) {
+    return(list(home = rep(table, n), rows = seq_len(n)))
+  }
+  # The others walk the routes. Every record is walked, so the walk takes the table whole, one
+  # key join per hop as for a table that doesn't hold the column, and a record with a value of
+  # its own keeps its row.
+  reached <- walk_fk_paths(input, table, holders, usable)
+  kept <- which(own)
+  reached$home[kept] <- table
+  reached$rows[kept] <- kept
+  reached
 }
 
 #' The values of a column at the rows records reached, as given; NA where a record reached none

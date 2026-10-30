@@ -426,6 +426,13 @@ test_that("a fresh build under each state the tests set gives the cached build (
     value <- state(builder)
     list(value = value, built = cache$built)
   }
+  # Under no_files a builder that reads a file stops with its own message, so nothing built
+  # under it is cached, while fx_fish_clean(), which reads none, builds as cached (D20.141,
+  # D20.144).
+  stops <- c(
+    fx_fish_spec = "`map` names a file that doesn't exist.",
+    fx_magp_clean = "The package has no compiled MAGPlot specification."
+  )
   for (name in names(builders)) {
     builder <- builders[[name]]
     builder()
@@ -438,10 +445,9 @@ test_that("a fresh build under each state the tests set gives the cached build (
         expect_false(is.null(fresh$built), info = info)
         fresh <- fresh$value
       }
-      if (state == no_files) {
-        # A builder that reads a file stops there, so nothing built under it is cached
-        # (D20.141).
-        expect_true(inherits(fresh, "error") || identical(cached, fresh), info = info)
+      if (state == no_files && name %in% names(stops)) {
+        said <- if (inherits(fresh, "error")) conditionMessage(fresh) else "no stop"
+        expect_identical(said, stops[[name]], info = info)
       } else {
         expect_identical(cached, fresh, info = info)
       }

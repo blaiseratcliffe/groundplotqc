@@ -1002,6 +1002,70 @@ test_that("each table's labels are found once, through the key's own table (D18.
   expect_equal(calls, "sites")
 })
 
+test_that("a site's own held code, NA or blank in the labels' key is read through its keys", {
+  # Sites hold contributor_id too, the last attribute of the bands' key: a site's own value
+  # labels it where it is one (site 101, ON's though its dataset is AB's), and a missing-value
+  # code, NA or a blank sends it through its dataset, as at a route's end (D21.16, D21.20). ON
+  # documents src_site_id as one-to-many, so only AB's repeats warn.
+  dictionary <- data.frame(
+    table_name = c("datasets", "datasets", "sites", "sites", "sites", "sites"),
+    attribute_name = c(
+      "dataset_id", "contributor_id", "site_id", "dataset_id", "contributor_id", "src_site_id"
+    ),
+    key_type = c("PK", NA, "PK", "FK", NA, NA),
+    reference_table = c(NA, NA, NA, "datasets", NA, NA),
+    appendix = c(NA, NA, NA, NA, NA, "A2"),
+    data_type = c("character", "character", "integer", "character", "character", "character")
+  )
+  spec <- gpq_read_spec(
+    dictionary,
+    code_lists = list(
+      ranges = data.frame(
+        contributor = c("ON", "AB"), v2_start = c("1", "100"), v2_end = c("99", "199")
+      ),
+      contributor = data.frame(
+        abbreviated_name = c("ON", "AB"), contributor_id = c("130", "100")
+      )
+    ),
+    non_code_sheets = c("ranges", "contributor"),
+    lineage_spec = data.frame(
+      contributor_label = c("ON", "AB"), table_name = "sites", attribute_name = "src_site_id",
+      spec_type = "id", source_text = "site.id", note = NA, source_cell = c("A2!D2", "A2!F2")
+    ),
+    id_pattern = "^src_.*_id$",
+    id_bands = list(
+      sheet = "ranges", label_col = "contributor", start_col = "v2_start", end_col = "v2_end",
+      labels_from = c(sheet = "contributor", column = "abbreviated_name"),
+      reserved_pattern = NULL, table = "sites", attribute = "site_id",
+      key = "dataset_id > contributor_id"
+    ),
+    one_to_many = data.frame(
+      contributor_label = "ON", table_name = "sites", attribute_name = "src_site_id", note = NA
+    ),
+    sentinels = gpq_sentinels(character = c(missing = "X", not_applicable = "Z")),
+    column_map = gpq_column_map(lineage_flag = c(column = "appendix", value = "A2"))
+  )
+  tables <- list(
+    datasets = data.table::data.table(
+      dataset_id = c("d1", "d2"), contributor_id = c("130", "100")
+    ),
+    sites = data.table::data.table(
+      site_id = c(1L, 2L, 101L, 102L, 103L), dataset_id = c("d1", "d1", "d2", "d2", "d2"),
+      contributor_id = c("Z", NA, "130", " ", "X"), src_site_id = c("a", "a", "a", "b", "b")
+    )
+  )
+  expect_equal(
+    record_labels(conformance_input(tables, spec), "sites"), c("ON", "ON", "ON", "AB", "AB")
+  )
+  results <- withCallingHandlers(
+    gpq_check_conformance(tables, spec, layers = 4),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_equal(
+    placed_at(opened(results, "src_id_duplicate")), c("sites src_site_id 4", "sites src_site_id 5")
+  )
+})
+
 # ---- task 13 ----
 
 test_that("record_unreachable reports unmeasured records from below, once (D18.4, D18.43)", {

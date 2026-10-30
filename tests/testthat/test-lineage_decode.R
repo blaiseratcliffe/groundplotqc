@@ -1,6 +1,6 @@
 # Tests for lineage decoding (plan 9.3, 9.6, 10.1, 10.2; D19.10 to D19.17, D19.41 to D19.48;
 # R1 to R9). The fixtures are helper-lineage.R's: the issues are made by hand, except in the
-# two tests that need a run's own (D19.77).
+# tests that need a run's own (D19.77).
 
 # The trees' issues in their rows' order, one per tree.
 decoded_by_tree <- function(issues) {
@@ -438,6 +438,35 @@ test_that("decoding the trees alone labels each holder of a shared ID as the run
   no_link$trees$site_id <- NULL
   gpq_decode_lineage(issues, no_link, lineage_spec_default, key_col = "contributor")
   expect_equal(issues$fingerprint, issues$fingerprint_pk)
+})
+
+test_that("a tree's own missing-value code in key_col is read through its site (D21.16, D21.19)", {
+  # The trees given a contributor column of their own, each holding its site's but t8, which
+  # holds the missing-value code "Z": the run reads t8's contributor through its site, north,
+  # so t8 decodes to t1's key and both keep the pk: form, as with the default fixture. At
+  # 5b54239 t8 was labelled "Z", which has no entry, and t1 kept its provider key's fingerprint.
+  spec <- lineage_spec_default
+  own <- spec$attributes[
+    spec$attributes$table_name == "sites" & spec$attributes$attribute_name == "contributor"
+  ]
+  data.table::set(own, j = "table_name", value = "trees")
+  spec$attributes <- rbind(spec$attributes, own)
+  tables <- fx_lineage_tables()
+  tables$trees$contributor <- c("north", "north", "north", "south", "south", "east", "west", "Z")
+  issues <- fx_lineage_issues(spec, tables)
+  trees <- issues[issues$table_name == "trees"]
+  expect_equal(trees$contributor[trees$row_number == 8L], "north")
+  gpq_decode_lineage(issues, tables, spec, key_col = "contributor")
+  got <- decoded_by_tree(issues)
+  expect_equal(got$provider_key_status[c(1L, 8L)], c("decoded", "decoded"))
+  expect_equal(got$provider_key[c(1L, 8L)], rep("survey.site=41; survey.tree=7", 2L))
+  expect_equal(got$fingerprint[c(1L, 8L)], got$fingerprint_pk[c(1L, 8L)])
+  # An issue on t1 alone: t8, the other holder of its ID, has none, so decoding reads t8's
+  # contributor from the tables (D19.76), through its site past its own "Z", and t1 keeps the
+  # pk: form. At 5b54239 t8 read "Z" and t1 kept its provider key's fingerprint.
+  alone <- fx_lineage_made_issues(tables, 1L)
+  gpq_decode_lineage(alone, tables, spec, key_col = "contributor")
+  expect_equal(alone$fingerprint, alone$fingerprint_pk)
 })
 
 test_that("a table's records are decoded by its first ID attribute that has an entry (R4)", {

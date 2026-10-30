@@ -40,9 +40,10 @@ name. A table of the specification the database doesn't have is reported as miss
 (\code{table_missing}).}
 
 \item{group_cols}{\code{NULL}, or the grouping columns, report unit first: results and issues
-carry them under these names. A blank group value, or the text \code{"*"}, counts as no
-value. A record that reaches only such values is grouped under \code{"*"}; in the report-unit
-column, its records' issues go into no provider's report in a run of several units.}
+carry them under these names. A group value that is blank, missing, a missing-value code
+or the text \code{"*"} counts as no value. A record that reaches only such values is grouped
+under \code{"*"}; in the report-unit column, its records' issues go into no provider's report
+in a run of several units.}
 
 \item{problem_unit}{\code{NULL}, or \code{list(table, key_col)}: the table and key column of the
 unit problem plots are ranked by; issues carry that key under its name.}
@@ -163,11 +164,14 @@ reports. When a rule fails on every checked record of a column in a group, and a
 \code{column_level_min_n} records were checked, the run records one column-level issue; masked
 records sharing one root collapse the same way.
 
-A record's group values are read from its own table or, through the foreign keys, from a
-table that holds the column, shortest route first. Where a key on the way is missing, blank
-or a missing-value code, a table or column on the way isn't given, or the value found is
-blank, missing, a missing-value code or \code{"*"}, the next route is tried. A record no route
-reaches, or whose key on the way names no parent record, has \code{"*"} there. A group value
+A group value, or a problem unit's key, that is blank, missing, a missing-value code or
+\code{"*"} is no value, whether it is the record's own or one reached through the keys. A
+record's group values, and its problem unit's key, are read from its own table where that
+table was given with the column and the record's value there is a value, and otherwise
+through the foreign keys from a table that holds the column, shortest route first. Where a
+key on the way is blank, missing or a missing-value code, a table or column on the way isn't
+given, or the value found is no value, the next route is tried. A record no route reaches,
+or whose key on the way names no parent record, has \code{"*"} there. A group value
 marked latin1 is converted to UTF-8 and runs; one whose bytes aren't valid UTF-8 stops the
 run, naming the column, the table it is read from and its first such row.
 

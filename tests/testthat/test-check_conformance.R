@@ -1243,3 +1243,80 @@ test_that("reaches_other_unit marks a record whose values come from another unit
   single <- issues[issues$level == "record"]
   expect_equal(single$row_number[single$reaches_other_unit], c(5L, 8L, 5L, 8L))
 })
+
+test_that("a record's own held code, NA or blank moves it on in a MAGPlot run (D21.16, D21.20)", {
+  # A MAGPlot run on the nine tables of magp_example that the plants and their routes read,
+  # about 1.5 s (D21.37's C2): the subplots, the design frames, the subplot measurements and
+  # the trees' tables are left out, and the table_missing issues they raise set aside.
+  # test-check_input.R's, test-check_keys.R's and test-lineage_decode.R's small specs cover the
+  # same reads, should D20.3's gate skip it.
+  read <- c(
+    "magp_contributors", "magp_datasets", "magp_sites", "magp_site_dist", "magp_site_treat",
+    "magp_site_visits", "magp_plots", "magp_designs", "magp_plot_meas"
+  )
+  x <- lapply(magp_example[read], data.table::copy)
+  # Contributor 110's two designs hold the missing-value codes "Z" (allowed in a foreign key)
+  # and "X" (not allowed); a site of dataset 110.01 holds "Z" for its jurisdiction; dataset
+  # 100.02 holds "Z" for its contributor and 100.01's source ID, and 100.01 holds a code no
+  # list has; a site disturbance has no dataset ID and a site treatment a blank one; and a
+  # plot measurement holds "Z" for its plot beside a code no list has.
+  data.table::set(x$magp_designs, i = 3:4, j = "magp_contributor_id", value = c("Z", "X"))
+  site <- which(x$magp_sites$magp_dataset_id == "110.01")[[1L]]
+  data.table::set(x$magp_sites, i = site, j = "jurisdiction", value = "Z")
+  data.table::set(
+    x$magp_datasets,
+    i = 2L, j = c("magp_contributor_id", "src_dataset_id"),
+    value = list("Z", x$magp_datasets$src_dataset_id[[1L]])
+  )
+  data.table::set(x$magp_datasets, i = 1L, j = "gp_type", value = "QQQ")
+  data.table::set(x$magp_site_dist, i = 1L, j = "magp_dataset_id", value = NA_character_)
+  data.table::set(x$magp_site_treat, i = 1L, j = "magp_dataset_id", value = "")
+  data.table::set(
+    x$magp_plot_meas,
+    i = 1L, j = c("magp_plot_id", "canopy_structure"), value = list("Z", "QQQ")
+  )
+  groups <- c("magp_contributor_id", "jurisdiction", "magp_dataset_id")
+  results <- withCallingHandlers(
+    gpq_check_conformance(
+      x, magp_spec(),
+      group_cols = groups, problem_unit = list("magp_plots", "magp_plot_id"),
+      rules = magp_rules(), layers = 0:4
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  # No code is a report unit or a breakdown value: at 5b54239 the units were 100, 110, X and Z.
+  expect_equal(results$metadata$run$report_units, "100; 110")
+  held <- unlist(lapply(groups, function(g) c(results$results[[g]], results$issues[[g]])))
+  expect_false(any(held %in% c("Z", "X")))
+  # Layer 0's table_missing rows are the tables left out; the plants' issues are the others.
+  missing <- results$issues$rule_id == "table_missing"
+  expect_setequal(results$issues$table_name[missing], setdiff(names(magp_example), read))
+  issues <- results$issues[!missing]
+  issue_of <- function(table, rule) {
+    wanted <- issues$table_name == table & issues$rule_id == rule
+    issues[wanted]
+  }
+  expect_equal(nrow(issues), 5L)
+  # Design 4's "X" is no contributor: its fk_unassigned issue goes to no unit.
+  design <- issue_of("magp_designs", "fk_unassigned")
+  expect_equal(design$row_number, 4L)
+  expect_equal(design$magp_contributor_id, "*")
+  # The disturbance and the treatment read their site's dataset (D21.20).
+  for (table in c("magp_site_dist", "magp_site_treat")) {
+    undated <- issue_of(table, "fk_unassigned")
+    expect_equal(c(undated$magp_contributor_id, undated$magp_dataset_id), c("100", "100.01"))
+  }
+  # The plot measurement's own "Z" has one route on, its own key to the plots: its key is "*",
+  # its contributor read through its design and its dataset through its visit.
+  meas <- issue_of("magp_plot_meas", "code_not_in_list")
+  expect_equal(
+    c(meas$magp_plot_id, meas$magp_contributor_id, meas$magp_dataset_id), c("*", "100", "100.01")
+  )
+  expect_false(meas$reaches_other_unit)
+  # Decoding is unchanged (D21.19): dataset 100.01's issue keeps the pk: form, its source ID
+  # held by dataset 100.02 too, which no contributor labels, "Z" read or not.
+  gpq_decode_lineage(issues, x, magp_spec(), key_col = "magp_contributor_id")
+  dataset <- issue_of("magp_datasets", "code_not_in_list")
+  expect_equal(dataset$provider_key_status, "no_lineage_spec")
+  expect_equal(dataset$fingerprint, "code_not_in_list|magp_datasets|gp_type|pk:100.01")
+})
