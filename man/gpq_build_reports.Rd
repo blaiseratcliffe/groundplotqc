@@ -73,9 +73,8 @@ counts no records, such as a check that couldn't run because a table wasn't give
 issue or results row with \code{"*"} as its unit, a whole-column issue of records included, goes
 to no unit's report, and so does an issue the run marks \code{reaches_other_unit} (one holding a
 value read from another unit's records or from records with no unit). In a run of one unit,
-all of these go to that unit's report. A run
-with no group columns builds one report, \code{reports/report.html}, and one CSV,
-\code{tables/report_issues.csv}, holding every issue.
+all of these go to that unit's report. A run with no group columns builds one report,
+\code{reports/report.html}, and one CSV, \code{tables/report_issues.csv}, holding every issue.
 
 Each provider's file name is its unit value, with every character other than an ASCII
 letter, a digit, "-", "_" or "." written as \% and its UTF-8 bytes in uppercase hex ("\%"

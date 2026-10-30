@@ -179,10 +179,11 @@ section_glance <- function(tables, text, settings) {
   not_linked <- word("report_not_linked")
   # One chart of the open issues by a column's values, most issues first, then by value, "*"
   # after the values with as many issues, at most row_cap values (D20.90); section_guide()
-  # orders a breakdown's values so too, to find a "(not linked)" bar (D20.135): change the two
-  # together. Each value is cut: a group value is delivered text, and so is a table's name
-  # (a table_unexpected issue's is the delivery's own, D19.72; D20.134). In a chart by a
-  # breakdown column "*" shows as W4.
+  # finds a "(not linked)" bar (D20.135) from where "*" falls in this order, after the values
+  # with as many issues: change that rule and its own together, and the test ties them. Each
+  # value is cut: a group value is delivered text, and so is a table's name (a
+  # table_unexpected issue's is the delivery's own, D19.72; D20.134). In a chart by a breakdown
+  # column "*" shows as W4.
   chart <- function(heading, values, breakdown) {
     if (length(values) == 0L) {
       return(character())
@@ -779,20 +780,16 @@ section_guide <- function(tables, text, settings) {
     )
   }
   # A chart by a breakdown column shows a "(not linked)" bar when "*" is among its row_cap
-  # values, in section_glance()'s chart() order: most open issues first, "*" after the values
-  # with as many, then by value (D20.90, D20.135); change the two together. Each column is
-  # counted once, by its values (16.2).
+  # values. section_glance()'s chart() puts "*" after the values with as many open issues
+  # (D20.90, D20.135), so its place is the number of values with at least its count: change
+  # that one rule and chart()'s together. Each column is counted once, by its values (16.2).
   unlinked <- any(vapply(tables$group_cols[-1L], function(column) {
     values <- issues[[column]][open]
     if (!"*" %chin% values) {
       return(FALSE)
     }
     counted <- data.table(value = values)[, list(n = .N), by = "value"]
-    counted <- counted[order(
-      -counted$n, counted$value == "*", enc2utf8(counted$value),
-      method = "radix"
-    )]
-    "*" %chin% counted$value[seq_len(min(nrow(counted), settings$row_cap))]
+    sum(counted$n >= counted$n[match("*", counted$value)]) <= settings$row_cap
   }, logical(1)))
   if (unlinked) {
     body <- c(body, paragraph(word("report_guide_not_linked")))

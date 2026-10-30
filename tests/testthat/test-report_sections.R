@@ -1453,4 +1453,34 @@ test_that("the guide explains a \"(not linked)\" bar only where a chart shows on
   expect_false(grepl(line, guide(waiting), fixed = TRUE))
   # No breakdown column, so no chart by value.
   expect_false(grepl(line, guide(group_cols = "unit"), fixed = TRUE))
+  # The guide works out where "*" falls in the chart's order on its own, so the chart is run
+  # too (html_bar() mocked): its "(not linked)" label is among the bars exactly when the guide
+  # has the line, at each row_cap and with "*" on a not-evaluated issue only.
+  not_linked <- report_text("report_not_linked")
+  labels <- character()
+  testthat::local_mocked_bindings(html_bar = function(value, max, label, bar_class = NULL) {
+    labels <<- c(labels, label)
+    "<bars>"
+  })
+  shows_bar <- function(found, row_cap) {
+    labels <<- character()
+    settings$row_cap <- row_cap
+    section_glance(
+      list(results = results, issues = found, unit = "u1", group_cols = c("unit", "area")),
+      NULL, settings
+    )
+    not_linked %in% labels
+  }
+  for (row_cap in 1:4) {
+    expect_identical(
+      shows_bar(issues, row_cap), grepl(line, guide(row_cap = row_cap), fixed = TRUE),
+      info = paste("row_cap", row_cap)
+    )
+    expect_identical(
+      shows_bar(waiting, row_cap), grepl(line, guide(waiting, row_cap = row_cap), fixed = TRUE),
+      info = paste("row_cap", row_cap, "not evaluated")
+    )
+  }
+  expect_false(shows_bar(issues, 2L))
+  expect_true(shows_bar(issues, 3L))
 })
