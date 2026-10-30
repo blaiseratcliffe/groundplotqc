@@ -1289,9 +1289,9 @@ test_that("a record's own held code, NA or blank moves it on in a MAGPlot run (D
   held <- unlist(lapply(groups, function(g) c(results$results[[g]], results$issues[[g]])))
   expect_false(any(held %in% c("Z", "X")))
   # Layer 0's table_missing rows are the tables left out; the plants' issues are the others.
-  missing <- results$issues$rule_id == "table_missing"
-  expect_setequal(results$issues$table_name[missing], setdiff(names(magp_example), read))
-  issues <- results$issues[!missing]
+  left_out <- results$issues$rule_id == "table_missing"
+  expect_setequal(results$issues$table_name[left_out], setdiff(names(magp_example), read))
+  issues <- results$issues[!left_out]
   issue_of <- function(table, rule) {
     wanted <- issues$table_name == table & issues$rule_id == rule
     issues[wanted]
