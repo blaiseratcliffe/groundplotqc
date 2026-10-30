@@ -86,7 +86,11 @@ In \code{metadata/inputs.csv}, each table's row (\verb{tables:<name>}) names the
 file and its SHA-256, with the table's row count as its detail. A delivery that holds
 \code{magp_meta} adds a row with the input \code{magp_meta}, naming the same file and hash;
 \code{magp_meta} itself is never checked. Tables given as a plain named list are recorded as "in
-memory", with no hash.
+memory", with no hash. Each run input that classification is given adds a row after these,
+with the input \code{overrides}, \code{filled} (your \code{pipeline_fill}), \code{lineage}, \code{computed} or
+\code{crosswalk} and the rows classification reads from it as its detail. A CSV file you gave is
+recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
+hash, and so are MAGPlot's own \code{computed} and \code{crosswalk}, which every run has.
 
 The run lets go of the tables once each issue has its provider key, before the classes and
 the reports. Their memory is freed only when nothing else holds them, so give the \code{.Rdata}

@@ -46,7 +46,11 @@
 #' file and its SHA-256, with the table's row count as its detail. A delivery that holds
 #' `magp_meta` adds a row with the input `magp_meta`, naming the same file and hash;
 #' `magp_meta` itself is never checked. Tables given as a plain named list are recorded as "in
-#' memory", with no hash.
+#' memory", with no hash. Each run input that classification is given adds a row after these,
+#' with the input `overrides`, `filled` (your `pipeline_fill`), `lineage`, `computed` or
+#' `crosswalk` and the rows classification reads from it as its detail. A CSV file you gave is
+#' recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
+#' hash, and so are MAGPlot's own `computed` and `crosswalk`, which every run has.
 #'
 #' The run lets go of the tables once each issue has its provider key, before the classes and
 #' the reports. Their memory is freed only when nothing else holds them, so give the `.Rdata`
@@ -167,13 +171,13 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   units <- held_units(tables, spec, group_cols[[1L]])
   text <- magp_texts()
   # The run inputs given, which pre-flight checks (3.6; D19.51).
-  inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
-  inputs <- inputs[!vapply(inputs, is.null, logical(1))]
+  run_inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
+  run_inputs <- run_inputs[!vapply(run_inputs, is.null, logical(1))]
   preflight <- withCallingHandlers(
     tryCatch(
       gpq_preflight(
         spec, rules,
-        inputs = inputs, settings = settings, text = text, output_dir = run_dir
+        inputs = run_inputs, settings = settings, text = text, output_dir = run_dir
       ),
       gpq_preflight_error = function(cond) {
         # A stopped run's own two files beside pre-flight's, then its error (11.9; D7.11).
@@ -213,10 +217,26 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   evidence_given <- evidence_given[!vapply(evidence_given, is.null, logical(1))]
   given <- c(list(overrides = overrides), evidence_given)
   load_bit64(given[vapply(given, is.data.frame, logical(1))])
-  read_evidence(read_run_inputs(evidence_given, "evidence", names(evidence_schema())), groups)
-  if (!is.null(overrides)) {
-    read_overrides(overrides, groups)
+  evidence_read <- read_run_inputs(evidence_given, "evidence", names(evidence_schema()))
+  read_evidence(evidence_read, groups)
+  overrides_read <- if (!is.null(overrides)) read_overrides(overrides, groups)
+  # Each input's row for inputs.csv (D21.41, D21.42): its file and SHA-256 as the read took them
+  # (an overrides path's as manifest_row() takes them) and the rows classification reads from
+  # it, in the engine's form for a table's rows. Only the rows are kept, so the reads go.
+  input_row <- function(manifest, n) {
+    data.table(
+      input = manifest$input, file = manifest$file, sha256 = manifest$sha256,
+      detail = paste(n, fifelse(n == 1L, "row", "rows"))
+    )
   }
+  given_rows <- c(
+    if (!is.null(overrides)) {
+      overrides_path <- if (is.character(overrides)) overrides else NA_character_
+      list(input_row(manifest_row("overrides", overrides_path), nrow(overrides_read$data)))
+    },
+    lapply(evidence_read, function(read) input_row(read$manifest, nrow(read$data)))
+  )
+  rm(evidence_read, overrides_read)
   results <- withCallingHandlers(
     gpq_check_conformance(
       tables, spec,
@@ -242,16 +262,18 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   rm(tables, flags)
   # MAGPlot's evidence, then the caller's: pipeline_fill as `filled`, and `lineage` (3.6;
   # D21.18 Q6).
+  evidence_bundled <- list(
+    computed = computed_evidence(spec = spec), crosswalk = crosswalk_evidence(spec = spec)
+  )
   gpq_classify_issues(
     results$issues, rules,
-    evidence = c(
-      list(computed = computed_evidence(spec = spec), crosswalk = crosswalk_evidence(spec = spec)),
-      evidence_given
-    ),
+    evidence = c(evidence_bundled, evidence_given),
     overrides = overrides, settings = settings
   )
   # Each table's inputs row names the delivery's file and hash, its detail as the engine wrote
-  # it, and a magp_meta row repeats them; a plain list's rows stay in memory (9.5; D21.13).
+  # it, and a magp_meta row repeats them; a plain list's rows stay in memory (9.5; D21.13). Then
+  # a row for each run input classification was given: the caller's, as read before the checks,
+  # and MAGPlot's computed and crosswalk, in memory (9.5; D21.41, D21.42).
   inputs <- results$metadata$inputs
   if (!is.null(source_file)) {
     from_tables <- which(startsWith(inputs$input, "tables:"))
@@ -260,13 +282,19 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   }
   if (has_meta) {
     delivered <- !is.null(source_file)
-    results$metadata$inputs <- rbind(inputs, data.table(
+    inputs <- rbind(inputs, data.table(
       input = "magp_meta",
       file = if (delivered) utf8_marked(source_file) else "in memory",
       sha256 = if (delivered) sha256 else NA_character_,
       detail = NA_character_
     ))
   }
+  bundled_rows <- lapply(names(evidence_bundled), function(name) {
+    input_row(manifest_row(name), nrow(evidence_bundled[[name]]))
+  })
+  run_rows <- rbindlist(c(given_rows, bundled_rows))
+  set(run_rows, j = "file", value = utf8_marked(run_rows$file))
+  results$metadata$inputs <- rbind(inputs, run_rows)
   # run_start the run's own, which its ID names; run_end set just before the write (D21.14).
   set(
     results$metadata$run,

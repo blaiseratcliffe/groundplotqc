@@ -1,7 +1,14 @@
 # Tests for magp_run_qc(), MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.34, D21.3 to
-# D21.5, D21.11 to D21.15, D21.18). Synthetic data only: magp_example and copies of it, saved
-# as a delivery's .Rdata by fx_magp_rdata() where a test gives a path. A run on the whole of
-# magp_example costs about 3 s, so one delivery run carries most of the checks (D20.3, D21.8).
+# D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42). Synthetic data only: magp_example and copies
+# of it, saved as a delivery's .Rdata by fx_magp_rdata() where a test gives a path. A run on the
+# whole of magp_example costs about 3 s, so one delivery run carries most of the checks (D20.3,
+# D21.8).
+
+# An inputs row's detail for each table of a list: its rows, as the engine writes a table's.
+rows_text <- function(tables) {
+  n <- vapply(tables, nrow, integer(1), USE.NAMES = FALSE)
+  paste(n, ifelse(n == 1L, "row", "rows"))
+}
 
 test_that("magp_run_qc() stops on a caller's error before it loads or writes anything (D21.11)", {
   output <- withr::local_tempdir()
@@ -214,14 +221,22 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     )
   )
   # The inputs rows (D21.13): each table's with the delivery's file and hash and the engine's
-  # detail, then magp_meta's, with no detail.
+  # detail, then magp_meta's, with no detail. Then a row for each run input classification was
+  # given (D21.41, D21.42), the three given as data.frames and MAGPlot's two evidence tables
+  # (as classification got them) in memory, each with the rows classification read from it.
   inputs <- results$metadata$inputs
   given <- delivery[names(delivery) != "magp_meta"]
-  rows <- vapply(given, nrow, integer(1), USE.NAMES = FALSE)
+  run_inputs <- list(
+    overrides = override, filled = fill, lineage = raw,
+    computed = caught$evidence$computed, crosswalk = caught$evidence$crosswalk
+  )
+  # The delivery's file and hash on each table's row and magp_meta's, none on the run inputs'.
+  from_delivery <- length(given) + 1L
   expect_equal(inputs, data.table::data.table(
-    input = c(paste0("tables:", names(given)), "magp_meta"),
-    file = attr(delivery, "source_file"), sha256 = attr(delivery, "sha256"),
-    detail = c(paste(rows, ifelse(rows == 1L, "row", "rows")), NA)
+    input = c(paste0("tables:", names(given)), "magp_meta", names(run_inputs)),
+    file = c(rep(attr(delivery, "source_file"), from_delivery), rep("in memory", 5L)),
+    sha256 = c(rep(attr(delivery, "sha256"), from_delivery), rep(NA_character_, 5L)),
+    detail = c(rows_text(given), NA, rows_text(run_inputs))
   ))
   expect_no_error(validate_gpq_results(results))
   # The run's own pre-flight, run with MAGPlot's text, is the one kept (D21.18 Q3).
@@ -254,8 +269,11 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     )
   }
   # Section 1 of each contributor's report names the delivery's file and hash, and lists only
-  # the tables, never magp_meta (D21.13). The raw value is in its own contributor's report
-  # only, beside its issue (D20.17).
+  # the tables, never magp_meta or a run input's row (D21.13, D21.41). The raw value is in its
+  # own contributor's report only, beside its issue (D20.17).
+  shown_as_table <- function(name) {
+    report_text("report_header_table", "en", table = name, text = magp_texts())
+  }
   for (unit in c("100", "110")) {
     html <- readLines(
       file.path(run_dir, "reports", paste0(unit, ".html")),
@@ -263,6 +281,11 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     )
     expect_true(any(grepl(attr(delivery, "sha256"), html, fixed = TRUE)), info = unit)
     expect_false(any(grepl("magp_meta", html, fixed = TRUE)), info = unit)
+    # A table's row shows as a table, so the same words for a run input would show too.
+    expect_true(any(grepl(shown_as_table("magp_plots"), html, fixed = TRUE)), info = unit)
+    for (name in names(run_inputs)) {
+      expect_false(any(grepl(shown_as_table(name), html, fixed = TRUE)), info = paste(unit, name))
+    }
     expect_equal(any(grepl("q-raw-110", html, fixed = TRUE)), unit == "110", info = unit)
   }
 })
@@ -275,15 +298,41 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
     magp_datasets = data.table::copy(magp_example$magp_datasets),
     magp_meta = list(note = "made up")
   )
+  # Run inputs too (D21.41): two overrides in a CSV file, recorded by the file's name and
+  # SHA-256, and a lineage input as a data.frame, in memory; no pipeline_fill, so no `filled`
+  # row.
+  override <- data.frame(
+    fingerprint = NA, rule_id = c("code_not_in_list", NA),
+    table_name = c("magp_plot_meas", "magp_plots"), column_name = c("canopy_structure", NA),
+    issue_class = "source", who = "A. Reviewer", when = "2026-10-29",
+    why = "Checked with the provider."
+  )
+  overrides_file <- file.path(withr::local_tempdir(), "overrides.csv")
+  utils::write.csv(override, overrides_file, row.names = FALSE, na = "")
+  raw <- data.frame(
+    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
+    column_name = "canopy_structure", raw_value = "q", raw_source = "plot_meas.csv"
+  )
   output <- withr::local_tempdir()
   results <- withCallingHandlers(
-    magp_run_qc(tables, output, report = FALSE),
+    magp_run_qc(tables, output, overrides = overrides_file, lineage = raw, report = FALSE),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
   run_dir <- file.path(output, results$metadata$run$run_id)
+  # MAGPlot's own evidence tables are in memory too (D21.42); each row's detail counts the rows
+  # of the table as given.
+  run_inputs <- list(
+    overrides = override, lineage = raw,
+    computed = computed_evidence(spec = magp_spec()),
+    crosswalk = crosswalk_evidence(spec = magp_spec())
+  )
   expect_equal(results$metadata$inputs, data.table::data.table(
-    input = c("tables:magp_contributors", "tables:magp_datasets", "magp_meta"),
-    file = "in memory", sha256 = NA_character_, detail = c("2 rows", "4 rows", NA)
+    input = c(
+      "tables:magp_contributors", "tables:magp_datasets", "magp_meta", names(run_inputs)
+    ),
+    file = c(rep("in memory", 3L), "overrides.csv", rep("in memory", 3L)),
+    sha256 = c(rep(NA_character_, 3L), unname(tools::sha256sum(overrides_file)), rep(NA, 3L)),
+    detail = c("2 rows", "4 rows", NA, rows_text(run_inputs))
   ))
   expect_no_error(validate_gpq_results(results))
   expect_identical(gpq_read_results(run_dir), results)
@@ -299,7 +348,7 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   expect_equal(results$metadata$run$report_units, "100; 110")
 })
 
-test_that("inputs classification can't take stop the run before any check (D21.4)", {
+test_that("inputs that classification can't take stop the run before any check (D21.4)", {
   output <- withr::local_tempdir()
   # A plain list of the tables the inputs name, so nothing is loaded from a file: the stops come
   # before any check reads a table (D21.37).
@@ -308,7 +357,16 @@ test_that("inputs classification can't take stop the run before any check (D21.4
     magp_plots = data.table::copy(magp_example$magp_plots)
   )
   # A run that reached the checks would stop with this, so a stop in other words came first.
-  testthat::local_mocked_bindings(gpq_check_conformance = function(...) stop("checks reached"))
+  # The package's own load_bit64() records which tables each call is given (D18.86, D19.80); with
+  # no integer64 column in these tables it would do nothing.
+  seen <- list()
+  testthat::local_mocked_bindings(
+    gpq_check_conformance = function(...) stop("checks reached"),
+    load_bit64 = function(tables) {
+      seen[[length(seen) + 1L]] <<- names(tables)
+      invisible(NULL)
+    }
+  )
   quiet <- function(expr) {
     withCallingHandlers(expr, gpq_preflight_warning = function(w) invokeRestart("muffleWarning"))
   }
@@ -317,38 +375,50 @@ test_that("inputs classification can't take stop the run before any check (D21.4
     column_name = "canopy_structure", issue_class = "source", who = "A. Reviewer",
     when = "2026-10-29", why = "Checked with the provider."
   )
+  raw <- data.frame(
+    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
+    column_name = "canopy_structure", raw_value = "q", raw_source = "plot_meas.csv"
+  )
+  fill <- data.frame(
+    table_name = "magp_plots", record_pk = "magp_plots_1", column_name = "plot_elevation",
+    written_value = "-1"
+  )
   # W229: an attribute of the specification, which pre-flight takes, that isn't one of the
   # issues' group columns.
   expect_error(
     quiet(magp_run_qc(tables, output, overrides = cbind(override, magp_site_id = NA))),
     "`overrides` must have the columns"
   )
-  # The problem unit's key is one of them, as classification reads the issues, so this run goes
-  # on to the checks.
+  # The problem unit's key is one of them, as classification reads the issues, so this run, with
+  # the two other inputs given too, reads them all and goes on to the checks.
   expect_error(
-    quiet(magp_run_qc(tables, output, overrides = cbind(override, magp_plot_id = "magp_plots_9"))),
+    quiet(magp_run_qc(
+      tables, output,
+      overrides = cbind(override, magp_plot_id = "magp_plots_9"), lineage = raw,
+      pipeline_fill = fill
+    )),
     "checks reached"
   )
   # W246: a cell listed twice, in lineage or in pipeline_fill, which classification names
   # `filled`.
-  raw <- data.frame(
-    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
-    column_name = "canopy_structure", raw_value = "q", raw_source = "plot_meas.csv"
-  )
   expect_error(
     quiet(magp_run_qc(tables, output, lineage = rbind(raw, raw))),
     "`lineage` lists the cell magp_plot_meas.canopy_structure of record magp_plot_meas_20 twice",
     fixed = TRUE
-  )
-  fill <- data.frame(
-    table_name = "magp_plots", record_pk = "magp_plots_1", column_name = "plot_elevation",
-    written_value = "-1"
   )
   expect_error(
     quiet(magp_run_qc(tables, output, pipeline_fill = rbind(fill, fill))),
     "`filled` lists the cell magp_plots.plot_elevation of record magp_plots_1 twice",
     fixed = TRUE
   )
+  # Each run asked load_bit64() about its tables, then about the data.frames among its inputs,
+  # as classification does before it reads them: overrides first, then the evidence by name.
+  expect_equal(seen, list(
+    names(tables), "overrides",
+    names(tables), c("overrides", "filled", "lineage"),
+    names(tables), "lineage",
+    names(tables), "filled"
+  ))
   # Each run left pre-flight's files only (D21.15).
   runs <- list.dirs(output, recursive = FALSE)
   expect_length(runs, 4L)
