@@ -40,13 +40,36 @@ test_that("a table saved as a data.frame comes back a data.table with its column
 
 test_that("dd, lkp and other objects that aren't data.frames are dropped (D8.3, D21.12)", {
   tables <- magp_example
-  # dd is dropped even as a data.frame; lkp, a character vector and a function are dropped.
+  # dd is dropped even as a data.frame; lkp, a character vector and a function are dropped. The
+  # function is a base one, so save() writes no environment of this test with it.
   tables$dd <- data.frame(table_name = "magp_plots", attribute_name = "magp_plot_id")
   tables$lkp <- list(species = data.frame(code = "PL"))
   tables$notes <- "t1"
-  tables$tally <- function() 1L
+  tables$tally <- sum
   read <- magp_read_delivery(fx_magp_rdata(tables))
   expect_named(read, names(magp_example))
+})
+
+test_that("the file loads into an environment of its own, so the caller's objects stay (D7.34)", {
+  # Objects of this frame named like three the delivery holds, and a delivery whose extra
+  # data.frame is named like the loader's own argument, path: a load into the loader's frame
+  # or into this one would overwrite them.
+  dd <- "session dd"
+  lkp <- "session lkp"
+  magp_plots <- "session magp_plots"
+  tables <- magp_example
+  tables$dd <- data.frame(table_name = "magp_plots")
+  tables$lkp <- list(species = data.frame(code = "PL"))
+  tables$path <- data.frame(note = "t1")
+  delivery <- fx_magp_rdata(tables)
+  read <- magp_read_delivery(delivery)
+  expect_identical(attr(read, "source_file"), basename(delivery))
+  expect_named(read, c(names(magp_example), "path"))
+  expect_equal(read$magp_plots, magp_example$magp_plots)
+  expect_equal(as.data.frame(read$path), data.frame(note = "t1"))
+  expect_identical(
+    c(dd, lkp, magp_plots), c("session dd", "session lkp", "session magp_plots")
+  )
 })
 
 test_that("an extra data.frame comes after the tables, in the file's order (D21.12)", {
