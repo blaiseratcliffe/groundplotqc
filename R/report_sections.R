@@ -15,14 +15,15 @@
 #' settings, each folded (D20.40)
 #'
 #' The facts, as a list: the report unit with its column (none without group columns, D20.29),
-#' the run ID, its start and finish in UTC, one row per input table with its file and SHA-256
-#' or, for a table given in memory or read from a connection, only how it came (D20.126), the
-#' rule set's name and version (none without a rule set), the package version, the git commit
-#' (or that there is none) and the R version. Then the specification files the run read from a
-#' file (file and date) and the resolved settings (value and the tier each came from; only the
-#' settings setting_definitions() names, a severity entry by its part before the colon,
-#' D20.68), each in a part folded until clicked. Never the run's list of units, its pre-flight,
-#' its clashes or the specification files' SHA-256 (D20.40).
+#' the run ID, its start and finish in UTC, one row per input table, the inputs' `tables:` rows
+#' only (never another input, such as a MAGPlot run's `magp_meta`, D21.13), with its file and
+#' SHA-256 or, for a table given in memory or read from a connection, only how it came
+#' (D20.126), the rule set's name and version (none without a rule set), the package version,
+#' the git commit (or that there is none) and the R version. Then the specification files the
+#' run read from a file (file and date) and the resolved settings (value and the tier each came
+#' from; only the settings setting_definitions() names, a severity entry by its part before the
+#' colon, D20.68), each in a part folded until clicked. Never the run's list of units, its
+#' pre-flight, its clashes or the specification files' SHA-256 (D20.40).
 #' @noRd
 section_header <- function(tables, text, settings) {
   lang <- settings$lang
@@ -41,8 +42,11 @@ section_header <- function(tables, text, settings) {
   # Each input table, recorded as "tables:<name>" (R/check_conformance.R): a file's name and
   # SHA-256, else only how the table came ("in memory" or a connection), never what else the
   # run recorded of it, such as its rows, the whole delivery's, or a connection's database table
-  # and driver (D20.126).
+  # and driver (D20.126). Only those rows: another input, such as a MAGPlot run's magp_meta row,
+  # isn't a table (D21.13).
   inputs <- metadata$inputs
+  is_table <- startsWith(inputs$input, "tables:")
+  inputs <- inputs[is_table]
   hashed <- !is.na(inputs$sha256)
   shown <- character(nrow(inputs))
   shown[hashed] <- report_text(

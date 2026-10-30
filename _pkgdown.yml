@@ -26,6 +26,7 @@ reference:
       - magp_example
       - magp_read_delivery
       - magp_rules
+      - magp_run_qc
       - magp_spec
   - title: Configuration and data
     contents:

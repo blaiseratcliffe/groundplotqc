@@ -162,7 +162,9 @@
 #'     or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
 #'     FALSE in a run without group columns, and isn't part of the fingerprint.
 #'   - `corrections`: an empty table.
-#'   - `metadata`: the tables of `metadata/` in a run folder.
+#'   - `metadata`: the tables of `metadata/` in a run folder. In its `run` table, `run_end` is
+#'     when this call ends: it covers pre-flight, reading the tables and the checks, not what
+#'     comes after, such as writing the results.
 #'
 #'   Write it with [gpq_write_results()].
 #' @seealso [gpq_preflight()], which the run calls first; [gpq_decode_lineage()] and

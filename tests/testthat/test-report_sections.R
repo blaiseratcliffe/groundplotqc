@@ -19,12 +19,15 @@ test_that("section_header lists the run's facts, then its files and settings fol
     file = c("20261005_dd.csv", "lists.xlsx", "in memory"), file_date = c("20261005", NA, NA),
     sha256 = c(strrep("a", 64L), strrep("b", 64L), NA)
   ), schema$spec_manifest, "spec_manifest")
-  # A CSV file, a table given in memory and one read from a connection (9.5, D9.23).
+  # A CSV file, a table given in memory and one read from a connection (9.5, D9.23), then a row
+  # that isn't a table's, as a MAGPlot run's magp_meta row (D21.13).
   metadata$inputs <- complete_table(list(
-    input = c("tables:catches", "tables:hauls", "tables:stations"),
-    file = c("catches <&>.csv", "in memory", "DBI connection, not hashed"),
-    sha256 = c(strrep("c", 64L), NA, NA),
-    detail = c("3 rows; separator comma", "2 rows", "4 rows; table st; driver SQLiteConnection")
+    input = c("tables:catches", "tables:hauls", "tables:stations", "magp_meta"),
+    file = c("catches <&>.csv", "in memory", "DBI connection, not hashed", "delivery.Rdata"),
+    sha256 = c(strrep("c", 64L), NA, NA, strrep("f", 64L)),
+    detail = c(
+      "3 rows; separator comma", "2 rows", "4 rows; table st; driver SQLiteConnection", NA
+    )
   ), schema$inputs, "inputs")
   metadata$rules <- complete_table(
     list(input = "rules", name = "Fish <rules>", version = "1.0", sha256 = strrep("d", 64L)),
@@ -96,6 +99,8 @@ test_that("section_header lists the run's facts, then its files and settings fol
   expect_false(any(grepl("u2", everything, fixed = TRUE)))
   expect_false(any(grepl(strrep("a", 64L), everything, fixed = TRUE)))
   expect_false(any(grepl("pk_missing", everything, fixed = TRUE)))
+  # Nor an input that isn't a table, its file or its hash (D21.13).
+  expect_false(any(grepl(paste0("magp_meta|delivery[.]Rdata|", strrep("f", 64L)), everything)))
   # Nor the unit's CSV name, from `settings` or a row the registry doesn't define (D20.68).
   expect_false(any(grepl("csv_name|issues.csv", everything)))
   # A run with no group columns has no unit row (D20.29); without a rule set, no rule-set

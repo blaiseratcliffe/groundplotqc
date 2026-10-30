@@ -89,7 +89,9 @@ unit, or a value \code{design_geometry_inconsistent} compared from a record of a
 or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
 FALSE in a run without group columns, and isn't part of the fingerprint.
 \item \code{corrections}: an empty table.
-\item \code{metadata}: the tables of \verb{metadata/} in a run folder.
+\item \code{metadata}: the tables of \verb{metadata/} in a run folder. In its \code{run} table, \code{run_end} is
+when this call ends: it covers pre-flight, reading the tables and the checks, not what
+comes after, such as writing the results.
 }
 
 Write it with \code{\link[=gpq_write_results]{gpq_write_results()}}.
