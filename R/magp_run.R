@@ -82,9 +82,9 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
   # The arguments, checked before any table is loaded (D21.18 Q4). magp_meta may come in any
   # shape (D21.12), so only the other elements of a list are looked at for CSV paths.
   in_list <- is.list(tables) && !is.data.frame(tables)
-  as_text <- if (in_list) vapply(tables, is.character, logical(1)) else logical()
-  as_text[match("magp_meta", names(tables), 0L)] <- FALSE
-  if ((is.character(tables) && length(tables) > 1L) || any(as_text)) {
+  text_given <- if (in_list) vapply(tables, is.character, logical(1)) else logical()
+  text_given[match("magp_meta", names(tables), 0L)] <- FALSE
+  if ((is.character(tables) && length(tables) > 1L) || any(text_given)) {
     # M7b W70 (D21.11)
     stop(
       "`tables` holds more than one path, or a list with a path or other text in place of a ",
@@ -94,7 +94,12 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
     )
   }
   path_given <- is.character(tables) && length(tables) == 1L
-  if (!path_given && !in_list) {
+  # A list's tables are known by their names, so a list with an element unnamed is refused here,
+  # before pre-flight writes its files.
+  element_names <- names(tables)
+  named <- in_list && !is.null(element_names) && !anyNA(element_names) &&
+    all(nzchar(element_names))
+  if (!path_given && !named) {
     # M7b W71
     stop(
       "`tables` must be magp_read_delivery()'s result, the path of one .Rdata file or a named ",

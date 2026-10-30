@@ -21,7 +21,8 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
     "settings the package doesn't have"
   )
   shape <- "`tables` must be magp_read_delivery\\(\\)'s result"
-  for (bad in list(42, magp_example$magp_plots, character(), NULL)) {
+  # A list of tables with no names is refused too, before pre-flight writes anything.
+  for (bad in list(42, magp_example$magp_plots, character(), NULL, unname(magp_example))) {
     expect_error(magp_run_qc(bad, output), shape)
   }
   a_file <- withr::local_tempfile(lines = "not a folder")
@@ -113,6 +114,7 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
       # The run's own reference to the tables is gone by now (D21.18 Q5).
       caught$tables_held <<- exists("tables", envir = parent.frame(), inherits = FALSE)
       caught$evidence <<- evidence
+      caught$settings <<- settings
       on.exit(caught$classified <<- Sys.time())
       classify(issues, rules, evidence, overrides, settings)
     },
@@ -137,9 +139,12 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   # Pre-flight's warning reaches the caller once, naming the run folder's page and holding the
   # table (D21.30); the checks' own pre-flight's never does.
   expect_length(warned, 1L)
-  expect_match(
-    conditionMessage(warned[[1L]]), file.path(run_dir, "reports", "preflight.html"),
-    fixed = TRUE
+  expect_identical(
+    conditionMessage(warned[[1L]]),
+    sprintf(
+      "Pre-flight found %d warning(s); see %s.", sum(results$metadata$preflight$outcome == "warn"),
+      file.path(run_dir, "reports", "preflight.html")
+    )
   )
   expect_identical(warned[[1L]]$preflight, results$metadata$preflight)
   # The run folder (11.9): pre-flight's files, the results and metadata, and each
@@ -169,6 +174,14 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   expect_named(caught$evidence, c("computed", "crosswalk"))
   expect_equal(caught$evidence$computed, computed_evidence(spec = magp_spec()))
   expect_equal(caught$evidence$crosswalk, crosswalk_evidence(spec = magp_spec()))
+  # The settings reach the classes, and the checks, whose settings table records the cap given
+  # as set by the argument (D21.18 Q6).
+  expect_identical(caught$settings, settings)
+  resolved <- results$metadata$settings
+  expect_equal(
+    resolved[resolved$setting == "row_cap", c("value", "tier")],
+    data.table::data.table(value = "7", tier = "argument")
+  )
   open <- results$issues[results$issues$status == "open"]
   expect_equal(
     open[, c("rule_id", "magp_contributor_id", "issue_class", "class_basis")],
@@ -216,11 +229,16 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
       open[open$magp_contributor_id == unit, c("rule_id", "issue_class")]
     )
   }
-  # Section 1 names the delivery's file and hash, and lists only the tables, never magp_meta
-  # (D21.13).
-  html <- readLines(file.path(run_dir, "reports", "100.html"), encoding = "UTF-8", warn = FALSE)
-  expect_true(any(grepl(attr(delivery, "sha256"), html, fixed = TRUE)))
-  expect_false(any(grepl("magp_meta", html, fixed = TRUE)))
+  # Section 1 of each contributor's report names the delivery's file and hash, and lists only
+  # the tables, never magp_meta (D21.13).
+  for (unit in c("100", "110")) {
+    html <- readLines(
+      file.path(run_dir, "reports", paste0(unit, ".html")),
+      encoding = "UTF-8", warn = FALSE
+    )
+    expect_true(any(grepl(attr(delivery, "sha256"), html, fixed = TRUE)), info = unit)
+    expect_false(any(grepl("magp_meta", html, fixed = TRUE)), info = unit)
+  }
 })
 
 test_that("a plain list's run is recorded in memory; report = FALSE builds no report (D21.13)", {
