@@ -1,9 +1,11 @@
-# MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.5, D7.11, D7.34, D21.3, D21.5,
+# MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.5, D7.11, D7.34, D21.3 to D21.5,
 # D21.11 to D21.15, D21.18): magp_run_qc() loads one delivery's tables, pre-flights MAGPlot's
-# specification, rule set and text, runs Layers 0 to 4 with MAGPlot's group columns and problem
-# unit, decodes and classes the issues with MAGPlot's flags and evidence, records the delivery's
-# file in the inputs metadata, writes the run folder and builds the reports. MAGPlot's names
-# reach the engine through this file (plan 3.2 step 4); the engine never names them.
+# specification, rule set and text with the caller's run inputs, reads those inputs as
+# classification does, runs Layers 0 to 4 with MAGPlot's group columns and problem unit,
+# decodes and classes the issues with MAGPlot's flags and evidence and the caller's, records
+# the delivery's file in the inputs metadata, writes the run folder and builds the reports.
+# MAGPlot's names reach the engine through this file (plan 3.2 step 4); the engine never names
+# them.
 
 #' Run MAGPlot's QC on one delivery
 #'
@@ -25,9 +27,16 @@
 #' Otherwise the run checks Layers 0 to 4, with MAGPlot's group columns `magp_contributor_id`,
 #' `jurisdiction` and `magp_dataset_id` and its problem unit, the plot (`magp_plot_id` of
 #' `magp_plots`). It then gives each issue its provider key, from its contributor's lineage
-#' spec and Ontario's age-tree flag, and its class, from the evidence: the columns MAGPlot's
-#' pipeline computes and its translation tables' provider codes. It writes the results and the
-#' run metadata, and with `report = TRUE` builds the reports.
+#' spec and Ontario's age-tree flag, and its class, from your `overrides` first, then from the
+#' evidence: the columns MAGPlot's pipeline computes, its translation tables' provider codes,
+#' `lineage` and `pipeline_fill`. It writes the results and the run metadata, and with
+#' `report = TRUE` builds the reports.
+#'
+#' Pre-flight checks `overrides`, `lineage` and `pipeline_fill`, and the run then reads them as
+#' [gpq_classify_issues()] reads them, before any check. The run stops there wherever
+#' [gpq_classify_issues()] would on these inputs, such as on an `overrides` table that lacks
+#' one of its own columns or has a column that is neither its own nor one of the issues' group
+#' columns, or on a cell that `lineage` or `pipeline_fill` lists twice.
 #'
 #' In `metadata/run.csv`, `run_start` is when the run started and `run_end` is set just before
 #' the results are written: the time between them covers loading the tables, pre-flight, the
@@ -56,6 +65,18 @@
 #'   refused; check CSV files with [gpq_check_conformance()].
 #' @param output_dir The folder that holds run folders, made if it doesn't exist. The run writes
 #'   into `<output_dir>/<run_id>/`.
+#' @param overrides `NULL`, or your overrides of issue classes: a data.frame or the path of a
+#'   CSV file, as [gpq_classify_issues()] takes them, whose scope may also name the
+#'   issues' group columns: the run's `magp_contributor_id`, `jurisdiction` and
+#'   `magp_dataset_id`, and the plot's key `magp_plot_id`.
+#' @param lineage `NULL`, or the provider's raw values of the cells the pipeline changed: a
+#'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
+#'   `column_name`, `raw_value` and `raw_source`. The classes read it as evidence, and each
+#'   contributor's report shows a listed cell's raw value beside its issue, as
+#'   [gpq_build_reports()] does.
+#' @param pipeline_fill `NULL`, or the cells the pipeline's missing-value fill wrote: a
+#'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
+#'   `column_name` and `written_value`, which the classes read as their evidence `filled`.
 #' @param report `TRUE` to build each contributor's report and issues CSV; `FALSE` writes the
 #'   results and run metadata, with no contributor reports or issues CSVs.
 #' @param settings A named list of settings, which come before the rule set's, the options' and
@@ -75,7 +96,8 @@
 #' run_dir <- file.path(output, results$metadata$run$run_id)
 #' list.files(run_dir, recursive = TRUE)
 #' @export
-magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
+magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
+                        pipeline_fill = NULL, report = TRUE, settings = list()) {
   # MAGPlot's names for the engine (3.2 step 4; D7.5).
   group_cols <- c("magp_contributor_id", "jurisdiction", "magp_dataset_id")
   problem_unit <- list("magp_plots", "magp_plot_id")
@@ -144,11 +166,14 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
   load_bit64(tables)
   units <- held_units(tables, spec, group_cols[[1L]])
   text <- magp_texts()
+  # The run inputs given, which pre-flight checks (3.6; D19.51).
+  inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
+  inputs <- inputs[!vapply(inputs, is.null, logical(1))]
   preflight <- withCallingHandlers(
     tryCatch(
       gpq_preflight(
         spec, rules,
-        inputs = list(), settings = settings, text = text, output_dir = run_dir
+        inputs = inputs, settings = settings, text = text, output_dir = run_dir
       ),
       gpq_preflight_error = function(cond) {
         # A stopped run's own two files beside pre-flight's, then its error (11.9; D7.11).
@@ -177,6 +202,21 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
       invokeRestart("muffleWarning")
     }
   )
+  # Classification's own reading of the inputs, before any check, so its stops on them (W229's
+  # overrides column, W246's cell listed twice) come in seconds (D21.4). The issues' group
+  # columns are the run's and the problem unit's key, as classification reads them from the
+  # issues (R/lineage_classify.R); bit64 is loaded first, as there.
+  groups <- setdiff(
+    names(results_schema(group_cols, problem_unit[[2L]])$issues), names(results_schema()$issues)
+  )
+  evidence_given <- list(filled = pipeline_fill, lineage = lineage)
+  evidence_given <- evidence_given[!vapply(evidence_given, is.null, logical(1))]
+  given <- c(list(overrides = overrides), evidence_given)
+  load_bit64(given[vapply(given, is.data.frame, logical(1))])
+  read_evidence(read_run_inputs(evidence_given, "evidence", names(evidence_schema())), groups)
+  if (!is.null(overrides)) {
+    read_overrides(overrides, groups)
+  }
   results <- withCallingHandlers(
     gpq_check_conformance(
       tables, spec,
@@ -200,12 +240,15 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
   # The run's own reference to the tables goes: R frees them when nothing else holds them, as
   # when the run loaded them from a path (D21.18 Q5).
   rm(tables, flags)
+  # MAGPlot's evidence, then the caller's: pipeline_fill as `filled`, and `lineage` (3.6;
+  # D21.18 Q6).
   gpq_classify_issues(
     results$issues, rules,
-    evidence = list(
-      computed = computed_evidence(spec = spec), crosswalk = crosswalk_evidence(spec = spec)
+    evidence = c(
+      list(computed = computed_evidence(spec = spec), crosswalk = crosswalk_evidence(spec = spec)),
+      evidence_given
     ),
-    settings = settings
+    overrides = overrides, settings = settings
   )
   # Each table's inputs row names the delivery's file and hash, its detail as the engine wrote
   # it, and a magp_meta row repeats them; a plain list's rows stay in memory (9.5; D21.13).
@@ -232,10 +275,10 @@ magp_run_qc <- function(tables, output_dir, report = TRUE, settings = list()) {
   gpq_write_results(results, output_dir)
   if (report) {
     # The reports read no saved settings but the rule set's, so the caps given come as
-    # arguments (D21.18 Q6).
+    # arguments; the lineage input's raw values show beside their issues (D21.18 Q6).
     gpq_build_reports(
       results, output_dir,
-      lang = settings[["lang"]], text = text, row_cap = settings[["row_cap"]],
+      lineage = lineage, lang = settings[["lang"]], text = text, row_cap = settings[["row_cap"]],
       example_cap = settings[["example_cap"]], cell_cap = settings[["cell_cap"]]
     )
   }

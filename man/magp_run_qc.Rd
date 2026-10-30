@@ -4,7 +4,15 @@
 \alias{magp_run_qc}
 \title{Run MAGPlot's QC on one delivery}
 \usage{
-magp_run_qc(tables, output_dir, report = TRUE, settings = list())
+magp_run_qc(
+  tables,
+  output_dir,
+  overrides = NULL,
+  lineage = NULL,
+  pipeline_fill = NULL,
+  report = TRUE,
+  settings = list()
+)
 }
 \arguments{
 \item{tables}{One delivery's tables: \code{\link[=magp_read_delivery]{magp_read_delivery()}}'s result, the path of the
@@ -14,6 +22,21 @@ refused; check CSV files with \code{\link[=gpq_check_conformance]{gpq_check_conf
 
 \item{output_dir}{The folder that holds run folders, made if it doesn't exist. The run writes
 into \verb{<output_dir>/<run_id>/}.}
+
+\item{overrides}{\code{NULL}, or your overrides of issue classes: a data.frame or the path of a
+CSV file, as \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} takes them, whose scope may also name the
+issues' group columns: the run's \code{magp_contributor_id}, \code{jurisdiction} and
+\code{magp_dataset_id}, and the plot's key \code{magp_plot_id}.}
+
+\item{lineage}{\code{NULL}, or the provider's raw values of the cells the pipeline changed: a
+data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
+\code{column_name}, \code{raw_value} and \code{raw_source}. The classes read it as evidence, and each
+contributor's report shows a listed cell's raw value beside its issue, as
+\code{\link[=gpq_build_reports]{gpq_build_reports()}} does.}
+
+\item{pipeline_fill}{\code{NULL}, or the cells the pipeline's missing-value fill wrote: a
+data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
+\code{column_name} and \code{written_value}, which the classes read as their evidence \code{filled}.}
 
 \item{report}{\code{TRUE} to build each contributor's report and issues CSV; \code{FALSE} writes the
 results and run metadata, with no contributor reports or issues CSVs.}
@@ -44,9 +67,16 @@ then stops with an error of class \code{gpq_preflight_error}.
 Otherwise the run checks Layers 0 to 4, with MAGPlot's group columns \code{magp_contributor_id},
 \code{jurisdiction} and \code{magp_dataset_id} and its problem unit, the plot (\code{magp_plot_id} of
 \code{magp_plots}). It then gives each issue its provider key, from its contributor's lineage
-spec and Ontario's age-tree flag, and its class, from the evidence: the columns MAGPlot's
-pipeline computes and its translation tables' provider codes. It writes the results and the
-run metadata, and with \code{report = TRUE} builds the reports.
+spec and Ontario's age-tree flag, and its class, from your \code{overrides} first, then from the
+evidence: the columns MAGPlot's pipeline computes, its translation tables' provider codes,
+\code{lineage} and \code{pipeline_fill}. It writes the results and the run metadata, and with
+\code{report = TRUE} builds the reports.
+
+Pre-flight checks \code{overrides}, \code{lineage} and \code{pipeline_fill}, and the run then reads them as
+\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} reads them, before any check. The run stops there wherever
+\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} would on these inputs, such as on an \code{overrides} table that lacks
+one of its own columns or has a column that is neither its own nor one of the issues' group
+columns, or on a cell that \code{lineage} or \code{pipeline_fill} lists twice.
 
 In \code{metadata/run.csv}, \code{run_start} is when the run started and \code{run_end} is set just before
 the results are written: the time between them covers loading the tables, pre-flight, the

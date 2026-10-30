@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9029 (development version)
+# groundplotqc 0.0.0.9030 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -70,3 +70,4 @@
 - MAGPlot 2.0's rule set gives the report caps `row_cap` (500) and `cell_cap` (100), their built-in values, so a MAGPlot run's settings show both as set by the rule set. The rule set is now version 4.
 - New `magp_read_delivery()` reads a MAGPlot 2.0 delivery's `.Rdata` file: its tables as data.tables, any other data.frame in the file for the checks to report, and `magp_meta` unchanged, with the file's name and SHA-256. It leaves out the file's `dd` and `lkp` and any other object that isn't a data.frame.
 - `magp_run_qc()` runs MAGPlot 2.0's checks on one delivery from start to finish: given `magp_read_delivery()`'s result, the path of the delivery's `.Rdata` file or a named list of tables, it runs pre-flight and the checks of Layers 0 to 4, gives each issue its provider key and class, writes the run folder and, by default, builds each contributor's report and issues CSV. A run that pre-flight stops still records its contributors, and, given the file or `magp_read_delivery()`'s result, the run's inputs metadata names the delivery's file and SHA-256 for every table.
+- `magp_run_qc()` takes your `overrides` and the pipeline's `lineage` and `pipeline_fill`. Pre-flight checks them and, before any check, the run reads them as `gpq_classify_issues()` does, so an overrides table it can't use, or a cell listed twice, stops the run at once. The classes use all three, and a contributor's report shows a listed cell's raw value beside its issue, as `gpq_build_reports()` does.

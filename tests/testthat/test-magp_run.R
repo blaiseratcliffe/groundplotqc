@@ -1,4 +1,4 @@
-# Tests for magp_run_qc(), MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.34, D21.3,
+# Tests for magp_run_qc(), MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.34, D21.3 to
 # D21.5, D21.11 to D21.15, D21.18). Synthetic data only: magp_example and copies of it, saved
 # as a delivery's .Rdata by fx_magp_rdata() where a test gives a path. A run on the whole of
 # magp_example costs about 3 s, so one delivery run carries most of the checks (D20.3, D21.8).
@@ -114,6 +114,7 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
       # The run's own reference to the tables is gone by now (D21.18 Q5).
       caught$tables_held <<- exists("tables", envir = parent.frame(), inherits = FALSE)
       caught$evidence <<- evidence
+      caught$overrides <<- overrides
       caught$settings <<- settings
       on.exit(caught$classified <<- Sys.time())
       classify(issues, rules, evidence, overrides, settings)
@@ -124,10 +125,28 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     }
   )
   settings <- list(lang = "en", row_cap = 7L, example_cap = 2L, cell_cap = 60L)
+  # Your inputs (D21.18 Q6): an override classing 110's code issue source, that code's raw value
+  # from the provider, and a cell the pipeline's fill wrote.
+  override <- data.frame(
+    fingerprint = NA, rule_id = "code_not_in_list", table_name = "magp_plot_meas",
+    column_name = "canopy_structure", issue_class = "source", who = "A. Reviewer",
+    when = "2026-10-29", why = "Checked with the provider."
+  )
+  raw <- data.frame(
+    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
+    column_name = "canopy_structure", raw_value = "q-raw-110", raw_source = "plot_meas.csv"
+  )
+  fill <- data.frame(
+    table_name = "magp_plots", record_pk = "magp_plots_1", column_name = "plot_elevation",
+    written_value = "-1"
+  )
   started <- Sys.time()
   warned <- list()
   results <- withCallingHandlers(
-    magp_run_qc(path, output, settings = settings),
+    magp_run_qc(
+      path, output,
+      overrides = override, lineage = raw, pipeline_fill = fill, settings = settings
+    ),
     gpq_preflight_warning = function(w) {
       warned[[length(warned) + 1L]] <<- w
       invokeRestart("muffleWarning")
@@ -169,9 +188,13 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   expect_equal(caught$decoded$flags, age_tree_flags(delivery))
   expect_setequal(caught$decoded$tables, setdiff(names(delivery), "magp_meta"))
   expect_false(anyNA(results$issues$provider_key_status))
-  # Classes from MAGPlot's evidence (D21.5), the tables let go first (D21.18 Q5).
+  # Classes from your overrides, then MAGPlot's evidence (D21.5) and yours, pipeline_fill as
+  # `filled` (D21.18 Q6), the tables let go first (D21.18 Q5).
   expect_false(caught$tables_held)
-  expect_named(caught$evidence, c("computed", "crosswalk"))
+  expect_named(caught$evidence, c("computed", "crosswalk", "filled", "lineage"))
+  expect_identical(caught$evidence$filled, fill)
+  expect_identical(caught$evidence$lineage, raw)
+  expect_identical(caught$overrides, override)
   expect_equal(caught$evidence$computed, computed_evidence(spec = magp_spec()))
   expect_equal(caught$evidence$crosswalk, crosswalk_evidence(spec = magp_spec()))
   # The settings reach the classes, and the checks, whose settings table records the cap given
@@ -187,7 +210,7 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     open[, c("rule_id", "magp_contributor_id", "issue_class", "class_basis")],
     data.table::data.table(
       rule_id = c("date_unparseable", "code_not_in_list"), magp_contributor_id = c("100", "110"),
-      issue_class = c("harmonization", "unclassified"), class_basis = c("computed", "default")
+      issue_class = c("harmonization", "source"), class_basis = c("computed", "override")
     )
   )
   # The inputs rows (D21.13): each table's with the delivery's file and hash and the engine's
@@ -214,10 +237,11 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   expect_true(utc_text(started) <= run$run_start)
   expect_true(utc_text(caught$classified) <= run$run_end)
   expect_true(run$run_end <= utc_text(ended))
-  # The settings' language and caps reach the reports as arguments, with MAGPlot's text
-  # (D21.18 Q6).
+  # The settings' language and caps reach the reports as arguments, with MAGPlot's text and
+  # your lineage input (D21.18 Q6).
   expect_equal(caught$build[c("lang", "row_cap", "example_cap", "cell_cap")], settings)
   expect_identical(caught$build$text, magp_texts())
+  expect_identical(caught$build$lineage, raw)
   # Each open issue's class in its own contributor's CSV.
   for (unit in c("100", "110")) {
     csv <- data.table::fread(
@@ -230,7 +254,8 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     )
   }
   # Section 1 of each contributor's report names the delivery's file and hash, and lists only
-  # the tables, never magp_meta (D21.13).
+  # the tables, never magp_meta (D21.13). The raw value is in its own contributor's report
+  # only, beside its issue (D20.17).
   for (unit in c("100", "110")) {
     html <- readLines(
       file.path(run_dir, "reports", paste0(unit, ".html")),
@@ -238,6 +263,7 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     )
     expect_true(any(grepl(attr(delivery, "sha256"), html, fixed = TRUE)), info = unit)
     expect_false(any(grepl("magp_meta", html, fixed = TRUE)), info = unit)
+    expect_equal(any(grepl("q-raw-110", html, fixed = TRUE)), unit == "110", info = unit)
   }
 })
 
@@ -271,4 +297,65 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   # (D21.18 Q4).
   expect_false(anyNA(results$issues$issue_class))
   expect_equal(results$metadata$run$report_units, "100; 110")
+})
+
+test_that("inputs classification can't take stop the run before any check (D21.4)", {
+  output <- withr::local_tempdir()
+  # A plain list of the tables the inputs name, so nothing is loaded from a file: the stops come
+  # before any check reads a table (D21.37).
+  tables <- list(
+    magp_plot_meas = data.table::copy(magp_example$magp_plot_meas),
+    magp_plots = data.table::copy(magp_example$magp_plots)
+  )
+  # A run that reached the checks would stop with this, so a stop in other words came first.
+  testthat::local_mocked_bindings(gpq_check_conformance = function(...) stop("checks reached"))
+  quiet <- function(expr) {
+    withCallingHandlers(expr, gpq_preflight_warning = function(w) invokeRestart("muffleWarning"))
+  }
+  override <- data.frame(
+    fingerprint = NA, rule_id = "code_not_in_list", table_name = "magp_plot_meas",
+    column_name = "canopy_structure", issue_class = "source", who = "A. Reviewer",
+    when = "2026-10-29", why = "Checked with the provider."
+  )
+  # W229: an attribute of the specification, which pre-flight takes, that isn't one of the
+  # issues' group columns.
+  expect_error(
+    quiet(magp_run_qc(tables, output, overrides = cbind(override, magp_site_id = NA))),
+    "`overrides` must have the columns"
+  )
+  # The problem unit's key is one of them, as classification reads the issues, so this run goes
+  # on to the checks.
+  expect_error(
+    quiet(magp_run_qc(tables, output, overrides = cbind(override, magp_plot_id = "magp_plots_9"))),
+    "checks reached"
+  )
+  # W246: a cell listed twice, in lineage or in pipeline_fill, which classification names
+  # `filled`.
+  raw <- data.frame(
+    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
+    column_name = "canopy_structure", raw_value = "q", raw_source = "plot_meas.csv"
+  )
+  expect_error(
+    quiet(magp_run_qc(tables, output, lineage = rbind(raw, raw))),
+    "`lineage` lists the cell magp_plot_meas.canopy_structure of record magp_plot_meas_20 twice",
+    fixed = TRUE
+  )
+  fill <- data.frame(
+    table_name = "magp_plots", record_pk = "magp_plots_1", column_name = "plot_elevation",
+    written_value = "-1"
+  )
+  expect_error(
+    quiet(magp_run_qc(tables, output, pipeline_fill = rbind(fill, fill))),
+    "`filled` lists the cell magp_plots.plot_elevation of record magp_plots_1 twice",
+    fixed = TRUE
+  )
+  # Each run left pre-flight's files only (D21.15).
+  runs <- list.dirs(output, recursive = FALSE)
+  expect_length(runs, 4L)
+  for (run_dir in runs) {
+    expect_equal(
+      sort(list.files(run_dir, recursive = TRUE), method = "radix"),
+      c("metadata/preflight.csv", "reports/preflight.html")
+    )
+  }
 })
