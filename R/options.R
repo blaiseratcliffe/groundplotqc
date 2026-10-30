@@ -33,11 +33,11 @@
 #'   `design_geometry_inconsistent` and `design_duplicate_signature` list in an
 #'   issue's `expected`, which then ends with a count of the rest; at 0,
 #'   `expected` is NA, as `examples` is.
-#' - `groundplotqc.row_cap`: the most rows a table of a report
-#'   [gpq_build_reports()] writes shows. A longer table shows that many rows,
-#'   with a note saying how many of how many it shows; where the rows are
-#'   issues, the note names the issues CSV, which holds every row. Built-in:
-#'   `500`.
+#' - `groundplotqc.row_cap`: the most bars a chart shows, and the most rows a
+#'   table of checks, issues or reasons not evaluated shows, in a report
+#'   [gpq_build_reports()] writes. A longer one shows that many, with a note
+#'   saying how many it shows; where the rows are issues, the note names the
+#'   issues CSV, which holds every row. Built-in: `500`.
 #' - `groundplotqc.cell_cap`: the most characters of delivered text, such as a
 #'   value or a key, that a table cell shows in a report [gpq_build_reports()]
 #'   writes, counted before the text is written as HTML. Longer text is cut and

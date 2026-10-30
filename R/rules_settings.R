@@ -106,9 +106,9 @@ setting_definitions <- function() {
       type = "integer", built_in = 5L, valid = function(x) whole(x, 0),
       wants = "one whole number, 0 or more", from_text = as_whole
     ),
-    # The HTML reports' caps (D4.18, D20.39): the rows a table shows, the rest in the issues
-    # CSV, and the characters of delivered text a cell shows, counted before escaping; the CSV
-    # is never cut.
+    # The HTML reports' caps (D4.18, D20.39, D20.144): the bars a chart shows and the rows a
+    # table of checks, issues or reasons shows, the rest in the issues CSV, and the characters
+    # of delivered text a cell shows, counted before escaping; the CSV is never cut.
     row_cap = list(
       type = "integer", built_in = 500L, valid = function(x) whole(x, 0),
       wants = "one whole number, 0 or more", from_text = as_whole

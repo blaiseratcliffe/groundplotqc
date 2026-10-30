@@ -1,8 +1,9 @@
 # Base-R HTML builders (plan 11.1, 11.2; D8.18, D12.17, D12.21, D14.7, D14.30, D20.30,
 # D20.37, D20.39, D20.49). Every value reaches HTML through html_escape(). Pages are
 # self-contained, in the NRCan Dark-green template's colours: inline CSS and a hand-written
-# script under 4 KB that sorts tables by a header click and filters rows; without JavaScript
-# the tables read as they are, the filter boxes stay hidden and a folded part opens on a click.
+# script under 4 KB that sorts tables by a header click, filters rows and opens every folded
+# part to print (D20.133); without JavaScript the tables read as they are, the filter boxes
+# stay hidden, and a folded part opens on a click and prints closed.
 
 #' Text escaped for HTML
 #'
@@ -49,7 +50,8 @@ cut_cell_text <- function(x, cell_cap) {
 #'
 #' Every cell escaped; a `row_cap` caps the rows shown, with a note naming `csv_name`, which
 #' a `row_cap` always needs, as one string, whether or not the table reaches it. A column of
-#' numbers (integer or double) is right-aligned, its header too (R4). `row_class` gives each
+#' numbers (integer or double) is right-aligned, its header too (R4), and a double is written
+#' in full, as html_bar() and html_facts() write numbers (D20.132). `row_class` gives each
 #' row one CSS class or NA (D20.37): a severity's class ("sev-error", "sev-warning",
 #' "sev-flag" or "sev-info") shows the row's first cell, the severity's word, as a label in
 #' the severity's colour; a row of class "total" goes in the table's foot, after the body, so
@@ -119,7 +121,12 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL, row_class =
     classes <- if (is.null(row_class)) rep(NA_character_, length(at)) else row_class[at]
     cells <- lapply(seq_along(dt), function(j) {
       column <- dt[[j]]
-      value <- html_escape(if (length(at) == length(column)) column else column[at])
+      x <- if (length(at) == length(column)) column else column[at]
+      # A double in full (as_text(), D12.45): 100000, never as.character()'s "1e+05" (D20.132).
+      if (is.double(x) && !is.object(x)) {
+        x <- as_text(x)
+      }
+      value <- html_escape(x)
       if (j == 1L) {
         label <- startsWith(classes, "sev-") %in% TRUE
         value[label] <- paste0("<span class=\"sev\">", value[label], "</span>")
@@ -350,7 +357,8 @@ html_page <- function(title, sections, meta = character(), subtitle = NULL, lang
 #' The pages' inline CSS (plan 11.2's look; D20.37, D20.49)
 #'
 #' The NRCan Dark-green template's colours, Arial; a masthead, a contents sidebar that sits
-#' on top on a narrow screen and is left out of print, dark header rows, striped rows, numbers
+#' on top on a narrow screen and is left out of print, the facts' terms above their values on
+#' a narrow screen (R104), dark header rows, striped rows, numbers
 #' right-aligned, each severity's colours set once on its class, bars, fact lists, folded
 #' parts and a visible keyboard focus.
 #' @noRd
@@ -452,6 +460,9 @@ page_css <- function() {
     "@media (max-width:56rem){.layout{display:block}",
     ".layout>nav{position:static;max-height:none;border-bottom:1px solid var(--rule)}",
     "main{border-left:0;padding:1rem}",
+    # Each fact's term above its value, so a long term, such as the report unit's with its
+    # column's name, leaves the values the page's width at 360 px (R104).
+    ".facts dl{grid-template-columns:minmax(0,1fr)}",
     ".bar,.cols .bar{grid-template-columns:7rem minmax(3rem,1fr) 3.75rem}}",
     "@media print{body{background:#fff}.layout{display:block}",
     ".layout>nav,input[data-gpq-filter]{display:none!important}",
@@ -462,7 +473,12 @@ page_css <- function() {
   )
 }
 
-#' The pages' hand-written sort-and-filter script, under 4 KB
+#' The pages' hand-written script, under 4 KB: sorting by a header click, filtering rows, and
+#' every folded part opened to print (D8.18, D20.133)
+#'
+#' On `beforeprint` each `<details>` that is closed is opened and remembered, and on
+#' `afterprint` only those are closed again, so a part the reader opened stays open. A page
+#' without JavaScript prints a folded part closed.
 #' @noRd
 page_script <- function() {
   paste(
@@ -512,6 +528,15 @@ page_script <- function() {
     "        r.hidden = q !== \"\" && r.textContent.toLowerCase().indexOf(q) === -1;",
     "      });",
     "    });",
+    "  });",
+    "  var opened = [];",
+    "  window.addEventListener(\"beforeprint\", function () {",
+    "    var shut = document.querySelectorAll(\"details:not([open])\");",
+    "    Array.prototype.forEach.call(shut, function (d) { d.open = true; opened.push(d); });",
+    "  });",
+    "  window.addEventListener(\"afterprint\", function () {",
+    "    opened.forEach(function (d) { d.open = false; });",
+    "    opened = [];",
     "  });",
     "})();",
     sep = "\n"

@@ -36,12 +36,15 @@ in its own unit's report only, and only where the record's key is given and, wri
 text, matches no other record's in its table.}
 
 \item{lang, row_cap, example_cap, cell_cap}{The reports' language (\code{lang}) and caps: the most
-rows a table shows (\code{row_cap}), examples per check (\code{example_cap}) and characters of
-delivered text per cell (\code{cell_cap}). Each \code{NULL} takes the run's rule set, then the
-option, then the built-in value (see \link{groundplotqc_options}); a value given here wins.}
+bars in a chart and rows in a table of checks, issues or reasons (\code{row_cap}), examples per
+check (\code{example_cap}) and characters of delivered text per cell (\code{cell_cap}). Each \code{NULL}
+takes the run's rule set, then the option, then the built-in value (see
+\link{groundplotqc_options}); a value given here wins.}
 
 \item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
-\code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}.}
+\code{text}, whose rows stand in for the package's rows of the same \code{text_id} and \code{lang}. A
+row that uses a slot the package's row of its text doesn't have stops the build before it
+removes or writes anything.}
 }
 \value{
 The files written, invisibly: a character vector of their paths, each named by its
@@ -65,11 +68,12 @@ complete, so a build that stops leaves no partly written file.
 One report and one CSV is built for each report unit \code{metadata/run.csv} lists, even a unit
 with no issue. An issue goes to its own unit's report. An issue of a check that checks whole
 tables or columns, with \code{"*"} as its unit and not marked \code{reaches_other_unit}, goes to every
-unit, and so does a results row that counts no records, such as a check that couldn't run
-because a table wasn't given. Any other issue or results row with \code{"*"} as its unit, a
-whole-column issue of records included, goes to no unit's report, and so does an issue the
-run marks \code{reaches_other_unit} (one holding a value read from another unit's records or from
-records with no unit). In a run of one unit, all of these go to that unit's report. A run
+unit, and so does a results row with \code{"*"} as its unit that comes from such a check or
+counts no records, such as a check that couldn't run because a table wasn't given. Any other
+issue or results row with \code{"*"} as its unit, a whole-column issue of records included, goes
+to no unit's report, and so does an issue the run marks \code{reaches_other_unit} (one holding a
+value read from another unit's records or from records with no unit). In a run of one unit,
+all of these go to that unit's report. A run
 with no group columns builds one report, \code{reports/report.html}, and one CSV,
 \code{tables/report_issues.csv}, holding every issue.
 
@@ -94,9 +98,10 @@ provider's CSV, a text cell that starts with =, +, @, a tab or a carriage return
 where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
 shows it as text instead of running it as a formula. \code{reaches_other_unit} isn't written.
 
-Tables show at most \code{row_cap} rows and \code{example_cap} examples per check, and text longer
-than \code{cell_cap} characters is cut and ends with an ellipsis. The issues CSV has every issue,
-with its text in full.
+Charts show at most \code{row_cap} bars, and tables of checks, issues and reasons at most
+\code{row_cap} rows and \code{example_cap} examples per check, and text longer than \code{cell_cap}
+characters is cut and ends with an ellipsis. The issues CSV has every issue, with its text
+in full.
 }
 \examples{
 # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
