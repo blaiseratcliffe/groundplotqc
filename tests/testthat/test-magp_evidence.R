@@ -19,13 +19,16 @@ test_that("computed_evidence() is pipeline_computed.csv keyed by contributor (D1
   # Each jurisdiction's row once for each contributor magp_spec()'s datasets pair with it (AB
   # 100, BC 110, ON 170, QC 180), worked out here by merge(), not the helper's join.
   datasets <- unique(magp_spec()$datasets[, c("jurisdiction", "magp_contributor_id")])
-  local <- merge(file[file$jurisdiction != "*"], datasets, by = "jurisdiction")
+  expected <- merge(file[file$jurisdiction != "*"], datasets, by = "jurisdiction")
   own <- computed[computed$magp_contributor_id != "*"]
   expect_setequal(
     paste(own$table_name, own$column_name, own$magp_contributor_id, own$derivation),
-    paste(local$table_name, local$attribute_name, local$magp_contributor_id, local$derivation)
+    paste(
+      expected$table_name, expected$attribute_name, expected$magp_contributor_id,
+      expected$derivation
+    )
   )
-  expect_equal(nrow(own), nrow(local))
+  expect_equal(nrow(own), nrow(expected))
   # Each table, column and contributor once: a contributor of two jurisdictions both listing a
   # column would fail here, which D19.88 leaves to a rule then.
   rows <- paste(computed$table_name, computed$column_name, computed$magp_contributor_id)
@@ -40,16 +43,20 @@ test_that("computed_evidence() is pipeline_computed.csv keyed by contributor (D1
 
 test_that("a jurisdiction's computed rows go to each of its contributors, none to none (D21.5)", {
   file <- data.table::data.table(
-    table_name = c("t1", "t1", "t2", "t2", "t3"), attribute_name = c("a", "b", "c", "d", "e"),
-    jurisdiction = c("BC", "*", "AB", "QC", "XX"),
-    derivation = c("fill", "id", "formula", "count", "class"), note = NA_character_
+    table_name = c("t1", "t1", "t2", "t2", "t3", "t4", "t4", "t5"),
+    attribute_name = c("a", "b", "c", "d", "e", "f", "g", "h"),
+    jurisdiction = c("BC", "*", "AB", "QC", "XX", "BC", "BC", "BC"),
+    derivation = c("fill", "id", "formula", "count", "class", "count", "class", "reference"),
+    note = NA_character_
   )
-  # BC in two contributors' datasets, AB in two datasets of one contributor, QC's one dataset
-  # without a contributor, and no dataset in XX.
+  # BC in three contributors' datasets and listed by four rows of the file, so its rows number
+  # more than the pairs and the file's rows together (5 + 8) and the join needs
+  # allow.cartesian; AB in two datasets of one contributor, QC's one dataset without a
+  # contributor, and no dataset in XX.
   spec <- list(datasets = data.table::data.table(
-    jurisdiction = c("BC", "AB", "AB", "BC", "QC"),
-    magp_dataset_id = c("110.01", "100.01", "100.02", "120.01", "180.01"),
-    magp_contributor_id = c("110", "100", "100", "120", NA)
+    jurisdiction = c("BC", "AB", "AB", "BC", "QC", "BC"),
+    magp_dataset_id = c("110.01", "100.01", "100.02", "120.01", "180.01", "130.01"),
+    magp_contributor_id = c("110", "100", "100", "120", NA, "130")
   ))
   testthat::local_mocked_bindings(read_evidence_file = function(name) file)
   computed <- computed_evidence(spec)
@@ -58,9 +65,15 @@ test_that("a jurisdiction's computed rows go to each of its contributors, none t
   expect_equal(
     as.data.frame(computed),
     data.frame(
-      table_name = c("t1", "t1", "t1", "t2"), column_name = c("a", "a", "b", "c"),
-      magp_contributor_id = c("110", "120", "*", "100"),
-      derivation = c("fill", "fill", "id", "formula")
+      table_name = c(rep("t1", 4L), "t2", rep("t4", 6L), rep("t5", 3L)),
+      column_name = c(rep("a", 3L), "b", "c", rep("f", 3L), rep("g", 3L), rep("h", 3L)),
+      magp_contributor_id = c(
+        "110", "120", "130", "*", "100", rep(c("110", "120", "130"), 3L)
+      ),
+      derivation = c(
+        rep("fill", 3L), "id", "formula", rep("count", 3L), rep("class", 3L),
+        rep("reference", 3L)
+      )
     )
   )
 })
