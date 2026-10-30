@@ -1,25 +1,79 @@
-# Tests for MAGPlot's evidence for issue classes (plan 3.6, 10.3; D19.29, D19.38, D19.59).
+# Tests for MAGPlot's evidence for issue classes (plan 3.6, 10.3; D19.29, D19.38, D19.59, D19.88,
+# D21.5).
 
-test_that("computed_evidence() is pipeline_computed.csv as the evidence computed (D19.59)", {
+test_that("computed_evidence() is pipeline_computed.csv keyed by contributor (D19.59, D21.5)", {
   computed <- computed_evidence()
-  expect_named(computed, c("table_name", "column_name", "jurisdiction", "derivation"))
+  expect_named(computed, c("table_name", "column_name", "magp_contributor_id", "derivation"))
   expect_true(all(vapply(computed, is.character, TRUE)))
   path <- system.file("extdata", "magp", "pipeline_computed.csv", package = "groundplotqc")
   file <- read_csv_text(path)$data
   # An empty file would pass the comparisons below.
   expect_gt(nrow(file), 0L)
-  expect_identical(computed$table_name, file$table_name)
-  expect_identical(computed$column_name, file$attribute_name)
-  expect_identical(computed$jurisdiction, file$jurisdiction)
-  expect_identical(computed$derivation, file$derivation)
-  rows <- paste(computed$table_name, computed$column_name, computed$jurisdiction)
+  # The "*" rows as the file gives them, in its order.
+  every <- computed[computed$magp_contributor_id == "*"]
+  wild <- file[file$jurisdiction == "*"]
+  expect_gt(nrow(wild), 0L)
+  expect_identical(every$table_name, wild$table_name)
+  expect_identical(every$column_name, wild$attribute_name)
+  expect_identical(every$derivation, wild$derivation)
+  # Each jurisdiction's row once for each contributor magp_spec()'s datasets pair with it (AB
+  # 100, BC 110, ON 170, QC 180), worked out here by merge(), not the helper's join.
+  datasets <- unique(magp_spec()$datasets[, c("jurisdiction", "magp_contributor_id")])
+  local <- merge(file[file$jurisdiction != "*"], datasets, by = "jurisdiction")
+  own <- computed[computed$magp_contributor_id != "*"]
+  expect_setequal(
+    paste(own$table_name, own$column_name, own$magp_contributor_id, own$derivation),
+    paste(local$table_name, local$attribute_name, local$magp_contributor_id, local$derivation)
+  )
+  expect_equal(nrow(own), nrow(local))
+  # Each table, column and contributor once: a contributor of two jurisdictions both listing a
+  # column would fail here, which D19.88 leaves to a rule then.
+  rows <- paste(computed$table_name, computed$column_name, computed$magp_contributor_id)
   expect_equal(anyDuplicated(rows), 0L)
   known <- c(
-    "magp_sites magp_site_id * id", "magp_sites datum BC fill", "magp_sites n_visits * count",
-    "magp_plots design_change * class", "magp_tree_meas crown_length AB formula",
+    "magp_sites magp_site_id * id", "magp_sites datum 110 fill", "magp_sites n_visits * count",
+    "magp_plots design_change * class", "magp_tree_meas crown_length 100 formula",
     "magp_datasets gp_type * reference"
   )
   expect_true(all(known %in% paste(rows, computed$derivation)))
+})
+
+test_that("a jurisdiction's computed rows go to each of its contributors, none to none (D21.5)", {
+  file <- data.table::data.table(
+    table_name = c("t1", "t1", "t2", "t2", "t3"), attribute_name = c("a", "b", "c", "d", "e"),
+    jurisdiction = c("BC", "*", "AB", "QC", "XX"),
+    derivation = c("fill", "id", "formula", "count", "class"), note = NA_character_
+  )
+  # BC in two contributors' datasets, AB in two datasets of one contributor, QC's one dataset
+  # without a contributor, and no dataset in XX.
+  spec <- list(datasets = data.table::data.table(
+    jurisdiction = c("BC", "AB", "AB", "BC", "QC"),
+    magp_dataset_id = c("110.01", "100.01", "100.02", "120.01", "180.01"),
+    magp_contributor_id = c("110", "100", "100", "120", NA)
+  ))
+  testthat::local_mocked_bindings(read_evidence_file = function(name) file)
+  computed <- computed_evidence(spec)
+  # The file's order, each jurisdiction's contributors in the datasets table's order; QC and
+  # XX give no rows.
+  expect_equal(
+    as.data.frame(computed),
+    data.frame(
+      table_name = c("t1", "t1", "t1", "t2"), column_name = c("a", "a", "b", "c"),
+      magp_contributor_id = c("110", "120", "*", "100"),
+      derivation = c("fill", "fill", "id", "formula")
+    )
+  )
+})
+
+test_that("each jurisdiction of pipeline_computed.csv has a contributor in magp_spec() (D21.5)", {
+  # A jurisdiction added to the file without a contributor in the spec's datasets would lose
+  # its evidence with no stop, computed_evidence() giving it no rows; this test fails instead.
+  path <- system.file("extdata", "magp", "pipeline_computed.csv", package = "groundplotqc")
+  given <- setdiff(unique(read_csv_text(path)$data$jurisdiction), "*")
+  expect_gt(length(given), 0L)
+  datasets <- magp_spec()$datasets
+  paired <- unique(datasets$jurisdiction[!is.na(datasets$magp_contributor_id)])
+  expect_equal(setdiff(given, paired), character())
 })
 
 test_that("crosswalk_evidence() splits, trims, filters and pools on a small spec (D19.59)", {
@@ -220,15 +274,20 @@ test_that("MAGPlot's provider cells give each of their codes with their row's co
   }
 })
 
-test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns (D19.59)", {
+test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns (D19.59, D21.5)", {
   computed <- computed_evidence()
   crosswalk <- crosswalk_evidence()
   read <- read_run_inputs(
     list(computed = computed, crosswalk = crosswalk), "evidence", names(evidence_schema())
   )
-  # The reader takes both for the run's group column, each derivation one of the six.
-  expect_no_error(read_evidence(read, groups = "jurisdiction"))
-  # Each table and column is the dictionary's, each jurisdiction "*" or a code of the sheet.
+  # The reader takes both for MAGPlot's group columns, computed for the contributor and the
+  # crosswalk for the jurisdiction, each derivation one of the six.
+  groups <- c("magp_contributor_id", "jurisdiction", "magp_dataset_id")
+  evidence <- read_evidence(read, groups = groups)
+  expect_equal(evidence$computed$group_col, "magp_contributor_id")
+  expect_equal(evidence$crosswalk$group_col, "jurisdiction")
+  # Each table and column is the dictionary's, each contributor "*" or one of the datasets
+  # table's.
   spec <- magp_spec()
   # The sheet's codes and the keys as the build takes them (data-raw/build_magp_config.R).
   jurisdictions <- spec$codes$code[
@@ -238,7 +297,7 @@ test_that("MAGPlot's compiled evidence reads as evidence, on its spec's columns 
     paste(computed$table_name, computed$column_name, sep = "\r") %chin%
       paste(spec$attributes$table_name, spec$attributes$attribute_name, sep = "\r")
   ))
-  expect_true(all(computed$jurisdiction %chin% c("*", jurisdictions)))
+  expect_true(all(computed$magp_contributor_id %chin% c("*", spec$datasets$magp_contributor_id)))
   # The crosswalk's map, row by row as the build checks it (M6 m63): a translation table the
   # spec reads, an attribute whose code list is that table, a column of it and a code of the
   # sheet, never "*". A row naming anything else gives no evidence, which no other test here
