@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9027 (development version)
+# groundplotqc 0.0.0.9028 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -68,3 +68,4 @@
 - `gpq_build_reports()` now stops before it removes or writes any file when a row of `text` uses a slot the package's row of that text doesn't have, as pre-flight does. A report unit named COM0 or LPT0, in any letter case, has the first character of its file names encoded, as COM1's are: COM0's report is `%43OM0.html`.
 - A record whose own value in a group column, or in the problem unit's key, is blank, missing, a missing-value code or "\*", or whose table was given without that column, now tries the routes through the foreign keys as a record of a table without the column does, so a missing-value code such as "X" or "Z" no longer becomes a report unit or a breakdown value; on MAGPlot's tables, a site disturbance or treatment with no dataset ID now takes its site's dataset. The record labels `src_id_duplicate` reads, the contributors `gpq_decode_lineage()` reads through the keys and each issue's `reaches_other_unit` follow the same rule.
 - MAGPlot 2.0's rule set gives the report caps `row_cap` (500) and `cell_cap` (100), their built-in values, so a MAGPlot run's settings show both as set by the rule set. The rule set is now version 4.
+- New `magp_read_delivery()` reads a MAGPlot 2.0 delivery's `.Rdata` file: its tables as data.tables, any other data.frame in the file for the checks to report, and `magp_meta` unchanged, with the file's name and SHA-256. It leaves out the file's `dd` and `lkp` and any other object that isn't a data.frame.

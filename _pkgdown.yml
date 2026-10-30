@@ -24,6 +24,7 @@ reference:
   - title: MAGPlot 2.0 layer
     contents:
       - magp_example
+      - magp_read_delivery
       - magp_rules
       - magp_spec
   - title: Configuration and data
