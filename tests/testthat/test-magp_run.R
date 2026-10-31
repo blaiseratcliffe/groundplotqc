@@ -435,10 +435,13 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
     regexpr("(?s)<section id=\"actions\">.*?</section>", seen[["110"]]$page, perl = TRUE)
   )
   expect_true("RAW-SP-110" %chin% tokens(actions))
-  # Absence: neither of a unit's files holds the other unit's surrogate keys, planted codes or
-  # raw value; the unit values as whole CSV cells only, since a count in the HTML can read as
-  # one.
-  planted <- list("100" = "QX9", "110" = c("QZ7", "RAW-SP-110"))
+  # Absence: neither of a unit's files holds the other unit's surrogate keys or planted values
+  # (codes, slope or aspect, date text, raw value); the unit values as whole CSV cells only,
+  # since a count in the HTML can read as one. The tokens split at spaces, so "not a date" is
+  # found only as a whole CSV cell.
+  planted <- list(
+    "100" = c("QX9", "1234.5", "not a date"), "110" = c("QZ7", "RAW-SP-110", "QQ", "456.5")
+  )
   for (unit in units) {
     other <- setdiff(units, unit)
     expect_identical(

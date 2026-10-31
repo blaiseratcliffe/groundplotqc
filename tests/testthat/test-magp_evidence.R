@@ -78,16 +78,23 @@ test_that("a jurisdiction's computed rows go to each of its contributors, none t
   )
 })
 
-test_that("each jurisdiction of pipeline_computed.csv has a contributor in magp_spec() (D21.5)", {
-  # A jurisdiction added to the file without a contributor in the spec's datasets would lose
-  # its evidence with no stop, computed_evidence() giving it no rows; this test fails instead.
-  path <- system.file("extdata", "magp", "pipeline_computed.csv", package = "groundplotqc")
-  given <- setdiff(unique(read_csv_text(path)$data$jurisdiction), "*")
-  expect_gt(length(given), 0L)
-  datasets <- magp_spec()$datasets
-  paired <- unique(datasets$jurisdiction[!is.na(datasets$magp_contributor_id)])
-  expect_equal(setdiff(given, paired), character())
-})
+test_that(
+  "each jurisdiction of pipeline_computed.csv has a contributor in magp_spec() (D21.5, D21.49)",
+  {
+    # A jurisdiction added to the file without a contributor in the spec's datasets would lose
+    # its evidence with no stop, computed_evidence() giving it no rows; this test fails instead.
+    path <- system.file("extdata", "magp", "pipeline_computed.csv", package = "groundplotqc")
+    given <- setdiff(unique(read_csv_text(path)$data$jurisdiction), "*")
+    expect_gt(length(given), 0L)
+    datasets <- magp_spec()$datasets
+    paired <- unique(datasets$jurisdiction[!is.na(datasets$magp_contributor_id)])
+    expect_equal(setdiff(given, paired), character())
+    # computed_evidence() pairs a jurisdiction with the datasets table's contributor as read, but
+    # the lookup workbook's dataset sheet wins that column (D12.20); a clash between the two
+    # fails here, so that update-spec brings it to the user.
+    expect_false("magp_contributor_id" %in% magp_spec()$clashes$column_name)
+  }
+)
 
 test_that("crosswalk_evidence() splits, trims, filters and pools on a small spec (D19.59)", {
   # Translation table "walk": a header row, then four rows; `keep` is the filter of "kind",

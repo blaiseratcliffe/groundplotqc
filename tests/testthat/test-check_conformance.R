@@ -1288,6 +1288,8 @@ test_that("a record's own held code, NA or blank moves it on in a MAGPlot run (D
   expect_equal(results$metadata$run$report_units, "100; 110")
   held <- unlist(lapply(groups, function(g) c(results$results[[g]], results$issues[[g]])))
   expect_false(any(held %in% c("Z", "X")))
+  # The run's held units (held_units(), read before pre-flight) are the engine's report units.
+  expect_setequal(held_units(x, magp_spec(), "magp_contributor_id"), c("100", "110"))
   # Layer 0's table_missing rows are the tables left out; the plants' issues are the others.
   left_out <- results$issues$rule_id == "table_missing"
   expect_setequal(results$issues$table_name[left_out], setdiff(names(magp_example), read))
