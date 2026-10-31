@@ -357,8 +357,8 @@ test_that("inputs that classification can't take stop the run before any check (
     magp_plots = data.table::copy(magp_example$magp_plots)
   )
   # A run that reached the checks would stop with this, so a stop in other words came first.
-  # The package's own load_bit64() records which tables each call is given (D18.86, D19.80); with
-  # no integer64 column in these tables it would do nothing.
+  # The mock of the package's own load_bit64() records which tables each call is given (D18.86,
+  # D19.80); with no integer64 column in these tables the real one would do nothing.
   seen <- list()
   testthat::local_mocked_bindings(
     gpq_check_conformance = function(...) stop("checks reached"),
