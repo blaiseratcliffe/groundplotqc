@@ -1,8 +1,9 @@
-# Tests for magp_run_qc(), MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.34, D21.3 to
-# D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42). Synthetic data only: magp_example and copies
-# of it, saved as a delivery's .Rdata by fx_magp_rdata() where a test gives a path. A run on the
-# whole of magp_example costs about 3 s, so one delivery run carries most of the checks (D20.3,
-# D21.8).
+# Tests for magp_run_qc(), MAGPlot's run end to end; and plan 13's confidentiality test end to
+# end, on a planted copy of magp_example run from its path (plan 3.2, 3.4, 9.5, 11.9, 13; D7.34,
+# D18.89, D21.3 to D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42). Synthetic data only:
+# magp_example and copies of it, saved as a delivery's .Rdata by fx_magp_rdata() where a test
+# gives a path. A run on the whole of magp_example costs about 3 s, so one delivery run carries
+# most of the checks, the confidentiality test's among them (D20.3, D21.8, D21.37).
 
 # An inputs row's detail for each table of a list: its rows, as the engine writes a table's.
 rows_text <- function(tables) {
@@ -91,12 +92,44 @@ test_that("a run pre-flight stops writes its run, with its tables' contributors 
   )
 })
 
-test_that("a delivery's run: its folder, inputs, times, keys, classes and reports (D21.13)", {
+test_that("a delivery's run: its files, each contributor's kept to its own records (13; D21.13)", {
+  # One run serves the delivery's checks (its folder, inputs, times, keys, classes and reports)
+  # and plan 13's confidentiality test, both tests' plants and inputs on one copy (D21.37).
   tables <- fx_mark_fixture(lapply(magp_example, data.table::copy))
-  # One open issue for each contributor: an unparseable date in a column the pipeline computes,
-  # on 100's site, and a code no list holds, on 110's plot measurement.
+  # The delivery's open issues: an unparseable date in a column the pipeline computes, on 100's
+  # site, and a code no list holds, on 110's plot measurement.
   data.table::set(tables$magp_sites, i = 1L, j = "estab_date", value = "not a date")
   data.table::set(tables$magp_plot_meas, i = 20L, j = "canopy_structure", value = "QQ")
+  # Plan 13's test end to end (D16.16, D18.89, D20.2 (d), D21.18 Q7): magp_example's two
+  # contributors, 100 and 110, with these plants in a copy saved as separate objects, run from
+  # its path. No coordinate is planted: no rule of Layers 0 to 4 carries one, so D8.19 (2)
+  # rests on test-report_build.R's hand-made test.
+  spec <- magp_spec()
+  pk_of <- function(table) {
+    spec$keys$attribute_name[spec$keys$table_name == table & spec$keys$key_type == "PK"]
+  }
+  plant <- function(table, key, column, value) {
+    at <- which(tables[[table]][[pk_of(table)]] == key)
+    data.table::set(tables[[table]], i = at, j = column, value = value)
+  }
+  # D18.89's (A): a tree of 100's whose subplot is 110's, filed under 100 with sides read from
+  # 110's site and plot.
+  plant("magp_trees", "magp_trees_1", "magp_subplot_id", "magp_subplots_17")
+  # (B): a plot measurement of 100's given 110's design, filed under 110 with 100's dataset and
+  # plot. Rules fire on it as it stands, so no defect is planted on it.
+  plant("magp_plot_meas", "magp_plot_meas_1", "magp_design_id", "magp_designs_3")
+  # An issue of each unit's own: a slope over the dictionary's maximum on 100's plot 7, an
+  # aspect over it on 110's plot 14.
+  plant("magp_plots", "magp_plots_7", "plot_slope", 1234.5)
+  plant("magp_plots", "magp_plots_14", "plot_aspect", 456.5)
+  # A code no code list holds, on 100.
+  plant("magp_plot_meas", "magp_plot_meas_12", "canopy_structure", "QX9")
+  # A species code of 110's that no list holds, its raw value given in `lineage`, classed
+  # source by an override scoped to its rule, table, column and contributor alone: 110's own
+  # issue above is another rule's.
+  plant("magp_tree_meas", "magp_tree_meas_100", "species", "QZ7")
+  # A record with no unit: a tree condition naming a measurement no record holds.
+  plant("magp_tree_cond", "magp_tree_cond_200", "magp_treemeas_id", "magp_tree_meas_999")
   # A made-up magp_meta (D21.12): recorded in the inputs, never checked. `$<-` keeps the
   # list's fixture marker, which c() would drop.
   meta <- data.frame(built = "2026-10-01T00:00:00Z", commit = "0123abc")
@@ -133,15 +166,21 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   )
   settings <- list(lang = "en", row_cap = 7L, example_cap = 2L, cell_cap = 60L)
   # Your inputs (D21.18 Q6): an override classing 110's code issue source, that code's raw value
-  # from the provider, and a cell the pipeline's fill wrote.
+  # from the provider, and a cell the pipeline's fill wrote; beside them, the confidentiality
+  # test's override and raw value of 110's species code. Each override is scoped to contributor
+  # 110, so the first doesn't class the code planted in the same column on 100 (D21.37).
   override <- data.frame(
-    fingerprint = NA, rule_id = "code_not_in_list", table_name = "magp_plot_meas",
-    column_name = "canopy_structure", issue_class = "source", who = "A. Reviewer",
-    when = "2026-10-29", why = "Checked with the provider."
+    fingerprint = NA, rule_id = "code_not_in_list",
+    table_name = c("magp_plot_meas", "magp_tree_meas"),
+    column_name = c("canopy_structure", "species"), magp_contributor_id = "110",
+    issue_class = "source", who = "A. Reviewer", when = "2026-10-29",
+    why = c("Checked with the provider.", "Planted for the test.")
   )
   raw <- data.frame(
-    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
-    column_name = "canopy_structure", raw_value = "q-raw-110", raw_source = "plot_meas.csv"
+    table_name = c("magp_plot_meas", "magp_tree_meas"),
+    record_pk = c("magp_plot_meas_20", "magp_tree_meas_100"),
+    column_name = c("canopy_structure", "species"), raw_value = c("q-raw-110", "RAW-SP-110"),
+    raw_source = c("plot_meas.csv", "synthetic")
   )
   fill <- data.frame(
     table_name = "magp_plots", record_pk = "magp_plots_1", column_name = "plot_elevation",
@@ -212,12 +251,32 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
     resolved[resolved$setting == "row_cap", c("value", "tier")],
     data.table::data.table(value = "7", tier = "argument")
   )
+  # The open issues and their classes, in the checks' order: the delivery's two (the date on
+  # 100's site, the code on 110's plot measurement) among the confidentiality test's twelve (the
+  # code on 100, 110's species code, the slope and aspect, the orphan, (B)'s three and (A)'s
+  # four). The overrides class only 110's two codes (D21.37).
   open <- results$issues[results$issues$status == "open"]
   expect_equal(
-    open[, c("rule_id", "magp_contributor_id", "issue_class", "class_basis")],
+    open[, c("record_pk", "rule_id", "magp_contributor_id", "issue_class", "class_basis")],
     data.table::data.table(
-      rule_id = c("date_unparseable", "code_not_in_list"), magp_contributor_id = c("100", "110"),
-      issue_class = c("harmonization", "source"), class_basis = c("computed", "override")
+      record_pk = c(
+        "350002", "magp_plot_meas_12", "magp_plot_meas_20", "magp_tree_meas_100", "magp_plots_7",
+        "magp_plots_14", "magp_tree_cond_200", "magp_plot_meas_1", "magp_subplot_meas_1",
+        "magp_subplot_meas_2", "magp_trees_1", "magp_trees_1", "magp_tree_meas_1",
+        "magp_tree_meas_9"
+      ),
+      rule_id = c(
+        "date_unparseable", rep("code_not_in_list", 3L), rep("value_above_max", 2L), "fk_orphan",
+        rep("key_incoherent", 7L)
+      ),
+      magp_contributor_id = c(
+        "100", "100", "110", "110", "100", "110", "*", rep("110", 3L), rep("100", 4L)
+      ),
+      issue_class = c(
+        "harmonization", "unclassified", "source", "source", "unclassified", "unclassified",
+        rep("harmonization", 8L)
+      ),
+      class_basis = c("computed", "default", "override", "override", rep("default", 10L))
     )
   )
   # The inputs rows (D21.13): each table's with the delivery's file and hash and the engine's
@@ -257,15 +316,22 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
   expect_equal(caught$build[c("lang", "row_cap", "example_cap", "cell_cap")], settings)
   expect_identical(caught$build$text, magp_texts())
   expect_identical(caught$build$lineage, raw)
-  # Each open issue's class in its own contributor's CSV.
+  # Each open issue's class in its own contributor's CSV, but for those marked
+  # reaches_other_unit, which are in neither contributor's (D18.89). The CSV sorts as the report
+  # does, so both sides are put in the records' order.
   for (unit in c("100", "110")) {
     csv <- data.table::fread(
       file.path(run_dir, "tables", paste0(unit, "_issues.csv")),
       encoding = "UTF-8", colClasses = "character"
     )
+    shown <- csv[csv$status == "open", c("record_pk", "rule_id", "issue_class")]
+    filed <- open[
+      open$magp_contributor_id == unit & !open$reaches_other_unit,
+      c("record_pk", "rule_id", "issue_class")
+    ]
     expect_equal(
-      csv[csv$status == "open", c("rule_id", "issue_class")],
-      open[open$magp_contributor_id == unit, c("rule_id", "issue_class")]
+      shown[order(shown$record_pk, shown$rule_id)], filed[order(filed$record_pk, filed$rule_id)],
+      info = unit
     )
   }
   # Section 1 of each contributor's report names the delivery's file and hash, and lists only
@@ -287,6 +353,129 @@ test_that("a delivery's run: its folder, inputs, times, keys, classes and report
       expect_false(any(grepl(shown_as_table(name), html, fixed = TRUE)), info = paste(unit, name))
     }
     expect_equal(any(grepl("q-raw-110", html, fixed = TRUE)), unit == "110", info = unit)
+  }
+  # Plan 13's confidentiality test, on the same run's files (D21.18 Q7, D21.37).
+  units <- c("100", "110")
+  expect_identical(split_units(results$metadata$run$report_units), units)
+  # Each unit's surrogate keys: every record's primary key in the clean example, its unit read
+  # through its chain of parents. The unit values themselves are checked apart, below.
+  parent <- c(
+    magp_design_frames = "magp_designs", magp_sites = "magp_datasets",
+    magp_site_dist = "magp_sites", magp_site_treat = "magp_sites",
+    magp_site_visits = "magp_sites", magp_plots = "magp_sites", magp_subplots = "magp_plots",
+    magp_plot_meas = "magp_plots", magp_subplot_meas = "magp_subplots",
+    magp_trees = "magp_subplots", magp_tree_meas = "magp_trees",
+    magp_tree_cond = "magp_tree_meas", magp_tree_age = "magp_tree_meas",
+    magp_tally_trees = "magp_subplot_meas"
+  )
+  owner <- function(table) {
+    rows <- magp_example[[table]]
+    if (!table %in% names(parent)) {
+      return(rows[["magp_contributor_id"]])
+    }
+    up <- parent[[table]]
+    key <- pk_of(up)
+    owner(up)[match(rows[[key]], magp_example[[up]][[key]])]
+  }
+  keyed <- c("magp_datasets", "magp_designs", names(parent))
+  expect_setequal(c(keyed, "magp_contributors"), names(magp_example))
+  key <- unlist(lapply(keyed, function(table) {
+    as.character(magp_example[[table]][[pk_of(table)]])
+  }))
+  key_unit <- unlist(lapply(keyed, owner))
+  expect_false(anyNA(key_unit))
+  keys <- split(key, key_unit)
+  # Whole tokens: runs of letters, digits, "_", "." and "-", split at markup, spaces, "=", ";"
+  # and every other character, a "." ending a sentence dropped. A unit's files hold the tokens
+  # of its HTML, the whole cells of its CSV and each cell's tokens, so a key inside a cell such
+  # as "magp_plot_id=magp_plots_9" counts, and magp_plots_1 never matches inside magp_plots_10
+  # (D21.18 Q7).
+  tokens <- function(text) {
+    found <- unlist(strsplit(text, "[^A-Za-z0-9_.-]+"), use.names = FALSE)
+    found <- gsub("^[.]+|[.]+$", "", found)
+    unique(found[nzchar(found)])
+  }
+  seen <- lapply(structure(units, names = units), function(unit) {
+    page <- paste(
+      readLines(file.path(run_dir, "reports", paste0(unit, ".html")), encoding = "UTF-8"),
+      collapse = "\n"
+    )
+    csv <- data.table::fread(
+      file.path(run_dir, "tables", paste0(unit, "_issues.csv")),
+      colClasses = "character", encoding = "UTF-8"
+    )
+    cells <- unlist(csv, use.names = FALSE)
+    list(page = page, cells = cells, held = unique(c(tokens(page), tokens(cells), cells)))
+  })
+  run_issues <- data.table::fread(
+    file.path(run_dir, "tables", "issues.csv"),
+    colClasses = "character", encoding = "UTF-8"
+  )
+  # Presence: each own issue's strings are whole cells of its unit's CSV, the unit value among
+  # them, and 110's raw value a token of its section 3.
+  own <- list(
+    "100" = c("magp_plots_7", "magp_plot_meas_12"),
+    "110" = c("magp_plots_14", "magp_tree_meas_100")
+  )
+  carried <- c(
+    "record_pk", "value", "expected", "provider_key", "magp_contributor_id", "jurisdiction",
+    "magp_dataset_id", "magp_plot_id", "fingerprint"
+  )
+  for (unit in units) {
+    rows <- run_issues[run_issues$record_pk %chin% own[[unit]]]
+    expect_setequal(rows$record_pk, own[[unit]])
+    expect_identical(unique(rows$magp_contributor_id), unit)
+    expect_identical(unique(rows$reaches_other_unit), "FALSE")
+    strings <- unlist(rows[, carried, with = FALSE], use.names = FALSE)
+    strings <- strings[!is.na(strings) & nzchar(strings)]
+    expect_identical(setdiff(strings, seen[[unit]]$cells), character(), info = unit)
+  }
+  actions <- regmatches(
+    seen[["110"]]$page,
+    regexpr("(?s)<section id=\"actions\">.*?</section>", seen[["110"]]$page, perl = TRUE)
+  )
+  expect_true("RAW-SP-110" %chin% tokens(actions))
+  # Absence: neither of a unit's files holds the other unit's surrogate keys, planted codes or
+  # raw value; the unit values as whole CSV cells only, since a count in the HTML can read as
+  # one.
+  planted <- list("100" = "QX9", "110" = c("QZ7", "RAW-SP-110"))
+  for (unit in units) {
+    other <- setdiff(units, unit)
+    expect_identical(
+      intersect(c(keys[[other]], planted[[other]]), seen[[unit]]$held), character(),
+      info = unit
+    )
+    expect_true(unit %chin% seen[[unit]]$cells)
+    expect_false(other %chin% seen[[unit]]$cells)
+  }
+  # (A)'s and (B)'s issues, their records' measurements' among them, and the "*" record's are
+  # in the run's own issues table, (A)'s filed under 100 and (B)'s under 110, both marked
+  # reaches_other_unit, the "*" record's under "*"; none of them is in either unit's files.
+  measured <- tables$magp_tree_meas$magp_treemeas_id[
+    tables$magp_tree_meas$magp_tree_id == "magp_trees_1"
+  ]
+  parts <- tables$magp_subplot_meas$magp_subpmeas_id[
+    tables$magp_subplot_meas$magp_plotmeas_id == "magp_plot_meas_1"
+  ]
+  a_rows <- run_issues$record_pk %chin% c("magp_trees_1", measured)
+  b_rows <- run_issues$record_pk %chin% c("magp_plot_meas_1", parts)
+  star_rows <- run_issues$record_pk == "magp_tree_cond_200"
+  expect_true(all(c("magp_trees_1", "magp_plot_meas_1") %chin% run_issues$record_pk))
+  expect_identical(unique(run_issues$magp_contributor_id[a_rows]), "100")
+  expect_identical(unique(run_issues$magp_contributor_id[b_rows]), "110")
+  expect_identical(unique(run_issues$reaches_other_unit[a_rows | b_rows]), "TRUE")
+  expect_identical(run_issues$magp_contributor_id[star_rows], "*")
+  crossing <- a_rows | b_rows | star_rows
+  for (unit in units) {
+    expect_identical(
+      intersect(c(run_issues$record_pk[crossing], "magp_tree_meas_999"), seen[[unit]]$held),
+      character(),
+      info = unit
+    )
+    expect_identical(
+      intersect(run_issues$fingerprint[crossing], seen[[unit]]$cells), character(),
+      info = unit
+    )
   }
 })
 
