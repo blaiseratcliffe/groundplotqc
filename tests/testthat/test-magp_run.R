@@ -437,8 +437,10 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   expect_true("RAW-SP-110" %chin% tokens(actions))
   # Absence: neither of a unit's files holds the other unit's surrogate keys or planted values
   # (codes, slope or aspect, date text, raw value); the unit values as whole CSV cells only,
-  # since a count in the HTML can read as one. The tokens split at spaces, so "not a date" is
-  # found only as a whole CSV cell.
+  # since a count in the HTML can read as one. The keys and values are looked for as whole HTML
+  # tokens, whole CSV cells and CSV cells' tokens. The tokens split at spaces, so a value with
+  # spaces ("not a date") is also looked for as a fixed substring of the HTML text and of each
+  # CSV cell (D21.50).
   planted <- list(
     "100" = c("QX9", "1234.5", "not a date"), "110" = c("QZ7", "RAW-SP-110", "QQ", "456.5")
   )
@@ -448,6 +450,10 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
       intersect(c(keys[[other]], planted[[other]]), seen[[unit]]$held), character(),
       info = unit
     )
+    for (phrase in planted[[other]][grepl(" ", planted[[other]], fixed = TRUE)]) {
+      expect_false(grepl(phrase, seen[[unit]]$page, fixed = TRUE), info = paste(unit, phrase))
+      expect_false(any(grepl(phrase, seen[[unit]]$cells, fixed = TRUE)), info = paste(unit, phrase))
+    }
     expect_true(unit %chin% seen[[unit]]$cells)
     expect_false(other %chin% seen[[unit]]$cells)
   }
