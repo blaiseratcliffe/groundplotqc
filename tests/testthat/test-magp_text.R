@@ -45,7 +45,18 @@ test_that("MAGPlot's design candidate rows override the engine's when given as t
   }
 })
 
-# The four tests above check the shipped file's rows (D18.54); the tests below read planted
+# The close's text pass (D21.56)
+test_that("MAGPlot's report_reason_no_matrix row overrides the engine's when given as text", {
+  texts <- magp_texts()
+  row <- texts$text[texts$text_id == "report_reason_no_matrix" & texts$lang == "en"]
+  expect_length(row, 1L)
+  # The words aren't pinned: only that the table's row is the one used, and differs.
+  overridden <- report_text("report_reason_no_matrix", text = texts)
+  expect_equal(overridden, row)
+  expect_false(identical(overridden, report_text("report_reason_no_matrix")))
+})
+
+# The tests above check the shipped file's rows (D18.54); the tests below read planted
 # files through magp_texts().
 
 test_that("magp_texts hands on a clean file's rows, checked", {
