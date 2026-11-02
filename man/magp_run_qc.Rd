@@ -31,8 +31,9 @@ issues' group columns: the run's \code{magp_contributor_id}, \code{jurisdiction}
 \item{lineage}{\code{NULL}, or the provider's raw values of the cells the pipeline changed: a
 data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
 \code{column_name}, \code{raw_value} and \code{raw_source}. The classes read it as evidence, and each
-contributor's report shows a listed cell's raw value beside its issue, as
-\code{\link[=gpq_build_reports]{gpq_build_reports()}} does.}
+contributor's report shows a listed cell's raw value beside its issue among the issues to
+act on, where the record's key is given and, written as text, matches no other record's in
+its table, as \code{\link[=gpq_build_reports]{gpq_build_reports()}} does.}
 
 \item{pipeline_fill}{\code{NULL}, or the cells the pipeline's missing-value fill wrote: a
 data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
@@ -68,15 +69,15 @@ Otherwise the run checks Layers 0 to 4, with MAGPlot's group columns \code{magp_
 \code{jurisdiction} and \code{magp_dataset_id} and its problem unit, the plot (\code{magp_plot_id} of
 \code{magp_plots}). It then gives each issue its provider key, from its contributor's lineage
 spec and Ontario's age-tree flag, and its class, from your \code{overrides} first, then from the
-evidence: the columns MAGPlot's pipeline computes, its translation tables' provider codes,
-\code{lineage} and \code{pipeline_fill}. It writes the results and the run metadata, and with
-\code{report = TRUE} builds the reports.
+evidence: the columns MAGPlot's pipeline computes, \code{pipeline_fill}, and \code{lineage} together
+with MAGPlot's translation tables' provider codes. It writes the results and the run
+metadata, and with \code{report = TRUE} builds the reports.
 
 Pre-flight checks \code{overrides}, \code{lineage} and \code{pipeline_fill}, and the run then reads them as
 \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} reads them, before any check. The run stops there wherever
-\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} would on these inputs, such as on an \code{overrides} table that lacks
-one of its own columns or has a column that is neither its own nor one of the issues' group
-columns, or on a cell that \code{lineage} or \code{pipeline_fill} lists twice.
+\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} would on an input that pre-flight lets pass, such as an \code{overrides}
+column that is an attribute of the specification but not one of the issues' group columns,
+or a cell that \code{lineage} or \code{pipeline_fill} lists twice.
 
 In \code{metadata/run.csv}, \code{run_start} is when the run started and \code{run_end} is set just before
 the results are written: the time between them covers loading the tables, pre-flight, the
@@ -85,9 +86,11 @@ checks, the provider keys and the classes, not the writing or the reports.
 In \code{metadata/inputs.csv}, each table's row (\verb{tables:<name>}) names the delivery's \code{.Rdata}
 file and its SHA-256, with the table's row count as its detail. A delivery that holds
 \code{magp_meta} adds a row with the input \code{magp_meta}, naming the same file and hash;
-\code{magp_meta} itself is never checked. Tables given as a plain named list are recorded as "in
-memory", with no hash. Each run input that classification is given adds a row after these,
-with the input \code{overrides}, \code{filled} (your \code{pipeline_fill}), \code{lineage}, \code{computed} or
+\code{magp_meta} itself is never checked. These rows name the file and its hash even for a table
+you added to \code{magp_read_delivery()}'s result, replaced in it or edited in it before the run,
+so they don't show which tables you changed. Tables given as a plain named list are recorded
+as "in memory", with no hash. Each run input that classification is given adds a row after
+these, with the input \code{overrides}, \code{filled} (your \code{pipeline_fill}), \code{lineage}, \code{computed} or
 \code{crosswalk} and the rows classification reads from it as its detail. A CSV file you gave is
 recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
 hash, and so are MAGPlot's own \code{computed} and \code{crosswalk}, which every run has.

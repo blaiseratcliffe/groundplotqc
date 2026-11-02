@@ -28,15 +28,15 @@
 #' `jurisdiction` and `magp_dataset_id` and its problem unit, the plot (`magp_plot_id` of
 #' `magp_plots`). It then gives each issue its provider key, from its contributor's lineage
 #' spec and Ontario's age-tree flag, and its class, from your `overrides` first, then from the
-#' evidence: the columns MAGPlot's pipeline computes, its translation tables' provider codes,
-#' `lineage` and `pipeline_fill`. It writes the results and the run metadata, and with
-#' `report = TRUE` builds the reports.
+#' evidence: the columns MAGPlot's pipeline computes, `pipeline_fill`, and `lineage` together
+#' with MAGPlot's translation tables' provider codes. It writes the results and the run
+#' metadata, and with `report = TRUE` builds the reports.
 #'
 #' Pre-flight checks `overrides`, `lineage` and `pipeline_fill`, and the run then reads them as
 #' [gpq_classify_issues()] reads them, before any check. The run stops there wherever
-#' [gpq_classify_issues()] would on these inputs, such as on an `overrides` table that lacks
-#' one of its own columns or has a column that is neither its own nor one of the issues' group
-#' columns, or on a cell that `lineage` or `pipeline_fill` lists twice.
+#' [gpq_classify_issues()] would on an input that pre-flight lets pass, such as an `overrides`
+#' column that is an attribute of the specification but not one of the issues' group columns,
+#' or a cell that `lineage` or `pipeline_fill` lists twice.
 #'
 #' In `metadata/run.csv`, `run_start` is when the run started and `run_end` is set just before
 #' the results are written: the time between them covers loading the tables, pre-flight, the
@@ -45,9 +45,11 @@
 #' In `metadata/inputs.csv`, each table's row (`tables:<name>`) names the delivery's `.Rdata`
 #' file and its SHA-256, with the table's row count as its detail. A delivery that holds
 #' `magp_meta` adds a row with the input `magp_meta`, naming the same file and hash;
-#' `magp_meta` itself is never checked. Tables given as a plain named list are recorded as "in
-#' memory", with no hash. Each run input that classification is given adds a row after these,
-#' with the input `overrides`, `filled` (your `pipeline_fill`), `lineage`, `computed` or
+#' `magp_meta` itself is never checked. These rows name the file and its hash even for a table
+#' you added to `magp_read_delivery()`'s result, replaced in it or edited in it before the run,
+#' so they don't show which tables you changed. Tables given as a plain named list are recorded
+#' as "in memory", with no hash. Each run input that classification is given adds a row after
+#' these, with the input `overrides`, `filled` (your `pipeline_fill`), `lineage`, `computed` or
 #' `crosswalk` and the rows classification reads from it as its detail. A CSV file you gave is
 #' recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
 #' hash, and so are MAGPlot's own `computed` and `crosswalk`, which every run has.
@@ -76,8 +78,9 @@
 #' @param lineage `NULL`, or the provider's raw values of the cells the pipeline changed: a
 #'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
 #'   `column_name`, `raw_value` and `raw_source`. The classes read it as evidence, and each
-#'   contributor's report shows a listed cell's raw value beside its issue, as
-#'   [gpq_build_reports()] does.
+#'   contributor's report shows a listed cell's raw value beside its issue among the issues to
+#'   act on, where the record's key is given and, written as text, matches no other record's in
+#'   its table, as [gpq_build_reports()] does.
 #' @param pipeline_fill `NULL`, or the cells the pipeline's missing-value fill wrote: a
 #'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
 #'   `column_name` and `written_value`, which the classes read as their evidence `filled`.
