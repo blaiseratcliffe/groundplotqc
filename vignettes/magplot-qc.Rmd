@@ -41,8 +41,9 @@ save(list = names(delivery), envir = list2env(delivery), file = path)
 `magp_run_qc()` takes the file's path and the folder to put the run's folder in. Given a path,
 it loads the tables itself and lets them go once it no longer needs them, so a large delivery's
 run uses the least memory. MAGPlot's bundled specification has known pre-flight warnings, so
-the run warns; the run's `reports/preflight.html` lists them. The warning gives the page's full
-path, here in a temporary folder.
+the run warns; the run's `reports/preflight.html` lists them. The warning gives the page's
+path: here a path in a temporary folder on the machine that built this article, and in your
+run, a path inside the folder you gave.
 
 ```{r}
 output <- tempfile("runs")
@@ -51,12 +52,14 @@ results <- magp_run_qc(path, output)
 
 ## Where the files go
 
-The run writes a folder named by its run ID inside the folder given. `metadata/` records the
-run: its inputs, settings, rules, pre-flight's findings and the specification's manifest.
-`tables/` holds the run's results, issues and corrections, and each contributor's issues CSV.
-`reports/` holds pre-flight's page and each contributor's report. Only a contributor's
-`reports/<contributor>.html` and `tables/<contributor>_issues.csv` are for that contributor;
-everything else in the folder is MAGPlot's own.
+The run writes a folder named by its run ID inside the folder given. `metadata/` holds the
+run's own record and its inputs, settings, rules, pre-flight's findings, the specification's
+manifest, the clashes between the specification's files that precedence settled, and the
+checks the run was meant to report and didn't. `tables/` holds the run's results, issues and
+corrections, and each contributor's issues CSV. `reports/` holds pre-flight's page and each
+contributor's report. Only a contributor's `reports/<contributor>.html` and
+`tables/<contributor>_issues.csv` are for that contributor; everything else in the folder is
+MAGPlot's own.
 
 ```{r}
 run_dir <- file.path(output, results$metadata$run$run_id)
