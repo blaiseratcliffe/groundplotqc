@@ -17,7 +17,8 @@
 # none (delete a folder to have it written again). For the defect run, next, MAGPlot's whole
 # run from bench/data/<scale>_defects.Rdata, which holds the defect tables, each its own object
 # named as its table, written first when the file is missing (delete it to have it written
-# again). Then, on the tables built in memory, one stage each:
+# again, and delete it after a run stopped while writing it, which leaves a cut file). Then,
+# on the tables built in memory, one stage each:
 #   run_csv    gpq_check_conformance() on the CSV paths: the read, the mark scan and the checks;
 #   run_qc     the defect run only: magp_run_qc() given the .Rdata's path, from the load to the
 #              reports (D21.7). It runs before `build`, once the CSV run's result is released
