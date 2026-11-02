@@ -36,9 +36,10 @@ in its own unit's report only, and only where the record's key is given and, wri
 text, matches no other record's in its table.}
 
 \item{lang, row_cap, example_cap, cell_cap}{The reports' language (\code{lang}) and caps: the most
-bars in a chart and rows in a table of checks, issues or reasons (\code{row_cap}), examples per
-check (\code{example_cap}) and characters of delivered text per cell (\code{cell_cap}). Each \code{NULL}
-takes the run's rule set, then the option, then the built-in value (see
+bars in a chart (the chart by severity always has its four) and rows in a table of checks,
+issues or reasons (\code{row_cap}), examples per check (\code{example_cap}) and characters of
+delivered text per chart label or cell of a table of checks or issues (\code{cell_cap}). Each
+\code{NULL} takes the run's rule set, then the option, then the built-in value (see
 \link{groundplotqc_options}); a value given here wins.}
 
 \item{text}{\code{NULL}, or a table of report text with the columns \code{text_id}, \code{lang} and
@@ -97,10 +98,12 @@ provider's CSV, a text cell that starts with =, +, @, a tab or a carriage return
 where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
 shows it as text instead of running it as a formula. \code{reaches_other_unit} isn't written.
 
-Charts show at most \code{row_cap} bars, and tables of checks, issues and reasons at most
-\code{row_cap} rows and \code{example_cap} examples per check, and text longer than \code{cell_cap}
-characters is cut and ends with an ellipsis. The issues CSV has every issue, with its text
-in full.
+A chart shows at most \code{row_cap} bars, except the chart by severity, which always shows its
+four. Tables of checks, issues and reasons show at most \code{row_cap} rows and \code{example_cap}
+examples per check. In a chart's labels and in the tables of checks and issues, delivered
+text, such as a value, a key, a record ID, or a table or column name, longer than \code{cell_cap}
+characters is cut and ends with an ellipsis; a check's examples are cut together, as one
+text. The issues CSV has every issue, with its text in full.
 }
 \examples{
 # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.

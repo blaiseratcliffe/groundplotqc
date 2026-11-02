@@ -270,10 +270,12 @@ unit_file_name <- function(units) {
 #' where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
 #' shows it as text instead of running it as a formula. `reaches_other_unit` isn't written.
 #'
-#' Charts show at most `row_cap` bars, and tables of checks, issues and reasons at most
-#' `row_cap` rows and `example_cap` examples per check, and text longer than `cell_cap`
-#' characters is cut and ends with an ellipsis. The issues CSV has every issue, with its text
-#' in full.
+#' A chart shows at most `row_cap` bars, except the chart by severity, which always shows its
+#' four. Tables of checks, issues and reasons show at most `row_cap` rows and `example_cap`
+#' examples per check. In a chart's labels and in the tables of checks and issues, delivered
+#' text, such as a value, a key, a record ID, or a table or column name, longer than `cell_cap`
+#' characters is cut and ends with an ellipsis; a check's examples are cut together, as one
+#' text. The issues CSV has every issue, with its text in full.
 #'
 #' @param results A `gpq_results` object, such as [gpq_check_conformance()] returns, its issues
 #'   classed by [gpq_classify_issues()] and its run written to `output_dir` by
@@ -290,9 +292,10 @@ unit_file_name <- function(units) {
 #'   in its own unit's report only, and only where the record's key is given and, written as
 #'   text, matches no other record's in its table.
 #' @param lang,row_cap,example_cap,cell_cap The reports' language (`lang`) and caps: the most
-#'   bars in a chart and rows in a table of checks, issues or reasons (`row_cap`), examples per
-#'   check (`example_cap`) and characters of delivered text per cell (`cell_cap`). Each `NULL`
-#'   takes the run's rule set, then the option, then the built-in value (see
+#'   bars in a chart (the chart by severity always has its four) and rows in a table of checks,
+#'   issues or reasons (`row_cap`), examples per check (`example_cap`) and characters of
+#'   delivered text per chart label or cell of a table of checks or issues (`cell_cap`). Each
+#'   `NULL` takes the run's rule set, then the option, then the built-in value (see
 #'   [groundplotqc_options]); a value given here wins.
 #' @param text `NULL`, or a table of report text with the columns `text_id`, `lang` and
 #'   `text`, whose rows stand in for the package's rows of the same `text_id` and `lang`. A
