@@ -1,5 +1,6 @@
 # Times the conformance run on MAGPlot-shaped synthetic tables, stage by stage, with each
-# stage's peak memory (plan 16.1, 16.3; D15.38, D17.7, D17.8, D17.10, D17.21, D17.23):
+# stage's peak memory, and on the defect run MAGPlot's whole run, magp_run_qc() (plan 16.1,
+# 16.3; D15.38, D17.7, D17.8, D17.10, D17.21, D17.23, D21.7, D21.11):
 #
 #   Rscript bench/run.R <scale> [variant]
 #
@@ -9,12 +10,24 @@
 # starts itself once per variant, with a third argument, the file to write that variant's rows
 # to, and binds their rows. A variant named runs alone, in this session.
 #
-# For each variant, first the run on its CSV files, reading included, as MAGPlot runs
-# (D17.21): bench/generate.R's write_tables() writes them to bench/data/<scale>/ (the clean
-# base), bench/data/<scale>_many_groups/ and bench/data/<scale>_defects/ first when the folder
-# holds none (delete a folder to have it written again). Then, on the tables built in memory,
-# one stage each:
+# For each variant, first the run on its CSV files, reading included, as an engine caller with
+# CSV files runs it (D17.21; magp_run_qc() reads an .Rdata, D21.11): bench/generate.R's
+# write_tables() writes them to bench/data/<scale>/ (the clean base),
+# bench/data/<scale>_many_groups/ and bench/data/<scale>_defects/ first when the folder holds
+# none (delete a folder to have it written again). For the defect run, next, MAGPlot's whole
+# run from bench/data/<scale>_defects.Rdata, which holds the defect tables, each its own object
+# named as its table, written first when the file is missing (delete it to have it written
+# again). Then, on the tables built in memory, one stage each:
 #   run_csv    gpq_check_conformance() on the CSV paths: the read, the mark scan and the checks;
+#   run_qc     the defect run only: magp_run_qc() given the .Rdata's path, from the load to the
+#              reports (D21.7). It runs before `build`, once the CSV run's result is released
+#              and any tables built to write the .Rdata are removed, so its peak counts no
+#              table but those the run loads itself and drops before classifying (D21.18):
+#              16.1 holds it under 8 GB at 1x, and its seconds are read against 15 minutes
+#              (Layers 0 to 4). Its row's `report_mb` is the largest provider report's, which
+#              isn't the `report` stage's measure of one report: this run's issues are
+#              classified with MAGPlot's evidence and that stage's with none, so their
+#              sections differ (0.075 against 0.073 at 0.01x);
 #   build      fx_magp_scaled(), timed but not counted against 16.1;
 #   mark_scan  validate_tables(), the scan of the tables for text marked as bytes (m33);
 #   run        gpq_check_conformance() on the tables, which makes the mark scan itself, so
@@ -27,8 +40,8 @@
 # tests/testthat/helper-fixtures.R (MAGPlot's spec and rule set, the group columns and the
 # problem unit, the pre-flight warning muffled), which takes fixtures only, not paths. A
 # stage's peak is gc()'s "max used", in Mb, from a reset at its start. One CSV per run goes
-# to bench/results/<UTC time>_<scale>x.csv, each variant's CSV run first, its seconds rounded
-# to three decimals.
+# to bench/results/<UTC time>_<scale>x.csv, each variant's CSV run first and the defect run's
+# run_qc next, its seconds rounded to three decimals.
 
 source(file.path("bench", "generate.R"))
 
@@ -96,10 +109,42 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
     csv_row <- stage_row("run_csv", from_csv, NA_integer_, from_csv$value)
     rm(from_csv)
     invisible(gc())
+    # MAGPlot's whole run, given the defect tables' .Rdata (D21.7, D21.21), before any table is
+    # built in this session: tables built to write the file are removed first, and the run's
+    # result and folder once its row is made, so no later stage holds them.
+    qc_row <- NULL
+    if (variant == "defects") {
+      rdata <- paste0(folder, ".Rdata")
+      if (!file.exists(rdata)) {
+        saved <- do.call(env$fx_magp_scaled, c(list(scale), shape))
+        save(list = names(saved), envir = list2env(saved), file = rdata)
+        rm(saved)
+        invisible(gc())
+      }
+      qc_output <- tempfile("bench_runs")
+      qc <- time_stage(withCallingHandlers(
+        magp_run_qc(rdata, qc_output),
+        gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+      ))
+      qc_pages <- list.files(
+        file.path(qc_output, qc$value$metadata$run$run_id, "reports"),
+        pattern = "[.]html$", full.names = TRUE
+      )
+      # The largest provider report: pre-flight's page, which the run writes too, isn't one.
+      qc_pages <- qc_pages[basename(qc_pages) != "preflight.html"]
+      qc_mb <- if (length(qc_pages) > 0L) max(file.size(qc_pages)) / 2^20 else NA_real_
+      qc_row <- stage_row("run_qc", qc, NA_integer_, qc$value, report_mb = qc_mb)
+      rm(qc)
+      unlink(qc_output, recursive = TRUE)
+      invisible(gc())
+    }
     built <- time_stage(do.call(env$fx_magp_scaled, c(list(scale), shape)))
     tables <- built$value
     n_rows <- sum(vapply(tables, nrow, integer(1)))
     data.table::set(csv_row, j = "n_rows", value = n_rows)
+    if (!is.null(qc_row)) {
+      data.table::set(qc_row, j = "n_rows", value = n_rows)
+    }
     mark_scan <- time_stage(validate_tables(tables))
     run <- time_stage(check(tables))
     # Classified by reference with no evidence before the write, as gpq_build_reports() asks
@@ -112,6 +157,7 @@ main <- function(args = commandArgs(trailingOnly = TRUE)) {
     report_mb <- if (length(pages) > 0L) max(file.size(pages)) / 2^20 else NA_real_
     data.table::rbindlist(list(
       csv_row,
+      qc_row,
       stage_row("build", built, n_rows),
       stage_row("mark_scan", mark_scan, n_rows),
       stage_row("run", run, n_rows, run$value),
