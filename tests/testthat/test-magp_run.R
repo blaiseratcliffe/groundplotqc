@@ -1,6 +1,6 @@
 # Tests for magp_run_qc(), MAGPlot's run end to end; and plan 13's confidentiality test end to
 # end, on a planted copy of magp_example run from its path (plan 3.2, 3.4, 9.5, 11.9, 13; D7.34,
-# D18.89, D21.3 to D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42). Synthetic data only:
+# D18.89, D21.3 to D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42, D21.69). Synthetic data only:
 # magp_example and copies of it, saved as a delivery's .Rdata by fx_magp_rdata() where a test
 # gives a path. A run on the whole of magp_example costs about 3 s, so one delivery run carries
 # most of the checks, the confidentiality test's among them (D20.3, D21.8, D21.37).
@@ -544,6 +544,44 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   # (D21.18 Q4).
   expect_false(anyNA(results$issues$issue_class))
   expect_equal(results$metadata$run$report_units, "100; 110")
+})
+
+test_that("a run's age-tree flags read each column as the run matches it (D21.69)", {
+  # The two tables the flags read, as a plain list: the other tables are missing, which Layer 0
+  # reports, and the run is cheaper.
+  tables <- lapply(magp_example[c("magp_trees", "magp_tree_meas")], data.table::copy)
+  trees <- tables$magp_trees
+  meas <- tables$magp_tree_meas
+  # One tree is an age tree: every measurement of it has tree_type "A".
+  age_tree <- trees$magp_tree_id[[1L]]
+  data.table::set(meas, which(meas$magp_tree_id == age_tree), "tree_type", "A")
+  # The flags of the tables under the dictionary's names, then the three columns the flags read
+  # delivered under names that differ in letter case or spaces, as the checks and decoding
+  # match them.
+  want <- age_tree_flags(tables)
+  data.table::setnames(trees, "magp_tree_id", "Magp_Tree_Id")
+  data.table::setnames(meas, c("magp_tree_id", "tree_type"), c("magp_tree_id ", "TREE_TYPE"))
+  # Decoding is mocked to take the flags the run hands it and stop the run there, so
+  # classification and writing don't run.
+  caught <- NULL
+  testthat::local_mocked_bindings(
+    gpq_decode_lineage = function(issues, tables, spec, key_col, table_map = NULL,
+                                  flags = NULL) {
+      caught <<- flags
+      stop("decoding reached")
+    }
+  )
+  output <- withr::local_tempdir()
+  expect_error(
+    withCallingHandlers(
+      magp_run_qc(tables, output, report = FALSE),
+      gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+    ),
+    "decoding reached"
+  )
+  flagged <- caught$magp_trees
+  expect_equal(flagged$magp_tree_id[flagged$age_tree == "Y"], age_tree)
+  expect_equal(caught, want)
 })
 
 test_that("inputs that classification can't take stop the run before any check (D21.4)", {

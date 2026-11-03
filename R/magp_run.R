@@ -254,8 +254,25 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   results$metadata$preflight <- preflight
   # Ontario's age trees on every run that has trees: decoding refuses a flag for a table not
   # given (W172), and a delivery may lack magp_trees, which Layer 0 reports (D21.3, D21.12,
-  # D21.28).
-  flags <- if ("magp_trees" %in% names(tables)) age_tree_flags(tables)
+  # D21.28). The flags read each column as the run matches it, by name, else by letter case and
+  # spaces, as the checks and decoding do (D21.69): the columns are handed on under the
+  # dictionary's names, by reference, and a column no attribute matched is left out.
+  matched_columns <- function(table, wanted) {
+    data <- tables[[table]]
+    if (!is.data.frame(data)) {
+      return(NULL)
+    }
+    own <- spec$attributes$attribute_name[spec$attributes$table_name == table]
+    column <- match_columns(names(data), own)$column[match(wanted, own)]
+    found <- !is.na(column)
+    structure(lapply(column[found], function(name) data[[name]]), names = wanted[found])
+  }
+  flags <- if ("magp_trees" %in% names(tables)) {
+    age_tree_flags(list(
+      magp_trees = matched_columns("magp_trees", "magp_tree_id"),
+      magp_tree_meas = matched_columns("magp_tree_meas", c("magp_tree_id", "tree_type"))
+    ))
+  }
   gpq_decode_lineage(
     results$issues, tables, spec,
     key_col = group_cols[[1L]], flags = flags

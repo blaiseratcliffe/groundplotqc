@@ -11,8 +11,9 @@
 #' matches no tree adds no row, and its broken link stays the foreign-key rules' to report
 #' (R1). Reads magp_trees.magp_tree_id, magp_tree_meas.magp_tree_id and
 #' magp_tree_meas.tree_type by reference (16.2); a table or column not given flags no tree
-#' "Y". `tables` is a named list of data.frames, as magp_read_delivery() returns it. Returns
-#' `list(magp_trees = data.table(magp_tree_id, age_tree))`.
+#' "Y". `tables` is a named list of data.frames, as magp_read_delivery() returns it, or of lists
+#' of the three columns, each under its attribute name, as magp_run_qc() hands them on (D21.69).
+#' Returns `list(magp_trees = data.table(magp_tree_id, age_tree))`.
 #' @noRd
 age_tree_flags <- function(tables) {
   trees <- tables[["magp_trees"]]
