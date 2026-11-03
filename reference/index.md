@@ -36,8 +36,12 @@
 
 - [`magp_example`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_example.md)
   : MAGPlot 2.0 example tables
+- [`magp_read_delivery()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_read_delivery.md)
+  : Read a MAGPlot 2.0 delivery
 - [`magp_rules()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.md)
   : MAGPlot 2.0's rule set
+- [`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+  : Run MAGPlot's QC on one delivery
 - [`magp_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.md)
   : MAGPlot 2.0's compiled specification
 

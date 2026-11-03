@@ -4,6 +4,7 @@
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/LICENSE.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/articles/generic-engine.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/articles/index.html</loc></url>
+<url><loc>https://blaiseratcliffe.github.io/groundplotqc/articles/magplot-qc.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/articles/specification.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/authors.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/index.html</loc></url>
@@ -23,7 +24,9 @@
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/index.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/magp_example.html</loc></url>
+<url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/magp_read_delivery.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/magp_rules.html</loc></url>
+<url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.html</loc></url>
 <url><loc>https://blaiseratcliffe.github.io/groundplotqc/reference/magp_spec.html</loc></url>
 </urlset>
 

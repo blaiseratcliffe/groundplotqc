@@ -41,60 +41,68 @@ rules <- magp_rules()
 rules$meta
 #>    rule_set_name version       date spec_version
 #>           <char>  <char>     <char>       <char>
-#> 1:   MAGPlot 2.0       3 2026-10-19     20261005
+#> 1:   MAGPlot 2.0       4 2026-10-30     20261005
 rules$settings
 #>                      setting
 #>                       <char>
 #>  1:                     lang
 #>  2:              example_cap
-#>  3:       column_level_min_n
-#>  4:            raw_na_policy
-#>  5:              rogue_codes
-#>  6:            unknown_codes
-#>  7:    coordinate_attributes
-#>  8:      code_set_max_values
-#>  9: code_set_skip_attributes
-#> 10:    code_set_skip_pattern
-#> 11:    design_geometry_table
-#> 12:       design_geometry_by
-#> 13:  design_geometry_columns
-#> 14:      subplot_label_table
-#> 15:    subplot_label_columns
-#> 16:   design_signature_table
-#> 17:      design_signature_by
-#> 18: design_signature_columns
+#>  3:                  row_cap
+#>  4:                 cell_cap
+#>  5:       column_level_min_n
+#>  6:            raw_na_policy
+#>  7:              rogue_codes
+#>  8:            unknown_codes
+#>  9:    coordinate_attributes
+#> 10:      code_set_max_values
+#> 11: code_set_skip_attributes
+#> 12:    code_set_skip_pattern
+#> 13:    design_geometry_table
+#> 14:       design_geometry_by
+#> 15:  design_geometry_columns
+#> 16:      subplot_label_table
+#> 17:    subplot_label_columns
+#> 18:   design_signature_table
+#> 19:      design_signature_by
+#> 20: design_signature_columns
+#>                      setting
+#>                       <char>
 #>                                                                                 value
 #>                                                                                <char>
 #>  1:                                                                                en
 #>  2:                                                                                 5
-#>  3:                                                                                10
-#>  4:                                                                            always
-#>  5:                                                                -999; UNK; NA; N/A
-#>  6:                                                                  species=UNKN.SPP
-#>  7:                                                 latitude; longitude; utm_e; utm_n
-#>  8:                                                                                25
-#>  9:                     meas_plots; meas_frames; temporal_extent; meas_cycle; subplot
-#> 10:                                 _id$|^comments$|name|_date$|^src_|^meas_subplots$
-#> 11:                                                                magp_design_frames
-#> 12:                                                           magp_design_id; subplot
-#> 13:                      plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf
-#> 14:                                                                     magp_subplots
-#> 15:                                                             magp_plot_id; subplot
-#> 16:                                                                magp_design_frames
-#> 17:                                                                    magp_design_id
-#> 18: frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf
+#>  3:                                                                               500
+#>  4:                                                                               100
+#>  5:                                                                                10
+#>  6:                                                                            always
+#>  7:                                                                -999; UNK; NA; N/A
+#>  8:                                                                  species=UNKN.SPP
+#>  9:                                                 latitude; longitude; utm_e; utm_n
+#> 10:                                                                                25
+#> 11:                     meas_plots; meas_frames; temporal_extent; meas_cycle; subplot
+#> 12:                                 _id$|^comments$|name|_date$|^src_|^meas_subplots$
+#> 13:                                                                magp_design_frames
+#> 14:                                                           magp_design_id; subplot
+#> 15:                      plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf
+#> 16:                                                                     magp_subplots
+#> 17:                                                             magp_plot_id; subplot
+#> 18:                                                                magp_design_frames
+#> 19:                                                                    magp_design_id
+#> 20: frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf
+#>                                                                                 value
+#>                                                                                <char>
 #>          type
 #>        <char>
 #>  1: character
 #>  2:   integer
 #>  3:   integer
-#>  4: character
-#>  5: character
+#>  4:   integer
+#>  5:   integer
 #>  6: character
 #>  7: character
-#>  8:   integer
+#>  8: character
 #>  9: character
-#> 10: character
+#> 10:   integer
 #> 11: character
 #> 12: character
 #> 13: character
@@ -103,4 +111,8 @@ rules$settings
 #> 16: character
 #> 17: character
 #> 18: character
+#> 19: character
+#> 20: character
+#>          type
+#>        <char>
 ```

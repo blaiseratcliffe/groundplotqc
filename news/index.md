@@ -1,6 +1,6 @@
 # Changelog
 
-## groundplotqc 0.0.0.9024 (development version)
+## groundplotqc 0.0.0.9031 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint
   configuration, continuous integration on Windows, macOS and Linux, and
@@ -383,8 +383,10 @@
   for print. What it says is unchanged.
 - Two new settings cap what a report
   [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
-  writes shows: `row_cap`, the rows of a table (500 by default), and
-  `cell_cap`, the characters of delivered text in a table cell (100 by
+  writes shows: `row_cap`, the bars of a chart (the chart by severity
+  always has its four) and the rows of a table of checks, issues or
+  reasons (500 by default), and `cell_cap`, the characters of delivered
+  text in a chart label or a cell of a table of checks or issues (100 by
   default), longer text being cut and ending with an ellipsis. A CSV is
   never capped or cut. Each resolves as `example_cap` does, from an
   argument, the rule set, its option (`groundplotqc.row_cap`,
@@ -410,3 +412,78 @@
   now stops at the run’s start if a group or key column is named
   `message` or `n_not_evaluated_own`, or starts with `key_`: the
   provider reports and their issues CSVs use those names.
+- In a report
+  [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  writes, each “By check” and “Each issue” table’s caption names its
+  section, and a “By check” table leaves out an Examples column that is
+  empty in every row. Table and column names in those tables and in the
+  chart of open issues by table are cut at `cell_cap`, as other
+  delivered text is. The guide says what a “(not linked)” bar counts
+  when a chart shows one. Printing a report opens every folded part, and
+  on a narrow screen section 1 shows each fact’s name above its value.
+- [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  now stops before it removes or writes any file when a row of `text`
+  uses a slot the package’s row of that text doesn’t have, as pre-flight
+  does. A report unit named COM0 or LPT0, in any letter case, has the
+  first character of its file names encoded, as COM1’s are: COM0’s
+  report is `%43OM0.html`.
+- A record whose own value in a group column, or in the problem unit’s
+  key, is blank, missing, a missing-value code or “\*”, or whose table
+  was given without that column, now tries the routes through the
+  foreign keys as a record of a table without the column does, so a
+  missing-value code such as “X” or “Z” no longer becomes a report unit
+  or a breakdown value; on MAGPlot’s tables, a site disturbance or
+  treatment with no dataset ID now takes its site’s dataset. The record
+  labels `src_id_duplicate` reads, the contributors
+  [`gpq_decode_lineage()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_decode_lineage.md)
+  reads through the keys and each issue’s `reaches_other_unit` follow
+  the same rule.
+- MAGPlot 2.0’s rule set gives the report caps `row_cap` (500) and
+  `cell_cap` (100), their built-in values, so a MAGPlot run’s settings
+  show both as set by the rule set. The rule set is now version 4.
+- New
+  [`magp_read_delivery()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_read_delivery.md)
+  reads a MAGPlot 2.0 delivery’s `.Rdata` file: its tables as
+  data.tables, any other data.frame in the file for the checks to
+  report, and `magp_meta` unchanged, with the file’s name and SHA-256.
+  It leaves out the file’s `dd` and `lkp` and any other object that
+  isn’t a data.frame.
+- [`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+  runs MAGPlot 2.0’s checks on one delivery from start to finish: given
+  [`magp_read_delivery()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_read_delivery.md)’s
+  result, the path of the delivery’s `.Rdata` file or a named list of
+  tables, it runs pre-flight and the checks of Layers 0 to 4, gives each
+  issue its provider key and class, writes the run folder and, by
+  default, builds each contributor’s report and issues CSV. A run that
+  pre-flight stops still records its contributors. Given the file or
+  [`magp_read_delivery()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_read_delivery.md)’s
+  result, the inputs metadata of a run that writes its results names the
+  delivery’s file and SHA-256 for every table.
+- [`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+  takes your `overrides` and the pipeline’s `lineage` and
+  `pipeline_fill`. Pre-flight checks them and, before any check, the run
+  reads them as
+  [`gpq_classify_issues()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_classify_issues.md)
+  does, so an overrides table it can’t use, or a cell listed twice,
+  stops the run at once. The classes use all three, and a contributor’s
+  report shows a listed cell’s raw value beside its issue among the
+  issues to act on, where the record’s key is given and, written as
+  text, matches no other record’s in its table, as
+  [`gpq_build_reports()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_build_reports.md)
+  does. The run’s `metadata/inputs.csv` gains a row for each of them
+  that you give, and for MAGPlot’s own `computed` and `crosswalk`
+  evidence.
+- A new article, “Running QC on MAGPlot 2.0”
+  ([`vignette("magplot-qc")`](https://blaiseratcliffe.github.io/groundplotqc/articles/magplot-qc.md)),
+  runs
+  [`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+  on `magp_example` saved as an `.Rdata` file, then shows where the
+  run’s files go, part of a contributor’s issues CSV and how to open the
+  reports.
+- Letter case in column names, and in file columns given as letters in
+  [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)’s
+  `origins`, is now folded in ASCII, whatever the session’s locale.
+  Before, in a Turkish or Azeri locale on Linux, a column `id` didn’t
+  match the attribute `ID`, and a file column given as `i` stopped
+  [`gpq_read_spec()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_read_spec.md)
+  with an error.

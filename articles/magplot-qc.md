@@ -1,0 +1,106 @@
+# Running QC on MAGPlot 2.0
+
+[`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+runs groundplotqc’s checks on a MAGPlot 2.0 delivery in one call. It
+reads the delivery’s `.Rdata` file, checks its tables against MAGPlot’s
+specification and rule set, gives each issue its class, and writes the
+run’s results with a report and an issues CSV for each contributor. This
+article runs it on `magp_example`, the package’s small synthetic
+delivery from two contributors, 100 and 110.
+
+## The delivery
+
+A delivery’s `.Rdata` file holds each table as its own object, named as
+its table. Here `magp_example`’s tables are saved that way to a
+temporary file, after two mistakes are put in contributor 100’s tree
+measurements: a diameter of 900 cm, past the dictionary’s maximum of
+500, and a crown class code that isn’t in its code list.
+
+``` r
+
+library(groundplotqc)
+delivery <- magp_example
+delivery$magp_tree_meas$dbh[2] <- 900
+delivery$magp_tree_meas$crown_class[3] <- "ZZ"
+path <- tempfile(fileext = ".Rdata")
+save(list = names(delivery), envir = list2env(delivery), file = path)
+```
+
+## The run
+
+[`magp_run_qc()`](https://blaiseratcliffe.github.io/groundplotqc/reference/magp_run_qc.md)
+takes the file’s path and the folder to put the run’s folder in. Given a
+path, it loads the tables itself and lets them go once it no longer
+needs them, so a large delivery’s run uses the least memory. MAGPlot’s
+bundled specification has known pre-flight warnings, so the run warns;
+the run’s `reports/preflight.html` lists them. The warning gives the
+page’s path: here a path in a temporary folder on the machine that built
+this article, and in your run, a path inside the folder you gave.
+
+``` r
+
+output <- tempfile("runs")
+results <- magp_run_qc(path, output)
+#> Warning: Pre-flight found 32 warning(s); see
+#> /tmp/RtmpCyMmAr/runs20722c1bf78d/20261103T175543Z_186c3e/reports/preflight.html.
+```
+
+## Where the files go
+
+The run writes a folder named by its run ID inside the folder given.
+`metadata/` holds the run’s own record and its inputs, settings, rules,
+pre-flight’s findings, the specification’s manifest, the clashes between
+the specification’s files that precedence settled, and the checks the
+run was meant to report and didn’t. `tables/` holds the run’s results,
+issues and corrections, and each contributor’s issues CSV. `reports/`
+holds pre-flight’s page and each contributor’s report. Only a
+contributor’s `reports/<contributor>.html` and
+`tables/<contributor>_issues.csv` are for that contributor; everything
+else in the folder is MAGPlot’s own.
+
+``` r
+
+run_dir <- file.path(output, results$metadata$run$run_id)
+list.files(run_dir, recursive = TRUE)
+#>  [1] "metadata/clashes.csv"       "metadata/inputs.csv"       
+#>  [3] "metadata/preflight.csv"     "metadata/rules.csv"        
+#>  [5] "metadata/run.csv"           "metadata/self_test.csv"    
+#>  [7] "metadata/settings.csv"      "metadata/spec_manifest.csv"
+#>  [9] "reports/100.html"           "reports/110.html"          
+#> [11] "reports/preflight.html"     "tables/100_issues.csv"     
+#> [13] "tables/110_issues.csv"      "tables/corrections.csv"    
+#> [15] "tables/issues.csv"          "tables/results.csv"
+```
+
+## A contributor’s issues
+
+Each contributor’s issues CSV lists every issue of its report, one per
+row, with each code as it was stored. Here are eight of its columns for
+contributor 100.
+
+``` r
+
+csv <- data.table::fread(
+  file.path(run_dir, "tables", "100_issues.csv"),
+  colClasses = "character", encoding = "UTF-8"
+)
+csv[, c(
+  "magp_contributor_id", "magp_dataset_id", "magp_plot_id", "table_name", "column_name",
+  "rule_id", "value", "expected"
+)]
+#>    magp_contributor_id magp_dataset_id magp_plot_id     table_name column_name          rule_id  value    expected
+#>                 <char>          <char>       <char>         <char>      <char>           <char> <char>      <char>
+#> 1:                 100          100.01 magp_plots_1 magp_tree_meas crown_class code_not_in_list     ZZ crown_class
+#> 2:                 100          100.01 magp_plots_1 magp_tree_meas         dbh  value_above_max    900         500
+```
+
+## The reports
+
+To read a contributor’s report, open `reports/<contributor>.html` in the
+run’s folder in a browser, here `reports/100.html`. Each report is one
+file that needs no internet connection.
+
+``` r
+
+utils::browseURL(file.path(run_dir, "reports", "100.html"))
+```

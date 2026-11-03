@@ -60,10 +60,11 @@ gpq_check_conformance(
 - group_cols:
 
   `NULL`, or the grouping columns, report unit first: results and issues
-  carry them under these names. A blank group value, or the text `"*"`,
-  counts as no value. A record that reaches only such values is grouped
-  under `"*"`; in the report-unit column, its records' issues go into no
-  provider's report in a run of several units.
+  carry them under these names. A group value that is blank, missing, a
+  missing-value code or the text `"*"` counts as no value. A record that
+  reaches only such values is grouped under `"*"`; in the report-unit
+  column, its records' issues go into no provider's report in a run of
+  several units.
 
 - problem_unit:
 
@@ -136,7 +137,10 @@ metadata:
 
 - `corrections`: an empty table.
 
-- `metadata`: the tables of `metadata/` in a run folder.
+- `metadata`: the tables of `metadata/` in a run folder. In its `run`
+  table, `run_end` is when this call ends: it covers pre-flight, reading
+  the tables and the checks, not what comes after, such as writing the
+  results.
 
 Write it with
 [`gpq_write_results()`](https://blaiseratcliffe.github.io/groundplotqc/reference/gpq_write_results.md).
@@ -225,15 +229,19 @@ rule fails on every checked record of a column in a group, and at least
 column-level issue; masked records sharing one root collapse the same
 way.
 
-A record's group values are read from its own table or, through the
-foreign keys, from a table that holds the column, shortest route first.
-Where a key on the way is missing, blank or a missing-value code, a
-table or column on the way isn't given, or the value found is blank,
-missing, a missing-value code or `"*"`, the next route is tried. A
-record no route reaches, or whose key on the way names no parent record,
-has `"*"` there. A group value marked latin1 is converted to UTF-8 and
-runs; one whose bytes aren't valid UTF-8 stops the run, naming the
-column, the table it is read from and its first such row.
+A group value, or a problem unit's key, that is blank, missing, a
+missing-value code or `"*"` is no value, whether it is the record's own
+or one reached through the keys. A record's group values, and its
+problem unit's key, are read from its own table where that table was
+given with the column and the record's value there is a value, and
+otherwise through the foreign keys from a table that holds the column,
+shortest route first. Where a key on the way is blank, missing or a
+missing-value code, a table or column on the way isn't given, or the
+value found is no value, the next route is tried. A record no route
+reaches, or whose key on the way names no parent record, has `"*"`
+there. A group value marked latin1 is converted to UTF-8 and runs; one
+whose bytes aren't valid UTF-8 stops the run, naming the column, the
+table it is read from and its first such row.
 
 Settings (each from the argument, the rule set, the option, or the
 built-in value, see

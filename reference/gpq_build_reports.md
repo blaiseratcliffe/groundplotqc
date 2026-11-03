@@ -58,10 +58,12 @@ gpq_build_reports(
 
 - lang, row_cap, example_cap, cell_cap:
 
-  The reports' language (`lang`) and caps: the most rows a table shows
-  (`row_cap`), examples per check (`example_cap`) and characters of
-  delivered text per cell (`cell_cap`). Each `NULL` takes the run's rule
-  set, then the option, then the built-in value (see
+  The reports' language (`lang`) and caps: the most bars in a chart (the
+  chart by severity always has its four) and rows in a table of checks,
+  issues or reasons (`row_cap`), examples per check (`example_cap`) and
+  characters of delivered text per chart label or cell of a table of
+  checks or issues (`cell_cap`). Each `NULL` takes the run's rule set,
+  then the option, then the built-in value (see
   [groundplotqc_options](https://blaiseratcliffe.github.io/groundplotqc/reference/groundplotqc_options.md));
   a value given here wins.
 
@@ -69,7 +71,9 @@ gpq_build_reports(
 
   `NULL`, or a table of report text with the columns `text_id`, `lang`
   and `text`, whose rows stand in for the package's rows of the same
-  `text_id` and `lang`.
+  `text_id` and `lang`. A row that uses a slot the package's row of its
+  text doesn't have stops the build before it removes or writes
+  anything.
 
 ## Value
 
@@ -95,15 +99,15 @@ One report and one CSV is built for each report unit `metadata/run.csv`
 lists, even a unit with no issue. An issue goes to its own unit's
 report. An issue of a check that checks whole tables or columns, with
 `"*"` as its unit and not marked `reaches_other_unit`, goes to every
-unit, and so does a results row that counts no records, such as a check
-that couldn't run because a table wasn't given. Any other issue or
-results row with `"*"` as its unit, a whole-column issue of records
-included, goes to no unit's report, and so does an issue the run marks
-`reaches_other_unit` (one holding a value read from another unit's
-records or from records with no unit). In a run of one unit, all of
-these go to that unit's report. A run with no group columns builds one
-report, `reports/report.html`, and one CSV, `tables/report_issues.csv`,
-holding every issue.
+unit, and so does a results row with `"*"` as its unit that comes from
+such a check or counts no records, such as a check that couldn't run
+because a table wasn't given. Any other issue or results row with `"*"`
+as its unit, a whole-column issue of records included, goes to no unit's
+report, and so does an issue the run marks `reaches_other_unit` (one
+holding a value read from another unit's records or from records with no
+unit). In a run of one unit, all of these go to that unit's report. A
+run with no group columns builds one report, `reports/report.html`, and
+one CSV, `tables/report_issues.csv`, holding every issue.
 
 Each provider's file name is its unit value, with every character other
 than an ASCII letter, a digit, "-", "\_" or "." written as % and its
@@ -131,9 +135,14 @@ carriage return, or with - where the cell isn't a number, is written
 with an apostrophe before it, so a spreadsheet shows it as text instead
 of running it as a formula. `reaches_other_unit` isn't written.
 
-Tables show at most `row_cap` rows and `example_cap` examples per check,
-and text longer than `cell_cap` characters is cut and ends with an
-ellipsis. The issues CSV has every issue, with its text in full.
+A chart shows at most `row_cap` bars, except the chart by severity,
+which always shows its four. Tables of checks, issues and reasons show
+at most `row_cap` rows and `example_cap` examples per check. In a
+chart's labels and in the tables of checks and issues, delivered text,
+such as a value, a key, a record ID, or a table or column name, longer
+than `cell_cap` characters is cut and ends with an ellipsis; a check's
+examples are cut together, as one text. The issues CSV has every issue,
+with its text in full.
 
 ## See also
 
