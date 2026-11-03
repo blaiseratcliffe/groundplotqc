@@ -15,14 +15,15 @@
 #' settings, each folded (D20.40)
 #'
 #' The facts, as a list: the report unit with its column (none without group columns, D20.29),
-#' the run ID, its start and finish in UTC, one row per input table with its file and SHA-256
-#' or, for a table given in memory or read from a connection, only how it came (D20.126), the
-#' rule set's name and version (none without a rule set), the package version, the git commit
-#' (or that there is none) and the R version. Then the specification files the run read from a
-#' file (file and date) and the resolved settings (value and the tier each came from; only the
-#' settings setting_definitions() names, a severity entry by its part before the colon,
-#' D20.68), each in a part folded until clicked. Never the run's list of units, its pre-flight,
-#' its clashes or the specification files' SHA-256 (D20.40).
+#' the run ID, its start and finish in UTC, one row per input table, the inputs' `tables:` rows
+#' only (never another input, such as a MAGPlot run's `magp_meta`, D21.13), with its file and
+#' SHA-256 or, for a table given in memory or read from a connection, only how it came
+#' (D20.126), the rule set's name and version (none without a rule set), the package version,
+#' the git commit (or that there is none) and the R version. Then the specification files the
+#' run read from a file (file and date) and the resolved settings (value and the tier each came
+#' from; only the settings setting_definitions() names, a severity entry by its part before the
+#' colon, D20.68), each in a part folded until clicked. Never the run's list of units, its
+#' pre-flight, its clashes or the specification files' SHA-256 (D20.40).
 #' @noRd
 section_header <- function(tables, text, settings) {
   lang <- settings$lang
@@ -41,8 +42,11 @@ section_header <- function(tables, text, settings) {
   # Each input table, recorded as "tables:<name>" (R/check_conformance.R): a file's name and
   # SHA-256, else only how the table came ("in memory" or a connection), never what else the
   # run recorded of it, such as its rows, the whole delivery's, or a connection's database table
-  # and driver (D20.126).
+  # and driver (D20.126). Only those rows: another input, such as a MAGPlot run's magp_meta row,
+  # isn't a table (D21.13).
   inputs <- metadata$inputs
+  is_table <- startsWith(inputs$input, "tables:")
+  inputs <- inputs[is_table]
   hashed <- !is.na(inputs$sha256)
   shown <- character(nrow(inputs))
   shown[hashed] <- report_text(
@@ -124,8 +128,9 @@ section_header <- function(tables, text, settings) {
 #' by class, three rows (D20.55); then bars by each breakdown column (the group columns after
 #' the report unit) and by table. A column-level issue counts once (D20.41). Breakdown values
 #' come from the issues, never the results (D20.23): "*" shows as W4, and any other value is
-#' cut at `cell_cap` (D20.39). A list of bars shows at most `row_cap` values, most issues
-#' first, with a line saying the issues CSV has them all (D20.90).
+#' cut at `cell_cap` (D20.39); a table's name in the chart by table is cut too, with no "*"
+#' swap (D20.134). A list of bars shows at most `row_cap` values, most issues first, with a
+#' line saying the issues CSV has them all (D20.90).
 #' @noRd
 section_glance <- function(tables, text, settings) {
   lang <- settings$lang
@@ -177,9 +182,13 @@ section_glance <- function(tables, text, settings) {
   )
   not_linked <- word("report_not_linked")
   # One chart of the open issues by a column's values, most issues first, then by value, "*"
-  # after the values with as many issues, at most row_cap values (D20.90); a group value is
-  # delivered text, so it is cut, and "*" shows as W4.
-  chart <- function(heading, values, delivered) {
+  # after the values with as many issues, at most row_cap values (D20.90); section_guide()
+  # finds a "(not linked)" bar (D20.135) from where "*" falls in this order, after the values
+  # with as many issues: change that rule and its own together, and the test ties them. Each
+  # value is cut: a group value is delivered text, and so is a table's name (a
+  # table_unexpected issue's is the delivery's own, D19.72; D20.134). In a chart by a breakdown
+  # column "*" shows as W4.
+  chart <- function(heading, values, breakdown) {
     if (length(values) == 0L) {
       return(character())
     }
@@ -192,9 +201,8 @@ section_glance <- function(tables, text, settings) {
     )]
     total <- nrow(counted)
     shown <- counted[seq_len(min(total, settings$row_cap))]
-    label <- shown$value
-    if (delivered) {
-      label <- cut_cell_text(label, settings$cell_cap) # D20.59: the cut's name
+    label <- cut_cell_text(shown$value, settings$cell_cap) # D20.59: the cut's name
+    if (breakdown) {
       label[shown$value == "*"] <- not_linked
     }
     c(
@@ -231,19 +239,23 @@ section_glance <- function(tables, text, settings) {
 }
 
 #' The "By check" table of sections 3 to 5: one row per check, table and column (D4.18,
-#' D20.39, D20.42, D20.43)
+#' D20.39, D20.42, D20.43, D20.134, D20.137)
 #'
 #' `issues` holds the section's issues, with at least `issue_id`, `severity`, `rule_id`,
-#' `table_name`, `column_name` and `value`. Each row: the severity, the check, what it means
-#' (the rule's text, from the registry's `message_id`), the table and column, the issues, and
-#' up to `example_cap` distinct values in the order the run found them (by issue ID), joined
-#' with "; " and cut as one cell at `cell_cap` (D20.39 counts the examples as one cell). Sorted
-#' by severity (error, warning, flag, info), most issues first, then check, table and column;
+#' `table_name`, `column_name` and `value`; `section` is the section's heading, which the
+#' caption names ("By check: {section}", D20.137). Each row: the severity, the check, what it
+#' means (the rule's text, from the registry's `message_id`), the table and column, each cut
+#' at `cell_cap` (D20.134), the issues, and up to `example_cap` distinct values in the order
+#' the run found them (by issue ID), joined with "; " and cut as one cell at `cell_cap`
+#' (D20.39 counts the examples as one cell). The Examples column is left out when it is empty
+#' in every row, as the "Each issue" tables leave out such a column (D20.137). Sorted by
+#' severity (error, warning, flag, info), most issues first, then check, table and column;
 #' capped at `row_cap`, the note naming the unit's CSV (D20.68).
 #' @noRd
-issue_summary <- function(issues, text, settings) {
+issue_summary <- function(issues, section, text, settings) {
   lang <- settings$lang
   word <- function(text_id) report_text(text_id, lang, text = text)
+  cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
   severities <- c("error", "warning", "flag", "info")
   keys <- c("severity", "rule_id", "table_name", "column_name")
   group <- as.integer(frankv(issues, cols = keys, ties.method = "dense"))
@@ -259,7 +271,7 @@ issue_summary <- function(issues, text, settings) {
   examples <- rep(NA_character_, n_groups)
   joined <- vapply(split(seen$value, seen$group), paste, "", collapse = "; ")
   examples[as.integer(names(joined))] <- joined
-  examples <- cut_cell_text(examples, settings$cell_cap) # D20.59: the cut's name
+  examples <- cut(examples)
   registry <- rule_registry()
   message_ids <- registry$message_id[match(issues$rule_id[first], registry$rule_id)]
   messages <- vapply(unique(message_ids), word, "")
@@ -274,22 +286,29 @@ issue_summary <- function(issues, text, settings) {
   severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
   shown <- data.table(
     severity_words[match(severity, severities)], issues$rule_id[first],
-    unname(messages[message_ids]), issues$table_name[first], issues$column_name[first], n,
-    examples
+    unname(messages[message_ids]), cut(issues$table_name[first]),
+    cut(issues$column_name[first]), n, examples
   )[order_by]
   setnames(shown, c(
     word("report_column_severity"), word("report_column_check"), word("report_column_meaning"),
     word("report_column_table"), word("report_column_column"), word("report_column_issues"),
     word("report_column_examples")
   ))
+  # An Examples column empty in every row is left out, as the "Each issue" tables leave out
+  # such a column (D20.42, D20.44, D20.137): example_cap 0, or no check with a value. A table
+  # of no rows keeps it, as issue_records() keeps its columns then.
+  if (n_groups > 0L && all(is.na(examples) | !nzchar(examples))) {
+    set(shown, j = ncol(shown), value = NULL)
+  }
   html_table(
-    shown, word("report_summary_caption"), settings$row_cap, settings$csv_name, # D20.68
+    shown, report_text("report_summary_caption", lang, section = section, text = text),
+    settings$row_cap, settings$csv_name, # D20.68
     row_class = paste0("sev-", severity[order_by]), lang = lang, text = text
   )
 }
 
 #' The "Each issue" table of section 3: one row per issue (D20.17, D20.39, D20.42, D20.44,
-#' D20.56)
+#' D20.56, D20.134, D20.137)
 #'
 #' `issues` holds the section's record-level issues, with at least `issue_id`, `severity`,
 #' `rule_id`, `table_name`, `column_name`, `provider_key`, `provider_key_status`, `record_pk`,
@@ -300,11 +319,13 @@ issue_summary <- function(issues, text, settings) {
 #' none (D20.17); it comes apart from `issues`, so a caller's column of any name keeps its place
 #' (D20.123). Each row: severity, check, table, column, provider key and its status, record ID,
 #' value, raw value, expected value, then those columns, "*" in them shown as W4. Delivered text
-#' is cut at `cell_cap` (D20.39). A column empty in every row is left out (D20.42, D20.44); the
-#' CSV keeps every column. Sorted by severity, check, table, column and provider key, then
-#' record ID and issue ID; capped at `row_cap`, the note naming the unit's CSV (D20.68).
+#' is cut at `cell_cap` (D20.39), and so are the table's and the column's names (D20.134). A
+#' column empty in every row is left out (D20.42, D20.44); the CSV keeps every column. Sorted
+#' by severity, check, table, column and provider key, then record ID and issue ID; capped at
+#' `row_cap`, the note naming the unit's CSV (D20.68). `section` is the section's heading,
+#' which the caption names ("Each issue: {section}", D20.137).
 #' @noRd
-issue_records <- function(issues, raw_values, text, settings) {
+issue_records <- function(issues, raw_values, section, text, settings) {
   lang <- settings$lang
   word <- function(text_id) report_text(text_id, lang, text = text)
   cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
@@ -321,8 +342,8 @@ issue_records <- function(issues, raw_values, text, settings) {
   status_words <- vapply(paste0("report_key_", statuses), word, "", USE.NAMES = FALSE)
   columns <- c(
     list(
-      severity_words[match(issues$severity, severities)], issues$rule_id, issues$table_name,
-      issues$column_name, cut(issues$provider_key),
+      severity_words[match(issues$severity, severities)], issues$rule_id, cut(issues$table_name),
+      cut(issues$column_name), cut(issues$provider_key),
       status_words[match(issues$provider_key_status, statuses)], cut(issues$record_pk),
       cut(issues$value), cut(as.character(raw_values)), cut(issues$expected)
     ),
@@ -349,7 +370,8 @@ issue_records <- function(issues, raw_values, text, settings) {
   shown <- as.data.table(lapply(columns[kept], function(x) x[order_by]))
   setnames(shown, headers[kept])
   html_table(
-    shown, word("report_records_caption"), settings$row_cap, settings$csv_name, # D20.68
+    shown, report_text("report_records_caption", lang, section = section, text = text),
+    settings$row_cap, settings$csv_name, # D20.68
     row_class = paste0("sev-", issues$severity[order_by]), lang = lang, text = text
   )
 }
@@ -413,8 +435,8 @@ section_actions <- function(tables, text, settings) {
       raw_values[pairs$row] <- lineage$raw_value[pairs$at]
     }
     body <- c(
-      body, issue_summary(shown, text, settings),
-      issue_records(shown, raw_values, text, settings)
+      body, issue_summary(shown, title, text, settings),
+      issue_records(shown, raw_values, title, text, settings)
     )
   }
   html_section("actions", title, body)
@@ -443,7 +465,7 @@ section_harmonization <- function(tables, text, settings) {
   body <- paste0("<p class=\"note\">", html_escape(word("report_harmonization_intro")), "</p>")
   if (length(record) > 0L) {
     columns <- c("issue_id", "severity", "rule_id", "table_name", "column_name", "value")
-    body <- c(body, issue_summary(issues[record, columns, with = FALSE], text, settings))
+    body <- c(body, issue_summary(issues[record, columns, with = FALSE], title, text, settings))
   }
   if (whole > 0L) {
     # Section 6's name is a link to it, wrapped once the line is escaped.
@@ -481,7 +503,7 @@ section_under_review <- function(tables, text, settings) {
   body <- paste0("<p class=\"note\">", html_escape(word("report_under_review_intro")), "</p>")
   if (length(record) > 0L) {
     columns <- c("issue_id", "severity", "rule_id", "table_name", "column_name", "value")
-    body <- c(body, issue_summary(issues[record, columns, with = FALSE], text, settings))
+    body <- c(body, issue_summary(issues[record, columns, with = FALSE], title, text, settings))
   }
   if (whole > 0L) {
     # Section 6's name is a link to it, wrapped once the line is escaped.
@@ -503,8 +525,10 @@ section_under_review <- function(tables, text, settings) {
 #' covers (`n_records`; none for a unit rule's "*" issue, the registry's `unit` and the report
 #' unit's column "*", as in section 10, D16.8, D20.122; a unit's own issue and every issue of a
 #' run with no group columns keep theirs, D20.124), value, expected value and the breakdown
-#' columns under their raw names (D20.56), "*" in them shown as W4; delivered text cut at
-#' `cell_cap` (D20.39). Sorted by severity, class (source, harmonization, unclassified), table
+#' columns under their raw names (D20.56), "*" in them shown as W4; delivered text, and the
+#' table's and the column's names, cut at `cell_cap` (D20.39, D20.134), a column's "*" kept as
+#' it is; the caption naming the section ("Each issue: {section}", D20.137). Sorted by
+#' severity, class (source, harmonization, unclassified), table
 #' and column, then check and issue ID; a column empty in every row left out (D20.44); capped
 #' at `row_cap`. It holds the unit rules' "*" issues (D16.8) and the unit's own
 #' undeclared_code_set issue (D20.11). With none, W133 alone.
@@ -555,7 +579,7 @@ section_column_level <- function(tables, text, settings) {
     list(
       severity_words[match(issues$severity[at], severities)],
       class_words[match(issues$issue_class[at], classes)], issues$rule_id[at],
-      unname(messages[message_ids]), issues$table_name[at], issues$column_name[at],
+      unname(messages[message_ids]), cut(issues$table_name[at]), cut(issues$column_name[at]),
       records, cut(issues$value[at]), cut(issues$expected[at])
     ),
     lapply(breakdowns, function(column) {
@@ -579,7 +603,8 @@ section_column_level <- function(tables, text, settings) {
   html_section("column-level", title, c(
     paste0("<p>", html_escape(word("report_column_level_intro")), "</p>"),
     html_table(
-      shown, word("report_records_caption"), settings$row_cap, settings$csv_name, # D20.68
+      shown, report_text("report_records_caption", lang, section = title, text = text),
+      settings$row_cap, settings$csv_name, # D20.68
       row_class = paste0("sev-", issues$severity[at]), lang = lang, text = text
     )
   ))
@@ -710,7 +735,9 @@ section_not_evaluated <- function(tables, text, settings) {
 #'
 #' Always: what the report is, naming the unit's CSV. With a results row: the layers' lead-in
 #' and a line for each layer the unit's results have a row of. With an open issue: severities,
-#' then classes. With a Layer 2 results row (the missing-value code checks): missing-value
+#' then classes. With a "(not linked)" bar in one of section 2's charts ("*" among the
+#' `row_cap` values a chart by a breakdown column shows): what such a bar counts (D20.135,
+#' D20.136). With a Layer 2 results row (the missing-value code checks): missing-value
 #' codes. With a key status in section 3's "Each issue" table (an open record-level source
 #' issue with a `provider_key_status`): provider keys. With a row in section 10 (a check that
 #' didn't run, a not-evaluated issue, or records a check that ran didn't reach or couldn't
@@ -755,6 +782,21 @@ section_guide <- function(tables, text, settings) {
     body <- c(
       body, paragraph(word("report_guide_severities")), paragraph(word("report_guide_classes"))
     )
+  }
+  # A chart by a breakdown column shows a "(not linked)" bar when "*" is among its row_cap
+  # values. section_glance()'s chart() puts "*" after the values with as many open issues
+  # (D20.90, D20.135), so its place is the number of values with at least its count: change
+  # that one rule and chart()'s together. Each column is counted once, by its values (16.2).
+  unlinked <- any(vapply(tables$group_cols[-1L], function(column) {
+    values <- issues[[column]][open]
+    if (!"*" %chin% values) {
+      return(FALSE)
+    }
+    counted <- data.table(value = values)[, list(n = .N), by = "value"]
+    sum(counted$n >= counted$n[match("*", counted$value)]) <= settings$row_cap
+  }, logical(1)))
+  if (unlinked) {
+    body <- c(body, paragraph(word("report_guide_not_linked")))
   }
   if (any(results$layer == 2L)) {
     body <- c(body, paragraph(word("report_guide_sentinels")))

@@ -94,10 +94,25 @@ test_that("html_table writes a table with no rows or no columns without phantom 
   expect_false(grepl("<td>", no_columns, fixed = TRUE))
 })
 
-test_that("html_table writes a double column's cells as text, right-aligned (R4)", {
-  out <- html_table(data.table::data.table(x = c(0.5, 2.25)), "c")
+test_that("html_table writes a double column's cells in full, right-aligned (R4, D20.132)", {
+  out <- html_table(data.table::data.table(x = c(0.5, 2.25, 1e5, 1e-4, NA)), "c")
   expect_match(out, "<td class=\"num\">0.5</td>", fixed = TRUE)
   expect_match(out, "<td class=\"num\">2.25</td>", fixed = TRUE)
+  # As html_bar() and html_facts() write numbers (as_text()), never as.character()'s "1e+05".
+  expect_match(out, "<td class=\"num\">100000</td>", fixed = TRUE)
+  expect_match(out, "<td class=\"num\">0.0001</td>", fixed = TRUE)
+  expect_false(grepl("e+05", out, fixed = TRUE))
+  expect_false(grepl("e-04", out, fixed = TRUE))
+  expect_match(out, "<td class=\"num\"></td>", fixed = TRUE)
+  # The rows a cap shows, too.
+  capped <- html_table(
+    data.table::data.table(x = c(1e5, 1e-4, 3)), "c",
+    row_cap = 2L, csv_name = "rows.csv"
+  )
+  expect_match(
+    capped, "<td class=\"num\">100000</td></tr><tr><td class=\"num\">0.0001</td>",
+    fixed = TRUE
+  )
 })
 
 test_that("html_table refuses bad arguments, naming the argument", {
@@ -604,6 +619,10 @@ test_that("page_css() sets the template's colours and each severity's once (D20.
   expect_match(css, "[hidden]{display:none!important}", fixed = TRUE)
   expect_match(css, "@media print{", fixed = TRUE)
   expect_match(css, "@media (max-width:", fixed = TRUE)
+  # On a narrow screen each of section 1's facts has its term above its value, so a long term
+  # doesn't squeeze the values (R104).
+  narrow <- regmatches(css, regexpr("@media \\(max-width:[^@]*", css))
+  expect_match(narrow, ".facts dl{grid-template-columns:minmax(0,1fr)}", fixed = TRUE)
   expect_match(css, "font-family:Arial,", fixed = TRUE)
   # A bar's value column holds a six-digit count in two columns and on a narrow screen, and in
   # print a short page ends where its content does.
@@ -619,4 +638,16 @@ test_that("page_css() sets the template's colours and each severity's once (D20.
   for (pattern in c("url(", "@import", "//")) {
     expect_false(grepl(pattern, css, fixed = TRUE), info = pattern)
   }
+})
+
+test_that("the script opens each folded part to print and closes those again (D20.133)", {
+  script <- page_script()
+  expect_lt(nchar(script, type = "bytes"), 4096L)
+  # Before printing, each closed part is opened and remembered; after, only those are closed,
+  # so a part the reader opened stays open.
+  expect_match(script, "window.addEventListener(\"beforeprint\", function () {", fixed = TRUE)
+  expect_match(script, "document.querySelectorAll(\"details:not([open])\")", fixed = TRUE)
+  expect_match(script, "d.open = true; opened.push(d);", fixed = TRUE)
+  expect_match(script, "window.addEventListener(\"afterprint\", function () {", fixed = TRUE)
+  expect_match(script, "opened.forEach(function (d) { d.open = false; });", fixed = TRUE)
 })

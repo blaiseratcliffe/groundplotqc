@@ -285,6 +285,22 @@ test_that("a name's Unicode spaces count in a locale that isn't UTF-8 (D16.36, F
   expect_identical(matched$near, c(TRUE, TRUE))
 })
 
+test_that("a near name's letter case is folded in ASCII, whatever the locale's rules (D20.108)", {
+  # In a Turkish or Azeri UTF-8 locale on Linux, tolower() gives "I" a dotless i (U+0131).
+  # The matcher runs here with a tolower() that does so, so "ID" still meets "id", in a name
+  # of plain ASCII and in one that isn't, on any platform and in any locale.
+  dotless <- function(x) base::tolower(gsub("I", intToUtf8(0x131), x, fixed = TRUE))
+  turkish <- match_columns
+  environment(turkish) <- list2env(list(tolower = dotless), parent = environment(match_columns))
+  e_acute <- intToUtf8(0xE9)
+  matched <- turkish(c("id", paste0("id_", e_acute)), c("ID", paste0("ID_", e_acute)))
+  expect_identical(matched$column, c("id", paste0("id_", e_acute)))
+  expect_identical(matched$near, c(TRUE, TRUE))
+  # A name that isn't plain ASCII still has its other letters folded (D21.32).
+  capital <- paste0("ANN", intToUtf8(0xC9), "E")
+  expect_true(match_columns(capital, paste0("ann", e_acute, "e"))$near)
+})
+
 test_that("fk_paths lists every route of keys to the targets, shortest first, ties in key order", {
   keys <- data.table::data.table(
     table_name = c("leaf", "leaf", "mid", "side", "top", "leaf"),
@@ -430,6 +446,60 @@ test_that("a record tries its next route past a masked break and stops at an orp
   expected[[5L]] <- NA_integer_
   expect_equal(reached$rows, expected)
   expect_equal(reached$home, ifelse(is.na(expected), NA_character_, "stations"))
+})
+
+test_that("a holding table's own value that is no value moves its record on (D21.16, D21.20)", {
+  # Trees hold region and zone, as their plots do. A tree's own value is kept where it is one,
+  # even where its plot's differs (tree 1's region, trees 5 and 6's zone); a blank, NA, a
+  # missing-value code of the column's type or "*" sends the tree through its plot, as at a
+  # route's end (D20.12's list, D21.20), and a plot key naming no plot reaches none (tree 7).
+  # The plots reach no other table holding the columns, so plot 3's codes reach none.
+  dictionary <- data.frame(
+    table_name = c(rep("plots", 3L), rep("trees", 4L)),
+    attribute_name = c("plot_id", "region", "zone", "tree_id", "plot_id", "region", "zone"),
+    key_type = c("PK", ".", ".", "PK", "FK", ".", "."),
+    reference_table = c(NA, NA, NA, NA, "plots", NA, NA),
+    data_type = c(
+      "character", "character", "integer", "character", "character", "character", "integer"
+    )
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = -1, not_applicable = -9),
+    character = c(missing = "X", not_applicable = "Z")
+  ))
+  tables <- list(
+    plots = data.table::data.table(
+      plot_id = c("p1", "p2", "p3"), region = c("north", "south", "Z"), zone = c(1L, 2L, -9L)
+    ),
+    trees = data.table::data.table(
+      tree_id = paste0("t", 1:7), plot_id = c("p1", "p1", "p2", "p2", "p1", "p2", "p9"),
+      region = c("east", "Z", "X", NA, " ", "*", "Z"), zone = c(3L, -9L, -1L, NA, 4L, 4L, -9L)
+    )
+  )
+  input <- conformance_input(tables, spec, group_cols = c("zone", "region"), key_col = "region")
+  region <- reach_column(input, "trees", "region")
+  expect_equal(region$home, c("trees", rep("plots", 5L), NA))
+  expect_equal(region$rows, c(1L, 1L, 2L, 2L, 1L, 2L, NA))
+  zone <- reach_column(input, "trees", "zone")
+  expect_equal(zone$home, c("trees", rep("plots", 3L), "trees", "trees", NA))
+  expect_equal(zone$rows, c(1L, 1L, 2L, 2L, 5L, 6L, NA))
+  # The group values and the problem unit's key follow, and reaches_other_unit marks trees 5
+  # and 6, whose region is read from a plot of another zone than their own.
+  trees <- input$groups$trees
+  values <- trees$values[trees$row_group]
+  expect_equal(values$region, c("east", "north", "south", "south", "north", "south", "*"))
+  expect_equal(values$zone, c("3", "1", "2", "2", "4", "4", "*"))
+  expect_equal(key_text(input, "trees", 1:7), values$region)
+  expect_equal(trees$reaches_other_unit, c(rep(FALSE, 4L), TRUE, TRUE, FALSE))
+  plots <- input$groups$plots
+  expect_equal(plots$values$region[plots$row_group], c("north", "south", "*"))
+  # A holding table given without the column: every tree goes through its plot (D21.33).
+  without <- data.table::copy(tables$trees)
+  data.table::set(without, j = "zone", value = NULL)
+  tables$trees <- without
+  reached <- reach_column(conformance_input(tables, spec), "trees", "zone")
+  expect_equal(reached$home, c(rep("plots", 6L), NA))
+  expect_equal(reached$rows, c(1L, 1L, 2L, 2L, 1L, 2L, NA))
 })
 
 test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {

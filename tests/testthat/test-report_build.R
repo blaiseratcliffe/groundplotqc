@@ -315,7 +315,7 @@ test_that("a remainder below 0 stops as an internal error (D20.54)", {
     route_unit(x, "110", c("100", "110")),
     paste(
       "Internal error: the not-evaluated issues of rule value_above_max on table catches,",
-      "column weight hold 1 records, more than the 0 its results row counts not evaluated."
+      "column weight hold more records (1) than the 0 its results row counts not evaluated."
     ),
     fixed = TRUE
   )
@@ -428,7 +428,9 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "%", "a b", "é", r"(/\:*?"<>|)", "\t", "a\nb", "\U0001F600", ";",
     ".a.", ".", "...", " lead", "trail ",
     "CON", "con.txt", "Com1", "LPT9.x.y", "nul", "aux.", "PRN",
-    "CONX", "COM0", "COM10", "xCON", "CON-1", ".CON",
+    # COM0 and LPT0 too (D20.133); Microsoft's superscript forms by the byte rule (D20.132).
+    "COM0", "LPT0", "COM¹", "LPT¹",
+    "CONX", "COM10", "xCON", "CON-1", ".CON",
     "preflight", "PreFlight", "national_summary", "preflight.x",
     # The package's own file stems, in any case (D20.70, D20.73); a value only holding one isn't.
     "report", "Results", "ISSUES", "corrections", "issues.csv", "my_report"
@@ -438,7 +440,8 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "%25", "a%20b", "%C3%A9", "%2F%5C%3A%2A%3F%22%3C%3E%7C", "%09", "a%0Ab", "%F0%9F%98%80",
     "%3B", "%2Ea%2E", "%2E", "%2E.%2E", "%20lead", "trail%20",
     "%43ON", "%63on.txt", "%43om1", "%4CPT9.x.y", "%6Eul", "%61ux%2E", "%50RN",
-    "CONX", "COM0", "COM10", "xCON", "CON-1", "%2ECON",
+    "%43OM0", "%4CPT0", "COM%C2%B9", "LPT%C2%B9",
+    "CONX", "COM10", "xCON", "CON-1", "%2ECON",
     "%70reflight", "%50reFlight", "%6Eational_summary", "preflight.x",
     "%72eport", "%52esults", "%49SSUES", "%63orrections", "issues.csv", "my_report"
   ))
@@ -1040,4 +1043,39 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
   expect_identical(
     length(gregexpr(capped, html, fixed = TRUE, useBytes = TRUE)[[1L]]), 2L
   )
+})
+
+test_that("a text row with a slot its package row lacks stops the build first (D20.138)", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  run_dir <- gpq_write_results(results, output)
+  # An earlier build's report and CSV, which a build that stops on its text must leave.
+  dir.create(file.path(run_dir, "reports"), showWarnings = FALSE)
+  earlier <- c(
+    file.path(run_dir, "reports", "100.html"), file.path(run_dir, "tables", "100_issues.csv")
+  )
+  for (path in earlier) writeLines("earlier", path)
+  # Pre-flight's slot rule (text_slots()) reads every row, in the run's language or another.
+  for (lang in c("en", "fr")) {
+    text <- data.frame(text_id = "report_title", lang = lang, text = "Report for {unit} {zone}")
+    expect_error(
+      gpq_build_reports(results, output, text = text),
+      paste0(
+        "Report text report_title (language ", lang, ") in `text` uses the slot {zone}, which ",
+        "the package's row of that text doesn't have."
+      ),
+      fixed = TRUE
+    )
+    for (path in earlier) expect_identical(readLines(path), "earlier", info = path)
+  }
+  # Fewer slots, and a text the package doesn't have, pass, and the build replaces the files.
+  text <- data.frame(
+    text_id = c("report_title", "provider_note"), lang = "en",
+    text = c("Quality report", "A note on {anything}")
+  )
+  files <- gpq_build_reports(results, output, text = text)
+  expect_true(all(earlier %in% files))
+  page <- paste(readLines(earlier[[1L]], encoding = "UTF-8"), collapse = "\n")
+  expect_match(page, "<h1>Quality report</h1>", fixed = TRUE)
 })

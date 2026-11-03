@@ -344,9 +344,11 @@ check_domains <- function(input, context) {
           value_code <- match(text, listed)
           held <- which(!is.na(value_code))
           width <- length(listed)
-          pair <- unique((unit_code[held] - 1L) * width + value_code[held])
-          unit_at <- (pair - 1L) %/% width + 1L
-          value_at <- (pair - 1L) %% width + 1L
+          # Each pair of unit and value held is one number, in double: in integer arithmetic it
+          # would overflow once the units times the values reach 2^31 (R104).
+          pair <- unique((unit_code[held] - 1) * width + value_code[held])
+          unit_at <- as.integer((pair - 1) %/% width) + 1L
+          value_at <- as.integer((pair - 1) %% width) + 1L
           ordered <- order(units[unit_at], value_at, method = "radix")
           named <- units[unit_at[ordered]]
           holding <- unique(named)

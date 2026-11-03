@@ -1,7 +1,8 @@
-# The clean base and the fixture scaffold (plan 18.3; D5.11, D8.21, D12.38, D15.10): clean
-# tables built in code from a spec (MAGPlot's from magp_spec(), the generic ones from the
-# fish toy spec), the fixture marker and the guard that refuses tables without it, and the
-# answer sheet with its defect blocks, one or more for each registered data rule.
+# The clean base and the fixture scaffold (plan 18.3; D5.11, D8.21, D12.38, D15.10, D21.21):
+# clean tables built in code from a spec (MAGPlot's from magp_spec(), the generic ones from
+# the fish toy spec), the fixture marker and the guard that refuses tables without it, the
+# answer sheet with its defect blocks, one or more for each registered data rule, and a
+# delivery's .Rdata made from fixture tables (fx_magp_rdata()).
 # data-raw/build_magp_example.R sources this file to build magp_example.
 
 # Clean tables for every table of `spec`, in the dictionary's order, each with its
@@ -738,4 +739,15 @@ fx_caught <- function(tables) {
     ),
     gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
   )
+}
+
+# A delivery's .Rdata made from fixture tables, as the pipeline saves one (D21.12, D21.21):
+# each element of `tables` saved as an object of its own, named by its element, in a temporary
+# file removed when the calling test ends. Returns the file's path. Fixtures only, as every
+# helper that takes tables (fx_require_fixture()); a copy changed with `$<-` keeps the marker.
+fx_magp_rdata <- function(tables = magp_example) {
+  fx_require_fixture(tables)
+  path <- withr::local_tempfile(fileext = ".Rdata", .local_envir = parent.frame())
+  save(list = names(tables), envir = list2env(tables), file = path)
+  path
 }

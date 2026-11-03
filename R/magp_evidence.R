@@ -1,8 +1,9 @@
-# MAGPlot's evidence for issue classes (plan 3.6, 10.3; D9.28, D19.29, D19.38, D19.58, D19.59):
-# the evidence `computed`, from pipeline_computed.csv, and the evidence `crosswalk`, from the
-# translation tables and crosswalk_provider_columns.csv. data-raw/build_magp_config.R checks
-# both hand-kept files against the spec and copies them into inst/extdata/magp/; magp_run_qc()
-# passes the two tables to gpq_classify_issues(evidence = ) from M7.
+# MAGPlot's evidence for issue classes (plan 3.6, 10.3; D9.28, D19.29, D19.38, D19.58, D19.59,
+# D19.88, D21.5): the evidence `computed`, from pipeline_computed.csv, each jurisdiction's rows
+# keyed by its contributors in the spec's datasets table, and the evidence `crosswalk`, from
+# the translation tables and crosswalk_provider_columns.csv. data-raw/build_magp_config.R
+# checks both hand-kept files against the spec and copies them into inst/extdata/magp/;
+# magp_run_qc() passes the two tables to gpq_classify_issues(evidence = ) from M7b.
 
 #' One of MAGPlot's evidence files in inst/extdata/magp/, read as text (D19.59)
 #'
@@ -21,18 +22,37 @@ read_evidence_file <- function(name) {
   read$data
 }
 
-#' MAGPlot's evidence `computed` for gpq_classify_issues() (plan 3.6, 10.3 step 2; D9.28)
+#' MAGPlot's evidence `computed` for gpq_classify_issues(), keyed by contributor (plan 3.6,
+#' 10.3 step 2; D9.28, D19.88, D21.5)
 #'
 #' The rows of pipeline_computed.csv, one per table, attribute and jurisdiction whose values
-#' the pipeline computes for every record: `table_name`, `column_name` (the file's
-#' `attribute_name`), `jurisdiction`, the evidence's caller-named column ("*" for every
-#' jurisdiction), and `derivation`; the file's `note` is left out. All character.
+#' the pipeline computes for every record, under the evidence's columns: `table_name`,
+#' `column_name` (the file's `attribute_name`), `magp_contributor_id`, the evidence's
+#' caller-named column, and `derivation`; the file's `note` is left out. A jurisdiction's row
+#' gives one row for each contributor `spec`'s datasets table pairs with that jurisdiction,
+#' and none where it pairs none (a dataset with a blank contributor pairs none); a "*" row
+#' gives one row, its contributor "*". The rows keep the file's order, a jurisdiction's
+#' contributors in the datasets table's. One key join, never row by row (16.2). All character.
 #' @noRd
-computed_evidence <- function() {
+computed_evidence <- function(spec = magp_spec()) {
   rows <- read_evidence_file("pipeline_computed.csv")
+  # Each jurisdiction's contributors once, and "*" for the file's rows that hold for every
+  # contributor.
+  datasets <- spec$datasets
+  pairs <- unique(data.table(
+    jurisdiction = datasets$jurisdiction, magp_contributor_id = datasets$magp_contributor_id
+  ))
+  pairs <- rbind(
+    pairs[!is.na(pairs$magp_contributor_id)],
+    data.table(jurisdiction = "*", magp_contributor_id = "*")
+  )
+  # Each of the file's rows by its position: a join keeps i's order, so the rows come out in
+  # the file's order, and a jurisdiction no pair holds drops out (nomatch = NULL).
+  given <- data.table(row = seq_len(nrow(rows)), jurisdiction = rows$jurisdiction)
+  keyed <- pairs[given, on = "jurisdiction", nomatch = NULL, allow.cartesian = TRUE]
   data.table(
-    table_name = rows$table_name, column_name = rows$attribute_name,
-    jurisdiction = rows$jurisdiction, derivation = rows$derivation
+    table_name = rows$table_name[keyed$row], column_name = rows$attribute_name[keyed$row],
+    magp_contributor_id = keyed$magp_contributor_id, derivation = rows$derivation[keyed$row]
   )
 }
 

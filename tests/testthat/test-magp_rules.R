@@ -1,4 +1,4 @@
-# Tests for MAGPlot 2.0's rule set (plan 3.5; D9.20, D14.2, D14.15).
+# Tests for MAGPlot 2.0's rule set (plan 3.5; D9.20, D14.2, D14.15, D21.6).
 
 test_that("magp_rules() gives the meta, rules and settings components, checked", {
   rules <- magp_rules()
@@ -15,7 +15,7 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_equal(
     unique(paste(rules$rules$rule_id, rules$rules$severity)), "record_unreachable warning"
   )
-  expect_equal(attr(rules$settings, "source_lines"), 2:19)
+  expect_equal(attr(rules$settings, "source_lines"), 2:21)
 })
 
 test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (D14.15)", {
@@ -25,20 +25,20 @@ test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (
   )
 })
 
-test_that("MAGPlot's settings rows restate the settings, with its own values (D1.8a, D16.12)", {
+test_that("MAGPlot's settings rows restate the settings, with its own values (D16.12, D21.6)", {
   expect_equal(
     as.data.frame(magp_rules()$settings),
     data.frame(
       setting = c(
-        "lang", "example_cap", "column_level_min_n", "raw_na_policy", "rogue_codes",
-        "unknown_codes", "coordinate_attributes", "code_set_max_values",
+        "lang", "example_cap", "row_cap", "cell_cap", "column_level_min_n", "raw_na_policy",
+        "rogue_codes", "unknown_codes", "coordinate_attributes", "code_set_max_values",
         "code_set_skip_attributes", "code_set_skip_pattern", "design_geometry_table",
         "design_geometry_by", "design_geometry_columns", "subplot_label_table",
         "subplot_label_columns", "design_signature_table", "design_signature_by",
         "design_signature_columns"
       ),
       value = c(
-        "en", "5", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP",
+        "en", "5", "500", "100", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP",
         "latitude; longitude; utm_e; utm_n", "25",
         "meas_plots; meas_frames; temporal_extent; meas_cycle; subplot",
         "_id$|^comments$|name|_date$|^src_|^meas_subplots$", "magp_design_frames",
@@ -51,8 +51,8 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
         )
       ),
       type = c(
-        "character", "integer", "integer", "character", "character", "character", "character",
-        "integer", "character", "character", rep("character", 8L)
+        "character", "integer", "integer", "integer", "integer", "character", "character",
+        "character", "character", "integer", "character", "character", rep("character", 8L)
       )
     ),
     ignore_attr = c("source_file", "source_lines", "source_sha256")
@@ -65,4 +65,13 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
   )
   expect_equal(resolve_setting("raw_na_policy", rules = rules)$value, "always")
   expect_identical(resolve_setting("column_level_min_n", rules = rules)$value, 10)
+  # The report caps restate their built-in values, so a MAGPlot run records them with the
+  # rule set's tier (D21.6).
+  for (name in c("row_cap", "cell_cap")) {
+    resolved <- resolve_setting(name, rules = rules)
+    expect_equal(resolved$tier, "rule set", info = name)
+    expect_equal(resolved$value, setting_definitions()[[name]]$built_in, info = name)
+  }
+  expect_equal(resolve_setting("row_cap", rules = rules)$value, 500)
+  expect_equal(resolve_setting("cell_cap", rules = rules)$value, 100)
 })

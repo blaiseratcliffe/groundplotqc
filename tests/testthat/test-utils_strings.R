@@ -105,6 +105,16 @@ test_that("column letters and numbers convert both ways", {
   expect_equal(column_numbers(c("A", "z", "AA", "AAA", "a1")), c(1L, 26L, 27L, 703L, NA))
 })
 
+test_that("column letters are read in ASCII, whatever the locale's rules (D20.108)", {
+  # In a Turkish or Azeri UTF-8 locale on Linux, toupper() gives "i" a dotted capital I
+  # (U+0130). The reader runs here with a toupper() that does so, so "i" is still column 9, on
+  # any platform and in any locale.
+  dotted <- function(x) base::toupper(gsub("i", intToUtf8(0x130), x, fixed = TRUE))
+  turkish <- column_numbers
+  environment(turkish) <- list2env(list(toupper = dotted), parent = environment(column_numbers))
+  expect_equal(turkish(c("i", "AI", "Ii", NA)), c(9L, 35L, 243L, NA))
+})
+
 test_that("column numbers beyond the integer range are NA with no warning (D12.36)", {
   # FXSHRXW is the last letters name inside the integer range.
   expect_equal(column_numbers(c("FXSHRXW", "FXSHRXX")), c(.Machine$integer.max, NA))

@@ -113,7 +113,9 @@ column_letters <- function(j) {
 #' sum is taken in double and compared with the maximum before it becomes an integer.
 #' @noRd
 column_numbers <- function(x) {
-  x <- toupper(x)
+  # Folded in ASCII with chartr(), whatever the session's locale: in a Turkish or Azeri locale
+  # on Linux, toupper() gives "i" a dotted capital I, so "i" would read as NA (D20.108).
+  x <- chartr(paste(letters, collapse = ""), paste(LETTERS, collapse = ""), x)
   out <- rep(NA_integer_, length(x))
   for (i in which(grepl("^[A-Z]+$", x))) {
     digits <- match(strsplit(x[[i]], "", fixed = TRUE)[[1L]], LETTERS)

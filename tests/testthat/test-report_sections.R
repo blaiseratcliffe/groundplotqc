@@ -19,12 +19,15 @@ test_that("section_header lists the run's facts, then its files and settings fol
     file = c("20261005_dd.csv", "lists.xlsx", "in memory"), file_date = c("20261005", NA, NA),
     sha256 = c(strrep("a", 64L), strrep("b", 64L), NA)
   ), schema$spec_manifest, "spec_manifest")
-  # A CSV file, a table given in memory and one read from a connection (9.5, D9.23).
+  # A CSV file, a table given in memory and one read from a connection (9.5, D9.23), then a row
+  # that isn't a table's, as a MAGPlot run's magp_meta row (D21.13).
   metadata$inputs <- complete_table(list(
-    input = c("tables:catches", "tables:hauls", "tables:stations"),
-    file = c("catches <&>.csv", "in memory", "DBI connection, not hashed"),
-    sha256 = c(strrep("c", 64L), NA, NA),
-    detail = c("3 rows; separator comma", "2 rows", "4 rows; table st; driver SQLiteConnection")
+    input = c("tables:catches", "tables:hauls", "tables:stations", "magp_meta"),
+    file = c("catches <&>.csv", "in memory", "DBI connection, not hashed", "delivery.Rdata"),
+    sha256 = c(strrep("c", 64L), NA, NA, strrep("f", 64L)),
+    detail = c(
+      "3 rows; separator comma", "2 rows", "4 rows; table st; driver SQLiteConnection", NA
+    )
   ), schema$inputs, "inputs")
   metadata$rules <- complete_table(
     list(input = "rules", name = "Fish <rules>", version = "1.0", sha256 = strrep("d", 64L)),
@@ -96,6 +99,8 @@ test_that("section_header lists the run's facts, then its files and settings fol
   expect_false(any(grepl("u2", everything, fixed = TRUE)))
   expect_false(any(grepl(strrep("a", 64L), everything, fixed = TRUE)))
   expect_false(any(grepl("pk_missing", everything, fixed = TRUE)))
+  # Nor an input that isn't a table, its file or its hash (D21.13).
+  expect_false(any(grepl(paste0("magp_meta|delivery[.]Rdata|", strrep("f", 64L)), everything)))
   # Nor the unit's CSV name, from `settings` or a row the registry doesn't define (D20.68).
   expect_false(any(grepl("csv_name|issues.csv", everything)))
   # A run with no group columns has no unit row (D20.29); without a rule set, no rule-set
@@ -501,8 +506,9 @@ test_that("issue_summary: a row per check, sorted, its examples cut as one cell 
     }
   )
   # The rows in another order than their issue IDs: the examples still follow the IDs.
-  issue_summary(issues[11:1], NULL, settings)
-  expect_equal(caught$caption, "By check")
+  issue_summary(issues[11:1], "Issues being fixed in harmonization", NULL, settings)
+  # The caption names the section the table is in (D20.137).
+  expect_equal(caught$caption, "By check: Issues being fixed in harmonization")
   expect_equal(caught$dt, data.table::data.table(
     Severity = c("Error", "Warning", "Warning", "Warning"),
     Check = c("raw_na", "code_not_in_list", "value_above_max", "value_above_max"),
@@ -526,7 +532,8 @@ test_that("issue_summary: a row per check, sorted, its examples cut as one cell 
     text_id = "report_summary_caption", lang = "fr", text = "Par controle"
   ))
   settings$lang <- "fr"
-  issue_summary(issues, text, settings)
+  issue_summary(issues, "Corrections en cours", text, settings)
+  # A caller's row may leave the slot out (D14.31).
   expect_equal(caught$caption, "Par controle")
   expect_equal(names(caught$dt)[[1L]], "Severity")
 })
@@ -568,8 +575,8 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
       "<table>"
     }
   )
-  issue_records(shown, c("Q", strrep("w", 101L), NA), NULL, settings)
-  expect_equal(caught$caption, "Each issue")
+  issue_records(shown, c("Q", strrep("w", 101L), NA), "Issues for you to act on", NULL, settings)
+  expect_equal(caught$caption, "Each issue: Issues for you to act on")
   # Sorted by severity, check, table, column and key; "*" shown as W4; delivered text cut at
   # cell_cap (D20.39), each of issue 2's: its key, record ID, value, raw value, expected value
   # and breakdown.
@@ -595,7 +602,7 @@ test_that("issue_records: keys, raw values, breakdowns, no empty column (D20.17,
     bare,
     j = c("provider_key", "provider_key_status", "expected"), value = NA_character_
   )
-  issue_records(bare, rep(NA_character_, 3L), NULL, settings)
+  issue_records(bare, rep(NA_character_, 3L), "Issues for you to act on", NULL, settings)
   expect_named(caught$dt, c("Severity", "Check", "Table", "Column", "Record ID", "Value"))
 })
 
@@ -655,19 +662,22 @@ test_that("sections 3 to 5 hold their class's record issues, pointing to section
   actions <- as.character(section_actions(tables, NULL, settings))
   expect_equal(attr(section_actions(tables, NULL, settings), "gpq_section")[["id"]], "actions")
   expect_match(actions, html_escape(report_text("report_actions_intro")), fixed = TRUE)
-  # The column-level line first, then "By check" and "Each issue" (D20.28, D20.42).
+  # The column-level line first, then "By check" and "Each issue", each caption naming the
+  # section (D20.28, D20.42, D20.137).
+  by_check <- "By check: Issues for you to act on"
+  each_issue <- "Each issue: Issues for you to act on"
   at <- vapply(
-    c(pointer, "<table By check>", "<table Each issue>"),
+    c(pointer, paste0("<table ", c(by_check, each_issue), ">")),
     function(piece) regexpr(piece, actions, fixed = TRUE), integer(1)
   )
   expect_true(all(at > 0L))
   expect_false(is.unsorted(at))
-  expect_equal(caught[["By check"]]$Examples, "<s1>")
-  expect_equal(caught[["Each issue"]]$`Record ID`, "c1")
+  expect_equal(caught[[by_check]]$Examples, "<s1>")
+  expect_equal(caught[[each_issue]]$`Record ID`, "c1")
   # Only the unit's cell meets a lineage row.
-  expect_equal(caught[["Each issue"]]$`Your value before harmonization`, "<raw1>&\"'")
-  expect_equal(caught[["Each issue"]]$area, "a1")
-  expect_equal(caught[["Each issue"]]$plot, "p1")
+  expect_equal(caught[[each_issue]]$`Your value before harmonization`, "<raw1>&\"'")
+  expect_equal(caught[[each_issue]]$area, "a1")
+  expect_equal(caught[[each_issue]]$plot, "p1")
   caught <- list()
   harmonization <- as.character(section_harmonization(tables, NULL, settings))
   expect_match(
@@ -676,16 +686,17 @@ test_that("sections 3 to 5 hold their class's record issues, pointing to section
     fixed = TRUE
   )
   # The summary only (D20.43), then the line pointing to section 6.
-  expect_equal(names(caught), "By check")
-  expect_equal(caught[["By check"]]$Examples, "<h1>")
+  by_check <- "By check: Issues being fixed in harmonization"
+  expect_equal(names(caught), by_check)
+  expect_equal(caught[[by_check]]$Examples, "<h1>")
   expect_gt(
     regexpr(pointer, harmonization, fixed = TRUE),
-    regexpr("<table By check>", harmonization, fixed = TRUE)
+    regexpr(paste0("<table ", by_check, ">"), harmonization, fixed = TRUE)
   )
   caught <- list()
   review <- as.character(section_under_review(tables, NULL, settings))
   expect_match(review, html_escape(report_text("report_under_review_intro")), fixed = TRUE)
-  expect_equal(caught[["By check"]]$Examples, "<r1>")
+  expect_equal(caught[["By check: Issues under review"]]$Examples, "<r1>")
   expect_false(grepl("listed in", review, fixed = TRUE))
   # Column-level source issues only: the line, no table.
   tables$issues <- issues[2L]
@@ -1156,10 +1167,10 @@ test_that("the tables and charts sort text marked latin1 as its UTF-8 text, in C
     issue_class = "source"
   ), group_cols = "unit")
   # "By check": the four on species first, as the most issues, then "é" before "ü".
-  issue_summary(issues, NULL, settings)
+  issue_summary(issues, "Issues for you to act on", NULL, settings)
   expect_equal(caught$Column, c("species", "é", "ü"))
   # "Each issue": by column, then provider key, then record ID, each in C order.
-  issue_records(issues, rep(NA_character_, 6L), NULL, settings)
+  issue_records(issues, rep(NA_character_, 6L), "Issues for you to act on", NULL, settings)
   expect_equal(caught$`Record ID`, c("r4", "r3", "é", "ü", "r2", "r1"))
   # Section 6: column-level issues alike but for their columns.
   whole <- new_issues(list(
@@ -1236,7 +1247,7 @@ test_that("section 3's raw values: one-record keys only, a column raw_value kept
     "<table>"
   })
   section_actions(tables, NULL, settings)
-  shown <- caught[["Each issue"]]
+  shown <- caught[["Each issue: Issues for you to act on"]]
   # The raw value only on the record whose key names one; the group column in its own place.
   expect_named(shown, c(
     "Severity", "Check", "Table", "Column", "Record ID", "Value",
@@ -1247,7 +1258,7 @@ test_that("section 3's raw values: one-record keys only, a column raw_value kept
   # With no lineage, no raw value to show, and the group column still there.
   tables$lineage <- NULL
   section_actions(tables, NULL, settings)
-  shown <- caught[["Each issue"]]
+  shown <- caught[["Each issue: Issues for you to act on"]]
   expect_named(shown, c(
     "Severity", "Check", "Table", "Column", "Record ID", "Value", "raw_value", "plot"
   ))
@@ -1303,4 +1314,178 @@ test_that("section 6 shows no count for a unit rule's \"*\" issue, any unit (D20
   ))
   section_column_level(list(issues = alone, group_cols = character()), NULL, settings)
   expect_equal(caught$Records, 9L)
+})
+
+test_that("table and column names are cut at cell_cap, \"*\" kept; captions name their section", {
+  # D20.134, D20.137
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:3, run_id = run_id, run_scope = "package",
+    rule_id = c("code_not_in_list", "code_not_in_list", "table_missing"),
+    rule_fingerprint = "f", stage = "conformance", layer = c(3L, 3L, 0L), severity = "error",
+    reason_code = "*", table_name = c("catches", "catches", "hauls"),
+    column_name = c("species", "species", "*"), record_pk = c("c1", "c2", "*"),
+    row_number = c(1L, 2L, NA), pk_positional = c(FALSE, FALSE, NA),
+    level = c("record", "record", "column"), n_records = c(NA, NA, 0L),
+    value = c("x", "y", NA), unit = c("u1", "u1", "*"), status = "open", issue_class = "source"
+  ), group_cols = "unit")
+  tables <- list(
+    results = new_results(group_cols = "unit"), issues = issues, unit = "u1", group_cols = "unit"
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 4L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- list()
+  bars <- list()
+  testthat::local_mocked_bindings(
+    html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    },
+    html_bar = function(value, max, label, bar_class = NULL) {
+      bars[[length(bars) + 1L]] <<- label
+      "<bars>"
+    }
+  )
+  section_actions(tables, NULL, settings)
+  section_column_level(tables, NULL, settings)
+  section_glance(tables, NULL, settings)
+  # Each caption names its section, so no two tables of a report share a name.
+  expect_named(caught, c(
+    "By check: Issues for you to act on", "Each issue: Issues for you to act on",
+    "Each issue: Issues that cover a whole column", "Open issues by layer and severity",
+    "Open issues by class"
+  ))
+  # A table's and a column's names are cut as delivered text is: a table_unexpected issue's
+  # table is the delivery's own (D19.72). A whole table's column, "*", stays "*", never W4.
+  expect_equal(caught[["By check: Issues for you to act on"]]$Table, "catc…")
+  expect_equal(caught[["By check: Issues for you to act on"]]$Column, "spec…")
+  expect_equal(caught[["Each issue: Issues for you to act on"]]$Table, c("catc…", "catc…"))
+  expect_equal(caught[["Each issue: Issues for you to act on"]]$Column, c("spec…", "spec…"))
+  whole <- caught[["Each issue: Issues that cover a whole column"]]
+  expect_equal(whole$Table, "haul…")
+  expect_equal(whole$Column, "*")
+  # Section 2's chart by table, its last chart, cuts the names too.
+  expect_equal(bars[[length(bars)]], c("catc…", "haul…"))
+  # A caller's caption in the run's language fills {section} with the heading in it.
+  text <- validate_text_table(data.frame(
+    text_id = c("report_records_caption", "report_section_column_level"), lang = "fr",
+    text = c("Chaque probleme : {section}", "Colonnes entieres")
+  ))
+  settings$lang <- "fr"
+  caught <- list()
+  section_column_level(tables, text, settings)
+  expect_named(caught, "Chaque probleme : Colonnes entieres")
+})
+
+test_that("the \"By check\" table leaves out an Examples column empty in every row (D20.137)", {
+  run_id <- "20261026T120000Z_abc123"
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:3, run_id = run_id, run_scope = "package",
+    rule_id = c("code_not_in_list", "raw_na", "raw_na"), rule_fingerprint = "f",
+    stage = "conformance", layer = c(3L, 2L, 2L), severity = "error", reason_code = "*",
+    table_name = "catches", column_name = c("species", "weight", "length"),
+    record_pk = c("c1", "c2", "c3"), row_number = 1:3, pk_positional = FALSE, level = "record",
+    value = NA_character_, unit = "u1", status = "open", issue_class = "unclassified"
+  ), group_cols = "unit")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  caught <- NULL
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught <<- data.table::copy(dt)
+    "<table>"
+  })
+  without <- c("Severity", "Check", "What it means", "Table", "Column", "Issues")
+  # No check has a value: no Examples column, as the "Each issue" tables leave out an empty one.
+  issue_summary(issues, "Issues under review", NULL, settings)
+  expect_named(caught, without)
+  # Nor at example_cap 0, whatever the values.
+  data.table::set(issues, j = "value", value = c("x", "y", "z"))
+  settings$example_cap <- 0L
+  issue_summary(issues, "Issues under review", NULL, settings)
+  expect_named(caught, without)
+  # One check with a value keeps the column, the other checks' cells empty.
+  settings$example_cap <- 5L
+  data.table::set(issues, j = "value", value = c("x", NA, NA))
+  issue_summary(issues, "Issues under review", NULL, settings)
+  expect_named(caught, c(without, "Examples"))
+  expect_equal(caught$Examples, c("x", NA, NA))
+})
+
+test_that("the guide explains a \"(not linked)\" bar only where a chart shows one (D20.135)", {
+  run_id <- "20261026T120000Z_abc123"
+  # The chart by area: b2 with 2 open issues, then a1 and "*" with 1 each, "*" after the value
+  # with as many. The problem unit's key, plot, is "*" throughout, and no chart shows it.
+  issues <- new_issues(list(
+    reaches_other_unit = FALSE,
+    issue_id = 1:4, run_id = run_id, run_scope = "package", rule_id = "code_not_in_list",
+    rule_fingerprint = "f", stage = "conformance", layer = 3L, severity = "error",
+    reason_code = "*", table_name = "catches", column_name = "species",
+    record_pk = paste0("c", 1:4), row_number = 1:4, pk_positional = FALSE, level = "record",
+    unit = "u1", area = c("b2", "b2", "a1", "*"), plot = "*", status = "open",
+    issue_class = "harmonization"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  results <- new_results(group_cols = c("unit", "area"))
+  data.table::set(results, j = "n_not_evaluated_own", value = integer())
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  guide <- function(found = issues, group_cols = c("unit", "area"), row_cap = 500L) {
+    settings$row_cap <- row_cap
+    as.character(section_guide(
+      list(results = results, issues = found, unit = "u1", group_cols = group_cols), NULL,
+      settings
+    ))
+  }
+  line <- html_escape(report_text("report_guide_not_linked"))
+  html <- guide()
+  expect_match(html, paste0("<p>", line, "</p>"), fixed = TRUE)
+  # After the classes, the other line on section 2.
+  classes <- html_escape(report_text("report_guide_classes"))
+  expect_gt(regexpr(line, html, fixed = TRUE), regexpr(classes, html, fixed = TRUE))
+  # At row_cap 2 the chart shows b2 and a1 only, so no "(not linked)" bar and no line; at 3, both.
+  expect_false(grepl(line, guide(row_cap = 2L), fixed = TRUE))
+  expect_match(guide(row_cap = 3L), line, fixed = TRUE)
+  # "*" on a not-evaluated issue only: the charts count open issues.
+  waiting <- data.table::copy(issues)
+  data.table::set(waiting, i = 4L, j = "status", value = "not_evaluated")
+  expect_false(grepl(line, guide(waiting), fixed = TRUE))
+  # No breakdown column, so no chart by value.
+  expect_false(grepl(line, guide(group_cols = "unit"), fixed = TRUE))
+  # The guide works out where "*" falls in the chart's order on its own, so the chart is run
+  # too (html_bar() mocked): its "(not linked)" label is among the bars exactly when the guide
+  # has the line, at each row_cap and with "*" on a not-evaluated issue only.
+  not_linked <- report_text("report_not_linked")
+  labels <- character()
+  testthat::local_mocked_bindings(html_bar = function(value, max, label, bar_class = NULL) {
+    labels <<- c(labels, label)
+    "<bars>"
+  })
+  shows_bar <- function(found, row_cap) {
+    labels <<- character()
+    settings$row_cap <- row_cap
+    section_glance(
+      list(results = results, issues = found, unit = "u1", group_cols = c("unit", "area")),
+      NULL, settings
+    )
+    not_linked %in% labels
+  }
+  for (row_cap in 1:4) {
+    expect_identical(
+      shows_bar(issues, row_cap), grepl(line, guide(row_cap = row_cap), fixed = TRUE),
+      info = paste("row_cap", row_cap)
+    )
+    expect_identical(
+      shows_bar(waiting, row_cap), grepl(line, guide(waiting, row_cap = row_cap), fixed = TRUE),
+      info = paste("row_cap", row_cap, "not evaluated")
+    )
+  }
+  expect_false(shows_bar(issues, 2L))
+  expect_true(shows_bar(issues, 3L))
 })

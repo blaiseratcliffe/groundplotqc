@@ -8,7 +8,7 @@ test_that("a run ID is the UTC start time and six hex characters, new for each r
   expect_match(id, run_id_pattern)
   expect_true(startsWith(id, "20261215T140312Z_"))
   # The same start in another time zone is the same UTC time.
-  eastern <- as.POSIXct("2026-12-15 09:03:12", tz = "EST")
+  eastern <- as.POSIXct("2026-12-15 09:03:12", tz = "America/New_York")
   expect_true(startsWith(new_run_id(eastern), "20261215T140312Z_"))
   expect_false(identical(new_run_id(start), new_run_id(start + 1e-3)))
   # The caller's random-number stream is left as it was.

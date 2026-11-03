@@ -865,3 +865,29 @@ test_that("undeclared_code_set writes one issue per report unit with its own val
   expect_equal(whole$value, "East; North; South; West")
   expect_equal(c(whole$n_records, whole$reaches_other_unit), c(8L, FALSE))
 })
+
+test_that("undeclared_code_set's units times its values may pass 2^31 (R104)", {
+  # 46,341 report units, the last holding all of 46,341 values: its pairs of unit and value
+  # pass 2^31, which in integer arithmetic gave NA with a warning, and the check stopped.
+  dictionary <- data.frame(
+    table_name = "plots", attribute_name = c("plot_id", "owner", "kind"),
+    key_type = c("PK", ".", "."), data_type = "character"
+  )
+  spec <- gpq_read_spec(dictionary)
+  n <- 46341L
+  units <- sprintf("u%05d", seq_len(n))
+  kinds <- sprintf("k%05d", seq_len(n))
+  plots <- data.table::data.table(
+    plot_id = sprintf("p%06d", seq_len(2L * n)),
+    owner = c(units[-n], rep(units[[n]], n + 1L)),
+    kind = c(rep(NA_character_, n - 1L), kinds, kinds[[1L]])
+  )
+  input <- conformance_input(list(plots = plots), spec, group_cols = "owner")
+  settings <- list(code_set_max_values = n, code_set_skip_attributes = "owner")
+  expect_no_warning(
+    found <- check_domains(input, conformance_context(spec, NULL, settings, 3L))
+  )
+  outcome <- found$undeclared_code_set[[1L]]
+  expect_equal(outcome$value, c(u46341 = paste(kinds, collapse = "; ")))
+  expect_equal(outcome$n_records, c(u46341 = n + 1L))
+})
