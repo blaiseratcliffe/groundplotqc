@@ -502,6 +502,62 @@ test_that("a holding table's own value that is no value moves its record on (D21
   expect_equal(reached$rows, c(1L, 1L, 2L, 2L, 1L, 2L, NA))
 })
 
+test_that("records reaching a column in two tables write each one's values as text once (16.2)", {
+  # Trees hold zone, a number, and region, as their plots do. Trees 1 to 5 keep their own zone
+  # (4.75 three times, 1/3 twice), trees 6 and 7 hold a missing-value code or NA and take their
+  # plot's, and tree 8's plot key names no plot. Region is a factor in trees and text in plots,
+  # so the two homes' classes differ.
+  dictionary <- data.frame(
+    table_name = c(rep("plots", 3L), rep("trees", 4L)),
+    attribute_name = c("plot_id", "zone", "region", "tree_id", "plot_id", "zone", "region"),
+    key_type = c("PK", ".", ".", "PK", "FK", ".", "."),
+    reference_table = c(NA, NA, NA, NA, "plots", NA, NA),
+    data_type = c(
+      "character", "numeric", "character", "character", "character", "numeric", "character"
+    )
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = -1, not_applicable = -9),
+    character = c(missing = "X", not_applicable = "Z")
+  ))
+  tables <- list(
+    plots = data.table::data.table(
+      plot_id = c("p1", "p2"), zone = c(1.5, 0.1 + 0.2), region = c("north", "south")
+    ),
+    trees = data.table::data.table(
+      tree_id = paste0("t", 1:8), plot_id = c("p1", "p2", "p1", "p2", "p1", "p1", "p2", "p9"),
+      zone = c(4.75, 4.75, 1 / 3, 4.75, 1 / 3, -1, NA, -9),
+      region = factor(c("north", "east", "east", "X", NA, "north", "east", "Z"))
+    )
+  )
+  input <- conformance_input(tables, spec, group_cols = c("zone", "region"))
+  zone <- reach_column(input, "trees", "zone")
+  region <- reach_column(input, "trees", "region")
+  expect_equal(zone$home, c(rep("trees", 5L), "plots", "plots", NA))
+  expect_equal(region$home, c("trees", "trees", "trees", "plots", "plots", "trees", "trees", NA))
+  # The groups as before: each number written to 15 significant digits, the plots' values as
+  # their own groups, read in one table, have them, and "*" where none is reached.
+  trees <- input$groups$trees
+  values <- trees$values[trees$row_group]
+  plots <- input$groups$plots
+  zones <- c("4.75", "4.75", "0.333333333333333", "4.75", "0.333333333333333", "1.5", "0.3")
+  expect_equal(values$zone, c(zones, "*"))
+  expect_equal(values$zone[6:7], plots$values$zone[plots$row_group])
+  regions <- c("north", "east", "east", "south", "north", "north", "east")
+  expect_equal(values$region, c(regions, "*"))
+  # Each home's distinct values are written as text once, never one per record: two of the
+  # trees' five rows, then two of the plots', for each column.
+  real <- value_text
+  given <- integer()
+  testthat::local_mocked_bindings(value_text = function(x) {
+    given <<- c(given, length(x))
+    real(x)
+  })
+  expect_identical(reached_values(input, zone, "zone"), c(zones, NA))
+  expect_identical(reached_values(input, region, "region"), c(regions, NA))
+  expect_identical(given, c(2L, 2L, 2L, 2L))
+})
+
 test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {
   dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
   station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
