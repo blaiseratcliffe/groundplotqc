@@ -733,7 +733,8 @@ section_not_evaluated <- function(tables, text, settings) {
 #' Section 14, "How to read this report": short paragraphs, each only where the report has
 #' something it explains, a layer's line only for a layer the run ran (D20.47)
 #'
-#' Always: what the report is, naming the unit's CSV. With a results row: the layers' lead-in
+#' Always: what the report is, then that proposed corrections come in a later version (D22.9,
+#' until M11 builds them), each naming the unit's CSV. With a results row: the layers' lead-in
 #' and a line for each layer the unit's results have a row of. With an open issue: severities,
 #' then classes. With a "(not linked)" bar in one of section 2's charts ("*" among the
 #' `row_cap` values a chart by a breakdown column shows): what such a bar counts (D20.135,
@@ -760,10 +761,18 @@ section_guide <- function(tables, text, settings) {
     open & issues$level %chin% "record" & issues$issue_class %chin% "source" &
       !is.na(issues$provider_key_status)
   )
-  body <- paragraph(report_text(
-    "report_guide_about", lang,
-    csv_name = settings$csv_name, text = text # D20.68
-  ))
+  # What the report is, then, on every page until M11 builds proposals, that the CSV's
+  # proposal columns are empty (D22.9); both name the unit's CSV (D20.68).
+  body <- c(
+    paragraph(report_text(
+      "report_guide_about", lang,
+      csv_name = settings$csv_name, text = text
+    )),
+    paragraph(report_text(
+      "report_guide_proposals", lang,
+      csv_name = settings$csv_name, text = text
+    ))
+  )
   layers <- sort(unique(results$layer))
   if (length(layers) > 0L) {
     # Each layer's name and line as a term and its description, escaped.

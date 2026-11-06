@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9031 (development version)
+# groundplotqc 0.0.0.9032 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -73,3 +73,4 @@
 - `magp_run_qc()` takes your `overrides` and the pipeline's `lineage` and `pipeline_fill`. Pre-flight checks them and, before any check, the run reads them as `gpq_classify_issues()` does, so an overrides table it can't use, or a cell listed twice, stops the run at once. The classes use all three, and a contributor's report shows a listed cell's raw value beside its issue among the issues to act on, where the record's key is given and, written as text, matches no other record's in its table, as `gpq_build_reports()` does. The run's `metadata/inputs.csv` gains a row for each of them that you give, and for MAGPlot's own `computed` and `crosswalk` evidence.
 - A new article, "Running QC on MAGPlot 2.0" (`vignette("magplot-qc")`), runs `magp_run_qc()` on `magp_example` saved as an `.Rdata` file, then shows where the run's files go, part of a contributor's issues CSV and how to open the reports.
 - Letter case in column names, and in file columns given as letters in `gpq_read_spec()`'s `origins`, is now folded in ASCII, whatever the session's locale. Before, in a Turkish or Azeri locale on Linux, a column `id` didn't match the attribute `ID`, and a file column given as `i` stopped `gpq_read_spec()` with an error.
+- Every provider report's guide, "How to read this report", now says that proposed corrections come in a later version, and that until then the `proposed_value` and `easy_fix` columns of its issues CSV are empty.
