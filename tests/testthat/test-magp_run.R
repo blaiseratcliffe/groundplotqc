@@ -578,6 +578,28 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   # (D21.18 Q4).
   expect_false(anyNA(results$issues$issue_class))
   expect_equal(results$metadata$run$report_units, "100; 110")
+  # The run reads its inputs before any check with the issues' group columns as classification
+  # reads them from the issues (M7b m31, D22.27): an override with an attribute that is neither
+  # an override's column nor a group column gets W229, which names them, from classification on
+  # this run's issues and the same from the run, before any check.
+  scoped <- cbind(override, magp_site_id = NA)
+  from_classes <- tryCatch(
+    gpq_classify_issues(results$issues, magp_rules(), overrides = scoped),
+    error = conditionMessage
+  )
+  expect_match(
+    from_classes,
+    "the issues' group columns (magp_contributor_id, jurisdiction, magp_dataset_id, magp_plot_id)",
+    fixed = TRUE
+  )
+  expect_error(
+    withCallingHandlers(
+      magp_run_qc(tables, output, overrides = scoped, report = FALSE),
+      gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+    ),
+    from_classes,
+    fixed = TRUE
+  )
 })
 
 test_that("a run's age-tree flags read each column as the run matches it (D21.69)", {
@@ -616,6 +638,33 @@ test_that("a run's age-tree flags read each column as the run matches it (D21.69
   flagged <- caught$magp_trees
   expect_equal(flagged$magp_tree_id[flagged$age_tree == "Y"], age_tree)
   expect_equal(caught, want)
+  # A second run: tree_type delivered under a name no attribute matches, even by letter case
+  # and spaces, is left out, so no tree is flagged "Y", though the age tree's measurements are
+  # all "A" as before (M7b m52); and magp_trees' key under its own name after a near name
+  # holding other keys, the first column, the exact name taken (M7b m53).
+  tables <- lapply(magp_example[c("magp_trees", "magp_tree_meas")], data.table::copy)
+  meas <- tables$magp_tree_meas
+  data.table::set(meas, which(meas$magp_tree_id == age_tree), "tree_type", "A")
+  data.table::setnames(meas, "tree_type", "tree type")
+  trees <- tables$magp_trees
+  data.table::set(trees, j = "Magp_Tree_Id", value = paste0(trees$magp_tree_id, "_near"))
+  data.table::setcolorder(trees, "Magp_Tree_Id")
+  caught <- NULL
+  local({
+    # The flags read the tables alone, so this run's checks are mocked to give no issues: it
+    # goes on to the flags at once, which keeps its CRAN-mode time small (D20.3).
+    testthat::local_mocked_bindings(gpq_check_conformance = function(...) list(metadata = list()))
+    expect_error(
+      withCallingHandlers(
+        magp_run_qc(tables, output, report = FALSE),
+        gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+      ),
+      "decoding reached"
+    )
+  })
+  expect_equal(caught, list(magp_trees = data.table::data.table(
+    magp_tree_id = want$magp_trees$magp_tree_id, age_tree = "N"
+  )))
 })
 
 test_that("inputs that classification can't take stop the run before any check (D21.4)", {
