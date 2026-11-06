@@ -22,15 +22,27 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
   expect_error(
     magp_run_qc(c(magp_plots = "magp_plots.csv", magp_trees = "magp_trees.csv"), output), csv
   )
-  # magp_meta given as text isn't taken for a CSV path (D21.12): the settings stop the run
-  # next.
-  expect_error(
-    magp_run_qc(list(magp_meta = "built 2026-10-01"), output, settings = list(no_such = 1)),
-    "settings the package doesn't have"
-  )
+  # magp_meta given as text isn't taken for a CSV path (D21.12), nor, as text or a list, for an
+  # element that isn't a data.frame (M7b m8): the settings stop the run next.
+  for (meta in list("built 2026-10-01", list(note = "made up"))) {
+    expect_error(
+      magp_run_qc(list(magp_meta = meta), output, settings = list(no_such = 1)),
+      "settings the package doesn't have"
+    )
+  }
   shape <- "`tables` must be magp_read_delivery\\(\\)'s result"
   # A list of tables with no names is refused too, before pre-flight writes anything.
   for (bad in list(42, magp_example$magp_plots, character(), NULL, unname(magp_example))) {
+    expect_error(magp_run_qc(bad, output), shape)
+  }
+  # So is a list holding an element that isn't a data.frame, but for magp_meta (M7b m8): a
+  # number beside a table, a table's columns as a plain list, and NULL.
+  not_frames <- list(
+    list(magp_plots = magp_example$magp_plots, magp_sites = 42),
+    list(magp_plots = as.list(magp_example$magp_plots)),
+    list(magp_plots = NULL)
+  )
+  for (bad in not_frames) {
     expect_error(magp_run_qc(bad, output), shape)
   }
   a_file <- withr::local_tempfile(lines = "not a folder")
@@ -46,6 +58,28 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
     magp_run_qc(path, output, settings = list(no_such = 1)), "settings the package doesn't have"
   )
   expect_error(magp_run_qc(path, output, settings = list(row_cap = -1)), "row_cap")
+  # overrides, lineage and pipeline_fill: one that is neither a data.frame nor the path of an
+  # existing CSV file stops before the delivery is loaded, in the words pre-flight gives it (M7b
+  # m7).
+  words <- list()
+  for (input in c("overrides", "lineage", "pipeline_fill")) {
+    words[[input]] <- tryCatch(
+      gpq_preflight(magp_spec(), magp_rules(), inputs = structure(list(42), names = input)),
+      error = conditionMessage
+    )
+    given <- list(path, output)
+    given[[input]] <- 42
+    expect_error(do.call(magp_run_qc, given), words[[input]], fixed = TRUE, info = input)
+  }
+  expect_match(
+    words$overrides, "`overrides` must be a data.frame or the path of an existing .csv file",
+    fixed = TRUE
+  )
+  # A path is taken only as an existing CSV file's: a file that isn't a CSV, a CSV path with no
+  # file.
+  for (bad in list(a_file, file.path(output, "absent.csv"))) {
+    expect_error(magp_run_qc(path, output, overrides = bad), words$overrides, fixed = TRUE)
+  }
   expect_equal(list.files(output, recursive = TRUE, all.files = TRUE, no.. = TRUE), character())
 })
 

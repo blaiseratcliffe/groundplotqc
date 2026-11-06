@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9032 (development version)
+# groundplotqc 0.0.0.9033 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -74,3 +74,5 @@
 - A new article, "Running QC on MAGPlot 2.0" (`vignette("magplot-qc")`), runs `magp_run_qc()` on `magp_example` saved as an `.Rdata` file, then shows where the run's files go, part of a contributor's issues CSV and how to open the reports.
 - Letter case in column names, and in file columns given as letters in `gpq_read_spec()`'s `origins`, is now folded in ASCII, whatever the session's locale. Before, in a Turkish or Azeri locale on Linux, a column `id` didn't match the attribute `ID`, and a file column given as `i` stopped `gpq_read_spec()` with an error.
 - Every provider report's guide, "How to read this report", now says that proposed corrections come in a later version, and that until then the `proposed_value` and `easy_fix` columns of its issues CSV are empty.
+- `magp_run_qc()` now stops before it loads the delivery when `overrides`, `lineage` or `pipeline_fill` is neither a data.frame nor the path of an existing CSV file, with pre-flight's message, or when `tables` is a list holding an element, other than `magp_meta`, that isn't a data.frame. Before, the first stopped the run only after the delivery was loaded, and the second only at the checks, after pre-flight had written its files.
+- When `magp_read_delivery()` can't load a file, its error now ends with the error R's `load()` gave, such as memory running out.
