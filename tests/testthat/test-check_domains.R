@@ -817,7 +817,6 @@ test_that("undeclared_code_set's results show example_cap of its values, its iss
 
 # M8 task 7a (D22.53, D22.58)
 test_that("undeclared_code_set skips another type's code where the text type has codes (D22.58)", {
-  testthat::skip_on_cran()
   four <- list(code_set_max_values = 2L)
   fish <- fx_clean_tables(fx_fish_spec(), n = 4L)
   stations <- data.table::copy(fish$stations)
