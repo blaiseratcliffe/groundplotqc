@@ -483,6 +483,16 @@ test_that("MAGPlot's rule set skips bore_ht and falls back to harmonization (D22
     expect_equal(unique(hit$issue_class), "harmonization", info = rule)
     expect_equal(unique(hit$class_basis), "fallback", info = rule)
   }
+  # On a MAGPlot page they land in the harmonization section, and none under review (m18).
+  settings <- list(lang = "en", row_cap = 7L, example_cap = 2L, cell_cap = 60L, csv_name = "x.csv")
+  open <- list(issues = issues[issues$status == "open" & issues$level == "record"])
+  harmonization <- as.character(section_harmonization(open, magp_texts(), settings))
+  review <- as.character(section_under_review(open, magp_texts(), settings))
+  for (rule in c("code_not_in_list", "pattern_mismatch")) {
+    expect_match(harmonization, paste0("<td>", rule, "</td>"), fixed = TRUE, info = rule)
+    expect_false(grepl(rule, review, fixed = TRUE), info = rule)
+  }
+  expect_match(review, report_text("report_under_review_empty"), fixed = TRUE)
 })
 
 test_that("every defect block stops on tables that aren't fixtures (18.3)", {

@@ -32,15 +32,16 @@
 #              (Layers 0 to 4). Its row's `report_mb` is the largest provider report's, which
 #              isn't the `report` stage's measure of one report: this run's issues are
 #              classified with MAGPlot's evidence and that stage's with none, so their
-#              sections differ (0.076 against 0.074 at 0.01x);
+#              sections differ (0.076 against 0.073 at 0.01x);
 #   run_qc_lineage
 #              the defect run only: the same run given the lineage table's path as `lineage`,
 #              after run_qc's result and folder are released, so its peak holds nothing of
-#              run_qc's. Its seconds and peak less run_qc's are what the table costs the run:
-#              its four reads (the early read, pre-flight, classification and the build;
-#              m30), classification's evidence join and the build's match of its rows to each
-#              report unit's issues (M7a m46). run_qc also pays the session's first-run costs,
-#              which make it the slower of the two at 0.01x;
+#              run_qc's, and the lineage run starts with the session's loaded code. Its
+#              seconds and peak less run_qc's are what the table costs the run: its four reads
+#              (the early read, pre-flight, classification and the build; m30),
+#              classification's evidence join and the build's match of its rows to each report
+#              unit's issues (M7a m46). run_qc also pays the session's first-run costs, which
+#              make it the slower of the two at 0.01x;
 #   build      fx_magp_scaled(), timed but not counted against 16.1;
 #   mark_scan  validate_tables(), the scan of the tables for text marked as bytes (m33);
 #   run        gpq_check_conformance() on the tables, which makes the mark scan itself, so

@@ -204,15 +204,22 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   # from the provider, and a cell the pipeline's fill wrote; beside them, the confidentiality
   # test's override and raw value of 110's species code, and its override classing 100's code
   # QX9 source, so 100's page has an "Each issue" table on the table and column of 110's raw
-  # value q-raw-110 (D22.22). Each override is scoped to its contributor, so the first classes
-  # no code of 100's in that column and the third none of 110's (D21.37).
+  # value q-raw-110 (D22.22). Each override is scoped to its contributor. The fourth classes
+  # harmonization on 110's species column but is scoped to 100, who has no code issue there, so it
+  # classes nothing; read without its contributor it would meet the second, class source, on the
+  # same scope, and leave 110's species issue unclassified (D9.27, D21.37). The first three give
+  # the same class for either contributor, so only the fourth shows the scope.
   override <- data.frame(
     fingerprint = NA, rule_id = "code_not_in_list",
-    table_name = c("magp_plot_meas", "magp_tree_meas", "magp_plot_meas"),
-    column_name = c("canopy_structure", "species", "canopy_structure"),
-    magp_contributor_id = c("110", "110", "100"), issue_class = "source", who = "A. Reviewer",
+    table_name = c("magp_plot_meas", "magp_tree_meas", "magp_plot_meas", "magp_tree_meas"),
+    column_name = c("canopy_structure", "species", "canopy_structure", "species"),
+    magp_contributor_id = c("110", "110", "100", "100"),
+    issue_class = c("source", "source", "source", "harmonization"), who = "A. Reviewer",
     when = "2026-10-29",
-    why = c("Checked with the provider.", "Planted for the test.", "Planted for the test.")
+    why = c(
+      "Checked with the provider.", "Planted for the test.", "Planted for the test.",
+      "Planted for the test."
+    )
   )
   raw <- data.frame(
     table_name = c("magp_plot_meas", "magp_tree_meas"),
@@ -292,8 +299,8 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   # The open issues and their classes, in the checks' order: the delivery's two (the date on
   # 100's site, the code on 110's plot measurement) among the confidentiality test's twelve (the
   # code on 100, 110's species code, the slope and aspect, the orphan, (B)'s three and (A)'s
-  # four). The overrides class only the three codes, each its own contributor's (D21.37,
-  # D22.22).
+  # four). The overrides class only the three codes, each by its own contributor's override: the
+  # fourth, on 110's species column for 100, leaves 110's species code source (D21.37, D22.22).
   open <- results$issues[results$issues$status == "open"]
   expect_equal(
     open[, c("record_pk", "rule_id", "magp_contributor_id", "issue_class", "class_basis")],
@@ -489,16 +496,16 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   expect_true("not a date" %chin% seen[["100"]]$cells)
   expect_true("QQ" %chin% tokens(seen[["110"]]$page))
   expect_true("QQ" %chin% seen[["110"]]$cells)
-  # No cap hides a value from those checks (D22.21): on this run the caps cut only section 10's
-  # table, which names checks and counts records, holding no key or value. Each page's one
-  # "Showing ..." line, the note a capped table or chart gives, is section 10's, and nothing on
-  # the page ends in an ellipsis, as a value cut at cell_cap would.
+  # No row or cell cap hides a value from those checks (D22.21): on this run they cut only
+  # section 10's table, which names checks and counts records, holding no key or value. Each
+  # page's one "Showing ..." line, the note a capped table or chart gives, is section 10's, and
+  # nothing on the page ends in an ellipsis, as a value cut at cell_cap would.
   for (unit in units) {
     notes <- regmatches(seen[[unit]]$page, gregexpr("Showing [^<]*", seen[[unit]]$page))[[1L]]
     expect_length(notes, 1L)
     expect_match(notes, "^Showing [0-9]+ of [0-9]+ rows[.]$")
     expect_true(grepl(notes[[1L]], section_of(unit, "not-evaluated"), fixed = TRUE), info = unit)
-    expect_false(grepl("…", seen[[unit]]$page, fixed = TRUE), info = unit)
+    expect_false(grepl("\u{2026}", seen[[unit]]$page, fixed = TRUE), info = unit)
   }
   # Absence: neither of a unit's files holds the other unit's surrogate keys or planted values
   # (codes, slope or aspect, date text, raw value); the unit values as whole CSV cells only,
@@ -672,7 +679,7 @@ test_that("a run's age-tree flags read each column as the run matches it (D21.69
   # A second run: tree_type delivered under a name no attribute matches, even by letter case
   # and spaces, is left out, so no tree is flagged "Y", though the age tree's measurements are
   # all "A" as before (M7b m52); and magp_trees' key under its own name after a near name
-  # holding other keys, the first column, the exact name taken (M7b m53).
+  # holding other keys, which is moved to the first column, the exact name taken (M7b m53).
   tables <- lapply(magp_example[c("magp_trees", "magp_tree_meas")], data.table::copy)
   meas <- tables$magp_tree_meas
   data.table::set(meas, which(meas$magp_tree_id == age_tree), "tree_type", "A")

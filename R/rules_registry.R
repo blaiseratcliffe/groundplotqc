@@ -256,7 +256,8 @@ build_rule_registry <- function() {
     ),
     # ---- M5: Appendix E's candidate (D8.24, D9.26; class proposed in the PR, Y6) ----
     # Version 2 (M7a): one issue per report unit, each holding that unit's own values (D20.11).
-    # Version 3 (M8): counts no missing-value code of any type (D22.53).
+    # Version 3 (M8): counts no other type's missing-value code, where the text type declares
+    # codes of its own (D22.53, D22.58).
     conformance(
       "undeclared_code_set", 3L, "warning", "harmonization",
       paste(
