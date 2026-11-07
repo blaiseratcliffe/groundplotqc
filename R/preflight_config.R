@@ -473,6 +473,8 @@ preflight_text_checks <- function() {
       ))
     },
     text_slot_unknown = function(spec, context) {
+      # gpq_build_reports() checks its `text` by the same rule before it writes (D20.138):
+      # change the two together; a test holds them to the same rows (D22.26).
       text <- context$text
       if (is.null(text)) {
         return(no_findings())

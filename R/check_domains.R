@@ -127,11 +127,13 @@ decimal_places <- function(number) {
 #' not_run row (no_input). `undeclared_code_set` per text attribute that isn't coded, a key
 #' or marked as an ID, and that the `code_set_skip_*` settings don't name: one column-level
 #' warning where the column holds more than `code_set_max_values` values (not NA, blank, a
-#' sentinel of its type or an unknown code of the attribute) and no more than that many
-#' distinct ones, each distinct value read once (D8.24, D9.26, D18.20, R11); its issue lists
-#' them all in C order and its results row's examples the first `example_cap` (D18.103). With
-#' group columns the column is still judged whole, but its issue is one per report unit, each
-#' listing its own records' values, those of records whose unit is "*" under "*" (D20.11).
+#' missing-value code of its type, another type's where its type declares codes, or an unknown
+#' code of the attribute) and no more than that many distinct ones, each distinct value read
+#' once (D8.24, D9.26, D18.20, D22.53, D22.58, R11); its
+#' issue lists them all in C order and its results row's examples the first `example_cap`
+#' (D18.103). With group columns the column is still judged whole, but its issue is one per
+#' report unit, each listing its own records' values, those of records whose unit is "*" under
+#' "*" (D20.11).
 #' @noRd
 check_domains <- function(input, context) {
   columns <- input$columns
@@ -306,12 +308,21 @@ check_domains <- function(input, context) {
       judged <- columns$family == "character" & !columns$coded & is.na(columns$key_type) &
         !columns$id_marked & !skipped_name
       most <- context$code_set_max_values
+      # Another type's missing-value codes aren't codes where the text type declares codes of
+      # its own, as missing_like() reads them (D22.53, D22.58, D16.32): there
+      # `sentinel_wrong_type` reports them. Where it declares none they are data.
+      sentinels <- context$spec$sentinels
+      other_codes <- if (any(sentinels$data_type == "character")) {
+        unique(sentinels$value[sentinels$data_type != "character"])
+      } else {
+        character()
+      }
       outcomes <- rule_outcomes(
         "undeclared_code_set", columns[judged], input, function(table, attribute, x, row) {
           text <- as_written(x, row)
           # Each distinct value is read once (16.2): domain_skipped() judges value by value.
           distinct <- unique(text)
-          kept <- distinct[!domain_skipped(distinct, row, context)]
+          kept <- distinct[!domain_skipped(distinct, row, context) & !distinct %chin% other_codes]
           # More distinct values than `most` means more values too: the column passes.
           if (length(kept) > most) {
             return(unit_outcome("undeclared_code_set", table, attribute, FALSE, length(x)))

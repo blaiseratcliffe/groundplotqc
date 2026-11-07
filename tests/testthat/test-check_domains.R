@@ -815,10 +815,41 @@ test_that("undeclared_code_set's results show example_cap of its values, its iss
   }
 })
 
+# M8 task 7a (D22.53, D22.58)
+test_that("undeclared_code_set skips another type's code where the text type has codes (D22.58)", {
+  four <- list(code_set_max_values = 2L)
+  fish <- fx_clean_tables(fx_fish_spec(), n = 4L)
+  stations <- data.table::copy(fish$stations)
+  # The fish spec's numeric missing code is -99, and station_name is text: another type's code.
+  data.table::set(stations, j = "station_name", value = c("North", "North", "-99", "-99"))
+  fish$stations <- stations
+  # Without the code the column holds one value, too few to judge.
+  results <- fish_run(fish, settings = four)
+  expect_false("undeclared_code_set" %in% results$results$rule_id)
+  # A text type that declares no codes: sentinel_wrong_type doesn't run, so -99 is data and the
+  # column holds two values (D16.32).
+  bare <- gpq_read_spec(
+    dictionary = example_file("fish_dictionary.csv"), code_lists = fx_fish_code_lists(),
+    column_map = fx_fish_column_map(), type_map = gpq_type_map(example_file("fish_types.csv")),
+    sentinels = gpq_sentinels(
+      numeric = c(missing = -99, not_applicable = -88),
+      date = c(missing = "?", not_applicable = "~")
+    )
+  )
+  found <- opened(fish_run(fish, settings = four, spec = bare), "undeclared_code_set")
+  expect_equal(found$value, "-99; North")
+  # A genuine small code set still warns, and lists no missing-value code of any type.
+  data.table::set(stations, j = "station_name", value = c("North", "South", "-99", "North"))
+  fish$stations <- stations
+  found <- opened(fish_run(fish, settings = four), "undeclared_code_set")
+  expect_equal(found$value, "North; South")
+  expect_equal(found$n_records, 4L)
+})
+
 # M7a task 3 (D18.60, D20.11, D20.14)
 test_that("undeclared_code_set writes one issue per report unit with its own values (D20.11)", {
   registry <- rule_registry()
-  expect_equal(registry$rule_version[registry$rule_id == "undeclared_code_set"], 2L)
+  expect_equal(registry$rule_version[registry$rule_id == "undeclared_code_set"], 3L)
   fish <- fx_clean_tables(fx_fish_spec(), n = 8L)
   stations <- data.table::copy(fish$stations)
   # Three water bodies and a station with none: North is LK's only, South both LK's and RV's,

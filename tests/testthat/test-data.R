@@ -466,6 +466,35 @@ test_that("the clean base raises nothing in Layers 0 to 4 (18.3)", {
   expect_equal(nrow(results$metadata$self_test), 0L)
 })
 
+test_that("MAGPlot's rule set skips bore_ht and falls back to harmonization (D22.54, D22.56)", {
+  testthat::skip_on_cran()
+  blocks <- fx_defect_blocks()
+  # One run: a code and a pattern defect, and bore_ht, a text column of one value, which the
+  # code-set rule would judge but for the rule set's skip.
+  tables <- fx_set_column("magp_tree_age", "bore_ht", function(x) rep("B", length(x)))(
+    blocks$pattern_mismatch(blocks$code_not_in_list(fx_magp_clean()))
+  )
+  results <- fx_caught(tables)
+  issues <- gpq_classify_issues(results$issues, magp_rules())
+  expect_false(any(issues$column_name == "bore_ht" & issues$rule_id == "undeclared_code_set"))
+  for (rule in c("code_not_in_list", "pattern_mismatch")) {
+    hit <- issues[issues$rule_id == rule & issues$status == "open"]
+    expect_gt(nrow(hit), 0L)
+    expect_equal(unique(hit$issue_class), "harmonization", info = rule)
+    expect_equal(unique(hit$class_basis), "fallback", info = rule)
+  }
+  # On a MAGPlot page they land in the harmonization section, and none under review (m18).
+  settings <- list(lang = "en", row_cap = 7L, example_cap = 2L, cell_cap = 60L, csv_name = "x.csv")
+  open <- list(issues = issues[issues$status == "open" & issues$level == "record"])
+  harmonization <- as.character(section_harmonization(open, magp_texts(), settings))
+  review <- as.character(section_under_review(open, magp_texts(), settings))
+  for (rule in c("code_not_in_list", "pattern_mismatch")) {
+    expect_match(harmonization, paste0("<td>", rule, "</td>"), fixed = TRUE, info = rule)
+    expect_false(grepl(rule, review, fixed = TRUE), info = rule)
+  }
+  expect_match(review, report_text("report_under_review_empty"), fixed = TRUE)
+})
+
 test_that("every defect block stops on tables that aren't fixtures (18.3)", {
   testthat::skip_on_cran()
   # lapply() returns a plain list, which lacks the marker the guard reads.

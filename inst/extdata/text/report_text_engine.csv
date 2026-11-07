@@ -354,6 +354,7 @@
 "report_not_evaluated_empty","en","Every check this run ran evaluated every record."
 "report_rows_shown","en","Showing {n} of {total} rows."
 "report_guide_about","en","This report is built from the run's saved results. The issues CSV, {csv_name}, holds every issue in this report, one per row, including any the tables here leave out."
+"report_guide_proposals","en","Proposed corrections come in a later version: until then, the proposed_value and easy_fix columns of {csv_name} are empty."
 "report_guide_layers","en","Checks run in layers, each building on the one before:"
 "report_guide_layer_0","en","Checks that the tables and columns delivered match the data dictionary."
 "report_guide_layer_1","en","Checks that each value can be read as its column's type."

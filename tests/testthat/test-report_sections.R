@@ -297,6 +297,10 @@ test_that("section_guide shows a paragraph only where the report has what it exp
   }
   expect_equal(attr(section_guide(tables, NULL, settings), "gpq_section")[["id"]], "guide")
   expect_true(shows("report_guide_about", csv_name = "u1_issues.csv"))
+  # Right after what the report is, on every page: proposed corrections come later (D22.9).
+  about <- html_escape(report_text("report_guide_about", csv_name = "u1_issues.csv"))
+  proposals <- html_escape(report_text("report_guide_proposals", csv_name = "u1_issues.csv"))
+  expect_match(html, paste0("<p>", about, "</p><p>", proposals, "</p>"), fixed = TRUE)
   expect_true(shows("report_guide_layers"))
   for (layer in c(0L, 2L, 3L)) {
     expect_true(shows(paste0("report_layer_", layer)), info = layer)
@@ -370,11 +374,13 @@ test_that("section_guide shows a paragraph only where the report has what it exp
   waiting_column <- issues[2L]
   data.table::set(waiting_column, j = "status", value = "not_evaluated")
   expect_equal(showing(base, waiting_column), c("not_evaluated", "caps"))
-  # A report with nothing to explain but the run: what it is, and Layer 0's line.
+  # A report with nothing to explain but the run: what it is, that proposed corrections come
+  # later, and Layer 0's line.
   results <- results[1L]
   tables <- list(results = results, issues = issues[0L], unit = "u1", group_cols = "unit")
   html <- as.character(section_guide(tables, NULL, settings))
   expect_true(shows("report_guide_about", csv_name = "u1_issues.csv"))
+  expect_match(html, paste0("<p>", about, "</p><p>", proposals, "</p>"), fixed = TRUE)
   expect_true(shows("report_guide_layer_0"))
   for (text_id in c(
     "report_guide_layer_2", "report_guide_severities", "report_guide_classes",

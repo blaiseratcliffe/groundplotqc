@@ -44,14 +44,20 @@ magp_read_delivery <- function(path) {
   # package's.
   env <- new.env(parent = emptyenv())
   # load() warns before it stops on a file it can't read, so its warnings are muffled and the
-  # caller's error alone says what went wrong. It returns the names it loaded, in the file's
-  # order: character() for a file saved with no objects.
+  # caller's error says what went wrong, ending with load()'s own error where load() stopped,
+  # such as memory running out (D22.18). It returns the names it loaded, in the file's order:
+  # character() for a file saved with no objects.
   loaded <- if (path_ok) {
-    tryCatch(suppressWarnings(load(path, envir = env)), error = function(e) NULL)
+    tryCatch(suppressWarnings(load(path, envir = env)), error = function(e) e)
   }
-  if (is.null(loaded)) {
+  if (!is.character(loaded)) {
     # M7b W48
-    stop("The file given must be one .Rdata file that R can load.", call. = FALSE)
+    problem <- "The file given must be one .Rdata file that R can load."
+    if (inherits(loaded, "error")) {
+      # M8 W10 (D22.18, D22.42)
+      problem <- sprintf("%s load() stopped with this error: %s", problem, conditionMessage(loaded))
+    }
+    stop(problem, call. = FALSE)
   }
   file <- basename(path)
   table_names <- unique(magp_spec()$attributes$table_name)

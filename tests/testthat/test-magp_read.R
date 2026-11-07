@@ -133,6 +133,34 @@ test_that("magp_read_delivery stops on a path that isn't one .Rdata file R can l
   }
 })
 
+test_that("W48 ends with load()'s own error where load() stopped on the file (D22.18)", {
+  sentence <- "The file given must be one .Rdata file that R can load."
+  dir <- withr::local_tempdir()
+  # A delivery cut short, as a copy stopped part way leaves it: load() starts on its first
+  # bytes, a saved file's, then stops. And two files load() stops on at once.
+  saved <- fx_magp_rdata()
+  cut <- file.path(dir, "cut.Rdata")
+  writeBin(readBin(saved, "raw", file.size(saved) %/% 2L), cut)
+  text <- file.path(dir, "notes.Rdata")
+  writeLines("not saved by R", text)
+  empty <- file.path(dir, "empty.Rdata")
+  writeBin(raw(), empty)
+  for (path in c(cut, text, empty)) {
+    # load()'s error as load() gives it here, in the session's language, never written here.
+    stopped <- tryCatch(suppressWarnings(load(path, envir = new.env())), error = function(e) e)
+    expect_s3_class(stopped, "error")
+    expect_identical(
+      tryCatch(magp_read_delivery(path), error = conditionMessage),
+      paste(sentence, "load() stopped with this error:", conditionMessage(stopped)),
+      info = basename(path)
+    )
+  }
+  # Where load() never ran, on a path that isn't one file, the sentence stands alone.
+  for (bad in list(file.path(dir, "absent.Rdata"), dir, NA_character_)) {
+    expect_identical(tryCatch(magp_read_delivery(bad), error = conditionMessage), sentence)
+  }
+})
+
 test_that("magp_read_delivery stops on a file holding none of the 17 tables", {
   message <- paste(
     "%s holds none of MAGPlot 2.0's 17 tables as an object of its own; a delivery saves each",

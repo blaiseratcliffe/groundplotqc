@@ -3,8 +3,8 @@
 # of two units fx_report_results() (D20.58), each unit's file name (D20.8, D20.70), and
 # gpq_build_reports(), which builds each unit's report and issues CSV into a saved run's folder
 # (D20.13, D20.25, D20.26, D20.29, D20.38, D20.48, D20.114, D20.116, D20.120, D20.125,
-# D20.126). Every test runs on CRAN (D20.3) but the worst case's size, which is skipped there
-# (D20.38).
+# D20.126, D22.9, D22.26). Every test runs on CRAN (D20.3) but the worst case's size, which
+# is skipped there (D20.38).
 
 test_that("a unit rule's \"*\" row and issue go to every unit (D16.8, D16.16, D20.24)", {
   local_results_registry()
@@ -554,6 +554,13 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
     # The CSV starts with UTF-8's byte-order mark, and the page loads nothing from elsewhere.
     expect_identical(readBin(files[[at[[2L]]]], "raw", 3L), as.raw(c(0xef, 0xbb, 0xbf)))
     expect_false(grepl("https?://|src=|<link", page))
+    # Every page's guide says proposed corrections come later, naming the unit's own CSV
+    # (D22.9).
+    proposals <- report_text(
+      "report_guide_proposals",
+      csv_name = paste0(stems[units == unit], "_issues.csv")
+    )
+    expect_true(grepl(html_escape(proposals), page, fixed = TRUE), info = unit)
     # The assembled page escapes what it shows: 110's under-review issue holds "<script>&".
     expect_false(grepl("<script>&", page, fixed = TRUE), info = unit)
     if (unit == "110") {
@@ -822,9 +829,11 @@ test_that("a run with no group columns builds one report of every issue (D20.29,
     file.path(run_dir, c("reports/report.html", "tables/report_issues.csv"))
   )
   expect_equal(nrow(data.table::fread(files[[2L]])), nrow(results$issues))
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  expect_match(page, paste("Quality report for run", results$metadata$run$run_id), fixed = TRUE)
+  # Its guide's line on proposed corrections names report_issues.csv (D22.9).
   expect_match(
-    paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n"),
-    paste("Quality report for run", results$metadata$run$run_id),
+    page, html_escape(report_text("report_guide_proposals", csv_name = "report_issues.csv")),
     fixed = TRUE
   )
 })
@@ -1078,4 +1087,57 @@ test_that("a text row with a slot its package row lacks stops the build first (D
   expect_true(all(earlier %in% files))
   page <- paste(readLines(earlier[[1L]], encoding = "UTF-8"), collapse = "\n")
   expect_match(page, "<h1>Quality report</h1>", fixed = TRUE)
+})
+
+test_that("the build stops on exactly the slots pre-flight's text_slot_unknown finds (D22.26)", {
+  local_results_registry()
+  results <- fx_report_results()
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  # The same rows through both copies of D14.21's rule: rows that pass (fewer slots, a slot
+  # repeated, a text the package lacks); a slot added in English and in another language; a
+  # slot another text has and this one lacks; and two rows each adding one, the build naming
+  # pre-flight's first.
+  cases <- list(
+    data.frame(
+      text_id = c("report_title", "report_title", "provider_note"), lang = c("en", "de", "en"),
+      text = c("Quality report", "{unit} {unit}", "A note on {anything}")
+    ),
+    data.frame(text_id = "report_title", lang = "en", text = "Report for {unit} {zone}"),
+    data.frame(text_id = "report_title", lang = "fr", text = "Rapport {unit} {zone}"),
+    data.frame(text_id = "report_title", lang = "en", text = "Report {run_id}"),
+    data.frame(
+      text_id = c("report_masthead_run", "report_title"), lang = "en",
+      text = c("Run {run_id} {when}", "Report for {unit} {zone}")
+    )
+  )
+  expected <- list(
+    character(), "report_title en {zone}", "report_title fr {zone}", "report_title en {run_id}",
+    c("report_masthead_run en {when}", "report_title en {zone}")
+  )
+  spec <- fx_fish_spec()
+  for (k in seq_along(cases)) {
+    found <- preflight_check_functions()[["text_slot_unknown"]](
+      spec, preflight_context(text = cases[[k]])
+    )
+    # Each finding's text, language and slot, as its detail and the build's error name them.
+    flagged <- sub(
+      "^Text (\\S+) in language (\\S+) uses the slot (\\S+), .*$", "\\1 \\2 \\3", found$detail
+    )
+    stopped <- tryCatch(
+      {
+        gpq_build_reports(results, output, text = cases[[k]])
+        character()
+      },
+      error = function(e) {
+        sub(
+          "^Report text (\\S+) \\(language (\\S+)\\) in `text` uses the slot (\\S+), .*$",
+          "\\1 \\2 \\3", conditionMessage(e)
+        )
+      }
+    )
+    expect_identical(flagged, expected[[k]], info = paste("case", k))
+    # The build stops where pre-flight finds a slot, and only there, naming its first.
+    expect_identical(stopped, head(flagged, 1L), info = paste("case", k))
+  }
 })
