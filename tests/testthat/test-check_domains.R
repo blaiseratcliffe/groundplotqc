@@ -815,10 +815,30 @@ test_that("undeclared_code_set's results show example_cap of its values, its iss
   }
 })
 
+# M8 task 7a (D22.53)
+test_that("undeclared_code_set counts no missing-value code of any type (D22.53)", {
+  testthat::skip_on_cran()
+  four <- list(code_set_max_values = 2L)
+  fish <- fx_clean_tables(fx_fish_spec(), n = 4L)
+  stations <- data.table::copy(fish$stations)
+  # The fish spec's numeric missing code is -99, and station_name is text: another type's code.
+  data.table::set(stations, j = "station_name", value = c("North", "North", "-99", "-99"))
+  fish$stations <- stations
+  # Without the code the column holds one value, too few to judge.
+  expect_equal(nrow(opened(fish_run(fish, settings = four), "undeclared_code_set")), 0L)
+  expect_false("undeclared_code_set" %in% fish_run(fish, settings = four)$results$rule_id)
+  # A genuine small code set still warns, and lists no missing-value code of any type.
+  data.table::set(stations, j = "station_name", value = c("North", "South", "-99", "North"))
+  fish$stations <- stations
+  found <- opened(fish_run(fish, settings = four), "undeclared_code_set")
+  expect_equal(found$value, "North; South")
+  expect_equal(found$n_records, 4L)
+})
+
 # M7a task 3 (D18.60, D20.11, D20.14)
 test_that("undeclared_code_set writes one issue per report unit with its own values (D20.11)", {
   registry <- rule_registry()
-  expect_equal(registry$rule_version[registry$rule_id == "undeclared_code_set"], 2L)
+  expect_equal(registry$rule_version[registry$rule_id == "undeclared_code_set"], 3L)
   fish <- fx_clean_tables(fx_fish_spec(), n = 8L)
   stations <- data.table::copy(fish$stations)
   # Three water bodies and a station with none: North is LK's only, South both LK's and RV's,
