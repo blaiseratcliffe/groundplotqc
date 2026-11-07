@@ -509,8 +509,8 @@ fx_answer_sheet <- function() {
       witness = "1"
     ),
     fx_defect(
-      "undeclared_code_set", "magp_tree_age", "bore_ht", "*; *",
-      "magp_tree_age$bore_ht all \"B\"", "undeclared_code_set",
+      "undeclared_code_set", "magp_tally_trees", "ht_class", "*; *",
+      "magp_tally_trees$ht_class all \"B\"", "undeclared_code_set",
       witness = "B"
     ),
     # ---- Layer 4 (M5) ----
@@ -666,7 +666,7 @@ fx_defect_blocks <- function() {
       }
       tables
     },
-    undeclared_code_set = fx_set_column("magp_tree_age", "bore_ht", function(x) {
+    undeclared_code_set = fx_set_column("magp_tally_trees", "ht_class", function(x) {
       rep("B", length(x))
     }),
     # ---- Layer 4 (M5) ----

@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9033 (development version)
+# groundplotqc 0.0.0.9034 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -77,3 +77,4 @@
 - `magp_run_qc()` now stops before it loads the delivery when `overrides`, `lineage` or `pipeline_fill` is neither a data.frame nor the path of an existing CSV file, with pre-flight's message, or when `tables` is a list holding an element, other than `magp_meta`, that isn't a data.frame. Before, the first stopped the run only after the delivery was loaded, and the second only at the checks, after pre-flight had written its files.
 - When `magp_read_delivery()` can't load a file, its error now ends with the error R's `load()` gave, such as memory running out.
 - `undeclared_code_set` no longer counts a missing-value code of any type as one of a text column's values. Before, a text column that held a number's missing-value code was warned on for it, though `sentinel_wrong_type` already reports that code on every record. Its `rule_version` is now 3.
+- MAGPlot's rule set is now version 5. The code-set rule `undeclared_code_set` skips `bore_ht`, since it holds a height in metres, not a code. When computed evidence doesn't settle the class of a `code_not_in_list` or `pattern_mismatch` issue, it now falls back to `harmonization`, so the provider report lists it under 'Issues being fixed in harmonization' instead of 'Issues under review'.
