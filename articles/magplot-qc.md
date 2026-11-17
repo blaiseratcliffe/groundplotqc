@@ -42,7 +42,7 @@ this article, and in your run, a path inside the folder you gave.
 output <- tempfile("runs")
 results <- magp_run_qc(path, output)
 #> Warning: Pre-flight found 32 warning(s); see
-#> /tmp/RtmpCyMmAr/runs20722c1bf78d/20261103T175543Z_186c3e/reports/preflight.html.
+#> /tmp/RtmpLHhUV5/runs1f1838baf305/20261117T172958Z_1155d5/reports/preflight.html.
 ```
 
 ## Where the files go

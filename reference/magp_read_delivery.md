@@ -57,7 +57,7 @@ names(tables)
 #> [13] "magp_trees"         "magp_tree_meas"     "magp_tree_cond"    
 #> [16] "magp_tree_age"      "magp_tally_trees"  
 attr(tables, "source_file")
-#> [1] "file1e6620d92950.Rdata"
+#> [1] "file1d1375b09a69.Rdata"
 attr(tables, "sha256")
 #> [1] "628020ca89267a01483cf4a73c39c8074a212bcc39b763ed27653e014a25bcd3"
 unlink(path)

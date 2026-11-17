@@ -41,7 +41,7 @@ rules <- magp_rules()
 rules$meta
 #>    rule_set_name version       date spec_version
 #>           <char>  <char>     <char>       <char>
-#> 1:   MAGPlot 2.0       4 2026-10-30     20261005
+#> 1:   MAGPlot 2.0       5 2026-11-06     20261005
 rules$settings
 #>                      setting
 #>                       <char>
@@ -65,6 +65,7 @@ rules$settings
 #> 18:   design_signature_table
 #> 19:      design_signature_by
 #> 20: design_signature_columns
+#> 21:           fallback_class
 #>                      setting
 #>                       <char>
 #>                                                                                 value
@@ -79,7 +80,7 @@ rules$settings
 #>  8:                                                                  species=UNKN.SPP
 #>  9:                                                 latitude; longitude; utm_e; utm_n
 #> 10:                                                                                25
-#> 11:                     meas_plots; meas_frames; temporal_extent; meas_cycle; subplot
+#> 11:            meas_plots; meas_frames; temporal_extent; meas_cycle; subplot; bore_ht
 #> 12:                                 _id$|^comments$|name|_date$|^src_|^meas_subplots$
 #> 13:                                                                magp_design_frames
 #> 14:                                                           magp_design_id; subplot
@@ -89,6 +90,7 @@ rules$settings
 #> 18:                                                                magp_design_frames
 #> 19:                                                                    magp_design_id
 #> 20: frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf
+#> 21:                    code_not_in_list=harmonization; pattern_mismatch=harmonization
 #>                                                                                 value
 #>                                                                                <char>
 #>          type
@@ -113,6 +115,7 @@ rules$settings
 #> 18: character
 #> 19: character
 #> 20: character
+#> 21: character
 #>          type
 #>        <char>
 ```

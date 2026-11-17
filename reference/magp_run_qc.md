@@ -171,7 +171,7 @@ save(list = names(magp_example), envir = list2env(magp_example), file = path)
 output <- tempfile("runs")
 # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 results <- magp_run_qc(path, output)
-#> Warning: Pre-flight found 32 warning(s); see /tmp/RtmpL0xf7E/runs1e66a8bbe0f/20261103T175534Z_9be761/reports/preflight.html.
+#> Warning: Pre-flight found 32 warning(s); see /tmp/RtmpZ5fU1S/runs1d13304a69d/20261117T172953Z_03ca27/reports/preflight.html.
 run_dir <- file.path(output, results$metadata$run$run_id)
 list.files(run_dir, recursive = TRUE)
 #>  [1] "metadata/clashes.csv"       "metadata/inputs.csv"       

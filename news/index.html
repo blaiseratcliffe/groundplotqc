@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">groundplotqc</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9031</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9034</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,7 +39,7 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.0.0.9031" id="groundplotqc-0009031-development-version">groundplotqc 0.0.0.9031 (development version)<a class="anchor" aria-label="anchor" href="#groundplotqc-0009031-development-version"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.0.0.9034" id="groundplotqc-0009034-development-version">groundplotqc 0.0.0.9034 (development version)<a class="anchor" aria-label="anchor" href="#groundplotqc-0009034-development-version"></a></h2>
 <ul><li>First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.</li>
 <li>
 <code><a href="../reference/gpq_column_map.html">gpq_column_map()</a></code>, <code><a href="../reference/gpq_type_map.html">gpq_type_map()</a></code> and <code><a href="../reference/gpq_sentinels.html">gpq_sentinels()</a></code> describe a specification’s dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.</li>
@@ -145,6 +145,13 @@
 <code><a href="../reference/magp_run_qc.html">magp_run_qc()</a></code> takes your <code>overrides</code> and the pipeline’s <code>lineage</code> and <code>pipeline_fill</code>. Pre-flight checks them and, before any check, the run reads them as <code><a href="../reference/gpq_classify_issues.html">gpq_classify_issues()</a></code> does, so an overrides table it can’t use, or a cell listed twice, stops the run at once. The classes use all three, and a contributor’s report shows a listed cell’s raw value beside its issue among the issues to act on, where the record’s key is given and, written as text, matches no other record’s in its table, as <code><a href="../reference/gpq_build_reports.html">gpq_build_reports()</a></code> does. The run’s <code>metadata/inputs.csv</code> gains a row for each of them that you give, and for MAGPlot’s own <code>computed</code> and <code>crosswalk</code> evidence.</li>
 <li>A new article, “Running QC on MAGPlot 2.0” (<code><a href="../articles/magplot-qc.html">vignette("magplot-qc")</a></code>), runs <code><a href="../reference/magp_run_qc.html">magp_run_qc()</a></code> on <code>magp_example</code> saved as an <code>.Rdata</code> file, then shows where the run’s files go, part of a contributor’s issues CSV and how to open the reports.</li>
 <li>Letter case in column names, and in file columns given as letters in <code><a href="../reference/gpq_read_spec.html">gpq_read_spec()</a></code>’s <code>origins</code>, is now folded in ASCII, whatever the session’s locale. Before, in a Turkish or Azeri locale on Linux, a column <code>id</code> didn’t match the attribute <code>ID</code>, and a file column given as <code>i</code> stopped <code><a href="../reference/gpq_read_spec.html">gpq_read_spec()</a></code> with an error.</li>
+<li>Every provider report’s guide, “How to read this report”, now says that proposed corrections come in a later version, and that until then the <code>proposed_value</code> and <code>easy_fix</code> columns of its issues CSV are empty.</li>
+<li>
+<code><a href="../reference/magp_run_qc.html">magp_run_qc()</a></code> now stops before it loads the delivery when <code>overrides</code>, <code>lineage</code> or <code>pipeline_fill</code> is neither a data.frame nor the path of an existing CSV file, with pre-flight’s message, or when <code>tables</code> is a list holding an element, other than <code>magp_meta</code>, that isn’t a data.frame. Before, the first stopped the run only after the delivery was loaded, and the second only at the checks, after pre-flight had written its files.</li>
+<li>When <code><a href="../reference/magp_read_delivery.html">magp_read_delivery()</a></code> can’t load a file, its error now ends with the error R’s <code><a href="https://rdrr.io/r/base/load.html" class="external-link">load()</a></code> gave, such as memory running out.</li>
+<li>
+<code>undeclared_code_set</code> no longer counts another type’s missing-value code as one of a text column’s values when the text type declares missing-value codes of its own. Before, such a column that held a number’s missing-value code was warned on for it, though <code>sentinel_wrong_type</code> already reports that code on every record. Its <code>rule_version</code> is now 3.</li>
+<li>MAGPlot’s rule set is now version 5. The code-set rule <code>undeclared_code_set</code> skips <code>bore_ht</code>, since it holds a height in metres, with a code only where no height was measured. When no override or evidence settles the class of a <code>code_not_in_list</code> or <code>pattern_mismatch</code> issue, it now falls back to <code>harmonization</code>, so the provider report lists an open one under “Issues being fixed in harmonization” instead of “Issues under review”. MAGPlot’s report guide now says that issues being fixed in harmonization may also be ones MAGPlot has taken on to fix there.</li>
 </ul></div>
   </main></div>
 
