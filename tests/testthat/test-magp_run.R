@@ -22,15 +22,27 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
   expect_error(
     magp_run_qc(c(magp_plots = "magp_plots.csv", magp_trees = "magp_trees.csv"), output), csv
   )
-  # magp_meta given as text isn't taken for a CSV path (D21.12): the settings stop the run
-  # next.
-  expect_error(
-    magp_run_qc(list(magp_meta = "built 2026-10-01"), output, settings = list(no_such = 1)),
-    "settings the package doesn't have"
-  )
+  # magp_meta given as text isn't taken for a CSV path (D21.12), nor, as text or a list, for an
+  # element that isn't a data.frame (M7b m8): the settings stop the run next.
+  for (meta in list("built 2026-10-01", list(note = "made up"))) {
+    expect_error(
+      magp_run_qc(list(magp_meta = meta), output, settings = list(no_such = 1)),
+      "settings the package doesn't have"
+    )
+  }
   shape <- "`tables` must be magp_read_delivery\\(\\)'s result"
   # A list of tables with no names is refused too, before pre-flight writes anything.
   for (bad in list(42, magp_example$magp_plots, character(), NULL, unname(magp_example))) {
+    expect_error(magp_run_qc(bad, output), shape)
+  }
+  # So is a list holding an element that isn't a data.frame, but for magp_meta (M7b m8): a
+  # number beside a table, a table's columns as a plain list, and NULL.
+  not_frames <- list(
+    list(magp_plots = magp_example$magp_plots, magp_sites = 42),
+    list(magp_plots = as.list(magp_example$magp_plots)),
+    list(magp_plots = NULL)
+  )
+  for (bad in not_frames) {
     expect_error(magp_run_qc(bad, output), shape)
   }
   a_file <- withr::local_tempfile(lines = "not a folder")
@@ -46,6 +58,28 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
     magp_run_qc(path, output, settings = list(no_such = 1)), "settings the package doesn't have"
   )
   expect_error(magp_run_qc(path, output, settings = list(row_cap = -1)), "row_cap")
+  # overrides, lineage and pipeline_fill: one that is neither a data.frame nor the path of an
+  # existing CSV file stops before the delivery is loaded, in the words pre-flight gives it (M7b
+  # m7).
+  words <- list()
+  for (input in c("overrides", "lineage", "pipeline_fill")) {
+    words[[input]] <- tryCatch(
+      gpq_preflight(magp_spec(), magp_rules(), inputs = structure(list(42), names = input)),
+      error = conditionMessage
+    )
+    given <- list(path, output)
+    given[[input]] <- 42
+    expect_error(do.call(magp_run_qc, given), words[[input]], fixed = TRUE, info = input)
+  }
+  expect_match(
+    words$overrides, "`overrides` must be a data.frame or the path of an existing .csv file",
+    fixed = TRUE
+  )
+  # A path is taken only as an existing CSV file's: a file that isn't a CSV, a CSV path with no
+  # file.
+  for (bad in list(a_file, file.path(output, "absent.csv"))) {
+    expect_error(magp_run_qc(path, output, overrides = bad), words$overrides, fixed = TRUE)
+  }
   expect_equal(list.files(output, recursive = TRUE, all.files = TRUE, no.. = TRUE), character())
 })
 
@@ -122,7 +156,8 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   # aspect over it on 110's plot 14.
   plant("magp_plots", "magp_plots_7", "plot_slope", 1234.5)
   plant("magp_plots", "magp_plots_14", "plot_aspect", 456.5)
-  # A code no code list holds, on 100.
+  # A code no code list holds, on 100, classed source by an override scoped to 100 below, so
+  # 100's page has an "Each issue" table (D22.22).
   plant("magp_plot_meas", "magp_plot_meas_12", "canopy_structure", "QX9")
   # A species code of 110's that no list holds, its raw value given in `lineage`, classed
   # source by an override scoped to its rule, table, column and contributor alone: 110's own
@@ -167,14 +202,24 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   settings <- list(lang = "en", row_cap = 7L, example_cap = 2L, cell_cap = 60L)
   # Your inputs (D21.18 Q6): an override classing 110's code issue source, that code's raw value
   # from the provider, and a cell the pipeline's fill wrote; beside them, the confidentiality
-  # test's override and raw value of 110's species code. Each override is scoped to contributor
-  # 110, so the first doesn't class the code planted in the same column on 100 (D21.37).
+  # test's override and raw value of 110's species code, and its override classing 100's code
+  # QX9 source, so 100's page has an "Each issue" table on the table and column of 110's raw
+  # value q-raw-110 (D22.22). Each override is scoped to its contributor. The fourth classes
+  # harmonization on 110's species column but is scoped to 100, who has no code issue there, so it
+  # classes nothing; read without its contributor it would meet the second, class source, on the
+  # same scope, and leave 110's species issue unclassified (D9.27, D21.37). The first three give
+  # the same class for either contributor, so only the fourth shows the scope.
   override <- data.frame(
     fingerprint = NA, rule_id = "code_not_in_list",
-    table_name = c("magp_plot_meas", "magp_tree_meas"),
-    column_name = c("canopy_structure", "species"), magp_contributor_id = "110",
-    issue_class = "source", who = "A. Reviewer", when = "2026-10-29",
-    why = c("Checked with the provider.", "Planted for the test.")
+    table_name = c("magp_plot_meas", "magp_tree_meas", "magp_plot_meas", "magp_tree_meas"),
+    column_name = c("canopy_structure", "species", "canopy_structure", "species"),
+    magp_contributor_id = c("110", "110", "100", "100"),
+    issue_class = c("source", "source", "source", "harmonization"), who = "A. Reviewer",
+    when = "2026-10-29",
+    why = c(
+      "Checked with the provider.", "Planted for the test.", "Planted for the test.",
+      "Planted for the test."
+    )
   )
   raw <- data.frame(
     table_name = c("magp_plot_meas", "magp_tree_meas"),
@@ -254,7 +299,8 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   # The open issues and their classes, in the checks' order: the delivery's two (the date on
   # 100's site, the code on 110's plot measurement) among the confidentiality test's twelve (the
   # code on 100, 110's species code, the slope and aspect, the orphan, (B)'s three and (A)'s
-  # four). The overrides class only 110's two codes (D21.37).
+  # four). The overrides class only the three codes, each by its own contributor's override: the
+  # fourth, on 110's species column for 100, leaves 110's species code source (D21.37, D22.22).
   open <- results$issues[results$issues$status == "open"]
   expect_equal(
     open[, c("record_pk", "rule_id", "magp_contributor_id", "issue_class", "class_basis")],
@@ -273,10 +319,10 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
         "100", "100", "110", "110", "100", "110", "*", rep("110", 3L), rep("100", 4L)
       ),
       issue_class = c(
-        "harmonization", "unclassified", "source", "source", "unclassified", "unclassified",
+        "harmonization", "source", "source", "source", "unclassified", "unclassified",
         rep("harmonization", 8L)
       ),
-      class_basis = c("computed", "default", "override", "override", rep("default", 10L))
+      class_basis = c("computed", rep("override", 3L), rep("default", 10L))
     )
   )
   # The inputs rows (D21.13): each table's with the delivery's file and hash and the engine's
@@ -430,11 +476,37 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
     strings <- strings[!is.na(strings) & nzchar(strings)]
     expect_identical(setdiff(strings, seen[[unit]]$cells), character(), info = unit)
   }
-  actions <- regmatches(
-    seen[["110"]]$page,
-    regexpr("(?s)<section id=\"actions\">.*?</section>", seen[["110"]]$page, perl = TRUE)
-  )
-  expect_true("RAW-SP-110" %chin% tokens(actions))
+  # A section of a unit's page, by its id.
+  section_of <- function(unit, id) {
+    page <- seen[[unit]]$page
+    pattern <- sprintf("(?s)<section id=\"%s\">.*?</section>", id)
+    regmatches(page, regexpr(pattern, page, perl = TRUE))
+  }
+  expect_true("RAW-SP-110" %chin% tokens(section_of("110", "actions")))
+  # 100's coded record shows in its section 3's "Each issue" table, the only table that shows a
+  # record's ID, on the table and column of 110's raw value q-raw-110, which the check of each
+  # report above keeps off 100's page (D22.22).
+  expect_true("magp_plot_meas_12" %chin% tokens(section_of("100", "actions")))
+  # The delivery's two plants show in their own unit's files, so the absence checks below can't
+  # pass on a plant that never reached them (D22.23): "not a date" in 100's page, as an example
+  # in its section 4 (an issue harmonization fixes, which has no "Each issue" table, D20.43),
+  # and as a whole cell of 100's CSV; "QQ" a token of 110's page, in its section 3, and a whole
+  # cell of 110's CSV. Each is looked for as the absence checks look for it.
+  expect_true(grepl("not a date", seen[["100"]]$page, fixed = TRUE))
+  expect_true("not a date" %chin% seen[["100"]]$cells)
+  expect_true("QQ" %chin% tokens(seen[["110"]]$page))
+  expect_true("QQ" %chin% seen[["110"]]$cells)
+  # No row or cell cap hides a value from those checks (D22.21): on this run they cut only
+  # section 10's table, which names checks and counts records, holding no key or value. Each
+  # page's one "Showing ..." line, the note a capped table or chart gives, is section 10's, and
+  # nothing on the page ends in an ellipsis, as a value cut at cell_cap would.
+  for (unit in units) {
+    notes <- regmatches(seen[[unit]]$page, gregexpr("Showing [^<]*", seen[[unit]]$page))[[1L]]
+    expect_length(notes, 1L)
+    expect_match(notes, "^Showing [0-9]+ of [0-9]+ rows[.]$")
+    expect_true(grepl(notes[[1L]], section_of(unit, "not-evaluated"), fixed = TRUE), info = unit)
+    expect_false(grepl("\u{2026}", seen[[unit]]$page, fixed = TRUE), info = unit)
+  }
   # Absence: neither of a unit's files holds the other unit's surrogate keys or planted values
   # (codes, slope or aspect, date text, raw value); the unit values as whole CSV cells only,
   # since a count in the HTML can read as one. The keys and values are looked for as whole HTML
@@ -544,6 +616,28 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   # (D21.18 Q4).
   expect_false(anyNA(results$issues$issue_class))
   expect_equal(results$metadata$run$report_units, "100; 110")
+  # The run reads its inputs before any check with the issues' group columns as classification
+  # reads them from the issues (M7b m31, D22.27): an override with an attribute that is neither
+  # an override's column nor a group column gets W229, which names them, from classification on
+  # this run's issues and the same from the run, before any check.
+  scoped <- cbind(override, magp_site_id = NA)
+  from_classes <- tryCatch(
+    gpq_classify_issues(results$issues, magp_rules(), overrides = scoped),
+    error = conditionMessage
+  )
+  expect_match(
+    from_classes,
+    "the issues' group columns (magp_contributor_id, jurisdiction, magp_dataset_id, magp_plot_id)",
+    fixed = TRUE
+  )
+  expect_error(
+    withCallingHandlers(
+      magp_run_qc(tables, output, overrides = scoped, report = FALSE),
+      gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+    ),
+    from_classes,
+    fixed = TRUE
+  )
 })
 
 test_that("a run's age-tree flags read each column as the run matches it (D21.69)", {
@@ -582,6 +676,33 @@ test_that("a run's age-tree flags read each column as the run matches it (D21.69
   flagged <- caught$magp_trees
   expect_equal(flagged$magp_tree_id[flagged$age_tree == "Y"], age_tree)
   expect_equal(caught, want)
+  # A second run: tree_type delivered under a name no attribute matches, even by letter case
+  # and spaces, is left out, so no tree is flagged "Y", though the age tree's measurements are
+  # all "A" as before (M7b m52); and magp_trees' key under its own name after a near name
+  # holding other keys, which is moved to the first column, the exact name taken (M7b m53).
+  tables <- lapply(magp_example[c("magp_trees", "magp_tree_meas")], data.table::copy)
+  meas <- tables$magp_tree_meas
+  data.table::set(meas, which(meas$magp_tree_id == age_tree), "tree_type", "A")
+  data.table::setnames(meas, "tree_type", "tree type")
+  trees <- tables$magp_trees
+  data.table::set(trees, j = "Magp_Tree_Id", value = paste0(trees$magp_tree_id, "_near"))
+  data.table::setcolorder(trees, "Magp_Tree_Id")
+  caught <- NULL
+  local({
+    # The flags read the tables alone, so this run's checks are mocked to give no issues: it
+    # goes on to the flags at once, which keeps its CRAN-mode time small (D20.3).
+    testthat::local_mocked_bindings(gpq_check_conformance = function(...) list(metadata = list()))
+    expect_error(
+      withCallingHandlers(
+        magp_run_qc(tables, output, report = FALSE),
+        gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+      ),
+      "decoding reached"
+    )
+  })
+  expect_equal(caught, list(magp_trees = data.table::data.table(
+    magp_tree_id = want$magp_trees$magp_tree_id, age_tree = "N"
+  )))
 })
 
 test_that("inputs that classification can't take stop the run before any check (D21.4)", {

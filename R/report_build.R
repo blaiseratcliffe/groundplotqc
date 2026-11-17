@@ -420,10 +420,10 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
   text <- validate_text_table(text)
   if (!is.null(text)) {
     # Pre-flight's slot rule (text_slot_unknown, D14.21): a slot a row uses that the package's
-    # English row of its text_id lacks, a text_id the package lacks skipped. It is checked
-    # before any file is removed or written, so such a row can't stop the build part way
-    # (D20.138). Each subset's test is worked out before the brackets: `text` and `lang` are
-    # columns there.
+    # English row of its text_id lacks, a text_id the package lacks skipped. Change the two
+    # together; a test holds them to the same rows (D22.26). It is checked before any file is
+    # removed or written, so such a row can't stop the build part way (D20.138). Each subset's
+    # test is worked out before the brackets: `text` and `lang` are columns there.
     engine <- report_texts()
     is_english <- engine$lang == "en"
     english <- engine[is_english]

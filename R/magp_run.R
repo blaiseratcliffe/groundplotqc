@@ -123,12 +123,15 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
     )
   }
   path_given <- is.character(tables) && length(tables) == 1L
-  # A list's tables are known by their names, so a list with an element unnamed is refused here,
-  # before pre-flight writes its files.
+  # A list's tables are known by their names, and each is a data.frame but magp_meta, which may
+  # come in any shape (D21.12), so a list with an element unnamed, or with one that isn't a
+  # data.frame, is refused here, before pre-flight writes its files (M7b m8).
   element_names <- names(tables)
-  named <- in_list && !is.null(element_names) && !anyNA(element_names) &&
-    all(nzchar(element_names))
-  if (!path_given && !named) {
+  frames <- if (in_list) vapply(tables, is.data.frame, logical(1)) else logical()
+  frames[match("magp_meta", element_names, 0L)] <- TRUE
+  shaped <- in_list && !is.null(element_names) && !anyNA(element_names) &&
+    all(nzchar(element_names)) && all(frames)
+  if (!path_given && !shaped) {
     # M7b W71
     stop(
       "`tables` must be magp_read_delivery()'s result, the path of one .Rdata file or a named ",
@@ -150,6 +153,17 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   # A setting the package doesn't have, or a value it can't take, stops here in the engine's
   # words, before a delivery is loaded (check_settings(), resolve_setting()).
   settings_metadata(settings, rules)
+  # The run inputs given, which pre-flight checks (3.6; D19.51). One that is neither a
+  # data.frame nor the path of an existing CSV file stops here, before a delivery is loaded, in
+  # the words of pre-flight's reader, which stops on it (read_input_table(); M7b m7); the
+  # others are read by pre-flight, as before.
+  run_inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
+  run_inputs <- run_inputs[!vapply(run_inputs, is.null, logical(1))]
+  for (input in names(run_inputs)) {
+    if (!is.data.frame(run_inputs[[input]]) && !is_path_to(run_inputs[[input]], "csv")) {
+      read_input_table(run_inputs[[input]], input)
+    }
+  }
   spec <- magp_spec()
   # The run ID and its start, then the tables, so a run pre-flight stops records the
   # contributors its tables hold (9.5): the reverse of the engine's order (D17.32, D21.18 Q3).
@@ -173,9 +187,6 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   load_bit64(tables)
   units <- held_units(tables, spec, group_cols[[1L]])
   text <- magp_texts()
-  # The run inputs given, which pre-flight checks (3.6; D19.51).
-  run_inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
-  run_inputs <- run_inputs[!vapply(run_inputs, is.null, logical(1))]
   preflight <- withCallingHandlers(
     tryCatch(
       gpq_preflight(

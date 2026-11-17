@@ -648,8 +648,8 @@ reach_column <- function(input, table, column_name) {
 #'
 #' `reached$home` is one table for every row (chain_values()) or each record's own
 #' (reach_column(), R5). Where the records reached several tables, each table's values are
-#' written as text (value_text()), since their classes may differ; where they reached one, the
-#' values are as given.
+#' written as text (value_text()), since their classes may differ, each distinct value once
+#' (16.2); where they reached one, the values are as given.
 #' @noRd
 reached_values <- function(input, reached, column_name) {
   rows <- reached$rows
@@ -672,10 +672,20 @@ reached_values <- function(input, reached, column_name) {
   value <- rep(NA_character_, length(rows))
   for (table in tables) {
     here <- which(home == table)
-    # Each distinct row reached is written as text once (16.2).
+    # Each distinct row reached is read once and each distinct value there written as text
+    # once, matched back as reach_column() matches a record's own value: text by match(), any
+    # other class by its dense rank (16.2, D21.16). A table whose records keep their own value
+    # has as many distinct rows as records, so writing its rows would write one text per record.
     at <- rows[here]
     distinct <- unique(at)
-    value[here] <- value_text(read(table, distinct))[match(at, distinct)]
+    x <- read(table, distinct)
+    group <- if (is.character(x)) {
+      match(x, x[!duplicated(x)])
+    } else {
+      frankv(x, ties.method = "dense", na.last = TRUE)
+    }
+    text <- value_text(x[match(seq_len(max(group)), group)])
+    value[here] <- text[group[match(at, distinct)]]
   }
   value
 }

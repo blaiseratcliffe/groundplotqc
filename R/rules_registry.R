@@ -256,6 +256,8 @@ build_rule_registry <- function() {
     ),
     # ---- M5: Appendix E's candidate (D8.24, D9.26; class proposed in the PR, Y6) ----
     # Version 2 (M7a): one issue per report unit, each holding that unit's own values (D20.11).
+    # Version 3 (M8): counts no other type's missing-value code, where the text type declares
+    # codes of its own (D22.53, D22.58).
     conformance(
       "undeclared_code_set", 3L, "warning", "harmonization",
       paste(
@@ -263,7 +265,7 @@ build_rule_registry <- function() {
         "settings:code_set_skip_attributes; settings:code_set_skip_pattern;",
         "settings:unknown_codes"
       ),
-      unit = TRUE, rule_version = 2L
+      unit = TRUE, rule_version = 3L
     ),
     # ---- M5: Layer 4, keys and relationships (6.1; D7.3, D7.9, D16.2, D18.10, D18.33) ----
     # Each record rule reads the keys and the sentinels' allowed_in_pk and allowed_in_fk (3.5).

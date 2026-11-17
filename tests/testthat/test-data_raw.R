@@ -927,9 +927,9 @@ test_that("check_template stops on each break of the M2a gate and passes a sound
     build$check_template(broken(function(m) m[1L, evidence := NA]), attributes),
     "row 1 has no evidence"
   )
-  local <- data.table::copy(sound$matrix[2L])
-  local[, `:=`(magp_dataset_id = "110.01", evidence = "A2 X")]
-  repeated <- list(matrix = rbind(sound$matrix, local, local), review = sound$review)
+  one_dataset <- data.table::copy(sound$matrix[2L])
+  one_dataset[, `:=`(magp_dataset_id = "110.01", evidence = "A2 X")]
+  repeated <- list(matrix = rbind(sound$matrix, one_dataset, one_dataset), review = sound$review)
   expect_error(build$check_template(repeated, attributes), "row 8 repeats a key")
   expect_error(
     build$check_template(broken(function(m) m[2L, note := "see C:\\pipe\\x.R"]), attributes),

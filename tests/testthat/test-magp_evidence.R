@@ -51,12 +51,13 @@ test_that("a jurisdiction's computed rows go to each of its contributors, none t
   )
   # BC in three contributors' datasets and listed by four rows of the file, so its rows number
   # more than the pairs and the file's rows together (5 + 8) and the join needs
-  # allow.cartesian; AB in two datasets of one contributor, QC's one dataset without a
-  # contributor, and no dataset in XX.
+  # allow.cartesian; its contributors 110, 120 and 105 in the datasets table's order, which
+  # isn't the sorted order, so the rows' order is the table's (M7b R16, m20); AB in two datasets
+  # of one contributor, QC's one dataset without a contributor, and no dataset in XX.
   spec <- list(datasets = data.table::data.table(
     jurisdiction = c("BC", "AB", "AB", "BC", "QC", "BC"),
-    magp_dataset_id = c("110.01", "100.01", "100.02", "120.01", "180.01", "130.01"),
-    magp_contributor_id = c("110", "100", "100", "120", NA, "130")
+    magp_dataset_id = c("110.01", "100.01", "100.02", "120.01", "180.01", "105.01"),
+    magp_contributor_id = c("110", "100", "100", "120", NA, "105")
   ))
   testthat::local_mocked_bindings(read_evidence_file = function(name) file)
   computed <- computed_evidence(spec)
@@ -68,7 +69,7 @@ test_that("a jurisdiction's computed rows go to each of its contributors, none t
       table_name = c(rep("t1", 4L), "t2", rep("t4", 6L), rep("t5", 3L)),
       column_name = c(rep("a", 3L), "b", "c", rep("f", 3L), rep("g", 3L), rep("h", 3L)),
       magp_contributor_id = c(
-        "110", "120", "130", "*", "100", rep(c("110", "120", "130"), 3L)
+        "110", "120", "105", "*", "100", rep(c("110", "120", "105"), 3L)
       ),
       derivation = c(
         rep("fill", 3L), "id", "formula", rep("count", 3L), rep("class", 3L),

@@ -15,7 +15,8 @@ test_that("magp_rules() gives the meta, rules and settings components, checked",
   expect_equal(
     unique(paste(rules$rules$rule_id, rules$rules$severity)), "record_unreachable warning"
   )
-  expect_equal(attr(rules$settings, "source_lines"), 2:21)
+  expect_equal(attr(rules$settings, "source_lines"), 2:22)
+  expect_equal(rules$meta$version, "5")
 })
 
 test_that("MAGPlot's rule set is written for the spec set magp_spec() compiles (D14.15)", {
@@ -35,12 +36,12 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
         "code_set_skip_attributes", "code_set_skip_pattern", "design_geometry_table",
         "design_geometry_by", "design_geometry_columns", "subplot_label_table",
         "subplot_label_columns", "design_signature_table", "design_signature_by",
-        "design_signature_columns"
+        "design_signature_columns", "fallback_class"
       ),
       value = c(
         "en", "5", "500", "100", "10", "always", "-999; UNK; NA; N/A", "species=UNKN.SPP",
         "latitude; longitude; utm_e; utm_n", "25",
-        "meas_plots; meas_frames; temporal_extent; meas_cycle; subplot",
+        "meas_plots; meas_frames; temporal_extent; meas_cycle; subplot; bore_ht",
         "_id$|^comments$|name|_date$|^src_|^meas_subplots$", "magp_design_frames",
         "magp_design_id; subplot",
         "plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht; baf", "magp_subplots",
@@ -48,11 +49,12 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
         paste(
           "frame_type; subplot; plot_area; plot_shape; min_dbh; max_dbh; min_ht; max_ht;",
           "baf"
-        )
+        ),
+        "code_not_in_list=harmonization; pattern_mismatch=harmonization"
       ),
       type = c(
         "character", "integer", "integer", "integer", "integer", "character", "character",
-        "character", "character", "integer", "character", "character", rep("character", 8L)
+        "character", "character", "integer", "character", "character", rep("character", 9L)
       )
     ),
     ignore_attr = c("source_file", "source_lines", "source_sha256")
@@ -64,6 +66,14 @@ test_that("MAGPlot's settings rows restate the settings, with its own values (D1
     list(value = c(species = "UNKN.SPP"), tier = "rule set")
   )
   expect_equal(resolve_setting("raw_na_policy", rules = rules)$value, "always")
+  withr::local_options(groundplotqc.fallback_class = NULL)
+  expect_equal(
+    resolve_setting("fallback_class", rules = rules),
+    list(
+      value = c(code_not_in_list = "harmonization", pattern_mismatch = "harmonization"),
+      tier = "rule set"
+    )
+  )
   expect_identical(resolve_setting("column_level_min_n", rules = rules)$value, 10)
   # The report caps restate their built-in values, so a MAGPlot run records them with the
   # rule set's tier (D21.6).
