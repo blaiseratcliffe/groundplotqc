@@ -1594,6 +1594,8 @@ test_that("section 13 ranks each group's units by their share, 20 at most (8.8; 
     fixed = TRUE
   )
   expect_false(grepl("\\{[a-z0-9_]+\\}", html))
+  # Each share written to two decimals, padded, and right-aligned (D23.104, D23.109).
+  expect_match(html, "<td class=\"num\">1.00</td>", fixed = TRUE)
   # At most row_cap rows, the first ones, with a line naming no file.
   settings$row_cap <- 5L
   html <- as.character(section_problem_plots(tables, NULL, settings))
@@ -1601,24 +1603,24 @@ test_that("section 13 ranks each group's units by their share, 20 at most (8.8; 
   expect_match(html, "Showing 5 of 23 rows.", fixed = TRUE)
   expect_false(grepl("u1_issues.csv", html, fixed = TRUE))
   # The mark reads the share as shown: 13 of 51 (0.2549) and 5 of 20 both show 0.25, and
-  # neither is above 0.25 (D23.104, R63).
+  # neither is above 0.25 (D23.104, R63); 2 of 20 shows 0.10.
   near <- list(
     unit_records = complete_table(
       list(
-        run_id = run_id, unit = "u1", area = "A1", plot = c("N1", "N2"), table_name = "trees",
-        n_records = c(51L, 20L)
+        run_id = run_id, unit = "u1", area = "A1", plot = c("N1", "N2", "N3"),
+        table_name = "trees", n_records = c(51L, 20L, 20L)
       ),
       results_schema(c("unit", "area"), "plot")$unit_records, "unit_records"
     ),
     unit = "u1", group_cols = c("unit", "area"), key_col = "plot"
   )
-  at <- rep(1:2, c(13L, 5L))
+  at <- rep(1:3, c(13L, 5L, 2L))
   near$issues <- new_issues(list(
     issue_id = seq_along(at), run_id = run_id, run_scope = "package", rule_id = "raw_na",
     rule_fingerprint = "f", stage = "conformance", layer = 2L, severity = "error",
     reason_code = "*", table_name = "trees", column_name = "x",
     record_pk = paste0("T", seq_along(at)), row_number = seq_along(at), pk_positional = FALSE,
-    level = "record", unit = "u1", area = "A1", plot = c("N1", "N2")[at],
+    level = "record", unit = "u1", area = "A1", plot = c("N1", "N2", "N3")[at],
     reaches_other_unit = FALSE, status = "open", issue_class = "source"
   ), group_cols = c("unit", "area"), key_col = "plot")
   local({
@@ -1628,9 +1630,12 @@ test_that("section 13 ranks each group's units by their share, 20 at most (8.8; 
     })
     section_problem_plots(near, NULL, settings)
   })
-  expect_equal(caught$dt$plot, c("N1", "N2"))
-  expect_equal(caught$dt$Share, c(0.25, 0.25))
-  expect_equal(caught$dt[["Above 0.25"]], c("no", "no"))
+  expect_equal(caught$dt$plot, c("N1", "N2", "N3"))
+  expect_equal(caught$dt$Share, c(0.25, 0.25, 0.1))
+  expect_equal(caught$dt[["Above 0.25"]], c("no", "no", "no"))
+  html <- as.character(section_problem_plots(near, NULL, settings))
+  expect_match(html, "<td class=\"num\">0.10</td><td>no</td>", fixed = TRUE)
+  expect_match(html, "<th scope=\"col\" data-gpq-sort class=\"num\">Share</th>", fixed = TRUE)
 })
 
 test_that("section 13 says so when the run names no unit, holds no counts or ranks none", {

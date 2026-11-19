@@ -733,15 +733,16 @@ section_not_evaluated <- function(tables, text, settings) {
 #' A table whose rows the issues CSV doesn't hold, such as section 13's: its first `row_cap`
 #' rows, then report_rows_shown's line, which names no file, as section 10 caps its table
 #' (D20.91); `shown` is the table as html_table() takes it, `row_class` one class per row or
-#' NULL. Returns the HTML.
+#' NULL; `...` goes to html_table(), such as its `decimals` (D23.109). Returns the HTML.
 #' @noRd
-capped_table <- function(shown, caption, row_class, text, settings) {
+capped_table <- function(shown, caption, row_class, text, settings, ...) {
   total <- nrow(shown)
   kept <- seq_len(min(total, settings$row_cap))
   c(
     html_table(
       shown[kept], caption,
-      row_class = if (!is.null(row_class)) row_class[kept], lang = settings$lang, text = text
+      row_class = if (!is.null(row_class)) row_class[kept], lang = settings$lang, text = text,
+      ...
     ),
     if (total > length(kept)) {
       paste0("<p>", html_escape(report_text(
@@ -763,8 +764,9 @@ capped_table <- function(shown, caption, row_class, text, settings) {
 #' blocked; in each group the 20 with the highest rate are shown, ties by their blocked
 #' records, then by key in C order (D23.38). One table: the breakdown columns and the key column
 #' under their raw names (D20.56), "*" in a breakdown shown as W4, each cut at `cell_cap`
-#' (D20.39); the records, the blocked records, the rate to two decimals and whether that rate,
-#' as shown, is above `problem_plot_rate` (D23.104); sorted by group in C order, then by rank.
+#' (D20.39); the records, the blocked records, the rate to two decimals, written padded
+#' ("0.10", html_table()'s `decimals`, D23.109), and whether that rate, as shown, is above
+#' `problem_plot_rate` (D23.104); sorted by group in C order, then by rank.
 #' At most `row_cap` rows, the first ones, with a line naming no file, since the CSV holds no
 #' rates (capped_table(), D20.91). Without a problem unit, one line saying so; with no
 #' unit_records row while an issue names a unit, as in a run folder an earlier version wrote,
@@ -857,7 +859,10 @@ section_problem_plots <- function(tables, text, settings) {
       min_n = settings$problem_plot_min_records, rate = as_text(settings$problem_plot_rate),
       text = text
     )), "</p>"),
-    capped_table(shown, word("report_problem_plots_caption"), NULL, text, settings)
+    capped_table(
+      shown, word("report_problem_plots_caption"), NULL, text, settings,
+      decimals = structure(2L, names = word("report_column_rate"))
+    )
   ))
 }
 
