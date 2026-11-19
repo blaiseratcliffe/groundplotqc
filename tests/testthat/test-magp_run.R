@@ -1,6 +1,7 @@
 # Tests for magp_run_qc(), MAGPlot's run end to end; and plan 13's confidentiality test end to
 # end, on a planted copy of magp_example run from its path (plan 3.2, 3.4, 9.5, 11.9, 13; D7.34,
-# D18.89, D21.3 to D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42, D21.69). Synthetic data only:
+# D18.89, D21.3 to D21.5, D21.11 to D21.15, D21.18, D21.41, D21.42, D21.69, D23.30). Synthetic
+# data only:
 # magp_example and copies of it, saved as a delivery's .Rdata by fx_magp_rdata() where a test
 # gives a path. A run on the whole of magp_example costs about 3 s, so one delivery run carries
 # most of the checks, the confidentiality test's among them (D20.3, D21.8, D21.37).
@@ -68,11 +69,14 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
     magp_run_qc(path, output, settings = list(no_such = 1)), "settings the package doesn't have"
   )
   expect_error(magp_run_qc(path, output, settings = list(row_cap = -1)), "row_cap")
-  # overrides, lineage and pipeline_fill: one that is neither a data.frame nor the path of an
-  # existing CSV file stops before the delivery is loaded, in the words pre-flight gives it (M7b
-  # m7).
+  # Each run input: one that is neither a data.frame nor the path of an existing CSV file, nor
+  # for previous a folder, stops before the delivery is loaded, in the words pre-flight gives it
+  # (M7b m7, D23.46).
   words <- list()
-  for (input in c("overrides", "lineage", "pipeline_fill")) {
+  inputs <- c(
+    "overrides", "lineage", "pipeline_fill", "previous", "acknowledgements", "attribution_map"
+  )
+  for (input in inputs) {
     words[[input]] <- tryCatch(
       gpq_preflight(magp_spec(), magp_rules(), inputs = structure(list(42), names = input)),
       error = conditionMessage
@@ -90,6 +94,24 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
   for (bad in list(a_file, file.path(output, "absent.csv"))) {
     expect_error(magp_run_qc(path, output, overrides = bad), words$overrides, fixed = TRUE)
   }
+  # A folder is a previous run's form, read by pre-flight, so the run goes on to the load.
+  expect_error(magp_run_qc(path, output, previous = withr::local_tempdir()), "loaded")
+  # The attribution map's key, jurisdiction, which pre-flight can't ask of it: a map without it
+  # stops before the load, in attribute_issues()'s words; one with it goes on to the load, its
+  # other columns left to pre-flight (D23.27, D23.50).
+  map <- data.frame(
+    jurisdiction = "AB", table_name = "magp_plots", attribute_name = "plot_slope",
+    script_file = "scripts/plots.R", script_block = NA, script_commit = NA
+  )
+  expect_error(
+    magp_run_qc(path, output, attribution_map = map[-1L]),
+    paste(
+      "`attribution_map` must have exactly the columns jurisdiction, table_name, attribute_name,",
+      "script_file, script_block, script_commit, note; missing: jurisdiction, note."
+    ),
+    fixed = TRUE
+  )
+  expect_error(magp_run_qc(path, output, attribution_map = map), "loaded")
   expect_equal(list.files(output, recursive = TRUE, all.files = TRUE, no.. = TRUE), character())
 })
 
@@ -705,6 +727,167 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
     from_classes,
     fixed = TRUE
   )
+})
+
+test_that(paste(
+  "a later delivery's run with previous, a register and an attribution map compares,",
+  "acknowledges and attributes its issues (D23.30)"
+), {
+  skip_on_cran()
+  # The first run, as the plain list's test runs it: two tables and a magp_meta of another
+  # shape, two overrides in a CSV file and a lineage input as a data.frame.
+  tables <- list(
+    magp_contributors = data.table::copy(magp_example$magp_contributors),
+    magp_datasets = data.table::copy(magp_example$magp_datasets),
+    magp_meta = list(note = "made up")
+  )
+  override <- data.frame(
+    fingerprint = NA, rule_id = c("code_not_in_list", NA),
+    table_name = c("magp_plot_meas", "magp_plots"), column_name = c("canopy_structure", NA),
+    issue_class = "source", who = "A. Reviewer", when = "2026-10-29",
+    why = "Checked with the provider."
+  )
+  overrides_file <- file.path(withr::local_tempdir(), "overrides.csv")
+  utils::write.csv(override, overrides_file, row.names = FALSE, na = "")
+  raw <- data.frame(
+    table_name = "magp_plot_meas", record_pk = "magp_plot_meas_20",
+    column_name = "canopy_structure", raw_value = "q", raw_source = "plot_meas.csv"
+  )
+  output <- withr::local_tempdir()
+  results <- withCallingHandlers(
+    magp_run_qc(tables, output, overrides = overrides_file, lineage = raw, report = FALSE),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  run_dir <- file.path(output, results$metadata$run$run_id)
+  run_inputs <- list(
+    overrides = override, lineage = raw,
+    computed = computed_evidence(spec = magp_spec()),
+    crosswalk = crosswalk_evidence(spec = magp_spec())
+  )
+  # A later delivery of the same two contributors, which now holds their sites and plots, run
+  # with the first run as `previous`, a register and the example attribution map (D23.30). 100's
+  # first site has a date that doesn't parse, and a plot of each contributor a slope over the
+  # maximum.
+  later <- c(tables[1:2], lapply(magp_example[c("magp_sites", "magp_plots")], data.table::copy))
+  data.table::set(later$magp_sites, i = 1L, j = "estab_date", value = "not a date")
+  data.table::set(later$magp_plots, i = c(2L, 14L), j = "plot_slope", value = 1234.5)
+  sites <- later$magp_sites
+  dataset_of <- function(site) as.character(sites$magp_dataset_id[match(site, sites$magp_site_id)])
+  # The register: the date acknowledged as it is and the BC plot's slope at another value, both
+  # by their pk: form alone; and two whole-table issues, the trees' and a design table's, by
+  # their fingerprint and group "*".
+  prints <- c(
+    "date_unparseable|magp_sites|estab_date|pk:350002",
+    "value_above_max|magp_plots|plot_slope|pk:magp_plots_14",
+    "table_missing|magp_trees|*|pk:*", "table_missing|magp_design_frames|*|pk:*"
+  )
+  register <- data.frame(
+    fingerprint = c(NA, NA, prints[3:4]), fingerprint_pk = prints,
+    rule_id = c("date_unparseable", "value_above_max", "table_missing", "table_missing"),
+    table_name = c("magp_sites", "magp_plots", "magp_trees", "magp_design_frames"),
+    column_name = c("estab_date", "plot_slope", "*", "*"), provider_key = NA,
+    acknowledged_value = c("not a date", "999", NA, NA), decision = "verified",
+    who = "A. Reviewer", when = "2026-11-17", why = "Planted for the test.",
+    run_scope = "package", magp_contributor_id = c("100", "110", "*", "*"),
+    jurisdiction = c("AB", "BC", "*", "*"),
+    magp_dataset_id = c(dataset_of(c(350002L, later$magp_plots$magp_site_id[[14L]])), "*", "*")
+  )
+  map <- system.file("extdata", "examples", "attribution_map.csv", package = "groundplotqc")
+  # What pre-flight and the build are given; the build itself is the reports' tests' (task 9).
+  caught <- list()
+  preflight <- gpq_preflight
+  testthat::local_mocked_bindings(
+    gpq_preflight = function(spec, rules = NULL, inputs = list(), ...) {
+      if (length(inputs) > 0L) caught$inputs <<- inputs
+      preflight(spec, rules, inputs, ...)
+    },
+    gpq_build_reports = function(results, output_dir, ...) {
+      caught$build <<- list(...)
+      invisible(character())
+    }
+  )
+  again <- withCallingHandlers(
+    magp_run_qc(
+      later, output,
+      previous = run_dir, acknowledgements = register, attribution_map = map
+    ),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  issues <- again$issues
+  first_run <- results$metadata$run$run_id
+  # Pre-flight checks the three with the others (3.6).
+  expect_identical(
+    caught$inputs, list(previous = run_dir, acknowledgements = register, attribution_map = map)
+  )
+  # The comparison (D23.30): the tables still missing persist, first seen in the first run, with
+  # no cause; the design tables' are new in every run (D12.75), and so are the plants, their
+  # rules unchanged, so changed by the data (D23.31).
+  missing <- issues$rule_id == "table_missing"
+  design <- issues$table_name %chin% c("magp_designs", "magp_design_frames")
+  kept <- missing & !design
+  expect_true(any(kept))
+  expect_identical(unique(issues$change[kept]), "persisting")
+  expect_identical(unique(issues$first_seen_run[kept]), first_run)
+  expect_identical(unique(issues$change_cause[kept]), NA_character_)
+  planted <- issues$rule_id %chin% c("date_unparseable", "value_above_max")
+  expect_equal(sum(planted), 3L)
+  for (fresh in list(design & missing, planted)) {
+    expect_identical(unique(issues$change[fresh]), "new")
+    expect_identical(unique(issues$first_seen_run[fresh]), again$metadata$run$run_id)
+    expect_identical(unique(issues$change_cause[fresh]), "data")
+  }
+  # The register (D23.34, D23.47): the date's entry holds by its pk: form and the trees' on its
+  # group; the slope's has lapsed, its value changed, and the design table's matches nothing
+  # (D12.75): both of those issues stay open.
+  expect_identical(
+    issues$status[match(prints, issues$fingerprint_pk)],
+    c("acknowledged", "open", "acknowledged", "open")
+  )
+  # The example map (D23.39, D23.40): the date by AB's row for it, the BC plot's slope by BC's,
+  # the AB plot's slope by AB's script as a whole, unmapped; the missing tables name no
+  # jurisdiction, so no script.
+  at <- match(
+    c(prints[1:2], "value_above_max|magp_plots|plot_slope|pk:magp_plots_2"), issues$fingerprint_pk
+  )
+  expect_equal(
+    issues[at, c("script_file", "script_block", "attribution_status")],
+    data.table::data.table(
+      script_file = c("scripts/ab_example.R", "scripts/bc_example.R", "scripts/ab_example.R"),
+      script_block = c("block 3: sites", "block 4: plots", NA),
+      attribution_status = c("script_version_unknown", "script_version_unknown", "unmapped")
+    )
+  )
+  expect_identical(unique(issues$script_file[missing]), NA_character_)
+  expect_identical(unique(issues$attribution_status[missing]), "unmapped")
+  # inputs.csv (9.5): after MAGPlot's evidence, the map by its file and hash, the earlier run by
+  # its folder's name, unhashed, with no detail, and the register in memory, each map and
+  # register with its rows.
+  inputs <- again$metadata$inputs
+  evidence <- run_inputs[c("computed", "crosswalk")]
+  expect_equal(
+    inputs[(nrow(inputs) - 4L):nrow(inputs)],
+    data.table::data.table(
+      input = c(names(evidence), "attribution_map", "previous", "acknowledgements"),
+      file = c("in memory", "in memory", "attribution_map.csv", first_run, "in memory"),
+      sha256 = c(NA, NA, unname(tools::sha256sum(map)), NA, NA),
+      detail = c(rows_text(evidence), "8 rows", NA, "4 rows")
+    )
+  )
+  # The build is given the earlier run, the register and MAGPlot's design tables (D23.25,
+  # D23.30), which give it the issues resolved since: the tables this delivery now holds.
+  expect_identical(
+    caught$build[c("previous", "acknowledgements", "unmatched_tables")],
+    list(
+      previous = run_dir, acknowledgements = register,
+      unmatched_tables = c("magp_designs", "magp_design_frames")
+    )
+  )
+  resolved <- gpq_compare_runs(
+    data.table::copy(issues), run_dir, caught$build$unmatched_tables
+  )$resolved
+  expect_setequal(resolved$table_name, c("magp_sites", "magp_plots"))
+  # Written as returned, the comparison, the register and the scripts in the saved issues.
+  expect_identical(gpq_read_results(file.path(output, again$metadata$run$run_id)), again)
 })
 
 test_that("a run's age-tree flags read each column as the run matches it (D21.69)", {

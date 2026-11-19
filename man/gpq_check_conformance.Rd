@@ -82,8 +82,9 @@ the problem unit's key column, \code{reaches_other_unit}, \code{root_issue_id}, 
 or \code{not_evaluated}), \code{issue_class}, \code{class_basis}, \code{script_file}, \code{script_block},
 \code{attribution_status}, \code{fingerprint}, \code{fingerprint_pk}, \code{first_seen_run}, \code{change} and
 \code{change_cause}. The columns a conformance run doesn't fill are NA. \code{script_file} and
-\code{script_block} are the processing script, and the block in it, that an attribution map
-names for the issue's table and column, and \code{attribution_status} says whether that
+\code{script_block} are the processing script, and the block in it, that an attribution map,
+such as \code{\link[=magp_run_qc]{magp_run_qc()}}'s \code{attribution_map}, names for the issue's table and column, and
+\code{attribution_status} says whether that
 script is known to be the one that made the delivery: \code{current} when the map's commit
 is the delivery's, \code{may_be_stale} when it differs or the map gives none,
 \code{script_version_unknown} when the delivery records none, and \code{unmapped} when the map

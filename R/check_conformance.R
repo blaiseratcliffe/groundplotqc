@@ -156,8 +156,9 @@
 #'     or `not_evaluated`), `issue_class`, `class_basis`, `script_file`, `script_block`,
 #'     `attribution_status`, `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and
 #'     `change_cause`. The columns a conformance run doesn't fill are NA. `script_file` and
-#'     `script_block` are the processing script, and the block in it, that an attribution map
-#'     names for the issue's table and column, and `attribution_status` says whether that
+#'     `script_block` are the processing script, and the block in it, that an attribution map,
+#'     such as [magp_run_qc()]'s `attribution_map`, names for the issue's table and column, and
+#'     `attribution_status` says whether that
 #'     script is known to be the one that made the delivery: `current` when the map's commit
 #'     is the delivery's, `may_be_stale` when it differs or the map gives none,
 #'     `script_version_unknown` when the delivery records none, and `unmapped` when the map

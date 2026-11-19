@@ -1,9 +1,11 @@
 # MAGPlot's run end to end (plan 3.2, 3.4, 9.5, 11.9; D7.5, D7.11, D7.34, D21.3 to D21.5,
-# D21.11 to D21.15, D21.18): magp_run_qc() loads one delivery's tables, pre-flights MAGPlot's
-# specification, rule set and text with the caller's run inputs, reads those inputs as
+# D21.11 to D21.15, D21.18, D23.30): magp_run_qc() loads one delivery's tables, pre-flights
+# MAGPlot's specification, rule set and text with the caller's run inputs, reads those inputs as
 # classification does, runs Layers 0 to 4 with MAGPlot's group columns and problem unit,
-# decodes and classes the issues with MAGPlot's flags and evidence and the caller's, records
-# the delivery's file in the inputs metadata, writes the run folder and builds the reports.
+# decodes and classes the issues with MAGPlot's flags and evidence and the caller's, attributes
+# them to scripts, compares them with an earlier run and applies the caller's acknowledgements,
+# records the delivery's file in the inputs metadata, writes the run folder and builds the
+# reports; magp_list_runs() lists a contributor's run folders.
 # MAGPlot's names reach the engine through this file (plan 3.2 step 4); the engine never names
 # them.
 
@@ -29,18 +31,34 @@
 #' `magp_plots`). It then gives each issue its provider key, from its contributor's lineage
 #' spec and Ontario's age-tree flag, and its class, from your `overrides` first, then from the
 #' evidence: the columns MAGPlot's pipeline computes, `pipeline_fill`, and `lineage` together
-#' with MAGPlot's translation tables' provider codes. It writes the results and the run
-#' metadata, and with `report = TRUE` builds the reports.
+#' with MAGPlot's translation tables' provider codes.
 #'
-#' Pre-flight checks `overrides`, `lineage` and `pipeline_fill`, and the run then reads them as
-#' [gpq_classify_issues()] reads them, before any check. The run stops there wherever
-#' [gpq_classify_issues()] would on an input that pre-flight lets pass, such as an `overrides`
-#' column that is an attribute of the specification but not one of the issues' group columns,
-#' or a cell that `lineage` or `pipeline_fill` lists twice.
+#' Given `attribution_map`, each issue then takes the processing script and block the map names
+#' for its jurisdiction, table and column, or else its jurisdiction's script as a whole, as
+#' `script_file`, `script_block` and `attribution_status` (see [gpq_check_conformance()]). A
+#' delivery doesn't yet record the commit of the scripts that made it, so a mapped issue's
+#' `attribution_status` is `script_version_unknown`, and one the map doesn't name is `unmapped`.
+#' Given `previous`, the run compares its issues with that run's, as [gpq_compare_runs()] does,
+#' so each issue is `new` or `persisting`, with the run it was first seen in; given
+#' `acknowledgements`, it applies your register, as [gpq_apply_acknowledgements()] does, so an
+#' issue whose entry still holds is `acknowledged`. Neither matches the issues of `magp_designs`
+#' and `magp_design_frames`, whose keys each delivery numbers anew: they are new in every run,
+#' and no acknowledgement reaches them. The run then writes the results and the run metadata,
+#' and with `report = TRUE` builds the reports, which compare and apply again to list the
+#' earlier run's issues this run no longer has and the entries that have lapsed.
+#'
+#' Pre-flight checks every run input given, and the run then reads `overrides`, `lineage` and
+#' `pipeline_fill` as [gpq_classify_issues()] reads them, before any check. The run stops there
+#' wherever [gpq_classify_issues()] would on an input that pre-flight lets pass, such as an
+#' `overrides` column that is an attribute of the specification but not one of the issues' group
+#' columns, or a cell that `lineage` or `pipeline_fill` lists twice. An `attribution_map`
+#' without the column `jurisdiction`, which pre-flight lets pass, stops the run before the
+#' delivery is loaded.
 #'
 #' In `metadata/run.csv`, `run_start` is when the run started and `run_end` is set just before
 #' the results are written: the time between them covers loading the tables, pre-flight, the
-#' checks, the provider keys and the classes, not the writing or the reports.
+#' checks, the provider keys, the classes, the scripts, and the comparison with `previous` and
+#' your `acknowledgements`, not the writing or the reports.
 #'
 #' In `metadata/inputs.csv`, each table's row (`tables:<name>`) names the delivery's `.Rdata`
 #' file and its SHA-256, with the table's row count as its detail. A delivery that holds
@@ -52,7 +70,11 @@
 #' these, with the input `overrides`, `filled` (your `pipeline_fill`), `lineage`, `computed` or
 #' `crosswalk` and the rows classification reads from it as its detail. A CSV file you gave is
 #' recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
-#' hash, and so are MAGPlot's own `computed` and `crosswalk`, which every run has.
+#' hash, and so are MAGPlot's own `computed` and `crosswalk`, which every run has. Then come a
+#' row for each of `attribution_map`, `previous` and `acknowledgements` given, in that order,
+#' recorded the same way, with the rows read from it as its detail. An earlier run's folder is
+#' recorded by its name, its run ID, with no hash, since its issues file can be large, and
+#' `previous`'s row has no detail, since only the comparison reads the earlier issues.
 #'
 #' The run lets go of the tables once each issue has its provider key, before the classes and
 #' the reports. Their memory is freed only when nothing else holds them, so give the `.Rdata`
@@ -71,10 +93,27 @@
 #'   refused; check CSV files with [gpq_check_conformance()].
 #' @param output_dir The folder that holds run folders, made if it doesn't exist. The run writes
 #'   into `<output_dir>/<run_id>/`.
+#' @param previous `NULL`, or an earlier run to compare with: its run folder, as
+#'   `magp_run_qc()` wrote it, or its issues table, a data.frame or the path of a CSV file, as
+#'   [gpq_compare_runs()] takes it. It should be an earlier run of the same contributors; it is
+#'   compared as given. [magp_list_runs()] lists a contributor's runs. Give the folder or the
+#'   file's path, or read the file with `colClasses = "character"`: [utils::read.csv()] reads a
+#'   dataset ID such as `"100.10"` as the number 100.1, which no longer matches.
+#' @param acknowledgements `NULL`, or your acknowledgements register: a data.frame or the path
+#'   of a CSV file, as [gpq_apply_acknowledgements()] takes it, which may also hold the run's
+#'   group columns `magp_contributor_id`, `jurisdiction` and `magp_dataset_id`. Give the file's
+#'   path, or read it with `colClasses = "character"`: an `acknowledged_value` such as `"4.20"`
+#'   read as the number 4.2 no longer matches, so its entry lapses.
 #' @param overrides `NULL`, or your overrides of issue classes: a data.frame or the path of a
 #'   CSV file, as [gpq_classify_issues()] takes them, whose scope may also name the
 #'   issues' group columns: the run's `magp_contributor_id`, `jurisdiction` and
 #'   `magp_dataset_id`, and the plot's key `magp_plot_id`.
+#' @param attribution_map `NULL`, or the map of MAGPlot's processing scripts: a data.frame or
+#'   the path of a CSV file with the columns `jurisdiction`, `table_name`, `attribute_name`,
+#'   `script_file`, `script_block`, `script_commit` and `note`, a row for each jurisdiction,
+#'   table and attribute a script makes, and a row whose `table_name` and `attribute_name` are
+#'   both `"*"` naming a jurisdiction's script as a whole. The package's synthetic example is
+#'   `system.file("extdata", "examples", "attribution_map.csv", package = "groundplotqc")`.
 #' @param lineage `NULL`, or the provider's raw values of the cells the pipeline changed: a
 #'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
 #'   `column_name`, `raw_value` and `raw_source`. The classes read it as evidence, and each
@@ -89,10 +128,12 @@
 #' @param settings A named list of settings, which come before the rule set's, the options' and
 #'   the built-in values (see [groundplotqc_options]).
 #' @return The run's results, invisibly: a `gpq_results` object as [gpq_check_conformance()]
-#'   describes it, each issue with its provider key and class, as written to the run folder. A
-#'   run that pre-flight stops returns nothing.
-#' @seealso [magp_read_delivery()], which loads a delivery; [gpq_build_reports()], which builds
-#'   a saved run's reports again.
+#'   describes it, each issue with its provider key and class, and with what `attribution_map`,
+#'   `previous` and `acknowledgements` give it, as written to the run folder. A run that
+#'   pre-flight stops returns nothing.
+#' @seealso [magp_read_delivery()], which loads a delivery; [magp_list_runs()], which lists a
+#'   contributor's runs, to pick the earlier one; [gpq_build_reports()], which builds a saved
+#'   run's reports again.
 #' @examples
 #' # magp_example's tables saved as a delivery saves them, each as its own object.
 #' path <- tempfile(fileext = ".Rdata")
@@ -103,11 +144,15 @@
 #' run_dir <- file.path(output, results$metadata$run$run_id)
 #' list.files(run_dir, recursive = TRUE)
 #' @export
-magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
+magp_run_qc <- function(tables, output_dir, previous = NULL, acknowledgements = NULL,
+                        overrides = NULL, attribution_map = NULL, lineage = NULL,
                         pipeline_fill = NULL, report = TRUE, settings = list()) {
-  # MAGPlot's names for the engine (3.2 step 4; D7.5).
+  # MAGPlot's names for the engine (3.2 step 4; D7.5), and its tables whose keys each delivery
+  # numbers anew, which no comparison or acknowledgement matches across runs (9.6; D12.75,
+  # D23.25).
   group_cols <- c("magp_contributor_id", "jurisdiction", "magp_dataset_id")
   problem_unit <- list("magp_plots", "magp_plot_id")
+  unmatched_tables <- c("magp_designs", "magp_design_frames")
   # The arguments, checked before any table is loaded (D21.18 Q4). magp_meta may come in any
   # shape (D21.12), so only the other elements of a list are looked at for CSV paths, every
   # element named magp_meta left out, as the later removal drops them all (M8 m5).
@@ -154,17 +199,50 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   # A setting the package doesn't have, or a value it can't take, stops here in the engine's
   # words, before a delivery is loaded (check_settings(), resolve_setting()).
   settings_metadata(settings, rules)
-  # The run inputs given, which pre-flight checks (3.6; D19.51). One that is neither a
-  # data.frame nor the path of an existing CSV file stops here, before a delivery is loaded, in
-  # the words of pre-flight's reader, which stops on it (read_input_table(); M7b m7); the
-  # others are read by pre-flight, as before.
-  run_inputs <- list(overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill)
+  # The run inputs given, which pre-flight checks, in its order (3.6; D19.51). One of
+  # classification's that is neither a data.frame nor the path of an existing CSV file stops
+  # here, before a delivery is loaded, in the words of pre-flight's reader, which stops on it
+  # (read_input_table(); M7b m7); the others are read by pre-flight, as before.
+  run_inputs <- list(
+    overrides = overrides, lineage = lineage, pipeline_fill = pipeline_fill,
+    previous = previous, acknowledgements = acknowledgements, attribution_map = attribution_map
+  )
   run_inputs <- run_inputs[!vapply(run_inputs, is.null, logical(1))]
-  for (input in names(run_inputs)) {
+  for (input in intersect(c("overrides", "lineage", "pipeline_fill"), names(run_inputs))) {
     if (!is.data.frame(run_inputs[[input]]) && !is_path_to(run_inputs[[input]], "csv")) {
       read_input_table(run_inputs[[input]], input)
     }
   }
+  # Each input's row for inputs.csv (D21.41, D21.42): its file and SHA-256 as the read took them
+  # (an overrides path's as manifest_row() takes them) and the rows the run reads from it, in
+  # the engine's form for a table's rows, or no detail.
+  input_row <- function(manifest, n) {
+    data.table(
+      input = manifest$input, file = manifest$file, sha256 = manifest$sha256,
+      detail = if (is.na(n)) NA_character_ else paste(n, fifelse(n == 1L, "row", "rows"))
+    )
+  }
+  # The inputs the run reads after the classes, read here as pre-flight reads them, so one in
+  # another form stops before a delivery is loaded, in its reader's words: an earlier run for
+  # its form and its issues' columns only (D23.46), your register and the attribution map
+  # whole, both small tables. Only their inputs rows are kept, in the order the run uses them.
+  later <- intersect(c("attribution_map", "previous", "acknowledgements"), names(run_inputs))
+  later_read <- read_run_inputs(run_inputs[later], "inputs", names(run_input_schema()))
+  # The map is keyed by jurisdiction (10.4; D23.27), which pre-flight can't ask of it, since the
+  # engine names no MAGPlot column: a map without it stops here, in the words attribute_issues()
+  # would give it after the checks (D23.50).
+  map_read <- later_read$attribution_map
+  if (!is.null(map_read) && !group_cols[[2L]] %chin% names(map_read$data)) {
+    check_input_columns(
+      map_read$data, c(group_cols[[2L]], run_input_schema()$attribution_map), "attribution_map"
+    )
+  }
+  # The comparison alone reads an earlier run's issues, so its row counts none.
+  later_rows <- lapply(later, function(input) {
+    read <- later_read[[input]]
+    input_row(read$manifest, if (input == "previous") NA_integer_ else nrow(read$data))
+  })
+  rm(later_read, map_read)
   spec <- magp_spec()
   # The run ID and its start, then the tables, so a run pre-flight stops records the
   # contributors its tables hold (9.5): the reverse of the engine's order (D17.32, D21.18 Q3).
@@ -235,15 +313,8 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   evidence_read <- read_run_inputs(evidence_given, "evidence", names(evidence_schema()))
   read_evidence(evidence_read, groups)
   overrides_read <- if (!is.null(overrides)) read_overrides(overrides, groups)
-  # Each input's row for inputs.csv (D21.41, D21.42): its file and SHA-256 as the read took them
-  # (an overrides path's as manifest_row() takes them) and the rows classification reads from
-  # it, in the engine's form for a table's rows. Only the rows are kept, so the reads go.
-  input_row <- function(manifest, n) {
-    data.table(
-      input = manifest$input, file = manifest$file, sha256 = manifest$sha256,
-      detail = paste(n, fifelse(n == 1L, "row", "rows"))
-    )
-  }
+  # Each of classification's inputs' rows for inputs.csv (input_row() above), with the rows
+  # classification reads from it. Only the rows are kept, so the reads go.
   given_rows <- c(
     if (!is.null(overrides)) {
       overrides_path <- if (is.character(overrides)) overrides else NA_character_
@@ -302,10 +373,27 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
     evidence = c(evidence_bundled, evidence_given),
     overrides = overrides, settings = settings
   )
+  # Each issue's script and block from your attribution map, by its jurisdiction, table and
+  # column (3.2 step 6, 10.4; D23.27, D23.39). magp_meta records no commit of the scripts that
+  # made the delivery yet, so a mapped issue's script version is unknown (D23.40, request 5).
+  if (!is.null(attribution_map)) {
+    attribute_issues(results$issues, attribution_map, group_cols[[2L]])
+  }
+  # Then the earlier run and your register, so the issues written carry each one's first-seen
+  # run, its change and the status acknowledged (3.2 step 7; D23.30), MAGPlot's design tables
+  # matched by neither (D12.75, D23.25). The reports compare again for the issues resolved
+  # since, which the results don't keep.
+  if (!is.null(previous)) {
+    gpq_compare_runs(results, previous, unmatched_tables)
+  }
+  if (!is.null(acknowledgements)) {
+    gpq_apply_acknowledgements(results$issues, acknowledgements, unmatched_tables)
+  }
   # Each table's inputs row names the delivery's file and hash, its detail as the engine wrote
   # it, and a magp_meta row repeats them; a plain list's rows stay in memory (9.5; D21.13). Then
   # a row for each run input classification was given: the caller's, as read before the checks,
-  # and MAGPlot's computed and crosswalk, in memory (9.5; D21.41, D21.42).
+  # and MAGPlot's computed and crosswalk, in memory (9.5; D21.41, D21.42); then the attribution
+  # map, the earlier run and the register, as read before the load.
   inputs <- results$metadata$inputs
   if (!is.null(source_file)) {
     from_tables <- which(startsWith(inputs$input, "tables:"))
@@ -324,7 +412,7 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   bundled_rows <- lapply(names(evidence_bundled), function(name) {
     input_row(manifest_row(name), nrow(evidence_bundled[[name]]))
   })
-  run_rows <- rbindlist(c(given_rows, bundled_rows))
+  run_rows <- rbindlist(c(given_rows, bundled_rows, later_rows))
   set(run_rows, j = "file", value = utf8_marked(run_rows$file))
   results$metadata$inputs <- rbind(inputs, run_rows)
   # run_start the run's own, which its ID names; run_end set just before the write (D21.14).
@@ -335,11 +423,15 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   gpq_write_results(results, output_dir)
   if (report) {
     # The reports read no saved settings but the rule set's, so the caps given come as
-    # arguments; the lineage input's raw values show beside their issues (D21.18 Q6).
+    # arguments; the lineage input's raw values show beside their issues (D21.18 Q6); the
+    # earlier run and the register give the changes and the acknowledgements, MAGPlot's design
+    # tables matched by neither (D23.30, D23.25).
     gpq_build_reports(
       results, output_dir,
-      lineage = lineage, lang = settings[["lang"]], text = text, row_cap = settings[["row_cap"]],
-      example_cap = settings[["example_cap"]], cell_cap = settings[["cell_cap"]]
+      previous = previous, lineage = lineage, acknowledgements = acknowledgements,
+      unmatched_tables = unmatched_tables, lang = settings[["lang"]], text = text,
+      row_cap = settings[["row_cap"]], example_cap = settings[["example_cap"]],
+      cell_cap = settings[["cell_cap"]]
     )
   }
   invisible(results)
