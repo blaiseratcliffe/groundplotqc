@@ -758,6 +758,44 @@ test_that("given previous and a register, each unit's sections 11 and 12 hold it
     routed <- route_unit(results, unit, names(own), resolved = compared$resolved)
     expect_identical(routed$resolved$value, own[[unit]][[1L]], info = unit)
   }
+  # A previous run's issues as fread() reads them, a numeric report unit, a record ID of digits
+  # and an empty provider key: the build reads them as text (D23.112).
+  typed <- as.data.frame(gone)[1:2, ]
+  typed$unit <- c(100, 110)
+  typed$record_pk <- c(91L, 92L)
+  typed$provider_key <- NA
+  typed_files <- gpq_build_reports(results, output, previous = typed)
+  for (unit in names(own)) {
+    path <- typed_files[names(typed_files) == unit][[1L]]
+    page <- readChar(path, file.size(path), useBytes = TRUE)
+    expect_true(grepl(own[[unit]][[1L]], page, fixed = TRUE), info = unit)
+    expect_false(grepl(own[[setdiff(names(own), unit)]][[1L]], page, fixed = TRUE), info = unit)
+  }
+  # A run of unit 100 alone, given entries of 110's on 100's provider keys (D23.110, D23.111):
+  # one would hold and one has lapsed, yet neither acknowledges 100's issue nor shows.
+  solo <- fx_report_results()
+  data.table::set(solo$metadata$run, j = "report_units", value = "100")
+  solo$results <- solo$results[solo$results$unit != "110"]
+  solo$issues <- solo$issues[solo$issues$unit != "110"]
+  solo$corrections <- solo$corrections[solo$corrections$issue_id %in% solo$issues$issue_id]
+  shared <- match(c(11L, 10L), issues$issue_id)
+  theirs <- data.frame(
+    fingerprint = issues$fingerprint[shared], fingerprint_pk = issues$fingerprint_pk[shared],
+    rule_id = issues$rule_id[shared], table_name = issues$table_name[shared],
+    column_name = issues$column_name[shared], provider_key = issues$provider_key[shared],
+    acknowledged_value = c(issues$value[shared[[1L]]], "VALUE-OF-110"), decision = "verified",
+    who = "WHO-secret", when = "2026-11-01", why = c("WHY-OF-110", "WHY-LAPSED-110"),
+    run_scope = "package", unit = "110", area = "A-110-1", plot = "P-110-1"
+  )
+  solo_output <- withr::local_tempdir()
+  gpq_write_results(solo, solo_output)
+  solo_files <- gpq_build_reports(solo, solo_output, acknowledgements = theirs)
+  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  for (value in c("WHY-OF-110", "WHY-LAPSED-110", "VALUE-OF-110")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
+  expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "open")
   # A bad previous run or register stops the build before it removes or writes anything.
   stamp <- file.mtime(files)
   expect_error(

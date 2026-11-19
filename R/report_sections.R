@@ -878,9 +878,10 @@ section_changes <- function(tables, text, settings) {
 #' Section 12, "Acknowledged issues": the unit's acknowledged issues, each with its register
 #' entry, then the entries that lapsed (11.3, 11.8; D4.8, D23.34, D23.36)
 #'
-#' The unit's issues of status acknowledged, which sections 2 to 6 leave out, one row each:
-#' what the check means, table, column, provider key, the acknowledged value, the decision,
-#' when and why, never who (D23.36). `tables$acknowledgements` is NULL when the build wasn't
+#' The unit's issues of status acknowledged, which sections 2 to 6 leave out, one row each,
+#' under the section's intro: severity, shown as the row's label (D23.113), what the check
+#' means, table, column, provider key, the acknowledged value, the decision, when and why,
+#' never who (D23.36). `tables$acknowledgements` is NULL when the build wasn't
 #' given the register: the acknowledged value is then the issue's own, the decision, when and
 #' why are empty and left out, and a line says they need the register. Otherwise it holds, by
 #' `issue_id`, the entry that holds for each of the unit's acknowledged issues
@@ -892,7 +893,8 @@ section_changes <- function(tables, text, settings) {
 #' copies of it, cut at `cell_cap` (D20.39); `when` and `why` are the register's own, shown in
 #' full. The issues sorted as the "Each issue" tables sort, the lapsed entries by table, column,
 #' provider key and check, both in C order; a column empty in every row left out (D20.44); each
-#' at most `row_cap` rows, with a line naming no file. With neither, one line.
+#' at most `row_cap` rows, the acknowledged issues' note naming the unit's CSV, which holds
+#' them, and the lapsed entries' a line naming no file (D23.116). With neither, one line.
 #' @noRd
 section_acknowledged <- function(tables, text, settings) {
   lang <- settings$lang
@@ -923,18 +925,21 @@ section_acknowledged <- function(tables, text, settings) {
     verified = word("report_decision_verified"),
     rejected_proposal = word("report_decision_rejected_proposal")
   )
+  severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
   # A column empty in every row is left out (D20.42, D20.44).
-  table_of <- function(columns, headers, caption, row_class = NULL) {
+  table_of <- function(columns, headers) {
     kept <- !vapply(columns, function(x) all(is.na(x) | !nzchar(x)), TRUE)
     shown <- as.data.table(columns[kept])
     setnames(shown, headers[kept])
-    capped_table(shown, caption, row_class, text, settings)
+    shown
   }
-  body <- paste0("<p>", html_escape(report_text(
-    "report_acknowledged_intro", lang,
-    csv_name = settings$csv_name, text = text
-  )), "</p>")
+  body <- character()
   if (length(at) > 0L) {
+    # The intro only above the acknowledged issues (D23.115).
+    body <- paste0("<p>", html_escape(report_text(
+      "report_acknowledged_intro", lang,
+      csv_name = settings$csv_name, text = text
+    )), "</p>")
     # The text keys read as UTF-8, so the radix sort's byte order is C order whatever a key's
     # encoding mark, as the "Each issue" tables sort (D20.42, R94).
     at <- at[order(
@@ -948,19 +953,25 @@ section_acknowledged <- function(tables, text, settings) {
       if (is.null(entries)) rep(NA_character_, length(at)) else entries[[column]][held]
     }
     acknowledged_value <- if (is.null(entries)) issues$value[at] else entry("acknowledged_value")
-    body <- c(body, table_of(
+    # Severity first, in its words, the row's class showing it as the label (D23.113); the
+    # rows are in the issues CSV, so a cap's note names it (D20.68, D23.116).
+    shown <- table_of(
       list(
-        meaning(issues$rule_id[at]), cut(issues$table_name[at]), cut(issues$column_name[at]),
-        cut(issues$provider_key[at]), cut(acknowledged_value),
-        unname(decisions[entry("decision")]), entry("when"), entry("why")
+        severity_words[match(issues$severity[at], severities)], meaning(issues$rule_id[at]),
+        cut(issues$table_name[at]), cut(issues$column_name[at]), cut(issues$provider_key[at]),
+        cut(acknowledged_value), unname(decisions[entry("decision")]), entry("when"),
+        entry("why")
       ),
       c(
-        word("report_column_meaning"), word("report_column_table"), word("report_column_column"),
+        word("report_column_severity"), word("report_column_meaning"),
+        word("report_column_table"), word("report_column_column"),
         word("report_column_provider_key"), word("report_column_acknowledged_value"),
         word("report_column_decision"), word("report_column_when"), word("report_column_why")
-      ),
-      word("report_acknowledged_caption"),
-      paste0("sev-", issues$severity[at])
+      )
+    )
+    body <- c(body, html_table(
+      shown, word("report_acknowledged_caption"), settings$row_cap, settings$csv_name,
+      row_class = paste0("sev-", issues$severity[at]), lang = lang, text = text
     ))
     if (is.null(entries)) {
       body <- c(body, paste0("<p>", html_escape(word("report_acknowledged_no_register")), "</p>"))
@@ -977,19 +988,21 @@ section_acknowledged <- function(tables, text, settings) {
     body <- c(
       body,
       paste0("<p>", html_escape(word("report_acknowledged_lapsed_intro")), "</p>"),
-      table_of(
-        list(
-          meaning(lapsed$rule_id), cut(lapsed$table_name), cut(lapsed$column_name),
-          cut(lapsed$provider_key), cut(lapsed$acknowledged_value), cut(lapsed$current_value),
-          unname(decisions[lapsed$decision]), lapsed$when, lapsed$why
+      capped_table(
+        table_of(
+          list(
+            meaning(lapsed$rule_id), cut(lapsed$table_name), cut(lapsed$column_name),
+            cut(lapsed$provider_key), cut(lapsed$acknowledged_value), cut(lapsed$current_value),
+            unname(decisions[lapsed$decision]), lapsed$when, lapsed$why
+          ),
+          c(
+            word("report_column_meaning"), word("report_column_table"),
+            word("report_column_column"), word("report_column_provider_key"),
+            word("report_column_acknowledged_value"), word("report_column_current_value"),
+            word("report_column_decision"), word("report_column_when"), word("report_column_why")
+          )
         ),
-        c(
-          word("report_column_meaning"), word("report_column_table"),
-          word("report_column_column"), word("report_column_provider_key"),
-          word("report_column_acknowledged_value"), word("report_column_current_value"),
-          word("report_column_decision"), word("report_column_when"), word("report_column_why")
-        ),
-        word("report_acknowledged_lapsed_caption")
+        word("report_acknowledged_lapsed_caption"), NULL, text, settings
       )
     )
   }

@@ -1,6 +1,7 @@
 # The acknowledgements register (plan 3.4, 11.8; D4.2, D4.8, D8.16, D23.13, D23.21, D23.26,
 # D23.34): gpq_apply_acknowledgements() matches each entry of your register to a run's issues as
-# the comparison with an earlier run does (match_issues(), R/results_compare.R), gives an issue
+# the comparison with an earlier run does (match_issues(), R/results_compare.R), a record-level
+# entry on its report unit too where the register holds that column (D23.111), gives an issue
 # whose entry still holds the status acknowledged, and lists the entries whose issue's value has
 # changed as lapsed. The register is read as pre-flight reads its run inputs
 # (read_input_table()); the issues are read by column and set by reference, never copied whole
@@ -18,9 +19,12 @@
 #' `fingerprint`, or failing that its `fingerprint_pk`, and the same `run_scope`, so it still
 #' matches after the contributor's provider keys are decoded differently. An entry for a
 #' column-level issue, which names no record, also needs the issue's values in the register's
-#' group columns. An entry whose `fingerprint` and `fingerprint_pk` are both blank matches
-#' nothing, and neither does an entry or an issue of a table in `unmatched_tables`. An entry
-#' naming a rule renamed or split since matches the new rules' issues.
+#' group columns. An entry for a record-level issue also needs the issue's report unit in the
+#' register's report-unit column, the first group column, where the register holds it; an entry
+#' with "*" there matches every unit's issue. An entry whose `fingerprint` and `fingerprint_pk`
+#' are both blank matches nothing, and neither does an entry or an issue of a table in
+#' `unmatched_tables`. An entry naming a rule renamed or split since matches the new rules'
+#' issues.
 #'
 #' An entry holds while its issue's value is the entry's `acknowledged_value`, a blank value
 #' equal to a blank one: the issue's status becomes `acknowledged`. Otherwise the entry has
@@ -43,8 +47,8 @@
 #' @return A list: `issues`, with `status` set; and `lapsed`, a new data.table of the entries
 #'   that match an issue whose value has changed, their columns as read with the issue's value
 #'   as `current_value`, one row for each entry and value.
-#' @seealso [gpq_compare_runs()], which matches issues the same way, and [gpq_preflight()] for
-#'   the checks of the register.
+#' @seealso [gpq_compare_runs()], which matches issues the same way but for the report unit, and
+#'   [gpq_preflight()] for the checks of the register.
 #' @examples
 #' # magp_example with two trees' distances missing, which Layer 2 finds. MAGPlot's bundled
 #' # specification has known pre-flight warnings, so this warning is expected.
@@ -153,6 +157,33 @@ gpq_apply_acknowledgements <- function(issues, acknowledgements, unmatched_table
   }
   # A column-level entry matches on the group columns the register holds (D23.21, D23.26).
   pairs <- match_issues(issues, data, intersect(groups, names(data)), unmatched_tables)
+  if (length(groups) > 0L && groups[[1L]] %chin% names(data)) {
+    # A record-level entry matches only its own report unit's issue, the unit in the register's
+    # report-unit column, the first group column, "*" there matching every unit's (D23.111). An
+    # issue whose fingerprint met only other units' entries is matched again by its pk: form
+    # alone, as an issue its fingerprint matches nothing is (D9.22): its fingerprint is left
+    # out of a copy of those rows' matching columns. Each test worked out before the brackets.
+    unit_col <- groups[[1L]]
+    own_unit <- function(pairs) {
+      given <- data[[unit_col]][pairs$at]
+      issues$level[pairs$row] %chin% "column" | given %chin% "*" |
+        (given == issues[[unit_col]][pairs$row]) %in% TRUE
+    }
+    own <- own_unit(pairs)
+    left <- setdiff(pairs$row[!own], pairs$row[own])
+    pairs <- pairs[own]
+    if (length(left) > 0L) {
+      columns <- c("table_name", "level", "run_scope", "fingerprint_pk")
+      by_pk <- setDT(lapply(structure(columns, names = columns), function(column) {
+        issues[[column]][left]
+      }))
+      set(by_pk, j = "fingerprint", value = NA_character_)
+      again <- match_issues(by_pk, data, character(), unmatched_tables)
+      set(again, j = "row", value = left[again$row])
+      own_again <- own_unit(again)
+      pairs <- rbind(pairs, again[own_again])
+    }
+  }
   # Only an open issue, or one acknowledged already, takes the status (D23.47).
   takes <- issues$status[pairs$row] %chin% c("open", "acknowledged")
   pairs <- pairs[takes]

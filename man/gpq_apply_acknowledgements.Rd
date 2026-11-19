@@ -37,9 +37,12 @@ An entry matches an issue as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}}
 \code{fingerprint}, or failing that its \code{fingerprint_pk}, and the same \code{run_scope}, so it still
 matches after the contributor's provider keys are decoded differently. An entry for a
 column-level issue, which names no record, also needs the issue's values in the register's
-group columns. An entry whose \code{fingerprint} and \code{fingerprint_pk} are both blank matches
-nothing, and neither does an entry or an issue of a table in \code{unmatched_tables}. An entry
-naming a rule renamed or split since matches the new rules' issues.
+group columns. An entry for a record-level issue also needs the issue's report unit in the
+register's report-unit column, the first group column, where the register holds it; an entry
+with "*" there matches every unit's issue. An entry whose \code{fingerprint} and \code{fingerprint_pk}
+are both blank matches nothing, and neither does an entry or an issue of a table in
+\code{unmatched_tables}. An entry naming a rule renamed or split since matches the new rules'
+issues.
 
 An entry holds while its issue's value is the entry's \code{acknowledged_value}, a blank value
 equal to a blank one: the issue's status becomes \code{acknowledged}. Otherwise the entry has
@@ -76,6 +79,6 @@ applied$issues[, c("rule_id", "record_pk", "status")]
 applied$lapsed[, c("rule_id", "acknowledged_value", "current_value")]
 }
 \seealso{
-\code{\link[=gpq_compare_runs]{gpq_compare_runs()}}, which matches issues the same way, and \code{\link[=gpq_preflight]{gpq_preflight()}} for
-the checks of the register.
+\code{\link[=gpq_compare_runs]{gpq_compare_runs()}}, which matches issues the same way but for the report unit, and
+\code{\link[=gpq_preflight]{gpq_preflight()}} for the checks of the register.
 }

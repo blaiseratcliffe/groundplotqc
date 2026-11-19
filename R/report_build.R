@@ -534,6 +534,19 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
     ))
     gone <- gpq_compare_runs(reported, previous, unmatched_tables)$resolved
     setcolorder(reported$issues, names(issues))
+    # The resolved issues' columns route_unit() and section 11 read, as text, as the comparison
+    # reads them: an issues table read with fread() may hold a report unit or record ID of
+    # digits as numbers, or an empty provider key as logical (D23.112). `gone` is the
+    # comparison's own new table, so no column of the caller's changes.
+    read_as_text <- c(
+      "rule_id", "severity", "table_name", "column_name", "provider_key", "record_pk", "value",
+      setdiff(names(gone), names(results_schema()$issues))
+    )
+    for (column in intersect(read_as_text, names(gone))) {
+      if (!is.character(gone[[column]])) {
+        set(gone, j = column, value = as_text(gone[[column]]))
+      }
+    }
   }
   # Given `acknowledgements`, the register is checked once here, before any file is removed or
   # written, as gpq_apply_acknowledgements() checks it, then read once as text; each unit's
@@ -661,29 +674,53 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
   )
   # One unit's acknowledgements (D23.34, D23.36): the register applied to its routed issues, a
   # copy of their own, so the caller's issues keep their statuses; then, for each issue it
-  # acknowledges, the first entry that holds, read as gpq_apply_acknowledgements() holds one
-  # (the issue's value, a blank one as NA, is the acknowledged value), and the entries that
-  # lapsed. In a run of several units an entry shows only where its own report-unit cell is the
-  # unit's or "*", and none where the register lacks that column (fail closed), so no unit's
-  # report holds an entry made for another's issue (13).
+  # acknowledges, the first entry that holds, matched and read as gpq_apply_acknowledgements()
+  # matches and holds one (a record-level entry on its own report unit, D23.111; the issue's
+  # value, a blank one as NA, is the acknowledged value), and the entries that lapsed. Where the
+  # register holds the report-unit column, in any run, an entry shows only where its own cell
+  # there is the unit's or "*" (D23.110); a register without it shows none in a run of several
+  # units (fail closed), so no unit's report holds an entry made for another's issue (13).
   acknowledged_in <- function(issues, unit) {
     lapsed <- gpq_apply_acknowledgements(issues, register, unmatched_tables)$lapsed
     groups <- setdiff(names(issues), names(results_schema()$issues))
     pairs <- match_issues(issues, register, intersect(groups, names(register)), unmatched_tables)
+    if (length(groups) > 0L && groups[[1L]] %chin% names(register)) {
+      # gpq_apply_acknowledgements()'s match on the report unit, its pk: form pass included
+      # (D9.22, D23.111); change the two together. Each test worked out before the brackets.
+      own_unit <- function(pairs) {
+        given <- register[[groups[[1L]]]][pairs$at]
+        issues$level[pairs$row] %chin% "column" | given %chin% "*" |
+          (given == issues[[groups[[1L]]]][pairs$row]) %in% TRUE
+      }
+      own <- own_unit(pairs)
+      left <- setdiff(pairs$row[!own], pairs$row[own])
+      pairs <- pairs[own]
+      if (length(left) > 0L) {
+        columns <- c("table_name", "level", "run_scope", "fingerprint_pk")
+        by_pk <- setDT(lapply(structure(columns, names = columns), function(column) {
+          issues[[column]][left]
+        }))
+        set(by_pk, j = "fingerprint", value = NA_character_)
+        again <- match_issues(by_pk, register, character(), unmatched_tables)
+        set(again, j = "row", value = left[again$row])
+        own_again <- own_unit(again)
+        pairs <- rbind(pairs, again[own_again])
+      }
+    }
     value <- issues$value[pairs$row]
     value[is_blank(value)] <- NA_character_
     given <- register$acknowledged_value[pairs$at]
     holds <- fifelse(is.na(value), is.na(given), !is.na(given) & value == given)
     pairs <- pairs[holds & issues$status[pairs$row] %chin% "acknowledged"]
-    if (length(units) > 1L) {
-      # Each test worked out before the brackets: `lapsed` holds the caller's columns.
-      if (unit_col %chin% names(register)) {
-        own_pairs <- register[[unit_col]][pairs$at] %chin% c(unit, "*")
-        own_lapsed <- lapsed[[unit_col]] %chin% c(unit, "*")
-      } else {
-        own_pairs <- logical(nrow(pairs))
-        own_lapsed <- logical(nrow(lapsed))
-      }
+    # Each test worked out before the brackets: `lapsed` holds the caller's columns.
+    if (!is.null(unit_col) && unit_col %chin% names(register)) {
+      own_pairs <- register[[unit_col]][pairs$at] %chin% c(unit, "*")
+      own_lapsed <- lapsed[[unit_col]] %chin% c(unit, "*")
+      pairs <- pairs[own_pairs]
+      lapsed <- lapsed[own_lapsed]
+    } else if (length(units) > 1L) {
+      own_pairs <- logical(nrow(pairs))
+      own_lapsed <- logical(nrow(lapsed))
       pairs <- pairs[own_pairs]
       lapsed <- lapsed[own_lapsed]
     }

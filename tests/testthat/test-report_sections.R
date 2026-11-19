@@ -1807,10 +1807,10 @@ test_that("section 12 lists acknowledged issues with their entries, lapsed ones 
   hostile <- "<u>&\"V"
   issues <- new_issues(list(
     issue_id = 1:4, run_id = run_id, run_scope = "package", rule_id = "raw_na",
-    rule_fingerprint = "f", stage = "conformance", layer = 2L, severity = "error",
-    reason_code = "*", table_name = "trees", column_name = "x",
-    record_pk = c("T1", "T2", "T3", "T4"), row_number = 1:4, pk_positional = FALSE,
-    level = "record", value = c(hostile, "2", "3", "4"),
+    rule_fingerprint = "f", stage = "conformance", layer = 2L,
+    severity = c("error", "warning", "error", "error"), reason_code = "*", table_name = "trees",
+    column_name = "x", record_pk = c("T1", "T2", "T3", "T4"), row_number = 1:4,
+    pk_positional = FALSE, level = "record", value = c(hostile, "2", "3", "4"),
     provider_key = c("k=1", "k=2", "k=3", "k=4"), unit = "u1", plot = "P1",
     reaches_other_unit = FALSE, status = c("acknowledged", "acknowledged", "open", "open"),
     issue_class = "source"
@@ -1846,10 +1846,12 @@ test_that("section 12 lists acknowledged issues with their entries, lapsed ones 
     expect_equal(attr(section, "gpq_section")[["title"]], "Acknowledged issues")
   })
   meaning <- report_text(rule_registry()$message_id[match("raw_na", rule_registry()$rule_id)])
+  # Severity is the table's first column, in its words (D23.113).
   expect_equal(caught[["Acknowledged issues"]], data.table::data.table(
-    "What it means" = meaning, Table = "trees", Column = "x", "Your key" = c("k=1", "k=2"),
-    "Acknowledged value" = c(hostile, NA), Decision = c("proposal rejected", NA),
-    When = c("2026-11-01", NA), Why = c("Checked <in the field>", NA)
+    Severity = c("Error", "Warning"), "What it means" = meaning, Table = "trees", Column = "x",
+    "Your key" = c("k=1", "k=2"), "Acknowledged value" = c(hostile, NA),
+    Decision = c("proposal rejected", NA), When = c("2026-11-01", NA),
+    Why = c("Checked <in the field>", NA)
   ))
   # Never who; a rule the registry doesn't have shows no text.
   expect_equal(caught[["Acknowledgements that no longer hold"]], data.table::data.table(
@@ -1870,12 +1872,35 @@ test_that("section 12 lists acknowledged issues with their entries, lapsed ones 
     caught[["Acknowledged issues"]][["Acknowledged value"]], c(cut_cell_text(hostile, 3L), NA)
   )
   expect_equal(caught[["Acknowledgements that no longer hold"]][["Current value"]], c("3", "4"))
+  # The register's own when and why are never cut (R72).
+  expect_equal(caught[["Acknowledged issues"]][["Why"]], c("Checked <in the field>", NA))
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    section_acknowledged(tables, NULL, utils::modifyList(settings, list(cell_cap = 1L)))
+  })
+  expect_equal(
+    caught[["Acknowledgements that no longer hold"]][["Acknowledged value"]],
+    cut_cell_text(c("30", "40"), 1L)
+  )
   html <- as.character(section_acknowledged(tables, NULL, settings))
   expect_false(grepl("WHO-secret", html, fixed = TRUE))
   expect_match(html, "&lt;u&gt;&amp;&quot;V", fixed = TRUE)
+  expect_match(html, "Checked &lt;in the field&gt;", fixed = TRUE)
   expect_false(grepl(hostile, html, fixed = TRUE))
   expect_match(html, "u1_issues.csv keeps them", fixed = TRUE)
   expect_false(grepl("\\{[a-z0-9_]+\\}", html))
+  # The two intros' words (D23.117, D23.118).
+  expect_match(
+    html, "They are counted among the changes since the previous run but left out of the other",
+    fixed = TRUE
+  )
+  expect_match(
+    html, "an issue no other acknowledgement holds for is listed in the sections above.",
+    fixed = TRUE
+  )
   # Without the register: the issues' own values, no decision, and a line saying so.
   caught <- list()
   local({
@@ -1890,14 +1915,21 @@ test_that("section 12 lists acknowledged issues with their entries, lapsed ones 
   expect_named(caught, "Acknowledged issues")
   expect_equal(caught[[1L]][["Acknowledged value"]], c(hostile, "2"))
   expect_named(
-    caught[[1L]], c("What it means", "Table", "Column", "Your key", "Acknowledged value")
+    caught[[1L]],
+    c("Severity", "What it means", "Table", "Column", "Your key", "Acknowledged value")
   )
-  # At most row_cap rows each.
+  # At most row_cap rows each: the acknowledged issues' note names the CSV, which holds them,
+  # the lapsed entries' names no file (D23.116).
   settings$row_cap <- 1L
   html <- as.character(section_acknowledged(tables, NULL, settings))
-  expect_equal(lengths(regmatches(html, gregexpr("Showing 1 of 2 rows.", html, fixed = TRUE))), 2L)
-  # With neither, one line.
+  expect_match(html, "Showing 1 of 2 rows; the full list is in u1_issues.csv.", fixed = TRUE)
+  expect_equal(lengths(regmatches(html, gregexpr("Showing 1 of 2 rows.", html, fixed = TRUE))), 1L)
+  # Lapsed entries alone: their table, without the acknowledged issues' intro (D23.115).
   data.table::set(issues, j = "status", value = "open")
+  html <- as.character(section_acknowledged(tables, NULL, settings))
+  expect_false(grepl("These issues are acknowledged", html, fixed = TRUE))
+  expect_match(html, "Acknowledgements that no longer hold", fixed = TRUE)
+  # With neither, one line.
   expect_match(
     as.character(section_acknowledged(list(issues = issues), NULL, settings)),
     "No issue is acknowledged.",

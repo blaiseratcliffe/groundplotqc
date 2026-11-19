@@ -50,6 +50,22 @@ test_that("an entry holds on its value; one whose value changed lapses (D4.2, D4
   again <- gpq_apply_acknowledgements(issues, register)
   expect_equal(issues$status, c("acknowledged", "open", "open"))
   expect_equal(nrow(again$lapsed), 1L)
+  # A record-level entry matches its own report unit's issue only, one of unit "*" every unit's
+  # (D23.111): u2's entry on u1's k1 neither acknowledges it nor lapses; u2's own k3 lapses.
+  issues <- issues_of(record_pk = c("k1", "k2", "k3"), unit = c("u1", "u1", "u2"))
+  register <- entries_of(
+    issues_of(record_pk = c("k1", "k2", "k3"), unit = c("u2", "*", "u2")),
+    acknowledged_value = c("900", "900", "1")
+  )
+  out <- gpq_apply_acknowledgements(issues, register)
+  expect_equal(issues$status, c("open", "acknowledged", "open"))
+  expect_equal(out$lapsed$fingerprint, register$fingerprint[[3L]])
+  # A register without the report-unit column matches as before.
+  issues <- issues_of(record_pk = c("k1", "k2", "k3"), unit = c("u1", "u1", "u2"))
+  register$unit <- NULL
+  out <- gpq_apply_acknowledgements(issues, register)
+  expect_equal(issues$status, c("acknowledged", "acknowledged", "open"))
+  expect_equal(nrow(out$lapsed), 1L)
 })
 
 test_that("an entry still matches after its provider key's decoding changes (D9.22)", {
@@ -63,6 +79,19 @@ test_that("an entry still matches after its provider key's decoding changes (D9.
   register$fingerprint <- NA
   gpq_apply_acknowledgements(issues, register)
   expect_equal(issues$status, "acknowledged")
+  # An issue whose fingerprint meets only another unit's entry still matches its own unit's
+  # entry by its pk: form (D9.22, D23.111).
+  issues <- issues_of(record_pk = "k1", provider_key = "plot=1; tree=2")
+  register <- rbind(
+    entries_of(
+      issues_of(record_pk = "k1", provider_key = "plot=1; tree=2", unit = "u2"),
+      acknowledged_value = "1"
+    ),
+    entries_of(issues_of(record_pk = "k1", provider_key = "site=1; tree=2"))
+  )
+  out <- gpq_apply_acknowledgements(issues, register)
+  expect_equal(issues$status, "acknowledged")
+  expect_equal(nrow(out$lapsed), 0L)
 })
 
 test_that("a blank value equals a blank one; a column-level entry matches on its group", {
