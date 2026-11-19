@@ -352,7 +352,9 @@ test_that("a run with no group columns is one unit holding every row and remaind
     n_records = c(NA, NA, 9L), reaches_other_unit = FALSE, root_issue_id = c(NA, 1L, NA),
     status = c("open", "not_evaluated", "open")
   ))
-  x <- new_gpq_results(results, issues, new_corrections(), metadata)
+  x <- new_gpq_results(
+    results, issues, new_corrections(), empty_table(results_schema()$unit_records), metadata
+  )
   routed <- route_unit(x, NULL, character())
   expect_identical(routed$issues$issue_id, 1:3)
   expect_identical(routed$results$rule_id, rule_id)
@@ -434,8 +436,10 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "COM0", "LPT0", "COM¹", "LPT¹",
     "CONX", "COM10", "xCON", "CON-1", ".CON",
     "preflight", "PreFlight", "national_summary", "preflight.x",
-    # The package's own file stems, in any case (D20.70, D20.73); a value only holding one isn't.
-    "report", "Results", "ISSUES", "corrections", "issues.csv", "my_report"
+    # The package's own file stems, in any case (D20.70, D20.73, D23.25); a value only holding
+    # one isn't.
+    "report", "Results", "ISSUES", "corrections", "issues.csv", "my_report",
+    "unit_records", "Unit_Records"
   )
   stems <- unit_file_name(units)
   expect_identical(stems, c(
@@ -445,7 +449,8 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "%43OM0", "%4CPT0", "COM%C2%B9", "LPT%C2%B9",
     "CONX", "COM10", "xCON", "CON-1", "%2ECON",
     "%70reflight", "%50reFlight", "%6Eational_summary", "preflight.x",
-    "%72eport", "%52esults", "%49SSUES", "%63orrections", "issues.csv", "my_report"
+    "%72eport", "%52esults", "%49SSUES", "%63orrections", "issues.csv", "my_report",
+    "%75nit_records", "%55nit_Records"
   ))
   expect_identical(unit_file_name("Issues"), "%49ssues")
   expect_true(all(grepl("^[A-Za-z0-9._%-]+$", stems)))
@@ -634,9 +639,8 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
   files <- gpq_build_reports(results, output)
   expect_false(any(file.exists(stale)))
   expect_equal(readLines(file.path(run_dir, "reports", "preflight.html")), "pre-flight")
-  expect_true(all(file.exists(
-    file.path(run_dir, "tables", c("results.csv", "issues.csv", "corrections.csv"))
-  )))
+  own_tables <- c("results.csv", "issues.csv", "corrections.csv", "unit_records.csv")
+  expect_true(all(file.exists(file.path(run_dir, "tables", own_tables))))
   # A rebuild writes the same files again, and nothing else.
   again <- gpq_build_reports(results, output)
   expect_equal(again, files)
@@ -644,7 +648,7 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
     list.files(run_dir, recursive = TRUE, all.files = TRUE),
     c(
       "reports/preflight.html", sub(paste0(run_dir, "/"), "", files, fixed = TRUE),
-      "tables/results.csv", "tables/issues.csv", "tables/corrections.csv",
+      file.path("tables", own_tables),
       file.path("metadata", paste0(names(metadata_schema()), ".csv"))
     )
   )
@@ -1019,7 +1023,10 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
     n_unchecked = 7L, reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L,
     status = "pass", message_id = "code_not_in_list"
   ), group_cols = c("unit", "area", "zone"))
-  worst <- new_gpq_results(results, issues, new_corrections(), metadata)
+  worst <- new_gpq_results(
+    results, issues, new_corrections(),
+    empty_table(results_schema(c("unit", "area", "zone"), "plot")$unit_records), metadata
+  )
   # A raw value of 200 characters on each source issue's cell, starting "R" so it can be told
   # from the other cells once cut.
   lineage <- data.frame(

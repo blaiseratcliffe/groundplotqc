@@ -20,7 +20,9 @@ each column with its class.
 \details{
 The object read is identical to the one written. A run that stopped at
 pre-flight has no results to read, and the call stops; so does a missing file,
-or one that doesn't read cleanly, naming the file.
+or one that doesn't read cleanly, naming the file. The one exception is
+\code{tables/unit_records.csv}, which folders written by earlier versions of groundplotqc
+don't have: a run folder without it reads with \code{unit_records} empty.
 }
 \examples{
 # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.

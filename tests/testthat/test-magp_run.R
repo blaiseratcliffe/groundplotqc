@@ -268,9 +268,21 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
       ), ".csv"),
       "reports/100.html", "reports/110.html", "reports/preflight.html",
       "tables/100_issues.csv", "tables/110_issues.csv", "tables/corrections.csv",
-      "tables/issues.csv", "tables/results.csv"
+      "tables/issues.csv", "tables/results.csv", "tables/unit_records.csv"
     )
   )
+  # The plots' record counts under MAGPlot's names (D23.24): each plot's own record and its
+  # descendants', none of a site's; the tree condition naming no measurement reaches no plot,
+  # so it isn't counted.
+  counts <- results$unit_records
+  expect_named(counts, c(
+    "run_id", "magp_contributor_id", "jurisdiction", "magp_dataset_id", "magp_plot_id",
+    "table_name", "n_records"
+  ))
+  by_table <- vapply(split(counts$n_records, counts$table_name), sum, integer(1))
+  expect_equal(by_table[["magp_plots"]], nrow(delivery$magp_plots))
+  expect_equal(by_table[["magp_tree_cond"]], nrow(delivery$magp_tree_cond) - 1L)
+  expect_false("magp_sites" %in% counts$table_name)
   expect_equal(run$outcome, "completed")
   expect_equal(run$report_units, "100; 110")
   # Decoding by contributor, with Ontario's age trees, on the tables without magp_meta (D21.3,
@@ -610,7 +622,7 @@ test_that("a plain list's run is recorded in memory; report = FALSE builds no re
   expect_equal(list.files(file.path(run_dir, "reports")), "preflight.html")
   expect_equal(
     sort(list.files(file.path(run_dir, "tables")), method = "radix"),
-    c("corrections.csv", "issues.csv", "results.csv")
+    c("corrections.csv", "issues.csv", "results.csv", "unit_records.csv")
   )
   # Every issue classed, so gpq_build_reports() can build the saved run's reports later
   # (D21.18 Q4).

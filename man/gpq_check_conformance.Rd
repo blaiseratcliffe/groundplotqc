@@ -46,7 +46,8 @@ under \code{"*"}; in the report-unit column, its records' issues go into no prov
 in a run of several units.}
 
 \item{problem_unit}{\code{NULL}, or \code{list(table, key_col)}: the table and key column of the
-unit problem plots are ranked by; issues carry that key under its name.}
+unit problem plots are ranked by; issues carry that key under its name, and
+\code{unit_records} counts each unit's records.}
 
 \item{rules}{\code{NULL}, or a rule set such as \code{\link[=magp_rules]{magp_rules()}} returns.}
 
@@ -58,7 +59,7 @@ unit problem plots are ranked by; issues carry that key under its name.}
 \code{"20261215T140312Z_3fa9c1"}: the UTC start time and six hex characters.}
 }
 \value{
-An object of class \code{gpq_results}, a list of three tables and the run metadata:
+An object of class \code{gpq_results}, a list of four tables and the run metadata:
 \itemize{
 \item \code{results}: the summary, one row per rule, table, column and group: \code{run_id},
 \code{run_scope}, \code{rule_id}, \code{rule_fingerprint}, \code{stage}, \code{layer}, \code{severity}, \code{table_name},
@@ -89,6 +90,11 @@ unit, or a value \code{design_geometry_inconsistent} compared from a record of a
 or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
 FALSE in a run without group columns, and isn't part of the fingerprint.
 \item \code{corrections}: an empty table.
+\item \code{unit_records}: the records behind the problem units' rates, one row per group, problem
+unit and table holding records of that unit: \code{run_id}, the group columns, the problem
+unit's key column, \code{table_name} and \code{n_records}, the number of the table's records in
+that group whose problem unit is that one, read as issues read it. A record whose
+problem unit's key is \code{"*"} isn't counted. Empty without \code{problem_unit}.
 \item \code{metadata}: the tables of \verb{metadata/} in a run folder. In its \code{run} table, \code{run_end} is
 when this call ends: it covers pre-flight, reading the tables and the checks, not what
 comes after, such as writing the results.

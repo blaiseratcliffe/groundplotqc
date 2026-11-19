@@ -1,6 +1,6 @@
 # Tests for a run's files: gpq_write_results() and gpq_read_results(), the round trip, the
-# files' bytes, a stopped run's files and the refusals (plan 9.1, 9.5, 11.9, 18.4; D4.16,
-# D7.11, D15.4, D15.16, D15.17, D15.27).
+# files' bytes, a stopped run's files, an older folder without unit_records.csv and the
+# refusals (plan 9.1, 9.5, 11.9, 18.4; D4.16, D7.11, D15.4, D15.16, D15.17, D15.27, D23.33).
 
 test_that("a run written and read back is identical (18.4)", {
   local_results_registry()
@@ -48,10 +48,11 @@ test_that("a completed run with no group columns and no key column round trips (
   run <- data.table::copy(metadata$run)
   data.table::set(run, j = "group_cols", value = NA_character_)
   metadata$run <- run
+  # Without a problem unit, no record counts (D23.24).
   bare <- new_gpq_results(
     without(object$results[1L], c("unit", "area")),
     without(object$issues[1:2], c("unit", "area", "plot")),
-    object$corrections, metadata
+    object$corrections, without(object$unit_records[0L], c("unit", "area", "plot")), metadata
   )
   run_dir <- gpq_write_results(bare, withr::local_tempdir())
   expect_identical(gpq_read_results(run_dir), bare)
@@ -74,7 +75,8 @@ test_that("group and key columns named with quotes round trip (9.1, 18.4)", {
   data.table::set(run, j = "group_cols", value = "un\"it; a\"\"b")
   metadata$run <- run
   changed <- new_gpq_results(
-    rename(object$results), rename(object$issues), object$corrections, metadata
+    rename(object$results), rename(object$issues), object$corrections,
+    rename(object$unit_records), metadata
   )
   expect_true(all(unname(quoted) %in% names(changed$issues)))
   run_dir <- gpq_write_results(changed, withr::local_tempdir())
@@ -95,7 +97,7 @@ test_that("the run folder holds tables/ and metadata/, each file once (11.9; D7.
   dir <- withr::local_tempdir()
   run_dir <- gpq_write_results(fx_results(), dir)
   expect_setequal(list.files(file.path(run_dir, "tables")), c(
-    "results.csv", "issues.csv", "corrections.csv"
+    "results.csv", "issues.csv", "corrections.csv", "unit_records.csv"
   ))
   expect_setequal(
     list.files(file.path(run_dir, "metadata")), paste0(names(metadata_schema()), ".csv")
@@ -284,6 +286,32 @@ test_that("reading stops on a missing file or one that doesn't read cleanly, nam
   expect_error(gpq_read_results(file.path(dir, "no_such_run")), "one run folder that exists")
 })
 
+test_that("a run folder without unit_records.csv reads with unit_records empty (D23.33)", {
+  local_results_registry()
+  object <- fx_results()
+  # Empty record counts are written and read back like any table.
+  object$unit_records <- object$unit_records[0L]
+  run_dir <- gpq_write_results(object, withr::local_tempdir())
+  expect_identical(gpq_read_results(run_dir), object)
+  # A folder written before the run counted its records: the table is empty, with the run's
+  # group columns and the issues' key column, and the other tables read as before.
+  file.remove(file.path(run_dir, "tables", "unit_records.csv"))
+  expect_identical(gpq_read_results(run_dir), object)
+  expect_named(
+    gpq_read_results(run_dir)$unit_records,
+    c("run_id", "unit", "area", "plot", "table_name", "n_records")
+  )
+  # So is one whose issues carry no key column.
+  issues <- data.table::copy(object$issues)
+  data.table::set(issues, j = "plot", value = NULL)
+  counts <- data.table::copy(object$unit_records)
+  data.table::set(counts, j = "plot", value = NULL)
+  keyless <- new_gpq_results(object$results, issues, object$corrections, counts, object$metadata)
+  run_dir <- gpq_write_results(keyless, withr::local_tempdir())
+  file.remove(file.path(run_dir, "tables", "unit_records.csv"))
+  expect_identical(gpq_read_results(run_dir), keyless)
+})
+
 test_that("writing refuses what isn't a gpq_results object or a folder", {
   local_results_registry()
   object <- fx_results()
@@ -358,7 +386,9 @@ test_that("a key column named with \"; \" round trips (D15.40; M3b m22)", {
   object <- fx_results()
   issues <- data.table::copy(object$issues)
   data.table::setnames(issues, "plot", "plot; 2")
-  changed <- new_gpq_results(object$results, issues, object$corrections, object$metadata)
+  counts <- data.table::copy(object$unit_records)
+  data.table::setnames(counts, "plot", "plot; 2")
+  changed <- new_gpq_results(object$results, issues, object$corrections, counts, object$metadata)
   run_dir <- gpq_write_results(changed, withr::local_tempdir())
   back <- gpq_read_results(run_dir)
   expect_true("plot; 2" %in% names(back$issues))

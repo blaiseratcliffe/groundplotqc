@@ -17,9 +17,9 @@ The run folder's path, invisibly.
 }
 \description{
 Writes a \code{gpq_results} object to \verb{<output_dir>/<run_id>/}: the results summary,
-issues and corrections to \verb{tables/}, and the run metadata to \verb{metadata/}, one
-CSV file for each table: \code{results.csv}, \code{issues.csv} and \code{corrections.csv}, and
-the eight metadata tables.
+issues, corrections and the problem units' record counts to \verb{tables/}, and the run
+metadata to \verb{metadata/}, one CSV file for each table: \code{results.csv}, \code{issues.csv},
+\code{corrections.csv} and \code{unit_records.csv}, and the eight metadata tables.
 }
 \details{
 Every file has LF line endings, every text field quoted and a missing value an

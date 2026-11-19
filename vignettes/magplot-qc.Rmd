@@ -55,11 +55,11 @@ results <- magp_run_qc(path, output)
 The run writes a folder named by its run ID inside the folder given. `metadata/` holds the
 run's own record and its inputs, settings, rules, pre-flight's findings, the specification's
 manifest, the clashes between the specification's files that precedence settled, and the
-checks the run was meant to report and didn't. `tables/` holds the run's results, issues and
-corrections, and each contributor's issues CSV. `reports/` holds pre-flight's page and each
-contributor's report. Only a contributor's `reports/<contributor>.html` and
-`tables/<contributor>_issues.csv` are for that contributor; everything else in the folder is
-MAGPlot's own.
+checks the run was meant to report and didn't. `tables/` holds the run's results, issues,
+corrections and each plot's record counts, and each contributor's issues CSV. `reports/` holds
+pre-flight's page and each contributor's report. Only a contributor's
+`reports/<contributor>.html` and `tables/<contributor>_issues.csv` are for that contributor;
+everything else in the folder is MAGPlot's own.
 
 ```{r}
 run_dir <- file.path(output, results$metadata$run$run_id)

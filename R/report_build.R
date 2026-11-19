@@ -142,13 +142,14 @@ route_unit <- function(x, unit, units, lineage = NULL) {
 #' Pre-flight's page (`reports/preflight.html`), M8a's national summary
 #' (`reports/national_summary.html`), the one report of a run with no group columns
 #' (`reports/report.html`, `tables/report_issues.csv`) and the run's own tables
-#' (`tables/results.csv`, `tables/issues.csv`, `tables/corrections.csv`). unit_file_name()
+#' (`tables/results.csv`, `tables/issues.csv`, `tables/corrections.csv`,
+#' `tables/unit_records.csv`, D23.25). unit_file_name()
 #' encodes the first character of a unit that is one of them, in any case, so no provider's
 #' file can take the name of one of them; a test holds every file a run and its build write
 #' in those folders to a unit's file or one of these stems. A file added later adds its stem here.
 #' @noRd
 package_file_stems <- c(
-  "preflight", "national_summary", "report", "results", "issues", "corrections"
+  "preflight", "national_summary", "report", "results", "issues", "corrections", "unit_records"
 )
 
 #' Each report unit's file stem, for `reports/<stem>.html` and `tables/<stem>_issues.csv`
@@ -255,8 +256,8 @@ unit_file_name <- function(units) {
 #' a value whose part before its first "." is a Windows reserved name such as CON, NUL or COM1
 #' ("CON" becomes "%43ON"). So is the first character of a value that, whatever its case, is
 #' the name of one of the run's own files ("preflight", "national_summary", "report",
-#' "results", "issues" or "corrections"), so a provider's file never replaces one of them. Any
-#' value then makes a safe file name that decodes back.
+#' "results", "issues", "corrections" or "unit_records"), so a provider's file never replaces
+#' one of them. Any value then makes a safe file name that decodes back.
 #'
 #' The CSV has one row per issue sent to the unit, open and not evaluated, codes as stored.
 #' Its columns, in order: the group columns and the problem unit's key column; the table,

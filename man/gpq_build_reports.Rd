@@ -83,8 +83,8 @@ itself as \%25). A leading or trailing "." is encoded too, and so is the first c
 a value whose part before its first "." is a Windows reserved name such as CON, NUL or COM1
 ("CON" becomes "\%43ON"). So is the first character of a value that, whatever its case, is
 the name of one of the run's own files ("preflight", "national_summary", "report",
-"results", "issues" or "corrections"), so a provider's file never replaces one of them. Any
-value then makes a safe file name that decodes back.
+"results", "issues", "corrections" or "unit_records"), so a provider's file never replaces
+one of them. Any value then makes a safe file name that decodes back.
 
 The CSV has one row per issue sent to the unit, open and not evaluated, codes as stored.
 Its columns, in order: the group columns and the problem unit's key column; the table,
