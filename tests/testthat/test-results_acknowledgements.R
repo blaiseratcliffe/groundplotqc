@@ -75,6 +75,11 @@ test_that("a blank value equals a blank one; a column-level entry matches on its
   gpq_apply_acknowledgements(issues, register)
   # u1's column-level issue is acknowledged, u2's, of the same fingerprint, isn't.
   expect_equal(issues$status, c("acknowledged", "open", "acknowledged"))
+  # A register without the group column matches the column-level entry across its values (D23.100).
+  ungrouped <- register
+  ungrouped$unit <- NULL
+  gpq_apply_acknowledgements(issues, ungrouped)
+  expect_equal(issues$status, c("acknowledged", "acknowledged", "acknowledged"))
 })
 
 test_that("run scope, a missing fingerprint and the tables not matched (D8.16, D15.9, D23.13)", {
@@ -163,6 +168,31 @@ test_that("a wrong issues table, register or unmatched_tables is a caller's erro
     gpq_apply_acknowledgements(typed, register),
     paste(
       "The group columns unit, plot of `issues` must be text, as gpq_check_conformance()",
+      "returns them."
+    ),
+    fixed = TRUE
+  )
+  # A value or status column that isn't text, then both (D23.101).
+  numeric_value <- data.table::copy(issues)
+  data.table::set(numeric_value, j = "value", value = 900)
+  expect_error(
+    gpq_apply_acknowledgements(numeric_value, register),
+    "The columns value of `issues` must be text, as gpq_check_conformance() returns them.",
+    fixed = TRUE
+  )
+  factor_status <- data.table::copy(issues)
+  data.table::set(factor_status, j = "status", value = factor("open"))
+  expect_error(
+    gpq_apply_acknowledgements(factor_status, register),
+    "The columns status of `issues` must be text, as gpq_check_conformance() returns them.",
+    fixed = TRUE
+  )
+  both <- data.table::copy(numeric_value)
+  data.table::set(both, j = "status", value = factor("open"))
+  expect_error(
+    gpq_apply_acknowledgements(both, register),
+    paste(
+      "The columns value, status of `issues` must be text, as gpq_check_conformance()",
       "returns them."
     ),
     fixed = TRUE

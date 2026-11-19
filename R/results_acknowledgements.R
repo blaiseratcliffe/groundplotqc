@@ -96,6 +96,16 @@ gpq_apply_acknowledgements <- function(issues, acknowledgements, unmatched_table
       paste(groups[typed], collapse = ", ")
     ), call. = FALSE)
   }
+  typed_own <- c("value", "status")[
+    !vapply(c("value", "status"), function(column) is.character(issues[[column]]), logical(1L))
+  ]
+  if (length(typed_own) > 0L) {
+    # M8a1 D23.101
+    stop(sprintf(
+      "The columns %s of `issues` must be text, as gpq_check_conformance() returns them.",
+      paste(typed_own, collapse = ", ")
+    ), call. = FALSE)
+  }
   tables_ok <- is.null(unmatched_tables) ||
     (is.character(unmatched_tables) && !anyNA(unmatched_tables))
   if (!tables_ok) {
