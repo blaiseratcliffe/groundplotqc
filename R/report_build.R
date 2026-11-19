@@ -39,9 +39,11 @@
 #' issue's cell are kept, each once and in the input's order, so a builder never sees the whole
 #' input. Only a record-level issue whose key names one record (`pk_positional` FALSE) is on a
 #' cell: a column-level issue, and one whose key is missing or repeats, takes none (D20.117).
+#' unit_records (8.8; D23.24, D23.38): the rows of the unit, and in a run of one unit those of
+#' "*" too, as its issues are taken; they are counts, so they hold no other unit's values.
 #' Returns
-#' `list(results, issues, corrections, lineage)`, new data.tables, `lineage` NULL when none is
-#' given.
+#' `list(results, issues, corrections, lineage, unit_records)`, new data.tables, `lineage` NULL
+#' when none is given.
 #' @noRd
 route_unit <- function(x, unit, units, lineage = NULL) {
   results <- x$results
@@ -83,6 +85,7 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   if (is.null(unit)) {
     take_results <- rep(TRUE, nrow(results))
     take_issues <- rep(TRUE, nrow(issues))
+    take_counts <- rep(TRUE, nrow(x$unit_records))
   } else {
     one <- length(units) <= 1L
     unit_col <- group_cols[[1L]]
@@ -105,6 +108,9 @@ route_unit <- function(x, unit, units, lineage = NULL) {
       take_issues[star] <- unit_rule(issues$rule_id[star])
       take_issues <- take_issues & issues$reaches_other_unit %in% FALSE
     }
+    # A unit's record counts as its issues are taken, "*" only in a run of one unit (D23.38).
+    count_units <- if (one) c(unit, "*") else unit
+    take_counts <- x$unit_records[[unit_col]] %chin% count_units
   }
   routed <- results[take_results]
   for (column in c("examples", group_cols[-1L])) {
@@ -132,7 +138,7 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   }
   list(
     results = routed, issues = routed_issues, corrections = x$corrections[take_corrections],
-    lineage = routed_lineage
+    lineage = routed_lineage, unit_records = x$unit_records[take_counts]
   )
 }
 
@@ -270,6 +276,15 @@ unit_file_name <- function(units) {
 #' provider's CSV, a text cell that starts with =, +, @, a tab or a carriage return, or with -
 #' where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
 #' shows it as text instead of running it as a formula. `reaches_other_unit` isn't written.
+#'
+#' Each report ranks the run's problem units, in each group of its group columns, by the share
+#' of their records that hold an open issue of a severity in the setting `blocking_severities`,
+#' counted from the records the run saved in `unit_records` and the issues still open. An
+#' issue that covers a whole column doesn't count, since it names no record. It shows the 20
+#' units with the highest share in each group, among those with at least
+#' `problem_plot_min_records` records, and marks each whose share is above `problem_plot_rate`,
+#' each setting as the run recorded it (see [groundplotqc_options]). A run folder an earlier
+#' version wrote holds no record counts, so its reports rank no unit.
 #'
 #' A chart shows at most `row_cap` bars, except the chart by severity, which always shows its
 #' four. Tables of checks, issues and reasons show at most `row_cap` rows and `example_cap`
@@ -417,6 +432,13 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
   settings$column_level_min_n <- as.integer(
     saved_settings$value[saved_settings$setting == "column_level_min_n"]
   )
+  # Section 13's settings as the run recorded them, read and checked as a rule-set row is; a
+  # run that recorded none, as one an earlier version made, takes the option or the built-in
+  # value (8.8; D23.38).
+  for (name in c("blocking_severities", "problem_plot_rate", "problem_plot_min_records")) {
+    recorded <- list(settings = saved_settings[saved_settings$setting == name])
+    settings[[name]] <- resolve_setting(name, rules = recorded)$value
+  }
   lang <- settings$lang
   text <- validate_text_table(text)
   if (!is.null(text)) {
@@ -560,7 +582,8 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
   )
   builders <- list(
     section_header, section_glance, section_actions, section_harmonization,
-    section_under_review, section_column_level, section_not_evaluated, section_guide
+    section_under_review, section_column_level, section_not_evaluated, section_problem_plots,
+    section_guide
   )
   for (k in seq_along(targets)) {
     unit <- targets[[k]]
@@ -571,7 +594,7 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
     tables <- list(
       results = routed$results, issues = issues, corrections = routed$corrections,
       metadata = metadata, unit = unit, group_cols = group_cols, key_col = key_col,
-      lineage = routed$lineage
+      lineage = routed$lineage, unit_records = routed$unit_records
     )
     # The unit's CSV name, which the sections' cap notes and guide name, travels with the
     # settings (D20.68).

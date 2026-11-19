@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9041 (development version)
+# groundplotqc 0.0.0.9042 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -87,3 +87,4 @@
 - A column-level issue now keeps the expected value when every failing record it covers has the same one, such as a range's limit; before, it showed one only when the rule gave a single value for the whole column.
 - The engine's guide to issue classes, shown when a rule set's text doesn't replace it, now says an issue being fixed in harmonization may also be one the team that converts the data has taken on, not only one that arose in conversion.
 - In a number column, "NaN" followed by a Unicode space, which R reads as NaN on Windows, is now reported as a value the column's type can't hold (`coercion_loss`), as a number with a Unicode space is, rather than as a number that isn't finite (`value_not_finite`). Both rules' versions are raised.
+- Each provider report built by `gpq_build_reports()` now ranks the run's problem units (MAGPlot's plots): in each group, the 20 with the highest share of records holding an open error or flag, among those with at least 20 records, each marked when its share is above 0.25. A record counts once, however many issues it holds, and issues that cover a whole column or are acknowledged don't count. The new settings `blocking_severities`, `problem_plot_rate` and `problem_plot_min_records` (see `?groundplotqc_options`) set the severities, the share and the size; a rule set gives the share in a settings row of the new type `double`. A run folder written by an earlier version has no record counts, and its reports say so. A group or key column can no longer be named `n_blocked` or `rate`.

@@ -138,6 +138,51 @@ test_that("a unit's routed tables hold no other unit's or \"*\" record's values 
   }
 })
 
+test_that("a unit's record counts go to it alone; its report ranks its own units (13; D23.38)", {
+  local_results_registry()
+  x <- fx_report_results()
+  # Counts for 100's plot P-100-1 in two tables, 110's P-110-1, and a plot whose unit is "*",
+  # whose key is in no unit's files of the two-unit run.
+  x$unit_records <- complete_table(
+    list(
+      run_id = x$metadata$run$run_id, unit = c("100", "100", "110", "*"),
+      area = c("A-100-1", "A-100-1", "A-110-1", "*"),
+      plot = c("P-100-1", "P-100-1", "P-110-1", "P-ZZ-77"),
+      table_name = c("hauls", "catches", "catches", "catches"), n_records = c(5L, 20L, 30L, 40L)
+    ),
+    results_schema(c("unit", "area"), "plot")$unit_records, "unit_records"
+  )
+  units <- c("100", "110")
+  expect_identical(route_unit(x, "100", units)$unit_records, x$unit_records[1:2])
+  expect_identical(route_unit(x, "110", units)$unit_records, x$unit_records[3L])
+  # In a run of one unit, "*" too, as its issues are taken.
+  expect_identical(route_unit(x, "110", "110")$unit_records, x$unit_records[3:4])
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  files <- gpq_build_reports(x, output)
+  ranked <- function(unit) {
+    file <- files[names(files) == unit][[1L]]
+    page <- readChar(file, file.size(file), useBytes = TRUE)
+    expect_false(grepl("P-ZZ-77", page, fixed = TRUE), info = unit)
+    regmatches(page, regexpr("<section id=\"problem-plots\">.*?</section>", page, perl = TRUE))
+  }
+  # P-100-1's 25 records, three of them holding an open error (a haul's and two catches'; its
+  # warning and its not-evaluated issue don't count); P-110-1's 30, with an open error and an
+  # open flag.
+  row <- function(area, plot, n, blocked, rate) {
+    sprintf(
+      paste0(
+        "<tr><td>%s</td><td>%s</td><td class=\"num\">%d</td><td class=\"num\">%d</td>",
+        "<td class=\"num\">%s</td><td>no</td></tr>"
+      ),
+      area, plot, n, blocked, rate
+    )
+  }
+  expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
+  expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 2L, "0.07"), fixed = TRUE)
+  expect_false(grepl("P-110-1", ranked("100"), fixed = TRUE))
+})
+
 test_that("route_unit keeps only the lineage rows of its unit's routed cells (D20.61, D20.65)", {
   local_results_registry()
   x <- fx_report_results()

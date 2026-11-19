@@ -10,9 +10,10 @@ lang_rule_set <- function(value = "fr", type = "character") {
   ))
 }
 
-test_that("the declared settings are M3a's two, M4a's five, M5's, M6's and M7a's (D20.39)", {
+test_that("the declared settings are M3a's two, M4a's five, M5's, M6's, M7a's and M8a1's", {
   expect_named(setting_definitions(), c(
     "lang", "severity", "example_cap", "row_cap", "cell_cap", "column_level_min_n",
+    "blocking_severities", "problem_plot_rate", "problem_plot_min_records",
     "raw_na_policy", "rogue_codes",
     "unknown_codes", "coordinate_attributes", "code_set_max_values", "code_set_skip_attributes",
     "code_set_skip_pattern", "design_geometry_table", "design_geometry_by",
@@ -113,7 +114,8 @@ test_that("check_settings refuses an unnamed list, an unknown setting and bad ru
     check_settings(rules = severity_row),
     paste(
       "can't give there: severity. A settings row can give only lang, example_cap, row_cap,",
-      "cell_cap, column_level_min_n, raw_na_policy, rogue_codes, unknown_codes,",
+      "cell_cap, column_level_min_n, blocking_severities, problem_plot_rate,",
+      "problem_plot_min_records, raw_na_policy, rogue_codes, unknown_codes,",
       "coordinate_attributes,",
       "code_set_max_values, code_set_skip_attributes, code_set_skip_pattern,",
       "design_geometry_table, design_geometry_by, design_geometry_columns, subplot_label_table,",
@@ -733,4 +735,94 @@ test_that("row_cap and cell_cap resolve by tier, each a whole number 0 or more (
   at <- match(c("row_cap", "cell_cap"), written$setting)
   expect_equal(written$value[at], c("10", "200"))
   expect_equal(written$tier[at], c("argument", "option"))
+})
+
+# ---- M8a1 task 8 ----
+
+test_that("the problem-plot settings resolve by tier and refuse what they can't take (D23.38)", {
+  withr::local_options(
+    groundplotqc.blocking_severities = NULL, groundplotqc.problem_plot_rate = NULL,
+    groundplotqc.problem_plot_min_records = NULL
+  )
+  expect_equal(
+    resolve_setting("blocking_severities"), list(value = c("error", "flag"), tier = "built-in")
+  )
+  expect_equal(resolve_setting("problem_plot_rate"), list(value = 0.25, tier = "built-in"))
+  expect_equal(resolve_setting("problem_plot_min_records"), list(value = 20L, tier = "built-in"))
+  # A rule-set row's text: severities "; "-joined, a rate with a fraction (type double), a whole
+  # number; none of them blocking is allowed.
+  rows <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(
+      setting = c("blocking_severities", "problem_plot_rate", "problem_plot_min_records"),
+      value = c("error; warning", ".3", "5"), type = c("character", "double", "integer")
+    )
+  ))
+  expect_null(check_settings(rules = rows))
+  expect_equal(
+    resolve_setting("blocking_severities", rules = rows),
+    list(value = c("error", "warning"), tier = "rule set")
+  )
+  expect_equal(
+    resolve_setting("problem_plot_rate", rules = rows), list(value = 0.3, tier = "rule set")
+  )
+  expect_equal(
+    resolve_setting("problem_plot_min_records", rules = rows), list(value = 5, tier = "rule set")
+  )
+  expect_equal(
+    resolve_setting("blocking_severities", list(blocking_severities = character()))$value,
+    character()
+  )
+  withr::local_options(groundplotqc.problem_plot_rate = 1)
+  expect_equal(resolve_setting("problem_plot_rate"), list(value = 1, tier = "option"))
+  for (bad in list(1.5, -0.1, NA_real_, c(0.1, 0.2), "0.3")) {
+    expect_error(
+      resolve_setting("problem_plot_rate", list(problem_plot_rate = bad)),
+      "Setting problem_plot_rate (argument) must be one number from 0 to 1.",
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  for (bad in list("fatal", c("error", "error"), NA_character_, c(a = "error"))) {
+    expect_error(
+      resolve_setting("blocking_severities", list(blocking_severities = bad)),
+      paste(
+        "Setting blocking_severities (argument) must be a character vector of severities, each",
+        "\"error\", \"warning\", \"flag\" or \"info\" and given once."
+      ),
+      fixed = TRUE, info = deparse(bad)
+    )
+  }
+  expect_error(
+    resolve_setting("problem_plot_min_records", list(problem_plot_min_records = 0L)),
+    "Setting problem_plot_min_records (argument) must be one whole number, 1 or more.",
+    fixed = TRUE
+  )
+  # A rate written otherwise than with digits and one point reads as no value, which is refused.
+  for (text in c("1e-1", "0,3", " 0.3", "-0.1")) {
+    written <- validate_rule_set(list(
+      rules = fx_empty_rule_set()$rules,
+      settings = data.frame(setting = "problem_plot_rate", value = text, type = "double")
+    ))
+    expect_error(
+      resolve_setting("problem_plot_rate", rules = written),
+      "Setting problem_plot_rate (rule set) must be one number from 0 to 1.",
+      fixed = TRUE, info = text
+    )
+  }
+  wrong_type <- validate_rule_set(list(
+    rules = fx_empty_rule_set()$rules,
+    settings = data.frame(setting = "problem_plot_rate", value = "0.3", type = "integer")
+  ))
+  expect_error(
+    check_settings(rules = wrong_type),
+    "give the wrong type for problem_plot_rate, which takes double.",
+    fixed = TRUE
+  )
+  # settings.csv writes each as text, in full.
+  written <- settings_metadata(list(problem_plot_rate = 0.125))
+  at <- match(
+    c("blocking_severities", "problem_plot_rate", "problem_plot_min_records"), written$setting
+  )
+  expect_equal(written$value[at], c("error; flag", "0.125", "20"))
+  expect_equal(written$tier[at], c("built-in", "argument", "built-in"))
 })

@@ -1,5 +1,5 @@
 # Tests for the problem plots' record counts: unit_record_counts(), the run's unit_records
-# table (plan 8.8, 9.1; D9.31, D23.24).
+# table (plan 8.8, 9.1; D9.31, D23.24); and rates, problem_plot_rates() (D23.37).
 
 test_that("a run counts each problem unit's records per group and table (8.8; D23.24)", {
   # The fish survey's stations as the problem unit, grouped by water body. Haul 1 names a blank
@@ -70,4 +70,59 @@ test_that("records reading their unit in two tables, or as numbers alike, count 
   expect_identical(
     sort(unique(key_text(input, "trees", 1:7))), c("*", sort(unique(counted$zone)))
   )
+})
+
+test_that("a unit's rate counts its records with an open blocking issue, each once (8.8; D23.37)", {
+  # Group columns n and area, named like the counts' own, so no caller's column meets them
+  # (16.2); the key column plot. P1 has 6 records in two tables, P2 4, P3 2.
+  unit_records <- complete_table(list(
+    run_id = "20261117T120000Z_abc123", n = c("u1", "u1", "u1", "u1", "u2"),
+    area = c("A1", "A1", "A1", "A2", "B1"), plot = c("P1", "P1", "P2", "P3", "P4"),
+    table_name = c("plots", "trees", "trees", "trees", "trees"),
+    n_records = c(1L, 5L, 4L, 2L, 3L)
+  ), results_schema(c("n", "area"), "plot")$unit_records, "unit_records")
+  # Issue by issue: P1's tree 2 twice (two rules), counted once; its plot record by a flag; a
+  # warning on P2, not blocking; an error on P2 acknowledged, one not evaluated (its root P1's
+  # tree 2) and a column-level one, none counted; an error whose unit is "*" and one of a unit
+  # with no counts (P9), neither counted; P4's error, its own.
+  rule_id <- c(
+    "raw_na", "value_above_max", "code_not_in_list", "decimals_exceeded", "raw_na",
+    "value_above_max", "raw_na", "raw_na", "raw_na", "raw_na"
+  )
+  level <- c(rep("record", 6L), "column", rep("record", 3L))
+  issues <- new_issues(list(
+    issue_id = 1:10, run_id = "20261117T120000Z_abc123", run_scope = "package",
+    rule_id = rule_id, rule_fingerprint = "f", stage = "conformance",
+    layer = c(2L, 3L, 3L, 3L, 2L, 3L, 2L, 2L, 2L, 2L),
+    severity = c("error", "error", "flag", "warning", rep("error", 6L)), reason_code = "*",
+    table_name = c("trees", "trees", "plots", rep("trees", 7L)),
+    column_name = "x",
+    record_pk = c("T2", "T2", "P1", "T7", "T7", "T2", "*", "T20", "T30", "T40"),
+    row_number = c(2L, 2L, 1L, 7L, 7L, 2L, NA, 20L, 30L, 40L),
+    pk_positional = ifelse(level == "record", FALSE, NA), level = level,
+    n_records = ifelse(level == "column", 4L, NA_integer_),
+    n = c("u1", "u1", "u1", "u1", "u1", "u1", "u1", "u1", "u1", "u2"),
+    area = c("A1", "A1", "A1", "A1", "A1", "A1", "A1", "A1", "A1", "B1"),
+    plot = c("P1", "P1", "P1", "P2", "P2", "P2", "P2", "*", "P9", "P4"),
+    reaches_other_unit = FALSE, root_issue_id = c(rep(NA, 5L), 1L, rep(NA, 4L)),
+    status = c(rep("open", 4L), "acknowledged", "not_evaluated", rep("open", 4L))
+  ), group_cols = c("n", "area"), key_col = "plot")
+  rates <- problem_plot_rates(unit_records, issues, c("n", "area"), "plot", c("error", "flag"))
+  expect_identical(rates, data.table::data.table(
+    n = c("u1", "u1", "u1", "u2"), area = c("A1", "A1", "A2", "B1"),
+    plot = c("P1", "P2", "P3", "P4"), n_records = c(6L, 4L, 2L, 3L),
+    n_blocked = c(2L, 0L, 0L, 1L), rate = c(2 / 6, 0, 0, 1 / 3)
+  ))
+  # Counted within the report unit alone, and with warnings blocking too.
+  rates <- problem_plot_rates(unit_records, issues, "n", "plot", c("error", "warning"))
+  expect_identical(rates$plot, c("P1", "P2", "P3", "P4"))
+  expect_identical(rates$n_blocked, c(1L, 1L, 0L, 1L))
+  # A caller's column named like one of the rates is refused when the run starts (D20.76).
+  for (name in c("n_blocked", "rate")) {
+    expect_error(
+      results_schema(c("unit", name), "plot"),
+      sprintf("The caller's columns %s have the names of columns the results already have.", name),
+      fixed = TRUE
+    )
+  }
 })

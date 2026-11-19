@@ -937,20 +937,27 @@ test_that("every section builds for a unit with no results row and no issue", {
   tables <- list(
     results = results, issues = new_issues(group_cols = c("unit", "area"), key_col = "plot"),
     corrections = new_corrections(), metadata = metadata, unit = "u1",
-    group_cols = c("unit", "area"), key_col = "plot", lineage = NULL
+    group_cols = c("unit", "area"), key_col = "plot", lineage = NULL,
+    unit_records = empty_table(results_schema(c("unit", "area"), "plot")$unit_records)
   )
   settings <- list(
     lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
-    csv_name = "u1_issues.csv"
+    csv_name = "u1_issues.csv", blocking_severities = c("error", "flag"),
+    problem_plot_rate = 0.25, problem_plot_min_records = 20L
   )
   builders <- list(
     section_header, section_glance, section_actions, section_harmonization,
-    section_under_review, section_column_level, section_not_evaluated, section_guide
+    section_under_review, section_column_level, section_not_evaluated, section_problem_plots,
+    section_guide
   )
   html <- vapply(builders, function(build) as.character(build(tables, NULL, settings)), "")
   expect_match(html[[2L]], "Open issues: 0.", fixed = TRUE)
   expect_match(html[[3L]], "No issues for you to act on.", fixed = TRUE)
   expect_match(html[[7L]], "Every check this run ran evaluated every record.", fixed = TRUE)
+  expect_match(
+    html[[8L]], "No unit has a record holding an open issue that counts toward its share.",
+    fixed = TRUE
+  )
   expect_false(any(grepl("\\{[a-z0-9_]+\\}", html)))
 })
 
@@ -1494,4 +1501,162 @@ test_that("the guide explains a \"(not linked)\" bar only where a chart shows on
   }
   expect_false(shows_bar(issues, 2L))
   expect_true(shows_bar(issues, 3L))
+})
+
+# ---- M8a1 task 8 ----
+
+test_that("section 13 ranks each group's units by their share, 20 at most (8.8; D23.37, D23.38)", {
+  run_id <- "20261117T120000Z_abc123"
+  hostile <- "<b>&\"Q-b"
+  long <- paste0(strrep("L", 30L), "x")
+  # Area A1: P01 to P23, 25 records each and as many blocked as their number, then P24, too
+  # small, and P25, with none blocked. Area A2: Q-a and the hostile key, both at 0.25, Q-a
+  # with more blocked records. A unit whose area is "*", with a long key, all blocked.
+  keys <- c(sprintf("P%02d", 1:23), "P24", "P25", "Q-a", hostile, long)
+  area <- c(rep("A1", 25L), "A2", "A2", "*")
+  records <- c(rep(25L, 23L), 19L, 25L, 40L, 20L, 20L)
+  blocked <- c(1:23, 19L, 0L, 10L, 5L, 20L)
+  unit_records <- complete_table(
+    list(
+      run_id = run_id, unit = "u1", area = area, plot = keys, table_name = "trees",
+      n_records = records
+    ),
+    results_schema(c("unit", "area"), "plot")$unit_records, "unit_records"
+  )
+  at <- rep(seq_along(keys), blocked)
+  n <- length(at)
+  issues <- new_issues(list(
+    issue_id = seq_len(n), run_id = run_id, run_scope = "package", rule_id = "raw_na",
+    rule_fingerprint = "f", stage = "conformance", layer = 2L, severity = "error",
+    reason_code = "*", table_name = "trees", column_name = "x", record_pk = paste0("T", at),
+    row_number = seq_len(n), pk_positional = FALSE, level = "record", unit = "u1",
+    area = area[at], plot = keys[at], reaches_other_unit = FALSE, status = "open",
+    issue_class = "source"
+  ), group_cols = c("unit", "area"), key_col = "plot")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 20L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv", blocking_severities = c("error", "flag"),
+    problem_plot_rate = 0.25, problem_plot_min_records = 20L
+  )
+  tables <- list(
+    issues = issues, unit_records = unit_records, unit = "u1", group_cols = c("unit", "area"),
+    key_col = "plot"
+  )
+  caught <- NULL
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught <<- list(dt = data.table::copy(dt), caption = caption)
+      "<table>"
+    })
+    section <- section_problem_plots(tables, NULL, settings)
+    expect_equal(attr(section, "gpq_section")[["id"]], "problem-plots")
+    expect_equal(attr(section, "gpq_section")[["title"]], "Problem units")
+  })
+  expect_equal(caught$caption, "Units with the highest share of records holding an open issue")
+  # Groups in C order ("*" first, shown as W4), each by share, then blocked records; the
+  # breakdown and key columns under their raw names, cut at cell_cap; a share at the threshold
+  # isn't above it.
+  share <- c(1, (23:4) / 25, 0.25, 0.25)
+  expect_equal(caught$dt, data.table::data.table(
+    area = c("(not linked)", rep("A1", 20L), "A2", "A2"),
+    plot = c(cut_cell_text(long, 20L), sprintf("P%02d", 23:4), "Q-a", hostile),
+    Records = c(20L, rep(25L, 20L), 40L, 20L),
+    "Records with an open issue" = c(20L, 23:4, 10L, 5L),
+    Share = round(share, 2L),
+    "Above 0.25" = ifelse(share > 0.25, "yes", "no")
+  ))
+  # A breakdown and a key column named like the builder's own variables rank as any others.
+  renamed <- tables
+  renamed$issues <- data.table::setnames(
+    data.table::copy(issues), c("area", "plot"), c("settings", "ranked")
+  )
+  renamed$unit_records <- data.table::setnames(
+    data.table::copy(unit_records), c("area", "plot"), c("settings", "ranked")
+  )
+  renamed$group_cols <- c("unit", "settings")
+  renamed$key_col <- "ranked"
+  first <- caught$dt
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught <<- list(dt = data.table::copy(dt), caption = caption)
+      "<table>"
+    })
+    section_problem_plots(renamed, NULL, settings)
+  })
+  expect_equal(unname(as.list(caught$dt)), unname(as.list(first)))
+  # The page escapes the key and fills every slot of the intro.
+  html <- as.character(section_problem_plots(tables, NULL, settings))
+  expect_match(html, "&lt;b&gt;&amp;&quot;Q-b", fixed = TRUE)
+  expect_false(grepl(hostile, html, fixed = TRUE))
+  expect_match(
+    html,
+    "The units of plot whose records most often hold an open issue of severity Error, Flag",
+    fixed = TRUE
+  )
+  expect_false(grepl("\\{[a-z0-9_]+\\}", html))
+  # At most row_cap rows, the first ones, with a line naming no file.
+  settings$row_cap <- 5L
+  html <- as.character(section_problem_plots(tables, NULL, settings))
+  expect_equal(lengths(regmatches(html, gregexpr("<tr>", html, fixed = TRUE))), 6L)
+  expect_match(html, "Showing 5 of 23 rows.", fixed = TRUE)
+  expect_false(grepl("u1_issues.csv", html, fixed = TRUE))
+})
+
+test_that("section 13 says so when the run names no unit, holds no counts or ranks none", {
+  run_id <- "20261117T120000Z_abc123"
+  unit_records <- complete_table(
+    list(
+      run_id = run_id, unit = "u1", plot = c("P1", "P2"), table_name = "trees",
+      n_records = c(30L, 20L)
+    ),
+    results_schema("unit", "plot")$unit_records, "unit_records"
+  )
+  # P1's warning and its column-level error, P2's acknowledged error.
+  issues <- new_issues(list(
+    issue_id = 1:3, run_id = run_id, run_scope = "package", rule_id = "raw_na",
+    rule_fingerprint = "f", stage = "conformance", layer = 2L,
+    severity = c("warning", "error", "error"), reason_code = "*", table_name = "trees",
+    column_name = "x", record_pk = c("T1", "*", "T2"), row_number = c(1L, NA, 2L),
+    pk_positional = c(FALSE, NA, FALSE), level = c("record", "column", "record"),
+    n_records = c(NA, 30L, NA), unit = "u1", plot = c("P1", "P1", "P2"),
+    reaches_other_unit = FALSE, status = c("open", "open", "acknowledged"),
+    issue_class = "source"
+  ), group_cols = "unit", key_col = "plot")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv", blocking_severities = c("error", "flag"),
+    problem_plot_rate = 0.25, problem_plot_min_records = 20L
+  )
+  tables <- list(
+    issues = issues, unit_records = unit_records, unit = "u1", group_cols = "unit",
+    key_col = "plot"
+  )
+  shown <- function(tables, settings) as.character(section_problem_plots(tables, NULL, settings))
+  none <- "No unit has a record holding an open issue that counts toward its share."
+  expect_match(shown(tables, settings), none, fixed = TRUE)
+  # With warnings blocking, P1 is ranked; above 20 records only, it isn't.
+  settings$blocking_severities <- c("error", "warning")
+  expect_match(shown(tables, settings), "<td>P1</td>", fixed = TRUE)
+  settings$problem_plot_min_records <- 31L
+  expect_match(shown(tables, settings), none, fixed = TRUE)
+  # Counts missing while an issue names a unit: a run folder an earlier version wrote (D23.33).
+  counted <- tables
+  counted$unit_records <- unit_records[0L]
+  expect_match(
+    shown(counted, settings),
+    html_escape(report_text("report_problem_plots_no_counts")),
+    fixed = TRUE
+  )
+  # No counts and no issue naming a unit: nothing to rank.
+  data.table::set(counted$issues, j = "plot", value = "*")
+  expect_match(shown(counted, settings), none, fixed = TRUE)
+  # A run with no problem unit.
+  plain <- list(
+    issues = new_issues(group_cols = "unit"), unit = "u1", group_cols = "unit", key_col = NULL,
+    unit_records = empty_table(results_schema("unit")$unit_records)
+  )
+  expect_match(
+    shown(plain, settings), "This run names no problem unit, so no unit is ranked.",
+    fixed = TRUE
+  )
 })

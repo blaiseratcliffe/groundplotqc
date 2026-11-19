@@ -730,6 +730,134 @@ section_not_evaluated <- function(tables, text, settings) {
   ))
 }
 
+#' A table whose rows the issues CSV doesn't hold, such as section 13's: its first `row_cap`
+#' rows, then report_rows_shown's line, which names no file, as section 10 caps its table
+#' (D20.91); `shown` is the table as html_table() takes it, `row_class` one class per row or
+#' NULL. Returns the HTML.
+#' @noRd
+capped_table <- function(shown, caption, row_class, text, settings) {
+  total <- nrow(shown)
+  kept <- seq_len(min(total, settings$row_cap))
+  c(
+    html_table(
+      shown[kept], caption,
+      row_class = if (!is.null(row_class)) row_class[kept], lang = settings$lang, text = text
+    ),
+    if (total > length(kept)) {
+      paste0("<p>", html_escape(report_text(
+        "report_rows_shown", settings$lang,
+        n = length(kept), total = total, text = text
+      )), "</p>")
+    }
+  )
+}
+
+#' Section 13, "Problem units": in each group, the units with the most records holding an
+#' open blocking issue for their size (8.8; D3.14, D23.33, D23.37, D23.38)
+#'
+#' The rates are problem_plot_rates()' on the unit's routed unit_records and issues, a unit
+#' being a value of the problem unit's key column within one combination of the report's group
+#' columns, its blocked records those holding an open record-level issue of a severity in
+#' `blocking_severities`, so acknowledged issues and column-level ones don't count (D23.37). A
+#' unit is ranked when it has at least `problem_plot_min_records` records and one of them
+#' blocked; in each group the 20 with the highest rate are shown, ties by their blocked
+#' records, then by key in C order (D23.38). One table: the breakdown columns and the key column
+#' under their raw names (D20.56), "*" in a breakdown shown as W4, each cut at `cell_cap`
+#' (D20.39); the records, the blocked records, the rate to two decimals and whether it is above
+#' `problem_plot_rate`; sorted by group in C order, then by rank. At most `row_cap` rows, the
+#' first ones, with a line naming no file, since the CSV holds no rates (capped_table(),
+#' D20.91). Without a problem unit, one line saying so; with no unit_records row while an
+#' issue names a unit, as in a run folder an earlier version wrote, which holds no counts
+#' (D23.33), one line saying so; with no unit ranked, one line.
+#' @noRd
+section_problem_plots <- function(tables, text, settings) {
+  lang <- settings$lang
+  word <- function(text_id) report_text(text_id, lang, text = text)
+  cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
+  title <- word("report_section_problem_plots")
+  alone <- function(text_id) {
+    html_section("problem-plots", title, paste0("<p>", html_escape(word(text_id)), "</p>"))
+  }
+  key_col <- tables$key_col
+  if (is.null(key_col)) {
+    return(alone("report_problem_plots_no_unit"))
+  }
+  issues <- tables$issues
+  unit_records <- tables$unit_records
+  if (nrow(unit_records) == 0L && any(!issues[[key_col]] %chin% c("*", NA))) {
+    return(alone("report_problem_plots_no_counts"))
+  }
+  groups <- tables$group_cols
+  rates <- problem_plot_rates(
+    unit_records, issues, groups, key_col, settings$blocking_severities
+  )
+  # Each row test is worked out before the brackets: the rates hold the caller's columns, whose
+  # names could be any of these variables'.
+  big <- which(rates$n_records >= settings$problem_plot_min_records & rates$n_blocked > 0L)
+  ranked <- rates[big]
+  if (nrow(ranked) == 0L) {
+    return(alone("report_problem_plots_empty"))
+  }
+  # By group in C order, then the highest rate, the most blocked records and the key; the text
+  # keys read as UTF-8, so the radix sort's byte order is C order whatever their marks (D20.42).
+  in_group <- lapply(groups, function(column) enc2utf8(ranked[[column]]))
+  by_rank <- do.call(order, c(
+    in_group, list(-ranked$rate, -ranked$n_blocked, enc2utf8(ranked[[key_col]])),
+    list(method = "radix")
+  ))
+  ranked <- ranked[by_rank]
+  # Each unit's place in its group, the first 20 kept (D23.38); a run with no group columns is
+  # one group.
+  place <- if (length(groups) > 0L) {
+    do.call(rowid, lapply(groups, function(column) ranked[[column]]))
+  } else {
+    seq_len(nrow(ranked))
+  }
+  top <- which(place <= 20L)
+  ranked <- ranked[top]
+  not_linked <- word("report_not_linked")
+  # The breakdown columns and the key column, the report unit's own column left out.
+  shown_cols <- setdiff(unique(c(groups[-1L], key_col)), groups[1L])
+  columns <- c(
+    lapply(shown_cols, function(column) {
+      shown <- cut(ranked[[column]])
+      shown[ranked[[column]] %chin% "*"] <- not_linked
+      shown
+    }),
+    list(
+      ranked$n_records, ranked$n_blocked, round(ranked$rate, 2L),
+      fifelse(
+        ranked$rate > settings$problem_plot_rate, word("report_problem_plots_above"),
+        word("report_problem_plots_not_above")
+      )
+    )
+  )
+  shown <- as.data.table(columns)
+  setnames(shown, c(
+    shown_cols, word("report_column_records"), word("report_column_records_blocked"),
+    word("report_column_rate"),
+    report_text(
+      "report_column_above_rate", lang,
+      rate = as_text(settings$problem_plot_rate), text = text
+    )
+  ))
+  severities <- c("error", "warning", "flag", "info")
+  blocking <- severities[severities %chin% settings$blocking_severities]
+  html_section("problem-plots", title, c(
+    paste0("<p>", html_escape(report_text(
+      "report_problem_plots_intro", lang,
+      key_col = key_col,
+      severities = paste(
+        vapply(paste0("report_severity_", blocking), word, "", USE.NAMES = FALSE),
+        collapse = ", "
+      ),
+      min_n = settings$problem_plot_min_records, rate = as_text(settings$problem_plot_rate),
+      text = text
+    )), "</p>"),
+    capped_table(shown, word("report_problem_plots_caption"), NULL, text, settings)
+  ))
+}
+
 #' Section 14, "How to read this report": short paragraphs, each only where the report has
 #' something it explains, a layer's line only for a layer the run ran (D20.47)
 #'

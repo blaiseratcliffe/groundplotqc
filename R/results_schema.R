@@ -16,8 +16,8 @@
 #' caller column is character. A caller column that
 #' repeats, is blank, or has the name of a fixed column is a caller error, and so is a group
 #' column whose name holds "; " (D15.39, D15.40). So is one named like a column a report adds,
-#' `message` or `n_not_evaluated_own`, or starting with `key_`, the provider CSV's key parts
-#' (D20.76).
+#' `message`, `n_not_evaluated_own`, `n_blocked` or `rate`, or starting with `key_`, the
+#' provider CSV's key parts (D20.76).
 #' @noRd
 results_schema <- function(group_cols = character(), key_col = NULL) {
   chr <- "character"
@@ -49,9 +49,10 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
     fixed_value_passes = lgl, easy_fix = lgl, easy_fix_blocked_by = chr
   )
   unit_records <- c(run_id = chr, table_name = chr, n_records = int)
-  # A report's routed results add n_not_evaluated_own (route_unit()) and the provider's CSV
-  # message (provider_csv_table()), so a caller's column can't take either name (D20.76).
-  report <- c("message", "n_not_evaluated_own")
+  # A report's routed results add n_not_evaluated_own (route_unit()), the provider's CSV
+  # message (provider_csv_table()) and the problem units' rates n_blocked and rate
+  # (problem_plot_rates()), so a caller's column can't take any of these names (D20.76).
+  report <- c("message", "n_not_evaluated_own", "n_blocked", "rate")
   validate_caller_columns(
     group_cols, key_col, unique(c(names(results), names(issues), names(corrections), report))
   )

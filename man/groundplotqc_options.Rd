@@ -57,6 +57,14 @@ CSV is never cut. Built-in: \code{100}.
 \item \code{groundplotqc.column_level_min_n}: the fewest records a column must have in
 a group before a rule that fails on all of them is recorded as one
 column-level issue. Built-in: \code{10}.
+\item \code{groundplotqc.blocking_severities}: the severities whose open issues count
+toward a problem unit's rate, in the problem plots a report
+\code{\link[=gpq_build_reports]{gpq_build_reports()}} writes ranks: each \code{"error"}, \code{"warning"}, \code{"flag"}
+or \code{"info"}, given once. Built-in: \code{c("error", "flag")}.
+\item \code{groundplotqc.problem_plot_rate}: the rate above which a problem unit is
+marked in those problem plots, a number from 0 to 1. Built-in: \code{0.25}.
+\item \code{groundplotqc.problem_plot_min_records}: the fewest records a problem unit
+must have to be ranked there. Built-in: \code{20}.
 \item \code{groundplotqc.raw_na_policy}: when a raw \code{NA} is an error (\code{raw_na}) in a
 column outside the primary and foreign keys, whose missing values
 \code{pk_missing} and \code{fk_unassigned} report (Layer 4, see
@@ -111,7 +119,8 @@ or end with a space, tab or line break, or hold ";" or "=". Pre-flight stops
 on a rule ID that isn't registered (\code{rule_id_unknown}).
 }
 
-In a rule set's settings rows, a whole number has type \code{integer}, a setting
+In a rule set's settings rows, a whole number has type \code{integer}, a number
+with a fraction, such as \code{0.25}, has type \code{double}, a setting
 with several values gives them joined by "; ", and a named one gives
 "name=value" parts. In every tier, a code can't be empty, begin or end with
 a space, tab or line break, or hold ";". In \code{groundplotqc.unknown_codes} the

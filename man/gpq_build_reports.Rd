@@ -98,6 +98,15 @@ provider's CSV, a text cell that starts with =, +, @, a tab or a carriage return
 where the cell isn't a number, is written with an apostrophe before it, so a spreadsheet
 shows it as text instead of running it as a formula. \code{reaches_other_unit} isn't written.
 
+Each report ranks the run's problem units, in each group of its group columns, by the share
+of their records that hold an open issue of a severity in the setting \code{blocking_severities},
+counted from the records the run saved in \code{unit_records} and the issues still open. An
+issue that covers a whole column doesn't count, since it names no record. It shows the 20
+units with the highest share in each group, among those with at least
+\code{problem_plot_min_records} records, and marks each whose share is above \code{problem_plot_rate},
+each setting as the run recorded it (see \link{groundplotqc_options}). A run folder an earlier
+version wrote holds no record counts, so its reports rank no unit.
+
 A chart shows at most \code{row_cap} bars, except the chart by severity, which always shows its
 four. Tables of checks, issues and reasons show at most \code{row_cap} rows and \code{example_cap}
 examples per check. In a chart's labels and in the tables of checks and issues, delivered

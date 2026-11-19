@@ -1,6 +1,7 @@
-# Problem plots (plan 8.8; D3.14, D8.15, D9.31, D23.24): the records behind each problem
-# unit's rate, counted by the run into the results' unit_records table, so a rebuild ranks the
-# units without the data.
+# Problem plots (plan 8.8; D3.14, D8.15, D9.31, D23.24, D23.37): the records behind each
+# problem unit's rate, counted by the run into the results' unit_records table, so a rebuild
+# ranks the units without the data, and each unit's rate, worked out from those counts and
+# the issues still open when the report is built (problem_plot_rates()).
 
 #' The records of each problem unit, per group and table (8.8, 9.1; D9.31, D23.24)
 #'
@@ -77,4 +78,59 @@ unit_record_counts <- function(input, run_id) {
   unit_records <- complete_table(if (nrow(rows) == 0L) NULL else rows, schema, "unit_records")
   validate_schema(unit_records, "unit_records", schema)
   unit_records
+}
+
+#' Each problem unit's rate: its records with an open blocking issue over its records (8.8;
+#' D3.14, D23.37)
+#'
+#' `unit_records` is a run's unit_records table, or the rows of it a report unit is given;
+#' `issues` the issues of the same run or report unit; `group_cols` the group columns a unit is
+#' counted within, each a column of both, such as a report's group columns; `key_col` the
+#' problem unit's key column; `blocking_severities` the severities that count. A unit is one
+#' value of `key_col` within one combination of `group_cols`: its records are the sum of its
+#' `n_records` over the tables that hold them, and those with an open blocking issue are the
+#' distinct records (table and row number) holding at least one open record-level issue of a
+#' blocking severity. Column-level issues name no record, so they don't count (D23.37), and nor
+#' does an issue whose key is "*" or NA, which reaches no unit. An issue of a unit with no
+#' unit_records row isn't counted. A group's rate is the sum of its units' counts. The counts
+#' are worked out under names of their own, so no caller's column meets them, and each unit
+#' meets its count by one key join (16.2). Returns a
+#' new data.table, one row per unit with records, by group and key in C order: the group
+#' columns and the key column under the caller's names, `n_records`, `n_blocked` (0 where none
+#' is blocked) and `rate`.
+#' @noRd
+problem_plot_rates <- function(unit_records, issues, group_cols, key_col, blocking_severities) {
+  by <- unique(c(group_cols, key_col))
+  cells <- sprintf("cell_%d", seq_along(by))
+  units <- setDT(structure(lapply(by, function(column) unit_records[[column]]), names = cells))
+  set(units, j = "n", value = unit_records$n_records)
+  units <- units[, list(n_records = sum(n)), by = cells]
+  blocked <- which(
+    issues$status %chin% "open" & issues$level %chin% "record" &
+      issues$severity %chin% blocking_severities & !issues[[key_col]] %chin% c("*", NA)
+  )
+  records <- setDT(structure(
+    lapply(by, function(column) issues[[column]][blocked]),
+    names = cells
+  ))
+  set(records, j = "table_name", value = issues$table_name[blocked])
+  set(records, j = "row_number", value = issues$row_number[blocked])
+  records <- unique(records)[, list(n = .N), by = cells]
+  # Each unit's count, by one key join (key_matches(), R/lineage_classify.R).
+  pairs <- key_matches(
+    lapply(cells, function(cell) records[[cell]]), seq_len(nrow(records)), units, cells
+  )
+  n_blocked <- integer(nrow(units))
+  n_blocked[pairs$at] <- records$n[pairs$row]
+  set(units, j = "n_blocked", value = n_blocked)
+  set(units, j = "rate", value = n_blocked / units$n_records)
+  # The text keys read as UTF-8, so the radix sort's byte order is C order whatever a key's
+  # encoding mark (D20.42, R94).
+  by_key <- do.call(
+    order,
+    c(lapply(cells, function(cell) enc2utf8(units[[cell]])), list(method = "radix"))
+  )
+  units <- units[by_key]
+  setnames(units, cells, by)
+  units
 }
