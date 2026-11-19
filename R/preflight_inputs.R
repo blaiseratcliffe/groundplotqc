@@ -29,6 +29,11 @@ run_input_schema <- function() {
     acknowledgements = c(
       "fingerprint", "fingerprint_pk", "rule_id", "table_name", "column_name", "provider_key",
       "acknowledged_value", "decision", "who", "when", "why", "run_scope"
+    ),
+    # The attribution map (10.4) is also keyed by one group column its caller names (MAGPlot:
+    # jurisdiction, D23.27), an attribute of the specification, so it isn't among its own.
+    attribution_map = c(
+      "table_name", "attribute_name", "script_file", "script_block", "script_commit", "note"
     )
   )
 }
@@ -194,11 +199,13 @@ override_scope <- function(data, groups) {
 #' `previous`, a folder that isn't a completed run's), at their cells; one finding naming the
 #' columns the input lacks and those it doesn't take, at its header, an overrides or
 #' acknowledgements column that is an attribute of the specification taken as a group column,
-#' and an earlier run's column that is another column of the issues or an attribute taken too
-#' (D23.33); then, for overrides holding all their own columns, each row whose class isn't
-#' source or harmonization, and each row with no scope cell; and for acknowledgements holding
-#' all theirs, each row whose decision isn't verified or rejected_proposal, and each whose run
-#' scope isn't package or merged (D23.26).
+#' an attribution map's as its key column, and an earlier run's column that is another column
+#' of the issues or an attribute taken too (D23.33); then, for overrides holding all their own
+#' columns, each row whose class isn't source or harmonization, and each row with no scope
+#' cell; for acknowledgements holding all theirs, each row whose decision isn't verified or
+#' rejected_proposal, and each whose run scope isn't package or merged (D23.26); and for an
+#' attribution map holding all its own columns, each row with a blank cell among its table,
+#' attribute and key, and each repeating an earlier row's (D23.39).
 #' @noRd
 input_problems <- function(spec, read, input) {
   data <- read$data
@@ -207,9 +214,9 @@ input_problems <- function(spec, read, input) {
   attributes <- unique(spec$attributes$attribute_name)
   missing <- setdiff(own, names(data))
   extra <- setdiff(names(data), own)
-  # The overrides and the acknowledgements may hold group columns, each an attribute (D19.51,
-  # D23.26).
-  if (input %chin% c("overrides", "acknowledgements")) {
+  # The overrides and the acknowledgements may hold group columns, and the attribution map is
+  # keyed by the group column its caller names, each an attribute (D19.51, D23.26, D23.27).
+  if (input %chin% c("overrides", "acknowledgements", "attribution_map")) {
     extra <- setdiff(extra, attributes)
   }
   # An earlier run's issues hold the issues' other columns and the run's group and key
@@ -268,6 +275,46 @@ input_problems <- function(spec, read, input) {
         cell_references(where, bad + 1L, match(column, names(data)))
       )
     }))
+  }
+  if (input == "attribution_map" && length(missing) == 0L) {
+    # Each map row names one table and attribute for one key value, "*" standing for all in a
+    # key value's own row (D23.39), so a row with a blank among them, or repeating an earlier
+    # row's, would leave an issue no script or two. The key is the table, the attribute and
+    # the columns taken as the key above.
+    keys <- c("table_name", "attribute_name", setdiff(names(data), c(own, extra)))
+    listed <- paste(keys, collapse = ", ")
+    given <- Reduce(`&`, lapply(keys, function(column) !is.na(data[[column]])))
+    blank <- which(!given)
+    keyed <- which(given)
+    # Each keyed row's first row with the same key; the columns are renamed first, so no
+    # caller's key column can meet a name of the grouping's own.
+    cells <- data[keyed, keys, with = FALSE]
+    key_names <- sprintf("key_%d", seq_along(keys))
+    setnames(cells, key_names)
+    grouped <- cells[, list(row = .I, first = .I[1L]), by = key_names]
+    again <- grouped[grouped$row != grouped$first]
+    again <- again[order(again$row)]
+    twice <- keyed[again$row]
+    found <- c(found, list(
+      findings_of(
+        where$file,
+        report_text(
+          "preflight_detail_input_unparseable_map_blank",
+          position = input_positions(read, input, blank), columns = rep(listed, length(blank))
+        ),
+        cell_references(where, blank + 1L, 1L)
+      ),
+      findings_of(
+        where$file,
+        report_text(
+          "preflight_detail_input_unparseable_map_repeat",
+          position = input_positions(read, input, twice),
+          first = input_positions(read, input, keyed[again$first], short = TRUE),
+          columns = rep(listed, length(twice))
+        ),
+        cell_references(where, twice + 1L, 1L)
+      )
+    ))
   }
   rbindlist(found)
 }

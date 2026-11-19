@@ -155,7 +155,14 @@
 #'     the problem unit's key column, `reaches_other_unit`, `root_issue_id`, `status` (`open`
 #'     or `not_evaluated`), `issue_class`, `class_basis`, `script_file`, `script_block`,
 #'     `attribution_status`, `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and
-#'     `change_cause`. The columns a conformance run doesn't fill are NA. `reaches_other_unit`
+#'     `change_cause`. The columns a conformance run doesn't fill are NA. `script_file` and
+#'     `script_block` are the processing script, and the block in it, that an attribution map
+#'     names for the issue's table and column, and `attribution_status` says whether that
+#'     script is known to be the one that made the delivery: `current` when the map's commit
+#'     is the delivery's, `may_be_stale` when it differs or the map gives none,
+#'     `script_version_unknown` when the delivery records none, and `unmapped` when the map
+#'     names no script for the column, the issue then taking the script its group's row
+#'     names as a whole, if any. `reaches_other_unit`
 #'     is TRUE where the issue holds a value read from a record of another report unit, or
 #'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
 #'     unit's key reached through the keys, any side of `key_incoherent`'s key pairs on the

@@ -684,7 +684,13 @@ preflight_check_functions <- function() {
 #'   (`override_scope_conflict`), and on an override naming a rule that isn't registered, or
 #'   a table or column the dictionary doesn't have (`override_unknown_name`); a rule renamed
 #'   or split since is known, as is a column `"*"`, and the delivery's own names in an
-#'   override of `table_unexpected` or `column_unexpected`.
+#'   override of `table_unexpected` or `column_unexpected`. `attribution_map` gives the
+#'   processing script and block that make each table's attribute, with the columns
+#'   `table_name`, `attribute_name`, `script_file`, `script_block`, `script_commit` and
+#'   `note`, and one more, an attribute of the specification, giving the group value each row
+#'   is for, such as a jurisdiction; a row whose `table_name` and `attribute_name` are both
+#'   `"*"` names that group's script as a whole. Pre-flight stops on a map row that leaves its
+#'   table, attribute or group blank, or that repeats an earlier row's (`input_unparseable`).
 #' @param settings A named list of settings, which come before the rule set's, the
 #'   options' and the built-in values (see [groundplotqc_options]). Pre-flight reads `lang`,
 #'   the run language, whose text `text_id_fallback` checks; `severity`, severities by rule

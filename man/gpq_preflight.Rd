@@ -42,7 +42,13 @@ columns (\code{input_unparseable}). It warns on two overrides that give one scop
 (\code{override_scope_conflict}), and on an override naming a rule that isn't registered, or
 a table or column the dictionary doesn't have (\code{override_unknown_name}); a rule renamed
 or split since is known, as is a column \code{"*"}, and the delivery's own names in an
-override of \code{table_unexpected} or \code{column_unexpected}.}
+override of \code{table_unexpected} or \code{column_unexpected}. \code{attribution_map} gives the
+processing script and block that make each table's attribute, with the columns
+\code{table_name}, \code{attribute_name}, \code{script_file}, \code{script_block}, \code{script_commit} and
+\code{note}, and one more, an attribute of the specification, giving the group value each row
+is for, such as a jurisdiction; a row whose \code{table_name} and \code{attribute_name} are both
+\code{"*"} names that group's script as a whole. Pre-flight stops on a map row that leaves its
+table, attribute or group blank, or that repeats an earlier row's (\code{input_unparseable}).}
 
 \item{settings}{A named list of settings, which come before the rule set's, the
 options' and the built-in values (see \link{groundplotqc_options}). Pre-flight reads \code{lang},

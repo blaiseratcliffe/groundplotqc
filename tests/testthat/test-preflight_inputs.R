@@ -451,3 +451,71 @@ test_that("gpq_preflight warns on overrides, stops on one it can't use, and keep
     class = "gpq_preflight_error"
   )
 })
+
+test_that("input_unparseable checks the attribution map's columns, its key taken (D23.27)", {
+  # water_body is an attribute of the survey, so the map's key column; colour isn't.
+  map <- data.frame(
+    water_body = c("LK", "LK", "*"), table_name = c("hauls", "*", "*"),
+    attribute_name = c("minutes", "*", "*"), script_file = "lake.R", script_block = NA,
+    script_commit = NA, note = NA
+  )
+  expect_equal(nrow(input_check("input_unparseable", list(attribution_map = map))), 0L)
+  odd <- map
+  odd$colour <- "red"
+  odd$note <- NULL
+  found <- input_check("input_unparseable", list(attribution_map = odd))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "attribution_map", missing = "note", extra = "colour"
+  ))
+  # Without a column of its own, the rows wait: a blank key cell gives only the missing column.
+  odd$colour <- NULL
+  odd$table_name[[1L]] <- NA
+  found <- input_check("input_unparseable", list(attribution_map = odd))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_missing",
+    input = "attribution_map", missing = "note"
+  ))
+  # A map with no rows, in memory or as a header-only file, gives no finding.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(map[0, ], path)
+  for (empty in list(map[0, ], path)) {
+    expect_equal(nrow(input_check("input_unparseable", list(attribution_map = empty))), 0L)
+  }
+})
+
+test_that("input_unparseable names a map row with a blank key cell or a repeated key (D23.39)", {
+  # Rows 2 and 4 leave a cell of their key blank; 5 repeats 1's key and 6 repeats 3's; 7 has
+  # 1's table and attribute for another key value, so it repeats nothing.
+  map <- data.frame(
+    water_body = c("LK", "LK", "*", NA, "LK", "*", "RV"),
+    table_name = c("hauls", NA, "*", "hauls", "hauls", "*", "hauls"),
+    attribute_name = c("minutes", "gear", "*", "gear", "minutes", "*", "minutes"),
+    script_file = "lake.R", script_block = NA, script_commit = NA, note = NA
+  )
+  found <- input_check("input_unparseable", list(attribution_map = map))
+  row <- function(r) report_text("input_position_memory", row = r, input = "attribution_map")
+  short <- function(r) report_text("rule_set_position_memory_short", row = r)
+  columns <- "table_name, attribute_name, water_body"
+  expect_equal(found$detail, c(
+    report_text(
+      "preflight_detail_input_unparseable_map_blank",
+      position = row(c(2L, 4L)), columns = columns
+    ),
+    report_text(
+      "preflight_detail_input_unparseable_map_repeat",
+      position = row(c(5L, 6L)), first = short(c(1L, 3L)), columns = columns
+    )
+  ))
+  # From a CSV file, each at its line; gpq_preflight() stops on them.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(map, path)
+  found <- input_check("input_unparseable", list(attribution_map = path))
+  expect_equal(found$source_cell, paste0(basename(path), c(":3", ":5", ":6", ":7")))
+  expect_match(found$detail[[3L]], paste("Line 6 of", basename(path)), fixed = TRUE)
+  expect_error(
+    gpq_preflight(fish_spec, inputs = list(attribution_map = path)),
+    class = "gpq_preflight_error"
+  )
+  expect_no_error(gpq_preflight(fish_spec, inputs = list(attribution_map = map[c(1L, 3L, 7L), ])))
+})
