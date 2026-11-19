@@ -64,11 +64,16 @@ test_that("a wrong inputs list or element is a caller's error (D19.51)", {
     shape,
     fixed = TRUE
   )
+  # A name outside the list: thresholds, which joins at M13. The names taken are listed as the
+  # schema gives them, the first three M6's.
+  taken <- names(run_input_schema())
+  expect_identical(taken[1:3], c("overrides", "lineage", "pipeline_fill"))
+  n <- length(taken)
   expect_error(
-    gpq_preflight(spec, inputs = list(previous = override_rows())),
-    paste(
-      "`inputs` names tables it doesn't take: previous.",
-      "It takes overrides, lineage and pipeline_fill."
+    gpq_preflight(spec, inputs = list(thresholds = override_rows())),
+    sprintf(
+      "`inputs` names tables it doesn't take: thresholds. It takes %s and %s.",
+      paste(taken[-n], collapse = ", "), taken[[n]]
     ),
     fixed = TRUE
   )
@@ -169,6 +174,65 @@ test_that("input_unparseable reports a run input's file that doesn't read cleanl
   found <- input_check("input_unparseable", list(lineage = path))
   expect_equal(nrow(found), 1L)
   expect_equal(found$source_cell, paste0(basename(path), ":3"))
+})
+
+test_that("input_unparseable reads previous for its form, folder and columns only (D23.33)", {
+  # A run of the fish survey, its group column water_body, written to its folder.
+  run <- gpq_check_conformance(fx_fish_clean(), fish_spec, group_cols = "water_body", layers = 0)
+  dir <- withr::local_tempdir()
+  run_dir <- gpq_write_results(run, dir)
+  issues_csv <- file.path(run_dir, "tables", "issues.csv")
+  # The folder, its issues file and its issues in memory pass.
+  for (previous in list(run_dir, issues_csv, run$issues)) {
+    expect_equal(nrow(input_check("input_unparseable", list(previous = previous))), 0L)
+  }
+  # Only the issues' columns are read: a file whose rows don't read cleanly passes here, and
+  # stops the comparison, which reads them (D23.46).
+  broken <- file.path(dir, "broken.csv")
+  writeLines(c(readLines(issues_csv, n = 1L), "\"1\",\"2\",\"3\""), broken)
+  expect_equal(nrow(input_check("input_unparseable", list(previous = broken))), 0L)
+  # Columns: one the comparison reads missing, one no issues table has, and a group column and
+  # an issues column of the earlier run's own taken.
+  issues <- as.data.frame(run$issues)
+  issues$first_seen_run <- NULL
+  issues$colour <- character()
+  found <- input_check("input_unparseable", list(previous = issues))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "previous", missing = "first_seen_run", extra = "colour"
+  ))
+  # A folder that isn't a completed run's: none of a run's files, a stopped run's, a run's with
+  # no results file; each named once, at the folder.
+  empty <- file.path(dir, "not_a_run")
+  dir.create(empty)
+  found <- input_check("input_unparseable", list(previous = empty))
+  expect_equal(c(found$file, found$detail), c("not_a_run", report_text(
+    "preflight_detail_input_unparseable_folder",
+    input = "previous", folder = "not_a_run", file = "metadata/run.csv"
+  )))
+  stopped <- file.path(dir, "stopped")
+  stopped_run <- data.table::copy(run$metadata$run)
+  data.table::set(stopped_run, j = "outcome", value = "stopped_preflight")
+  write_run_metadata(list(run = stopped_run), stopped)
+  dir.create(file.path(stopped, "tables"))
+  file.copy(issues_csv, file.path(stopped, "tables"))
+  file.copy(file.path(run_dir, "tables", "results.csv"), file.path(stopped, "tables"))
+  found <- input_check("input_unparseable", list(previous = stopped))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_stopped",
+    input = "previous", folder = "stopped"
+  ))
+  unlink(file.path(run_dir, "tables", "results.csv"))
+  found <- input_check("input_unparseable", list(previous = run_dir))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_folder",
+    input = "previous", folder = basename(run_dir), file = "tables/results.csv"
+  ))
+  # Neither a folder, a data.frame nor a CSV file: a caller's error.
+  form <- "`previous` must be a run folder, a data.frame or the path of an existing .csv file."
+  for (bad in list(42, file.path(dir, "absent.csv"), list(issues))) {
+    expect_error(input_check("input_unparseable", list(previous = bad)), form, fixed = TRUE)
+  }
 })
 
 test_that("override_scope_conflict names each row repeating a scope with the other class (D9.27)", {

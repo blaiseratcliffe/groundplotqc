@@ -15,6 +15,7 @@ reference:
     contents:
       - gpq_build_reports
       - gpq_check_conformance
+      - gpq_compare_runs
       - gpq_read_results
       - gpq_write_results
   - title: "Generic engine: lineage and issue classes"

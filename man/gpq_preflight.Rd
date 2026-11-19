@@ -21,14 +21,19 @@ gpq_preflight(
 registered rules, and its \code{settings} rows give settings.}
 
 \item{inputs}{A named list of the run's optional inputs, each a data.frame or the path of
-a CSV file, read as text: \code{overrides}, your classes for issues, with the columns
+a CSV file, read as text, or for \code{previous} also a run folder: \code{overrides}, your classes
+for issues, with the columns
 \code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name}, \code{issue_class}, \code{who}, \code{when} and
 \code{why}, and any of the run's group columns, each an attribute of the specification;
 \code{lineage}, the provider's raw values of the cells the pipeline changed (\code{table_name},
-\code{record_pk}, \code{column_name}, \code{raw_value}, \code{raw_source}); and \code{pipeline_fill}, the cells
+\code{record_pk}, \code{column_name}, \code{raw_value}, \code{raw_source}); \code{pipeline_fill}, the cells
 the pipeline's missing-value fill wrote (\code{table_name}, \code{record_pk}, \code{column_name},
-\code{written_value}). Pre-flight stops on an input it can't read cleanly or without exactly
-its columns, and on an override whose \code{issue_class} isn't \code{source} or \code{harmonization} or
+\code{written_value}); and \code{previous}, an earlier run to compare with, as
+\code{\link[=gpq_compare_runs]{gpq_compare_runs()}} takes it, of which pre-flight reads a folder's files and the issues'
+columns, never their rows. Pre-flight stops on an input it can't read cleanly or without
+exactly its columns (an earlier run's issues may hold the issues' other columns and the
+specification's attributes), on a run folder that isn't a completed run's, and on an
+override whose \code{issue_class} isn't \code{source} or \code{harmonization} or
 that gives none of \code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name} and the group
 columns (\code{input_unparseable}). It warns on two overrides that give one scope two classes
 (\code{override_scope_conflict}), and on an override naming a rule that isn't registered, or
