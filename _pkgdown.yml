@@ -26,6 +26,7 @@ reference:
   - title: MAGPlot 2.0 layer
     contents:
       - magp_example
+      - magp_list_runs
       - magp_read_delivery
       - magp_rules
       - magp_run_qc

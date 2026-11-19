@@ -124,6 +124,15 @@ test_that("a run pre-flight stops writes its run, with its tables' contributors 
   expect_identical(
     readBin(manifest, "raw", file.size(manifest)), compiled_bytes(magp_spec()$manifest)
   )
+  # magp_list_runs() lists it with its outcome for each contributor it holds, none other (11.8).
+  expect_equal(
+    magp_list_runs(output, "120"),
+    data.table::data.table(
+      run_id = run$run_id, run_start = run$run_start, outcome = "stopped_preflight",
+      run_dir = run_dir
+    )
+  )
+  expect_equal(nrow(magp_list_runs(output, "130")), 0L)
 })
 
 test_that("a delivery's run: its files, each contributor's kept to its own records (13; D21.13)", {
@@ -795,6 +804,82 @@ test_that("inputs that classification can't take stop the run before any check (
     expect_equal(
       sort(list.files(run_dir, recursive = TRUE), method = "radix"),
       c("metadata/preflight.csv", "reports/preflight.html")
+    )
+  }
+  # magp_list_runs() lists each such folder as incomplete, for any contributor, its start read
+  # from its run ID (D23.14, D23.27).
+  listed <- magp_list_runs(output, "any contributor")
+  expect_setequal(listed$run_dir, runs)
+  expect_equal(unique(listed$outcome), "incomplete")
+  expect_equal(gsub("[-:]", "", listed$run_start), sub("_.*$", "", listed$run_id))
+})
+
+test_that("magp_list_runs() lists a contributor's run folders, oldest first (D23.14, D23.27)", {
+  output <- withr::local_tempdir()
+  # A run's run.csv as a run writes it, the git commit and versions read once.
+  base <- run_metadata("20260101T000000Z_000000", Sys.time(), Sys.time())
+  run_folder <- function(run_id, units = NULL, outcome = "completed", results = TRUE) {
+    run_dir <- file.path(output, run_id)
+    dir.create(file.path(run_dir, "metadata"), recursive = TRUE)
+    if (!is.null(units)) {
+      start <- as.POSIXct(sub("_.*$", "", run_id), format = "%Y%m%dT%H%M%SZ", tz = "UTC")
+      run <- data.table::copy(base)
+      data.table::set(
+        run,
+        j = c("run_id", "run_start", "run_end", "report_units", "outcome"),
+        value = list(run_id, utc_text(start), utc_text(start + 60), join_units(units), outcome)
+      )
+      write_run_metadata(list(run = run), run_dir)
+    }
+    if (results) {
+      dir.create(file.path(run_dir, "tables"))
+      writeLines("results", file.path(run_dir, "tables", "results.csv"))
+    }
+    run_dir
+  }
+  # Made out of time order: a completed run of 100 and 110; a run pre-flight stopped; a run
+  # whose write stopped before its results (run.csv, no results.csv); a folder a stop after
+  # pre-flight left (no run.csv), whose contributors can't be known; a run of 110 alone; and
+  # a contributor whose ID holds "; ", as run.csv escapes it (W201).
+  later <- run_folder("20261103T090000Z_aaaaaa", c("100", "110"))
+  stopped <- run_folder("20261101T090000Z_bbbbbb", c("100", "a; b"), "stopped_preflight", FALSE)
+  cut <- run_folder("20261102T090000Z_cccccc", "100", results = FALSE)
+  left <- run_folder("20261102T080000Z_dddddd", results = FALSE)
+  run_folder("20261104T090000Z_eeeeee", "110")
+  # Not run folders: a folder not named by a run ID, one so named with no metadata/, and a file.
+  dir.create(file.path(output, "notes", "metadata"), recursive = TRUE)
+  dir.create(file.path(output, "20261105T090000Z_ffffff"))
+  writeLines("not a run", file.path(output, "20261106T090000Z_abcdef"))
+  expect_equal(
+    magp_list_runs(output, "100"),
+    data.table::data.table(
+      run_id = basename(c(stopped, left, cut, later)),
+      run_start = c(
+        "2026-11-01T09:00:00Z", "2026-11-02T08:00:00Z", "2026-11-02T09:00:00Z",
+        "2026-11-03T09:00:00Z"
+      ),
+      outcome = c("stopped_preflight", "incomplete", "incomplete", "completed"),
+      run_dir = c(stopped, left, cut, later)
+    )
+  )
+  expect_equal(magp_list_runs(output, "a; b")$run_dir, c(stopped, left))
+  expect_equal(magp_list_runs(output, "a")$run_dir, left)
+  # A folder with no run folders lists none, the four columns kept.
+  empty <- magp_list_runs(withr::local_tempdir(), "100")
+  expect_equal(
+    empty,
+    data.table::data.table(
+      run_id = character(), run_start = character(), outcome = character(),
+      run_dir = character()
+    )
+  )
+  # Caller errors.
+  for (bad in list(file.path(output, "absent"), c(output, output), NA_character_, 1)) {
+    expect_error(magp_list_runs(bad, "100"), "`output_dir` must be one folder that exists.")
+  }
+  for (bad in list(100, c("100", "110"), NA_character_, character(), " ")) {
+    expect_error(
+      magp_list_runs(output, bad), "`contributor` must be one contributor ID, as text."
     )
   }
 })

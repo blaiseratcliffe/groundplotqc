@@ -380,3 +380,95 @@ held_units <- function(tables, spec, unit_col) {
   })
   enc2utf8(unique(as.character(unlist(units, use.names = FALSE))))
 }
+
+#' List a contributor's runs
+#'
+#' @description
+#' Lists the run folders [magp_run_qc()] made under `output_dir` that hold a contributor's
+#' delivery, oldest first, each with its outcome, so you can pick the earlier run to compare
+#' a new one with.
+#'
+#' @details
+#' A run folder is a folder of `output_dir` named by a run ID, such as
+#' `20261215T140312Z_3fa9c1`, that holds a `metadata` folder. A run holds the contributor
+#' when its `metadata/run.csv` lists it among the contributors the run's tables held, so a run
+#' that pre-flight stopped is listed too. Its outcome is the one `run.csv` records,
+#' `completed` or `stopped_preflight`, except that a completed run whose folder has no
+#' `tables/results.csv` is `incomplete`.
+#'
+#' A run that stopped after pre-flight passed, and before it wrote its results, leaves no
+#' `run.csv`, so it can't tell whose delivery it was: such a folder is listed for every
+#' contributor, with the outcome `incomplete` and the start its run ID gives. The outcome
+#' `incomplete` is the listing's own and is never written to `run.csv`.
+#'
+#' @param output_dir The folder that holds run folders, as given to [magp_run_qc()].
+#' @param contributor One contributor ID, as text, such as `"100"`.
+#' @return A data.table with one row per run folder, oldest first: `run_id`, `run_start`
+#'   (UTC, as `run.csv` writes it), `outcome` (`completed`, `stopped_preflight` or
+#'   `incomplete`) and `run_dir`, the run folder's path. No rows when no run holds the
+#'   contributor.
+#' @seealso [magp_run_qc()], which makes the run folders.
+#' @examples
+#' # A run of magp_example's tables, written as a run writes its folder, for both of its
+#' # contributors, 100 and 110. MAGPlot's bundled specification has known pre-flight
+#' # warnings, so this warning is expected.
+#' output <- tempfile("runs")
+#' results <- gpq_check_conformance(
+#'   magp_example, magp_spec(),
+#'   group_cols = "magp_contributor_id", rules = magp_rules(), layers = 0
+#' )
+#' gpq_write_results(results, output)
+#' # A folder left by a run that stopped before its results, which names no contributor.
+#' dir.create(file.path(output, "20261215T140312Z_3fa9c1", "metadata"), recursive = TRUE)
+#' magp_list_runs(output, "100")
+#' @export
+magp_list_runs <- function(output_dir, contributor) {
+  dir_ok <- is.character(output_dir) && length(output_dir) == 1L && !is.na(output_dir) &&
+    dir.exists(output_dir)
+  if (!dir_ok) {
+    # M8a1 W40
+    stop("`output_dir` must be one folder that exists.", call. = FALSE)
+  }
+  contributor_ok <- is.character(contributor) && length(contributor) == 1L &&
+    !is.na(contributor) && !is_blank(contributor)
+  if (!contributor_ok) {
+    # M8a1 W41
+    stop("`contributor` must be one contributor ID, as text.", call. = FALSE)
+  }
+  # A run folder is named by its run ID and holds metadata/, which pre-flight writes first on
+  # every run (11.9, D21.15); anything else in output_dir isn't one.
+  names_in <- list.dirs(output_dir, full.names = FALSE, recursive = FALSE)
+  run_ids <- sort(names_in[grepl(run_id_pattern, names_in)], method = "radix")
+  run_dirs <- file.path(output_dir, run_ids)
+  run_dirs <- run_dirs[dir.exists(file.path(run_dirs, "metadata"))]
+  schema <- metadata_schema()$run
+  # One row per run folder: its run.csv read, else its start from its run ID (9.1), in
+  # run.csv's form. A loop over folders, never over a run's rows.
+  rows <- lapply(run_dirs, function(run_dir) {
+    path <- file.path(run_dir, "metadata", "run.csv")
+    run_id <- basename(run_dir)
+    if (!file.exists(path)) {
+      start <- sub(
+        "^([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z_.*$",
+        "\\1-\\2-\\3T\\4:\\5:\\6Z", run_id
+      )
+      return(list(run_id, start, "incomplete", run_dir))
+    }
+    run <- read_run_csv(path, schema)
+    # match() compares the units as UTF-8, however each is marked.
+    if (!contributor %in% split_units(run$report_units[[1L]])) {
+      return(NULL)
+    }
+    outcome <- run$outcome[[1L]]
+    if (outcome == "completed" && !file.exists(file.path(run_dir, "tables", "results.csv"))) {
+      outcome <- "incomplete"
+    }
+    list(run_id, run$run_start[[1L]], outcome, run_dir)
+  })
+  listed <- rbindlist(c(
+    list(list(character(), character(), character(), character())), rows
+  ))
+  setnames(listed, c("run_id", "run_start", "outcome", "run_dir"))
+  setorderv(listed, c("run_start", "run_id"))
+  listed[]
+}
