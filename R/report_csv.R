@@ -9,8 +9,8 @@
 #' `issues` are the unit's routed issues (route_unit()); `group_cols` the group columns to
 #' write, report unit first (gpq_build_reports() gives the run's, as 11.6 lists them);
 #' `key_col` the problem unit's key column, or NULL; `lang` and `text` as report_text() takes
-#' them. One row per issue, open or not evaluated, codes as
-#' stored (D20.32). The columns, in 11.6's order: the group columns, then the key column
+#' them. One row per issue, open, not evaluated or acknowledged, codes as stored (D20.32,
+#' D23.34). The columns, in 11.6's order: the group columns, then the key column
 #' (D20.74); `table_name`, `column_name`, `rule_id`, `severity`, `issue_class`; `message`, the
 #' rule's text (report_text() of its registry `message_id`, looked up once per rule; no rule's
 #' text has a slot); the `key_<label>` columns (split_provider_key()), their tables in C order

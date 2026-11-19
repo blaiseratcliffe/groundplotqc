@@ -1696,3 +1696,240 @@ test_that("section 13 says so when the run names no unit, holds no counts or ran
     fixed = TRUE
   )
 })
+
+# ---- M8a1 task 9 ----
+
+test_that("section 11 counts changes by cause and lists the resolved issues (D23.31, D23.35)", {
+  run_id <- "20261117T120000Z_abc123"
+  hostile <- "<i>&\"R"
+  schema <- results_schema(c("unit", "area"), "plot")$issues
+  # The unit's issues: new by data twice (one column-level), new by rules once, persisting
+  # twice, one of them acknowledged, which still counts (D23.32).
+  issues <- complete_table(list(
+    issue_id = 1:5, run_id = run_id, rule_id = "raw_na", severity = "error",
+    table_name = "trees", column_name = "x", level = c("record", "column", rep("record", 3L)),
+    unit = "u1", area = "A1", plot = "P1",
+    status = c("open", "open", "open", "acknowledged", "open"),
+    change = c("new", "new", "new", "persisting", "persisting"),
+    change_cause = c("data", "data", "rules_or_spec", NA, NA),
+    first_seen_run = c(run_id, run_id, run_id, "20261001T080000Z_000aaa", "20261001T080000Z_000aaa")
+  ), schema, "issues")
+  # The previous run's resolved issues: a rule renamed since (read under its new ID), a rule the
+  # registry no longer has, and an error holding hostile and long text, its area "*".
+  resolved <- complete_table(list(
+    issue_id = 1:3, run_id = "20261001T080000Z_000aaa",
+    rule_id = c("old_name", "gone_rule", "value_above_max"),
+    severity = c("warning", "flag", "error"), table_name = "trees", column_name = "x",
+    provider_key = c("k=1", "k=2", "k=3"), record_pk = c("T1", "T2", "T3"),
+    value = c("1", "2", hostile), level = "record", unit = "u1",
+    area = c("A1", "A1", "*"), plot = c("P1", "P2", strrep("Z", 30L)),
+    change = "resolved", change_cause = c("rules_or_spec", "rules_or_spec", "data"),
+    first_seen_run = c("20260901T080000Z_000bbb", "20261001T080000Z_000aaa", "odd <run>")
+  ), schema, "issues")
+  testthat::local_mocked_bindings(rule_id_map = function() {
+    data.table::data.table(
+      old_rule_id = "old_name", new_rule_id = "whitespace_padding", change = "rename",
+      package_version = "0.0.0.9000"
+    )
+  })
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 20L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  tables <- list(
+    issues = issues, resolved = resolved, unit = "u1", group_cols = c("unit", "area"),
+    key_col = "plot"
+  )
+  caught <- list()
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    section <- section_changes(tables, NULL, settings)
+    expect_equal(attr(section, "gpq_section")[["id"]], "changes")
+    expect_equal(attr(section, "gpq_section")[["title"]], "Changes since the previous run")
+  })
+  expect_equal(caught[["Issues compared with the previous run"]], data.table::data.table(
+    Change = c("New", "Resolved", "Persisting"),
+    "Changed by data" = c(2L, 1L, NA), "Changed by rules or specification" = c(1L, 2L, NA),
+    Total = c(3L, 3L, 2L)
+  ))
+  expect_equal(caught[["Resolved since the previous run"]], data.table::data.table(
+    Severity = c("Error", "Warning", "Flag"),
+    Check = c("value_above_max", "whitespace_padding", "gone_rule"),
+    "What it means" = c(
+      vapply(
+        rule_registry()$message_id[match(
+          c("value_above_max", "whitespace_padding"), rule_registry()$rule_id
+        )],
+        report_text, "",
+        USE.NAMES = FALSE
+      ),
+      NA
+    ),
+    Table = "trees", Column = "x", "Your key" = c("k=3", "k=1", "k=2"),
+    "Record ID" = c("T3", "T1", "T2"), Value = c(hostile, "1", "2"),
+    "First seen" = c("odd <run>", "2026-09-01", "2026-10-01"),
+    area = c("(not linked)", "A1", "A1"),
+    plot = c(cut_cell_text(strrep("Z", 30L), 20L), "P1", "P2")
+  ))
+  # The page escapes what it shows; at most row_cap rows, with a line naming no file.
+  settings$row_cap <- 2L
+  html <- as.character(section_changes(tables, NULL, settings))
+  expect_match(html, "&lt;i&gt;&amp;&quot;R", fixed = TRUE)
+  expect_false(grepl(hostile, html, fixed = TRUE))
+  expect_match(html, "Showing 2 of 3 rows.", fixed = TRUE)
+  expect_false(grepl("u1_issues.csv", html, fixed = TRUE))
+  # Without the previous run: the saved counts, no resolved row, and a line saying so.
+  tables$resolved <- NULL
+  caught <- list()
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    html <- as.character(section_changes(tables, NULL, settings))
+    expect_match(html, report_text("report_changes_no_previous"), fixed = TRUE)
+  })
+  expect_equal(caught[[1L]]$Change, c("New", "Persisting"))
+  # Nor any saved change: the run wasn't compared.
+  data.table::set(tables$issues, j = "change", value = NA_character_)
+  expect_match(
+    as.character(section_changes(tables, NULL, settings)),
+    html_escape(report_text("report_changes_empty")),
+    fixed = TRUE
+  )
+})
+
+test_that("section 12 lists acknowledged issues with their entries, lapsed ones apart (D23.36)", {
+  run_id <- "20261117T120000Z_abc123"
+  hostile <- "<u>&\"V"
+  issues <- new_issues(list(
+    issue_id = 1:4, run_id = run_id, run_scope = "package", rule_id = "raw_na",
+    rule_fingerprint = "f", stage = "conformance", layer = 2L, severity = "error",
+    reason_code = "*", table_name = "trees", column_name = "x",
+    record_pk = c("T1", "T2", "T3", "T4"), row_number = 1:4, pk_positional = FALSE,
+    level = "record", value = c(hostile, "2", "3", "4"),
+    provider_key = c("k=1", "k=2", "k=3", "k=4"), unit = "u1", plot = "P1",
+    reaches_other_unit = FALSE, status = c("acknowledged", "acknowledged", "open", "open"),
+    issue_class = "source"
+  ), group_cols = "unit", key_col = "plot")
+  # Issue 1's entry; issue 2 has none of the unit's that holds.
+  entries <- data.table::data.table(
+    issue_id = 1L, acknowledged_value = hostile, decision = "rejected_proposal",
+    when = "2026-11-01", why = "Checked <in the field>"
+  )
+  lapsed <- data.table::data.table(
+    fingerprint = "fp", fingerprint_pk = "fp", rule_id = c("raw_na", "gone_rule"),
+    table_name = "trees", column_name = "x", provider_key = c("k=3", "k=4"),
+    acknowledged_value = c("30", "40"), decision = "verified", who = "WHO-secret",
+    when = "2026-10-01", why = "Measured twice", run_scope = "package", unit = "u1",
+    current_value = c("3", "4")
+  )
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  tables <- list(
+    issues = issues, acknowledgements = entries, lapsed = lapsed, unit = "u1",
+    group_cols = "unit", key_col = "plot"
+  )
+  caught <- list()
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    section <- section_acknowledged(tables, NULL, settings)
+    expect_equal(attr(section, "gpq_section")[["id"]], "acknowledged")
+    expect_equal(attr(section, "gpq_section")[["title"]], "Acknowledged issues")
+  })
+  meaning <- report_text(rule_registry()$message_id[match("raw_na", rule_registry()$rule_id)])
+  expect_equal(caught[["Acknowledged issues"]], data.table::data.table(
+    "What it means" = meaning, Table = "trees", Column = "x", "Your key" = c("k=1", "k=2"),
+    "Acknowledged value" = c(hostile, NA), Decision = c("proposal rejected", NA),
+    When = c("2026-11-01", NA), Why = c("Checked <in the field>", NA)
+  ))
+  # Never who; a rule the registry doesn't have shows no text.
+  expect_equal(caught[["Acknowledgements that no longer hold"]], data.table::data.table(
+    "What it means" = c(meaning, NA), Table = "trees", Column = "x",
+    "Your key" = c("k=3", "k=4"), "Acknowledged value" = c("30", "40"),
+    "Current value" = c("3", "4"), Decision = "verified", When = "2026-10-01",
+    Why = "Measured twice"
+  ))
+  # Delivered text, the register's copy of a value included, cut at cell_cap.
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    section_acknowledged(tables, NULL, utils::modifyList(settings, list(cell_cap = 3L)))
+  })
+  expect_equal(
+    caught[["Acknowledged issues"]][["Acknowledged value"]], c(cut_cell_text(hostile, 3L), NA)
+  )
+  expect_equal(caught[["Acknowledgements that no longer hold"]][["Current value"]], c("3", "4"))
+  html <- as.character(section_acknowledged(tables, NULL, settings))
+  expect_false(grepl("WHO-secret", html, fixed = TRUE))
+  expect_match(html, "&lt;u&gt;&amp;&quot;V", fixed = TRUE)
+  expect_false(grepl(hostile, html, fixed = TRUE))
+  expect_match(html, "u1_issues.csv keeps them", fixed = TRUE)
+  expect_false(grepl("\\{[a-z0-9_]+\\}", html))
+  # Without the register: the issues' own values, no decision, and a line saying so.
+  caught <- list()
+  local({
+    testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+      caught[[caption]] <<- data.table::copy(dt)
+      "<table>"
+    })
+    plain <- list(issues = issues, unit = "u1", group_cols = "unit", key_col = "plot")
+    html <- as.character(section_acknowledged(plain, NULL, settings))
+    expect_match(html, report_text("report_acknowledged_no_register"), fixed = TRUE)
+  })
+  expect_named(caught, "Acknowledged issues")
+  expect_equal(caught[[1L]][["Acknowledged value"]], c(hostile, "2"))
+  expect_named(
+    caught[[1L]], c("What it means", "Table", "Column", "Your key", "Acknowledged value")
+  )
+  # At most row_cap rows each.
+  settings$row_cap <- 1L
+  html <- as.character(section_acknowledged(tables, NULL, settings))
+  expect_equal(lengths(regmatches(html, gregexpr("Showing 1 of 2 rows.", html, fixed = TRUE))), 2L)
+  # With neither, one line.
+  data.table::set(issues, j = "status", value = "open")
+  expect_match(
+    as.character(section_acknowledged(list(issues = issues), NULL, settings)),
+    "No issue is acknowledged.",
+    fixed = TRUE
+  )
+})
+
+test_that("section 3 shows the date each issue was first seen, where the issues give it (D23.35)", {
+  run_id <- "20261117T120000Z_abc123"
+  issues <- new_issues(list(
+    issue_id = 1:2, run_id = run_id, run_scope = "package", rule_id = "raw_na",
+    rule_fingerprint = "f", stage = "conformance", layer = 2L, severity = "error",
+    reason_code = "*", table_name = "trees", column_name = "x", record_pk = c("T1", "T2"),
+    row_number = 1:2, pk_positional = FALSE, level = "record", unit = "u1",
+    reaches_other_unit = FALSE, status = "open", issue_class = "source",
+    first_seen_run = c("20261001T080000Z_000aaa", run_id)
+  ), group_cols = "unit")
+  settings <- list(
+    lang = "en", row_cap = 500L, example_cap = 5L, cell_cap = 100L, column_level_min_n = 10L,
+    csv_name = "u1_issues.csv"
+  )
+  tables <- list(issues = issues, unit = "u1", group_cols = "unit", key_col = NULL)
+  caught <- list()
+  testthat::local_mocked_bindings(html_table = function(dt, caption, ...) {
+    caught[[caption]] <<- data.table::copy(dt)
+    "<table>"
+  })
+  section_actions(tables, NULL, settings)
+  each <- caught[["Each issue: Issues for you to act on"]]
+  expect_equal(each[["First seen"]], c("2026-10-01", "2026-11-17"))
+  # A run never compared has none, and the column is left out.
+  data.table::set(issues, j = "first_seen_run", value = NA_character_)
+  section_actions(tables, NULL, settings)
+  expect_false("First seen" %in% names(caught[["Each issue: Issues for you to act on"]]))
+})

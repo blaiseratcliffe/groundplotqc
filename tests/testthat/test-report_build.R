@@ -666,6 +666,119 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
   }
 })
 
+test_that("given previous and a register, each unit's sections 11 and 12 hold its own (13)", {
+  local_results_registry()
+  results <- fx_report_results()
+  issues <- results$issues
+  schema <- results_schema(c("unit", "area"), "plot")$issues
+  # The previous run: this run's issues but 100's issue 7 and 110's issue 18, each a source
+  # issue, so both are new, and four issues this run doesn't have: 100's, 110's, one marked,
+  # and one of a record rule whose unit is "*", each holding a value of its own.
+  previous <- data.table::copy(issues)[!issues$issue_id %in% c(7L, 18L)]
+  data.table::set(previous, j = "run_id", value = "20261001T080000Z_0000aa")
+  gone <- complete_table(list(
+    issue_id = 101:104, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = c("H91", "H92", "H93", "H94"), row_number = 1:4, pk_positional = FALSE,
+    level = "record", value = c("RES-100-own", "RES-110-own", "RES-MARKED", "RES-STAR"),
+    unit = c("100", "110", "100", "*"), area = c("A-100-1", "A-110-1", "A-100-1", "*"),
+    plot = c("P-100-1", "P-110-1", "P-100-1", "*"),
+    reaches_other_unit = c(FALSE, FALSE, TRUE, FALSE), status = "open",
+    issue_class = "source", fingerprint = paste0("gone-", 1:4),
+    fingerprint_pk = paste0("gone-pk-", 1:4)
+  ), schema, "issues")
+  previous <- rbind(previous, gone)
+  # The register: first two entries naming 100 for 110's issues 19 and 18, one holding and one
+  # lapsed, which no unit shows, and one that lapsed on 100's issue 8; then an entry that holds
+  # for issue 8 (a missing value), one for 110's issue 19, one that lapsed on 100's issue 11
+  # and one on 110's issue 18; and an entry for issue 14, which reaches no unit. Each issue's
+  # list row shows its first entry that holds, its own unit's. The report-unit column is named
+  # unit, as a variable of the build is.
+  at <- match(c(19L, 18L, 8L, 8L, 19L, 11L, 18L, 14L), issues$issue_id)
+  held <- issues$value[at[[1L]]]
+  why <- c(
+    "WHY-CROSS", "LAPSED-CROSS", "LAPSED-ON-HELD", "WHY-100-own", "WHY-110-own",
+    "LAPSED-100-own", "LAPSED-110-own", "WHY-MARKED"
+  )
+  register <- data.frame(
+    fingerprint = issues$fingerprint[at], fingerprint_pk = issues$fingerprint_pk[at],
+    rule_id = issues$rule_id[at], table_name = issues$table_name[at],
+    column_name = issues$column_name[at], provider_key = issues$provider_key[at],
+    acknowledged_value = c(
+      held, "OLD-CROSS", "OLD-ON-HELD", NA, held, "OLD-100-own", "OLD-110-own", NA
+    ),
+    decision = "verified", who = "WHO-secret", when = "2026-11-01", why = why,
+    run_scope = "package", unit = c("100", "100", "100", "100", "110", "100", "110", "110"),
+    area = issues$area[at], plot = issues$plot[at]
+  )
+  before <- data.table::copy(results$issues)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output, previous = previous, acknowledgements = register)
+  # The caller's results are as they were (D20.120).
+  expect_identical(results$issues, before)
+  own <- list(
+    "100" = c("RES-100-own", "WHY-100-own", "OLD-100-own", "LAPSED-100-own", "LAPSED-ON-HELD"),
+    "110" = c("RES-110-own", "WHY-110-own", "OLD-110-own", "LAPSED-110-own")
+  )
+  nowhere <- c(
+    "RES-MARKED", "RES-STAR", "WHY-MARKED", "WHY-CROSS", "LAPSED-CROSS", "OLD-CROSS", "WHO-secret"
+  )
+  for (unit in names(own)) {
+    at <- which(names(files) == unit)
+    page <- readChar(files[[at[[1L]]]], file.size(files[[at[[1L]]]]), useBytes = TRUE)
+    csv <- data.table::fread(files[[at[[2L]]]], encoding = "UTF-8", colClasses = "character")
+    for (value in own[[unit]]) {
+      expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+    }
+    for (value in c(own[[setdiff(names(own), unit)]], nowhere)) {
+      expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+    }
+    # The acknowledged issue's row shows the entry that holds, never the one that lapsed.
+    listed <- regmatches(page, regexpr(
+      "<caption>Acknowledged issues</caption>.*?</table>", page,
+      perl = TRUE
+    ))
+    expect_true(grepl(own[[unit]][[2L]], listed, fixed = TRUE), info = unit)
+    expect_false(grepl("LAPSED-", listed, fixed = TRUE), info = unit)
+    # The CSV keeps the acknowledged issue, with its status, and holds no resolved one (D23.34).
+    expect_false(any(grepl("RES-", unlist(csv), fixed = TRUE)), info = unit)
+    acked <- match(c("100" = 8L, "110" = 19L)[[unit]], issues$issue_id)
+    row <- csv$record_pk == issues$record_pk[acked] & csv$rule_id == issues$rule_id[acked]
+    expect_equal(csv$status[row], "acknowledged", info = unit)
+    # Persisting issues were first seen in the previous run, new ones in this one (D23.35).
+    expect_true(grepl("<td>2026-10-01</td>", page, fixed = TRUE), info = unit)
+    expect_true(grepl("<td>2026-10-26</td>", page, fixed = TRUE), info = unit)
+  }
+  # route_unit gives each unit its own resolved issues, the marked and "*" ones to none.
+  saved <- gpq_read_results(file.path(output, results$metadata$run$run_id))
+  compared <- gpq_compare_runs(saved, previous)
+  for (unit in names(own)) {
+    routed <- route_unit(results, unit, names(own), resolved = compared$resolved)
+    expect_identical(routed$resolved$value, own[[unit]][[1L]], info = unit)
+  }
+  # A bad previous run or register stops the build before it removes or writes anything.
+  stamp <- file.mtime(files)
+  expect_error(
+    gpq_build_reports(results, output, previous = file.path(output, "nowhere")),
+    "`previous` must be a run folder, a data.frame or the path of an existing .csv file.",
+    fixed = TRUE
+  )
+  register$decision[[1L]] <- "maybe"
+  expect_error(
+    gpq_build_reports(results, output, acknowledgements = register),
+    "an acknowledgement's decision is verified or rejected_proposal.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_build_reports(results, output, unmatched_tables = 1),
+    "`unmatched_tables` must be NULL or a character vector of table names.",
+    fixed = TRUE
+  )
+  expect_identical(file.mtime(files), stamp)
+})
+
 test_that("gpq_build_reports writes only into a saved run's folder and rebuilds cleanly", {
   local_results_registry()
   results <- fx_report_results()

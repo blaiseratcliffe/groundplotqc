@@ -8,7 +8,10 @@ gpq_build_reports(
   results,
   output_dir,
   group_cols = NULL,
+  previous = NULL,
   lineage = NULL,
+  acknowledgements = NULL,
+  unmatched_tables = NULL,
   lang = NULL,
   text = NULL,
   row_cap = NULL,
@@ -28,12 +31,23 @@ followed by any of its other group columns, which choose the breakdowns the repo
 For a run with no group columns, \code{NULL} or empty. The issues CSVs always hold all the
 run's group columns.}
 
+\item{previous}{\code{NULL}, or the previous run, as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}} takes it: its run
+folder or its issues table. The run's issues are compared with it again for the resolved
+issues; the results given aren't changed.}
+
 \item{lineage}{\code{NULL}, or the provider's raw values of the cells the pipeline changed: a
 data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
 \code{column_name}, \code{raw_value} and \code{raw_source}, as \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} takes it in
 \code{evidence}. A listed cell's raw value shows beside its issue among the issues to act on,
 in its own unit's report only, and only where the record's key is given and, written as
 text, matches no other record's in its table.}
+
+\item{acknowledgements}{\code{NULL}, or your register of acknowledgements, as
+\code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} takes it. It is applied to the reports' copy of the issues;
+the results given aren't changed.}
+
+\item{unmatched_tables}{\code{NULL}, or the names of tables whose issues aren't matched across
+runs, as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}} and \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} take them.}
 
 \item{lang, row_cap, example_cap, cell_cap}{The reports' language (\code{lang}) and caps: the most
 bars in a chart (the chart by severity always has its four) and rows in a table of checks,
@@ -86,7 +100,8 @@ the name of one of the run's own files ("preflight", "national_summary", "report
 "results", "issues", "corrections" or "unit_records"), so a provider's file never replaces
 one of them. Any value then makes a safe file name that decodes back.
 
-The CSV has one row per issue sent to the unit, open and not evaluated, codes as stored.
+The CSV has one row per issue sent to the unit, open, not evaluated and acknowledged, codes
+as stored.
 Its columns, in order: the group columns and the problem unit's key column; the table,
 column, check, severity and class; the check's text in the run language; the key's parts as
 \verb{key_<label>} columns, named from the lineage spec's labels and empty where a key can't be
@@ -106,6 +121,23 @@ units with the highest share in each group, among those with at least
 \code{problem_plot_min_records} records, and marks each whose share is above \code{problem_plot_rate},
 each setting as the run recorded it (see \link{groundplotqc_options}). A run folder an earlier
 version wrote holds no record counts, so its reports rank no unit.
+
+Each report counts its issues new, persisting and, given \code{previous}, resolved since the
+previous run, the new and resolved ones by whether the data or the rules and specification
+changed, as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}} finds them; it lists the resolved issues, which aren't in
+the issues CSV. Without \code{previous}, the counts are those the run saved, and the report says
+that resolved issues need the previous run. Where the issues carry the run each was first
+seen in, the issues to act on show that run's date.
+
+An acknowledged issue is left out of the counts and tables of the issues to act on, being
+fixed, under review and covering a whole column, and is listed with the other acknowledged
+issues instead; the issues CSV keeps it, with the status \code{acknowledged}. Given
+\code{acknowledgements}, the register is applied first, as \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} applies
+it, and the list shows each issue's entry, its decision, when and why, never who made it,
+and, apart, the entries that no longer hold, since their issue's value changed. In a run of
+several units, an entry is shown only in the report of the unit its own report-unit column
+names, or, where that is \code{"*"}, in each report its issue goes to; a register without that
+column shows no entry.
 
 A chart shows at most \code{row_cap} bars, except the chart by severity, which always shows its
 four. Tables of checks, issues and reasons show at most \code{row_cap} rows and \code{example_cap}
@@ -129,5 +161,7 @@ basename(files)
 }
 \seealso{
 \code{\link[=gpq_write_results]{gpq_write_results()}}, which saves the run first; \code{\link[=gpq_classify_issues]{gpq_classify_issues()}}, which
-gives the issues their classes; \code{\link[=gpq_decode_lineage]{gpq_decode_lineage()}}, which gives them provider keys.
+gives the issues their classes; \code{\link[=gpq_decode_lineage]{gpq_decode_lineage()}}, which gives them provider keys;
+\code{\link[=gpq_compare_runs]{gpq_compare_runs()}} and \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}}, which a run calls before it saves
+its issues.
 }

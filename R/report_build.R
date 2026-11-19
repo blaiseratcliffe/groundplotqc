@@ -41,11 +41,13 @@
 #' cell: a column-level issue, and one whose key is missing or repeats, takes none (D20.117).
 #' unit_records (8.8; D23.24, D23.38): the rows of the unit, and in a run of one unit those of
 #' "*" too, as its issues are taken; they are counts, so they hold no other unit's values.
-#' Returns
-#' `list(results, issues, corrections, lineage, unit_records)`, new data.tables, `lineage` NULL
-#' when none is given.
+#' Resolved (D23.35): `resolved` is NULL or the previous run's issues gpq_compare_runs() lists
+#' as resolved; the unit takes them as it takes the run's issues, by their own report-unit
+#' column and marks, and none where they lack either (fail closed). Returns
+#' `list(results, issues, corrections, lineage, unit_records, resolved)`, new data.tables,
+#' `lineage` and `resolved` NULL when none is given.
 #' @noRd
-route_unit <- function(x, unit, units, lineage = NULL) {
+route_unit <- function(x, unit, units, lineage = NULL, resolved = NULL) {
   results <- x$results
   issues <- x$issues
   group_cols <- split_joined(x$metadata$run$group_cols)
@@ -86,6 +88,7 @@ route_unit <- function(x, unit, units, lineage = NULL) {
     take_results <- rep(TRUE, nrow(results))
     take_issues <- rep(TRUE, nrow(issues))
     take_counts <- rep(TRUE, nrow(x$unit_records))
+    take_resolved <- rep(TRUE, NROW(resolved))
   } else {
     one <- length(units) <= 1L
     unit_col <- group_cols[[1L]]
@@ -99,15 +102,25 @@ route_unit <- function(x, unit, units, lineage = NULL) {
     counts_none <- none(results$n_checked[star]) & none(results$n_not_evaluated[star]) &
       none(results$n_unchecked[star])
     take_results[star] <- one | unit_rule(results$rule_id[star]) | counts_none
-    value <- issues[[unit_col]]
-    if (one) {
-      take_issues <- value %chin% c(unit, "*")
-    } else {
-      take_issues <- value == unit
+    # The issues a unit takes, the run's or the previous run's resolved ones alike; a table
+    # without the report-unit column, or of several units without the marks, gives none (fail
+    # closed, D18.89).
+    taken <- function(table) {
+      value <- table[[unit_col]]
+      marked <- table$reaches_other_unit
+      if (is.null(value) || (!one && is.null(marked))) {
+        return(logical(nrow(table)))
+      }
+      if (one) {
+        return(value %chin% c(unit, "*"))
+      }
+      take <- value == unit
       star <- which(value == "*")
-      take_issues[star] <- unit_rule(issues$rule_id[star])
-      take_issues <- take_issues & issues$reaches_other_unit %in% FALSE
+      take[star] <- unit_rule(table$rule_id[star])
+      take & marked %in% FALSE
     }
+    take_issues <- taken(issues)
+    take_resolved <- if (!is.null(resolved)) taken(resolved)
     # A unit's record counts as its issues are taken, "*" only in a run of one unit (D23.38).
     count_units <- if (one) c(unit, "*") else unit
     take_counts <- x$unit_records[[unit_col]] %chin% count_units
@@ -138,7 +151,8 @@ route_unit <- function(x, unit, units, lineage = NULL) {
   }
   list(
     results = routed, issues = routed_issues, corrections = x$corrections[take_corrections],
-    lineage = routed_lineage, unit_records = x$unit_records[take_counts]
+    lineage = routed_lineage, unit_records = x$unit_records[take_counts],
+    resolved = if (!is.null(resolved)) resolved[take_resolved]
   )
 }
 
@@ -265,7 +279,8 @@ unit_file_name <- function(units) {
 #' "results", "issues", "corrections" or "unit_records"), so a provider's file never replaces
 #' one of them. Any value then makes a safe file name that decodes back.
 #'
-#' The CSV has one row per issue sent to the unit, open and not evaluated, codes as stored.
+#' The CSV has one row per issue sent to the unit, open, not evaluated and acknowledged, codes
+#' as stored.
 #' Its columns, in order: the group columns and the problem unit's key column; the table,
 #' column, check, severity and class; the check's text in the run language; the key's parts as
 #' `key_<label>` columns, named from the lineage spec's labels and empty where a key can't be
@@ -286,6 +301,23 @@ unit_file_name <- function(units) {
 #' each setting as the run recorded it (see [groundplotqc_options]). A run folder an earlier
 #' version wrote holds no record counts, so its reports rank no unit.
 #'
+#' Each report counts its issues new, persisting and, given `previous`, resolved since the
+#' previous run, the new and resolved ones by whether the data or the rules and specification
+#' changed, as [gpq_compare_runs()] finds them; it lists the resolved issues, which aren't in
+#' the issues CSV. Without `previous`, the counts are those the run saved, and the report says
+#' that resolved issues need the previous run. Where the issues carry the run each was first
+#' seen in, the issues to act on show that run's date.
+#'
+#' An acknowledged issue is left out of the counts and tables of the issues to act on, being
+#' fixed, under review and covering a whole column, and is listed with the other acknowledged
+#' issues instead; the issues CSV keeps it, with the status `acknowledged`. Given
+#' `acknowledgements`, the register is applied first, as [gpq_apply_acknowledgements()] applies
+#' it, and the list shows each issue's entry, its decision, when and why, never who made it,
+#' and, apart, the entries that no longer hold, since their issue's value changed. In a run of
+#' several units, an entry is shown only in the report of the unit its own report-unit column
+#' names, or, where that is `"*"`, in each report its issue goes to; a register without that
+#' column shows no entry.
+#'
 #' A chart shows at most `row_cap` bars, except the chart by severity, which always shows its
 #' four. Tables of checks, issues and reasons show at most `row_cap` rows and `example_cap`
 #' examples per check. In a chart's labels and in the tables of checks and issues, delivered
@@ -301,12 +333,20 @@ unit_file_name <- function(units) {
 #'   followed by any of its other group columns, which choose the breakdowns the reports show.
 #'   For a run with no group columns, `NULL` or empty. The issues CSVs always hold all the
 #'   run's group columns.
+#' @param previous `NULL`, or the previous run, as [gpq_compare_runs()] takes it: its run
+#'   folder or its issues table. The run's issues are compared with it again for the resolved
+#'   issues; the results given aren't changed.
 #' @param lineage `NULL`, or the provider's raw values of the cells the pipeline changed: a
 #'   data.frame or the path of a CSV file with the columns `table_name`, `record_pk`,
 #'   `column_name`, `raw_value` and `raw_source`, as [gpq_classify_issues()] takes it in
 #'   `evidence`. A listed cell's raw value shows beside its issue among the issues to act on,
 #'   in its own unit's report only, and only where the record's key is given and, written as
 #'   text, matches no other record's in its table.
+#' @param acknowledgements `NULL`, or your register of acknowledgements, as
+#'   [gpq_apply_acknowledgements()] takes it. It is applied to the reports' copy of the issues;
+#'   the results given aren't changed.
+#' @param unmatched_tables `NULL`, or the names of tables whose issues aren't matched across
+#'   runs, as [gpq_compare_runs()] and [gpq_apply_acknowledgements()] take them.
 #' @param lang,row_cap,example_cap,cell_cap The reports' language (`lang`) and caps: the most
 #'   bars in a chart (the chart by severity always has its four) and rows in a table of checks,
 #'   issues or reasons (`row_cap`), examples per check (`example_cap`) and characters of
@@ -321,7 +361,9 @@ unit_file_name <- function(units) {
 #'   report unit (by the run ID for a run with no group columns). A run with group columns
 #'   whose `metadata/run.csv` lists no unit gets no file, and an empty vector.
 #' @seealso [gpq_write_results()], which saves the run first; [gpq_classify_issues()], which
-#'   gives the issues their classes; [gpq_decode_lineage()], which gives them provider keys.
+#'   gives the issues their classes; [gpq_decode_lineage()], which gives them provider keys;
+#'   [gpq_compare_runs()] and [gpq_apply_acknowledgements()], which a run calls before it saves
+#'   its issues.
 #' @examples
 #' # MAGPlot's bundled specification has known pre-flight warnings, so this warning is expected.
 #' results <- gpq_check_conformance(
@@ -335,7 +377,8 @@ unit_file_name <- function(units) {
 #' files <- gpq_build_reports(results, output)
 #' basename(files)
 #' @export
-gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = NULL,
+gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous = NULL,
+                              lineage = NULL, acknowledgements = NULL, unmatched_tables = NULL,
                               lang = NULL, text = NULL, row_cap = NULL, example_cap = NULL,
                               cell_cap = NULL) {
   if (!inherits(results, "gpq_results")) {
@@ -469,6 +512,37 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
       read_run_inputs(list(lineage = lineage), "lineage", "lineage"), run_cols
     )$lineage$data
   }
+  tables_ok <- is.null(unmatched_tables) ||
+    (is.character(unmatched_tables) && !anyNA(unmatched_tables))
+  if (!tables_ok) {
+    # M8a1 W82, gpq_compare_runs()'s words
+    stop("`unmatched_tables` must be NULL or a character vector of table names.", call. = FALSE)
+  }
+  # The reports' copy of the run: the caller's results are never changed (D20.120). Given
+  # `previous`, its issues are compared again, for section 11's resolved issues (D23.30): on a
+  # table sharing every column of the issues but the three the comparison sets, which it adds
+  # anew, so no column of the caller's is written (16.2: the issues never copied whole).
+  reported <- results
+  gone <- NULL
+  if (!is.null(previous)) {
+    issues <- results$issues
+    set_here <- c("first_seen_run", "change", "change_cause")
+    shared <- setdiff(names(issues), set_here)
+    reported$issues <- setDT(structure(
+      lapply(shared, function(column) issues[[column]]),
+      names = shared
+    ))
+    gone <- gpq_compare_runs(reported, previous, unmatched_tables)$resolved
+    setcolorder(reported$issues, names(issues))
+  }
+  # Given `acknowledgements`, the register is checked once here, before any file is removed or
+  # written, as gpq_apply_acknowledgements() checks it, then read once as text; each unit's
+  # routed issues, a copy of their own, take it in the loop below (D23.34, D23.36).
+  register <- NULL
+  if (!is.null(acknowledgements)) {
+    gpq_apply_acknowledgements(reported$issues[0L], acknowledgements, unmatched_tables)
+    register <- read_input_table(acknowledgements, "acknowledgements")$data
+  }
   unit_col <- if (length(group_cols) > 0L) group_cols[[1L]] else NULL
   if (is.null(unit_col)) {
     # A run with no group columns is a run of one unit, every row its own (D20.29, R3).
@@ -582,19 +656,59 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
   )
   builders <- list(
     section_header, section_glance, section_actions, section_harmonization,
-    section_under_review, section_column_level, section_not_evaluated, section_problem_plots,
-    section_guide
+    section_under_review, section_column_level, section_not_evaluated, section_changes,
+    section_acknowledged, section_problem_plots, section_guide
   )
+  # One unit's acknowledgements (D23.34, D23.36): the register applied to its routed issues, a
+  # copy of their own, so the caller's issues keep their statuses; then, for each issue it
+  # acknowledges, the first entry that holds, read as gpq_apply_acknowledgements() holds one
+  # (the issue's value, a blank one as NA, is the acknowledged value), and the entries that
+  # lapsed. In a run of several units an entry shows only where its own report-unit cell is the
+  # unit's or "*", and none where the register lacks that column (fail closed), so no unit's
+  # report holds an entry made for another's issue (13).
+  acknowledged_in <- function(issues, unit) {
+    lapsed <- gpq_apply_acknowledgements(issues, register, unmatched_tables)$lapsed
+    groups <- setdiff(names(issues), names(results_schema()$issues))
+    pairs <- match_issues(issues, register, intersect(groups, names(register)), unmatched_tables)
+    value <- issues$value[pairs$row]
+    value[is_blank(value)] <- NA_character_
+    given <- register$acknowledged_value[pairs$at]
+    holds <- fifelse(is.na(value), is.na(given), !is.na(given) & value == given)
+    pairs <- pairs[holds & issues$status[pairs$row] %chin% "acknowledged"]
+    if (length(units) > 1L) {
+      # Each test worked out before the brackets: `lapsed` holds the caller's columns.
+      if (unit_col %chin% names(register)) {
+        own_pairs <- register[[unit_col]][pairs$at] %chin% c(unit, "*")
+        own_lapsed <- lapsed[[unit_col]] %chin% c(unit, "*")
+      } else {
+        own_pairs <- logical(nrow(pairs))
+        own_lapsed <- logical(nrow(lapsed))
+      }
+      pairs <- pairs[own_pairs]
+      lapsed <- lapsed[own_lapsed]
+    }
+    setorderv(pairs, c("row", "at"))
+    first <- pairs[!duplicated(pairs$row)]
+    entries <- data.table(
+      issue_id = issues$issue_id[first$row],
+      acknowledged_value = register$acknowledged_value[first$at],
+      decision = register$decision[first$at], when = register$when[first$at],
+      why = register$why[first$at]
+    )
+    list(acknowledgements = entries, lapsed = lapsed)
+  }
   for (k in seq_along(targets)) {
     unit <- targets[[k]]
-    # The unit's lineage rows are filtered in route_unit(), so no builder sees the whole input
-    # (D20.17, D20.61, D20.65).
-    routed <- route_unit(results, unit, units, lineage)
+    # The unit's lineage rows and resolved issues are filtered in route_unit(), so no builder
+    # sees the whole input (D20.17, D20.61, D20.65).
+    routed <- route_unit(reported, unit, units, lineage, gone)
     issues <- routed$issues
+    acknowledged <- if (!is.null(register)) acknowledged_in(issues, unit)
     tables <- list(
       results = routed$results, issues = issues, corrections = routed$corrections,
       metadata = metadata, unit = unit, group_cols = group_cols, key_col = key_col,
-      lineage = routed$lineage, unit_records = routed$unit_records
+      lineage = routed$lineage, unit_records = routed$unit_records, resolved = routed$resolved,
+      acknowledgements = acknowledged$acknowledgements, lapsed = acknowledged$lapsed
     )
     # The unit's CSV name, which the sections' cap notes and guide name, travels with the
     # settings (D20.68).
@@ -620,7 +734,7 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, lineage = 
     files <- c(files, structure(c(html, csv), names = rep(labels[[k]], 2L)))
     # Once the unit's files are written, its routed tables, page and CSV table are released,
     # so the next unit's are never held beside them (D20.92).
-    rm(routed, issues, tables, sections, page, provider)
+    rm(routed, issues, acknowledged, tables, sections, page, provider)
   }
   invisible(files)
 }
