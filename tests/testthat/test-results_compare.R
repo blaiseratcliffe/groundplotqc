@@ -41,8 +41,10 @@ test_that("new, persisting and resolved issues, each new or resolved one's cause
     issues_of(record_pk = c("k1", "k2", "k3"), run_id = later),
     issues_of(rule_id = "raw_na", record_pk = "k9", rule_fingerprint = "f2", run_id = later)
   )
+  before_df <- as.data.frame(before)
+  given_df <- data.table::copy(before_df)
   given <- data.table::copy(before)
-  out <- gpq_compare_runs(now, as.data.frame(before))
+  out <- gpq_compare_runs(now, before_df)
   # The current issues are changed by reference and returned.
   expect_identical(out$issues, now)
   expect_equal(now$change, c("persisting", "persisting", "new", "new"))
@@ -55,11 +57,13 @@ test_that("new, persisting and resolved issues, each new or resolved one's cause
   expect_equal(out$resolved$change_cause, c("rules_or_spec", "data", "data"))
   expect_equal(out$resolved$first_seen_run, rep(earlier, 3L))
   # The earlier issues, given as a data.frame, are read where they are, never changed.
-  expect_identical(before, given)
-  # Comparing again gives the same.
+  expect_identical(before_df, given_df)
+  # Comparing again, with the earlier issues as a data.table, gives the same and leaves them
+  # as they were too.
   again <- gpq_compare_runs(now, before)
   expect_equal(now$change, c("persisting", "persisting", "new", "new"))
   expect_equal(again$resolved$record_pk, c("k4", "k5", "k6"))
+  expect_identical(before, given)
 })
 
 test_that("an issue still persists after its provider key's decoding changes (D9.22)", {
@@ -188,6 +192,22 @@ test_that("a run folder or an issues file is read for its issues and rules (D23.
   from_file <- gpq_compare_runs(now$issues, issues_csv)
   expect_equal(now$issues$change, c("persisting", "new", "new", "new", "persisting"))
   expect_equal(from_file$resolved$issue_id, c(2L, 4L))
+  # The issues file read as a caller may, with utils::read.csv() as the help says or with
+  # fread(), each reading an empty cell as "": a blank is missing, so the earlier issue 3, with
+  # no fingerprint, isn't resolved, and the persisting issues were first seen in the earlier run
+  # (D15.9).
+  as_read <- list(
+    utils::read.csv(issues_csv, colClasses = "character"), data.table::fread(issues_csv)
+  )
+  for (earlier_issues in as_read) {
+    from_read <- gpq_compare_runs(now$issues, earlier_issues)
+    expect_equal(as.integer(from_read$resolved$issue_id), c(2L, 4L))
+    expect_equal(now$issues$first_seen_run[c(1L, 5L)], rep(first$issues$run_id[[1L]], 2L))
+  }
+  # So with the current issues read back with fread() too, issue 3's "" on each side: new.
+  read_back <- data.table::fread(issues_csv, colClasses = "character")
+  gpq_compare_runs(read_back, as_read[[2L]])
+  expect_equal(read_back$change, c("persisting", "persisting", "new", "persisting", "persisting"))
   # A rule that ran in only one run is a change of rules: the current run's results lack
   # value_jump.
   ran <- now$results
@@ -210,6 +230,25 @@ test_that("a wrong current, previous or unmatched_tables is a caller's error", {
   expect_error(
     gpq_compare_runs(now, before, unmatched_tables = c("designs", NA)),
     "`unmatched_tables` must be NULL or a character vector of table names.",
+    fixed = TRUE
+  )
+  # A group column that isn't text, as fread() reads digits: an issues table's, and a run's
+  # results' two (D23.95).
+  numbered <- data.table::copy(now)
+  data.table::set(numbered, j = "unit", value = 1L)
+  expect_error(
+    gpq_compare_runs(numbered, before),
+    "`current`'s group columns unit must be text, as gpq_check_conformance() returns them.",
+    fixed = TRUE
+  )
+  numbered_run <- fx_results()
+  run_issues <- data.table::copy(numbered_run$issues)
+  n <- nrow(run_issues)
+  data.table::set(run_issues, j = c("unit", "area"), value = list(seq_len(n), rep(2, n)))
+  numbered_run$issues <- run_issues
+  expect_error(
+    gpq_compare_runs(numbered_run, before),
+    "`current`'s group columns unit, area must be text, as gpq_check_conformance() returns them.",
     fixed = TRUE
   )
   form <- "`previous` must be a run folder, a data.frame or the path of an existing .csv file."

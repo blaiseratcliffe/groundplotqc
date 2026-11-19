@@ -191,6 +191,7 @@ test_that("input_unparseable reads previous for its form, folder and columns onl
   broken <- file.path(dir, "broken.csv")
   writeLines(c(readLines(issues_csv, n = 1L), "\"1\",\"2\",\"3\""), broken)
   expect_equal(nrow(input_check("input_unparseable", list(previous = broken))), 0L)
+  expect_error(gpq_compare_runs(run$issues, broken))
   # Columns: one the comparison reads missing, one no issues table has, and a group column and
   # an issues column of the earlier run's own taken.
   issues <- as.data.frame(run$issues)

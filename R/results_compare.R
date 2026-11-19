@@ -101,12 +101,13 @@ match_issues <- function(issues, other, group_cols, unmatched_tables = NULL) {
 #' `previous` is a run folder, of which only metadata/run.csv, tables/issues.csv and
 #' tables/results.csv are read, so any folder a completed run of the package wrote will do, an
 #' older one included (D23.33); or an issues table, a data.frame, read where it is and never
-#' copied, or the path of a CSV file. A folder's files and an issues file are read with their
-#' columns' classes, any other column as text, and stop on a file that doesn't read cleanly
-#' (read_run_csv()). Caller's errors: any other `previous`, a folder of a run that stopped at
-#' pre-flight, and issues lacking a column the comparison reads (run_input_schema()). Returns
-#' `issues` and `rules`, each rule's fingerprint in the run's results (`rule_id`,
-#' `rule_fingerprint`), NULL for an issues table.
+#' copied, a blank cell of a column the comparison reads taken as missing (D15.9, D19.51) and
+#' only such a column read anew, or the path of a CSV file. A folder's files and an issues file
+#' are read with their columns' classes, any other column as text, and stop on a file that
+#' doesn't read cleanly (read_run_csv()). Caller's errors: any other `previous`, a folder of a
+#' run that stopped at pre-flight, and issues lacking a column the comparison reads
+#' (run_input_schema()). Returns `issues` and `rules`, each rule's fingerprint in the run's
+#' results (`rule_id`, `rule_fingerprint`), NULL for an issues table.
 #' @noRd
 read_previous <- function(previous) {
   folder <- is.character(previous) && length(previous) == 1L && !is.na(previous) &&
@@ -130,6 +131,30 @@ read_previous <- function(previous) {
     )
   } else if (is.data.frame(previous)) {
     issues <- previous
+    # A blank cell, as utils::read.csv() and fread() read an empty one, is missing, as the run
+    # inputs' blanks are (3.6; D15.9, D19.51). Only the columns the comparison reads are looked
+    # at, and only a cell that is empty or starts with a space can be blank, so is_blank() reads
+    # those alone; a column holding one is read anew, the others are used where they are.
+    compared <- intersect(run_input_schema()$previous, names(previous))
+    blanks <- lapply(compared, function(column) {
+      values <- previous[[column]]
+      if (!is.character(values)) {
+        return(integer())
+      }
+      maybe <- which(
+        !nzchar(values) | startsWith(values, " ") | startsWith(values, "\t") |
+          startsWith(values, "\r") | startsWith(values, "\n")
+      )
+      maybe[is_blank(values[maybe])]
+    })
+    holding <- which(lengths(blanks) > 0L)
+    if (length(holding) > 0L) {
+      columns <- lapply(previous, identity)
+      for (k in holding) {
+        columns[[compared[[k]]]][blanks[[k]]] <- NA_character_
+      }
+      issues <- setDT(columns)
+    }
   } else if (is_path_to(previous, "csv")) {
     issues <- read_run_csv(previous, results_schema()$issues)
   } else {
@@ -238,6 +263,17 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
       "data.table, as gpq_check_conformance() returns them.",
       call. = FALSE
     )
+  }
+  typed <- vapply(group_cols, function(column) {
+    values <- issues[[column]]
+    !is.null(values) && !is.character(values)
+  }, logical(1L))
+  if (any(typed)) {
+    # M8a1 D23.96
+    stop(sprintf(
+      "`current`'s group columns %s must be text, as gpq_check_conformance() returns them.",
+      paste(group_cols[typed], collapse = ", ")
+    ), call. = FALSE)
   }
   tables_ok <- is.null(unmatched_tables) ||
     (is.character(unmatched_tables) && !anyNA(unmatched_tables))
