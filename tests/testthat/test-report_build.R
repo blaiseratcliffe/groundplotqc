@@ -217,23 +217,25 @@ test_that("route_unit gives lineage rows only to an issue whose key names one re
 })
 
 test_that("a key text two units' records share sends its raw value to neither (D20.118)", {
-  # A run: 100's record ("a|b", "c") and 110's ("a", "b|c") both write record_pk "a|b|c", and
-  # each fails value_below_min, so each unit has an issue on that text's weight.
+  # A run: 100's record ("x", 0.1 + 0.2) and 110's ("x", 0.3) both write record_pk "x|0.3", a
+  # number being written to 15 significant digits, and each fails value_below_min, so each
+  # unit has an issue on that text's weight. (Parts holding "|" no longer share a text: each
+  # is escaped, D23.12.)
   dictionary <- data.frame(
     table_name = "k", attribute_name = c("a", "b", "unit", "weight"),
-    key_type = c("PK", "PK", ".", "."), data_type = c(rep("character", 3L), "numeric"),
+    key_type = c("PK", "PK", ".", "."),
+    data_type = c("character", "numeric", "character", "numeric"),
     min_value = c(NA, NA, NA, "0")
   )
   tables <- list(k = data.frame(
-    a = c("a|b", "a", "x"), b = c("c", "b|c", "y"), unit = c("100", "110", "100"),
-    weight = c(-5, -5, 1)
+    a = "x", b = c(0.1 + 0.2, 0.3, 1), unit = c("100", "110", "100"), weight = c(-5, -5, 1)
   ))
   x <- gpq_check_conformance(tables, gpq_read_spec(dictionary), group_cols = "unit", layers = 3)
   below <- x$issues[x$issues$rule_id == "value_below_min"]
-  expect_identical(below$record_pk, c("a|b|c", "a|b|c"))
+  expect_identical(below$record_pk, c("x|0.3", "x|0.3"))
   expect_identical(below$pk_positional, c(TRUE, TRUE))
   lineage <- data.table::data.table(
-    table_name = "k", record_pk = "a|b|c", column_name = "weight", raw_value = "RAW-SHARED",
+    table_name = "k", record_pk = "x|0.3", column_name = "weight", raw_value = "RAW-SHARED",
     raw_source = "x"
   )
   units <- c("100", "110")

@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9034 (development version)
+# groundplotqc 0.0.0.9035 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -78,3 +78,4 @@
 - When `magp_read_delivery()` can't load a file, its error now ends with the error R's `load()` gave, such as memory running out.
 - `undeclared_code_set` no longer counts another type's missing-value code as one of a text column's values when the text type declares missing-value codes of its own. Before, such a column that held a number's missing-value code was warned on for it, though `sentinel_wrong_type` already reports that code on every record. Its `rule_version` is now 3.
 - MAGPlot's rule set is now version 5. The code-set rule `undeclared_code_set` skips `bore_ht`, since it holds a height in metres, with a code only where no height was measured. When no override or evidence settles the class of a `code_not_in_list` or `pattern_mismatch` issue, it now falls back to `harmonization`, so the provider report lists an open one under "Issues being fixed in harmonization" instead of "Issues under review". MAGPlot's report guide now says that issues being fixed in harmonization may also be ones MAGPlot has taken on to fix there.
+- In an issue's fingerprint, a "|" inside a table or column name is now written as a backslash and a "|", and a backslash as two backslashes; so is each part of a composite primary key in `record_pk` and in `pk_duplicate`'s value (now rule version 2). Table "a|b" with column "c" and table "a" with column "b|c", or the keys ("a|b", "c") and ("a", "b|c"), no longer share a fingerprint or a `record_pk`. A name or key part holding neither character is written as before, so earlier runs' fingerprints still match. The `record_pk` a `lineage` or `pipeline_fill` input gives for a composite key follows the same rule.

@@ -269,9 +269,11 @@ build_rule_registry <- function() {
     ),
     # ---- M5: Layer 4, keys and relationships (6.1; D7.3, D7.9, D16.2, D18.10, D18.33) ----
     # Each record rule reads the keys and the sentinels' allowed_in_pk and allowed_in_fk (3.5).
+    # Version 2 (M8a1): a composite key's value escapes each part, as record_pk does (D23.12).
     conformance(
       "pk_duplicate", 4L, "error", "harmonization",
-      "attributes; keys; type_map; sentinels; settings:column_level_min_n"
+      "attributes; keys; type_map; sentinels; settings:column_level_min_n",
+      rule_version = 2L
     ),
     conformance(
       "pk_missing", 4L, "error", "harmonization",

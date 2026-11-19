@@ -199,3 +199,19 @@ test_that("bytes_unmarked() drops the bytes mark only, keeping the bytes (m63, D
   expect_identical(Encoding(out[-6L]), Encoding(x[-6L]))
   expect_identical(bytes_unmarked(character()), character())
 })
+
+test_that("escape_key_part() escapes a backslash and a \"|\", nothing else (D23.12, D23.26)", {
+  x <- c("a|b", "a\\b", "\\|", "plain", NA, "", "pré|1")
+  out <- escape_key_part(x)
+  expect_identical(out, c("a\\|b", "a\\\\b", "\\\\\\|", "plain", NA, "", "pré\\|1"))
+  expect_identical(Encoding(out[[7L]]), "UTF-8")
+  # Joined with "|", two sets of parts never give one text: unescaped, ("a|b", "c") and
+  # ("a", "b|c") both read "a|b|c", and ("a\", "|c") and ("a\|", "c") both "a\||c".
+  joined <- function(...) paste(escape_key_part(c(...)), collapse = "|")
+  expect_false(joined("a|b", "c") == joined("a", "b|c"))
+  expect_false(joined("a\\", "|c") == joined("a\\|", "c"))
+  # A value holding neither keeps its encoding mark, latin1 included.
+  latin <- iconv("café", "UTF-8", "latin1")
+  expect_identical(Encoding(escape_key_part(latin)), "latin1")
+  expect_identical(escape_key_part(character()), character())
+})

@@ -1,5 +1,5 @@
-# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.28, D12.36, D12.45, D14.20, D14.39), and
-# the encoding helpers the checks share (D16.47, m63).
+# String helpers (plan 3.3, 3.6; D12.14, D12.27, D12.28, D12.36, D12.45, D14.20, D14.39), the
+# encoding helpers the checks share (D16.47, m63), and the escape inside a key's parts (D23.12).
 
 #' Which cells are blank: empty after trimming
 #'
@@ -179,6 +179,25 @@ bytes_unmarked <- function(x) {
     held <- x[marked]
     Encoding(held) <- "unknown"
     x[marked] <- held
+  }
+  x
+}
+
+#' One part of a fingerprint or of a composite PK's text, escaped so that no two sets of parts
+#' join to one text with "|" (D15.41, D23.12, D23.26)
+#'
+#' Inside the part a backslash is written as two backslashes and a "|" as a backslash and a
+#' "|", as join_units() escapes a report unit's ";" (W201). A part holding neither, as every
+#' MAGPlot name and key does, is returned as it is, its encoding mark kept, so earlier run
+#' folders' fingerprints and record_pks still match; NA stays NA. Only the values holding
+#' either character are read again (16.2).
+#' @noRd
+escape_key_part <- function(x) {
+  hit <- which(grepl("[|\\\\]", x, useBytes = TRUE))
+  if (length(hit) > 0L) {
+    # Backslashes first, so the backslash a "|" gains isn't doubled in turn.
+    escaped <- gsub("\\", "\\\\", x[hit], fixed = TRUE)
+    x[hit] <- gsub("|", "\\|", escaped, fixed = TRUE)
   }
   x
 }

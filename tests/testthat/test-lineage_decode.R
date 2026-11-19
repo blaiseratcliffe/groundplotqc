@@ -136,6 +136,21 @@ test_that("flags of the wrong shape are a caller's error (D19.42; R2)", {
   expect_error(decode(NULL), "flag.tagged")
 })
 
+test_that("a flag meets its record by a composite key whose parts hold \"|\" (D23.12)", {
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = "character"
+  )
+  tables <- list(k = data.table::data.table(a = c("a|b", "a"), b = c("c", "b|c"), v = "p"))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
+  # Joined as record_pk joins them, each part escaped: two keys, where unescaped both would
+  # read "a|b|c" and stop as given twice (W174).
+  flags <- list(k = data.frame(a = c("a", "a|b"), b = c("b|c", "c"), tagged = c("N", "Y")))
+  joined <- flag_values(flags, input)
+  expect_identical(joined$k$at, c(2L, 1L))
+  expect_identical(joined$k$values$tagged, c("N", "Y"))
+})
+
 test_that("tables that aren't the issues' own stop decoding (D19.14)", {
   spec <- lineage_spec_default
   tables <- fx_lineage_tables()

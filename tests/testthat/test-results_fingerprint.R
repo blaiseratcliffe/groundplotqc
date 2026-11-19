@@ -23,6 +23,34 @@ test_that("an issue's fingerprint is readable text: provider key, else pk: (D4.2
   expect_equal(composite$fingerprint, "r|t|c|pk:a|b")
 })
 
+test_that("a \"|\" or backslash in a table or column name is escaped in both forms (D23.12)", {
+  issues <- data.table::data.table(
+    rule_id = "r", table_name = c("a|b", "a"), column_name = c("c", "b|c"), record_pk = "k",
+    provider_key = c(NA, "p")
+  )
+  prints <- issue_fingerprint(issues)
+  # Joined unescaped, both stems would read "r|a|b|c".
+  expect_equal(prints$fingerprint_pk, c("r|a\\|b|c|pk:k", "r|a|b\\|c|pk:k"))
+  expect_equal(prints$fingerprint, c("r|a\\|b|c|pk:k", "r|a|b\\|c|p"))
+  # A backslash is doubled; the last part, a record_pk or a provider key, goes in as given.
+  slash <- issue_fingerprint(data.table::data.table(
+    rule_id = "r", table_name = "t\\", column_name = "c", record_pk = "x|y\\",
+    provider_key = c(NA, "p|q")
+  ))
+  expect_equal(slash$fingerprint, c("r|t\\\\|c|pk:x|y\\", "r|t\\\\|c|p|q"))
+})
+
+test_that("MAGPlot's fingerprints and record_pks don't change with the escape (D23.12, D23.26)", {
+  spec <- magp_spec()
+  names_in <- unique(c(spec$attributes$table_name, spec$attributes$attribute_name))
+  # No MAGPlot table or column name holds "|" or a backslash, so every stem reads as before.
+  expect_identical(escape_key_part(names_in), names_in)
+  # Every MAGPlot table's PK is one column, whose value is never escaped.
+  pk <- spec$keys[spec$keys$key_type == "PK"]
+  expect_false(anyDuplicated(pk$table_name) > 0L)
+  expect_setequal(pk$table_name, unique(spec$attributes$table_name))
+})
+
 test_that("a record whose PK is missing has no pk: fingerprint, its provider key kept (D15.9)", {
   issues <- data.table::data.table(
     rule_id = "pk_rule", table_name = "t", column_name = "id", record_pk = NA_character_,

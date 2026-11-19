@@ -1019,21 +1019,35 @@ test_that("a composite PK's parts are joined with \"|\"", {
   )
 })
 
-test_that("a record whose PK text another record holds is positional (D20.118)", {
-  # Parts holding "|" join to one text: ("a|b", "c") and ("a", "b|c") are both "a|b|c", the
-  # text the lineage input and decoding read, though the parts differ.
+test_that("a record whose PK text another record holds is positional (D20.118, D23.12)", {
+  # Each part is escaped before the parts are joined (D23.12): ("a|b", "c") and ("a", "b|c"),
+  # and ("a\", "|c") and ("a\|", "c"), which unescaped would each join to one text, write four,
+  # so none is positional.
   dictionary <- data.frame(
     table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
     data_type = "character"
   )
   tables <- list(k = data.table::data.table(
-    a = c("a|b", "a", "x"), b = c("c", "b|c", "y"), v = c("p", "q", "r")
+    a = c("a|b", "a", "x", "a\\", "a\\|"), b = c("c", "b|c", "y", "|c", "c"),
+    v = c("p", "q", "r", "s", "t")
   ))
   input <- conformance_input(tables, gpq_read_spec(dictionary))
-  # Judged over the table's rows, for a row given alone too.
+  pk <- record_pk_text(input, "k", 1:5)
+  expect_identical(pk$record_pk, c("a\\|b|c", "a|b\\|c", "x|y", "a\\\\|\\|c", "a\\\\\\||c"))
+  expect_identical(pk$positional, rep(FALSE, 5L))
+  # A composite key's numbers can still write one text, 15 significant digits: judged over
+  # the table's rows, for a row given alone too.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = c("character", "numeric", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    a = "x", b = c(0.1 + 0.2, 0.3, 0.4), v = c("p", "q", "r")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
   expect_true(record_pk_text(input, "k", 2L)$positional)
   pk <- record_pk_text(input, "k", 1:3)
-  expect_identical(pk$record_pk, c("a|b|c", "a|b|c", "x|y"))
+  expect_identical(pk$record_pk, c("x|0.3", "x|0.3", "x|0.4"))
   expect_identical(pk$positional, c(TRUE, TRUE, FALSE))
   # A one-column key too: two numbers written as one text, 15 significant digits.
   dictionary <- data.frame(
