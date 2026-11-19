@@ -30,6 +30,16 @@ test_that("magp_run_qc() stops on a caller's error before it loads or writes any
       "settings the package doesn't have"
     )
   }
+  # Nor is any of several elements named magp_meta, which the run drops alike (M8 m5).
+  for (second in list("built again", list(note = "made up again"))) {
+    expect_error(
+      magp_run_qc(
+        list(magp_meta = "built 2026-10-01", magp_meta = second), output,
+        settings = list(no_such = 1)
+      ),
+      "settings the package doesn't have"
+    )
+  }
   shape <- "`tables` must be magp_read_delivery\\(\\)'s result"
   # A list of tables with no names is refused too, before pre-flight writes anything.
   for (bad in list(42, magp_example$magp_plots, character(), NULL, unname(magp_example))) {
@@ -537,6 +547,20 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   planted <- list(
     "100" = c("QX9", "1234.5", "not a date"), "110" = c("QZ7", "RAW-SP-110", "QQ", "456.5")
   )
+  # Each planted value shows on its own unit's page, as a token or, with spaces, as a fixed
+  # substring, so its absence from the other unit's page below is read in the HTML, not only
+  # in the CSV, and no cap hid it there, example_cap's two examples a check among them (M8 m10,
+  # m2).
+  for (unit in units) {
+    spaced <- grepl(" ", planted[[unit]], fixed = TRUE)
+    expect_identical(
+      setdiff(planted[[unit]][!spaced], tokens(seen[[unit]]$page)), character(),
+      info = unit
+    )
+    for (phrase in planted[[unit]][spaced]) {
+      expect_true(grepl(phrase, seen[[unit]]$page, fixed = TRUE), info = paste(unit, phrase))
+    }
+  }
   for (unit in units) {
     other <- setdiff(units, unit)
     expect_identical(
@@ -579,6 +603,28 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
       info = unit
     )
   }
+})
+
+test_that("magp_read_delivery()'s result runs as given, its file and hash kept (M7b m27)", {
+  # A second run of the whole of magp_example, about 3 s, so skipped on CRAN (D20.3, D23.8):
+  # the delivery's run above, from its path, which the run passes to magp_read_delivery(),
+  # covers the same steps there.
+  testthat::skip_on_cran()
+  path <- fx_magp_rdata()
+  delivery <- magp_read_delivery(path)
+  output <- withr::local_tempdir()
+  results <- withCallingHandlers(
+    magp_run_qc(delivery, output, report = FALSE),
+    gpq_preflight_warning = function(w) invokeRestart("muffleWarning")
+  )
+  expect_equal(results$metadata$run$outcome, "completed")
+  # Each table's inputs row names the delivery's file and hash, as a run from the path does.
+  inputs <- results$metadata$inputs
+  tables <- startsWith(inputs$input, "tables:")
+  expect_equal(inputs$input[tables], paste0("tables:", names(delivery)))
+  expect_equal(unique(inputs$file[tables]), attr(delivery, "source_file"))
+  expect_equal(unique(inputs$sha256[tables]), attr(delivery, "sha256"))
+  expect_equal(unique(inputs$sha256[tables]), unname(tools::sha256sum(path)))
 })
 
 test_that("a plain list's run is recorded in memory; report = FALSE builds no report (D21.13)", {

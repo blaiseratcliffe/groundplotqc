@@ -1,4 +1,4 @@
-# groundplotqc 0.0.0.9040 (development version)
+# groundplotqc 0.0.0.9041 (development version)
 
 - First version: the package skeleton, with its help pages, tests, lint configuration, continuous integration on Windows, macOS and Linux, and the pkgdown site.
 - `gpq_column_map()`, `gpq_type_map()` and `gpq_sentinels()` describe a specification's dictionary columns, its types and its missing-value codes. Two example specifications, a fish survey and forest ground plots, come with the package.
@@ -84,3 +84,6 @@
 - `gpq_apply_acknowledgements()` applies your acknowledgements register to a run's issues: an issue whose entry still holds, its value the one you acknowledged, takes the status `acknowledged`, and an entry whose issue's value has changed is listed as lapsed, with the value the issue now holds. Entries match issues as `gpq_compare_runs()` matches an earlier run's, a column-level entry on the register's group columns too. `gpq_preflight()` takes the register as its input `acknowledgements`, and stops on a column missing or one it doesn't take, a `decision` other than `verified` or `rejected_proposal`, and a `run_scope` other than `package` or `merged`.
 - `gpq_preflight()` now takes an attribution map as its input `attribution_map`: the processing script and block that make each table's attribute, for each group, such as a jurisdiction, with a row naming each group's script as a whole. Pre-flight stops on a map without its columns, or with a row that leaves its table, attribute or group blank or repeats another's.
 - New `magp_list_runs()` lists the run folders that hold a contributor's delivery, oldest first, with each run's outcome, so you can pick the earlier run to compare with. A folder left by a run that stopped before writing its results is listed as `incomplete`.
+- A column-level issue now keeps the expected value when every failing record it covers has the same one, such as a range's limit; before, it showed one only when the rule gave a single value for the whole column.
+- The engine's guide to issue classes, shown when a rule set's text doesn't replace it, now says an issue being fixed in harmonization may also be one the team that converts the data has taken on, not only one that arose in conversion.
+- In a number column, "NaN" followed by a Unicode space, which R reads as NaN on Windows, is now reported as a value the column's type can't hold (`coercion_loss`), as a number with a Unicode space is, rather than as a number that isn't finite (`value_not_finite`). Both rules' versions are raised.

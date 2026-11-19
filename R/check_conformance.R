@@ -1034,7 +1034,8 @@ cascade_masks <- function(state, table, attribute, layer, row_group, masked_by =
 #' that checked nothing is not_run, reason none_checked (D18.22). Each issue is marked
 #' reaches_other_unit where its record's mark (conformance_input()) or the rule's for the
 #' record (the outcome's `reaches_other_unit`) is TRUE, a column-level issue where any of its
-#' records' is (D20.10).
+#' records' is (D20.10). A column-level issue's `expected` is the value every failing record it
+#' covers shares, NA where they differ (M8 m15, D23.6).
 #' @noRd
 record_records <- function(outcome, rule, severity, layer, input, context, state, run_id) {
   table <- outcome$table_name
@@ -1147,12 +1148,19 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   if (length(whole) > 0L) {
     # A column-level issue is marked when any record it covers is (D20.10 (b)).
     marked <- tabulate(row_group[fail[other[fail]]], n_groups) > 0L
+    # It keeps the expected value every failing record it covers shares, and none where they
+    # differ (M8 m15, D23.6): each group's distinct expected values, counted.
+    shared <- rep(NA_character_, length(whole))
+    if (length(expected) == length(fail)) {
+      distinct <- unique(data.table(group = row_group[fail], expected = expected))
+      once <- tabulate(distinct$group, n_groups)[whole] == 1L
+      shared[once] <- as.character(distinct$expected[match(whole[once], distinct$group)])
+    }
     ids <- issue_rows(
       run_id, rule, severity, context, table, attribute,
       list(
         record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
-        n_records = fail_count[whole], value = NA_character_,
-        expected = if (length(outcome$expected) == 1L) outcome$expected else NA_character_,
+        n_records = fail_count[whole], value = NA_character_, expected = shared,
         reaches_other_unit = marked[whole], root_issue_id = NA_integer_, status = "open"
       ),
       group_values(grouping, whole), rep("*", length(whole)), input, state

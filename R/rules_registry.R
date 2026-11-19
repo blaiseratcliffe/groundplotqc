@@ -136,14 +136,15 @@ build_rule_registry <- function() {
       unit = TRUE
     ),
     # Version 2 (M5): a key of only Unicode spaces is left to Layer 4 (D18.62, D18.63), and
-    # coercion_loss reports an integer64 value a double can't hold exactly (D18.111).
+    # coercion_loss reports an integer64 value a double can't hold exactly (D18.111). Version 3
+    # (M8a1): "NaN" with a Unicode space is lost, not value_not_finite's (M4b m18, D23.22).
     conformance(
       "coercion_loss", 1L, "error", "harmonization",
       paste(
         "attributes; keys; type_map; sentinels; codes; code_list_map;",
         "settings:column_level_min_n; settings:rogue_codes; settings:unknown_codes"
       ),
-      rule_version = 2L
+      rule_version = 3L
     ),
     conformance(
       "date_unparseable", 1L, "error", "depends",
@@ -157,9 +158,11 @@ build_rule_registry <- function() {
       "integer_stored_as_double", 1L, "warning", "harmonization", "attributes; type_map",
       unit = TRUE
     ),
+    # Version 2 (M8a1): "NaN" with a Unicode space is coercion_loss's (M4b m18, D23.22).
     conformance(
       "value_not_finite", 1L, "error", "harmonization",
-      "attributes; type_map; settings:column_level_min_n"
+      "attributes; type_map; settings:column_level_min_n",
+      rule_version = 2L
     ),
     # ---- M4a: Layer 2, missing-value codes (6.1; D1.8a, D7.4, D7.9, D8.8, D8.11, D16.11) ----
     conformance(

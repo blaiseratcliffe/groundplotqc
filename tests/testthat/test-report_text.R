@@ -480,3 +480,22 @@ test_that("a text is as long as the values passed, those it doesn't use included
     c("Row 1.", "Row 2.")
   )
 })
+
+test_that("the engine's guide to classes allows for issues the converters take on (M8 m16)", {
+  # A rule set's fallback_class can file a contributor's own unsettled code under
+  # harmonization, so the guide doesn't say every such issue arises in conversion: the
+  # engine's row as worded (D23.7), as MAGPlot's says it for MAGPlot (D22.62).
+  expect_identical(
+    report_text("report_guide_classes"),
+    paste(
+      "Each issue has a class. Issues for you to act on come from the data as delivered.",
+      "Issues being fixed in harmonization arise when your data is converted (harmonized), or",
+      "are ones the team that converts it has taken on to fix there. Issues under review could",
+      "be either, and are being reviewed."
+    )
+  )
+  expect_match(
+    report_text("report_guide_classes", text = magp_texts()), "MAGPlot has taken on",
+    fixed = TRUE
+  )
+})

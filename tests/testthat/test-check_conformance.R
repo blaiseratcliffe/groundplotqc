@@ -517,6 +517,34 @@ test_that("failures are record issues, or one column-level issue when every reco
   expect_equal(nrow(recorded(run$state)$issues), nrow(catches))
 })
 
+test_that("a column-level issue keeps the expected value its records all share (M8 m15, D23.6)", {
+  local_stand_in_rules()
+  all_rows <- seq_len(nrow(fx_fish_clean()$catches))
+  # Every catch fails, so each group's records make one column-level issue: the expected
+  # values of those issues, in group order.
+  column_expected <- function(expected, group_cols = character()) {
+    run <- assembly(settings = list(column_level_min_n = 3L), group_cols = group_cols)
+    record_layer(list(test_cast = list(record_outcome(
+      "test_cast", "catches", "weight", all_rows, as.character(all_rows), expected
+    ))), 1L, run$input, run$context, run$state, run_id)
+    issues <- recorded(run$state)$issues
+    expect_equal(unique(issues$level), "column")
+    issues$expected
+  }
+  n <- length(all_rows)
+  # One value for the column, as before; one per record, all the same; none where they differ,
+  # one of them NA among them, or all NA.
+  expect_equal(column_expected("double"), "double")
+  expect_equal(column_expected(rep("1000", n)), "1000")
+  expect_equal(column_expected(c("0", rep("1000", n - 1L))), NA_character_)
+  expect_equal(column_expected(c(NA, rep("1000", n - 1L))), NA_character_)
+  expect_equal(column_expected(rep(NA_character_, n)), NA_character_)
+  # By group: catches 1 to 4 are the lake's (LK), 5 to 8 the river's (RV). Each column-level
+  # issue reads its own group's records only: the lake's share 0, the river's differ.
+  by_water <- column_expected(c(rep("0", 4L), "0", rep("1000", 3L)), "water_body")
+  expect_equal(by_water, c("0", NA))
+})
+
 test_that("examples are capped, distinct and in row order; NA isn't one", {
   local_stand_in_rules()
   run <- assembly(settings = list(example_cap = 2L, column_level_min_n = 100L))

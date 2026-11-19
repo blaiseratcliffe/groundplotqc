@@ -190,8 +190,10 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     # Unicode space after it: a value it reads is kept only when written as a decimal number,
     # Inf or NaN, in plain ASCII (D16.42, m26). Of the values it reads, those are the ones
     # holding no "x" or "X" and no byte outside ASCII, which byte tests find at a tenth of a
-    # pattern's cost (D17.22). A number is plain ASCII, so its bytes are read.
-    read <- which(!is.na(number))
+    # pattern's cost (D17.22). A number is plain ASCII, so its bytes are read. A NaN it reads is
+    # tested too, as is.na() is TRUE for it, so "NaN" with a Unicode space after it is lost,
+    # not a number that isn't finite (M4b m18, D23.22).
+    read <- which(!is.na(number) | is.nan(number))
     held <- text[read]
     refused <- grepl("x", held, fixed = TRUE, useBytes = TRUE) |
       grepl("X", held, fixed = TRUE, useBytes = TRUE) |

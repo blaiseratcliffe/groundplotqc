@@ -558,6 +558,43 @@ test_that("records reaching a column in two tables write each one's values as te
   expect_identical(given, c(2L, 2L, 2L, 2L))
 })
 
+test_that("records reaching an integer64 column in two tables write its values in full (M8 m7)", {
+  testthat::skip_if_not_installed("bit64")
+  # As above, with zone an integer64 column in both tables, as fread() reads integers beyond
+  # 32 bits: values a double can't hold, ranked by integer64's own order on the mixed-homes
+  # path. Trees 1 to 3 keep their own zone; tree 4 holds a missing-value code and takes its
+  # plot's, as tree 5's NA does.
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "zone", "tree_id", "plot_id", "zone"),
+    key_type = c("PK", ".", "PK", "FK", "."),
+    reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = c("character", "numeric", "character", "character", "numeric")
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = -1, not_applicable = -9),
+    character = c(missing = "X", not_applicable = "Z")
+  ))
+  big <- c("9007199254740993", "9007199254740995", "-9007199254740993")
+  tables <- list(
+    plots = data.table::data.table(
+      plot_id = c("p1", "p2"), zone = bit64::as.integer64(c(big[[3L]], "12"))
+    ),
+    trees = data.table::data.table(
+      tree_id = paste0("t", 1:5), plot_id = c("p1", "p2", "p1", "p1", "p2"),
+      zone = bit64::as.integer64(c(big[[1L]], big[[2L]], big[[1L]], "-1", NA))
+    )
+  )
+  input <- conformance_input(tables, spec, group_cols = "zone")
+  zone <- reach_column(input, "trees", "zone")
+  expect_equal(zone$home, c("trees", "trees", "trees", "plots", "plots"))
+  zones <- c(big[[1L]], big[[2L]], big[[1L]], big[[3L]], "12")
+  expect_identical(reached_values(input, zone, "zone"), zones)
+  # The groups read the same text.
+  trees <- input$groups$trees
+  expect_equal(trees$values$zone[trees$row_group], zones)
+})
+
 test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {
   dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
   station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
@@ -1152,7 +1189,11 @@ test_that("coerce_column() refuses what D16.42's pattern refuses, by byte tests 
     # one, a minus sign.
     paste0(intToUtf8(0xa0), "1"), paste0("1", intToUtf8(0xa0)), paste0("1", intToUtf8(0x2009)),
     paste0(intToUtf8(0x2009), "1"), paste0("1", intToUtf8(0x3000)), intToUtf8(0xff11),
-    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1")
+    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1"),
+    # NaN and Inf with a Unicode space after them, which as.numeric() reads on Windows: NaN
+    # is refused too, though is.na() is TRUE for it (M4b m18).
+    paste0("NaN", intToUtf8(0x2009)), paste0("nan", intToUtf8(0x3000)),
+    paste0("Inf", intToUtf8(0x2009))
   )
   read <- suppressWarnings(as.numeric(forms))
   expected <- read

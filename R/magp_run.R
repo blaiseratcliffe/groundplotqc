@@ -109,10 +109,11 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   group_cols <- c("magp_contributor_id", "jurisdiction", "magp_dataset_id")
   problem_unit <- list("magp_plots", "magp_plot_id")
   # The arguments, checked before any table is loaded (D21.18 Q4). magp_meta may come in any
-  # shape (D21.12), so only the other elements of a list are looked at for CSV paths.
+  # shape (D21.12), so only the other elements of a list are looked at for CSV paths, every
+  # element named magp_meta left out, as the later removal drops them all (M8 m5).
   in_list <- is.list(tables) && !is.data.frame(tables)
   text_given <- if (in_list) vapply(tables, is.character, logical(1)) else logical()
-  text_given[match("magp_meta", names(tables), 0L)] <- FALSE
+  text_given[which(names(tables) == "magp_meta")] <- FALSE
   if ((is.character(tables) && length(tables) > 1L) || any(text_given)) {
     # M7b W70 (D21.11)
     stop(
@@ -128,7 +129,7 @@ magp_run_qc <- function(tables, output_dir, overrides = NULL, lineage = NULL,
   # data.frame, is refused here, before pre-flight writes its files (M7b m8).
   element_names <- names(tables)
   frames <- if (in_list) vapply(tables, is.data.frame, logical(1)) else logical()
-  frames[match("magp_meta", element_names, 0L)] <- TRUE
+  frames[which(element_names == "magp_meta")] <- TRUE
   shaped <- in_list && !is.null(element_names) && !anyNA(element_names) &&
     all(nzchar(element_names)) && all(frames)
   if (!path_given && !shaped) {
