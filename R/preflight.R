@@ -670,12 +670,15 @@ preflight_check_functions <- function() {
 #'   `lineage`, the provider's raw values of the cells the pipeline changed (`table_name`,
 #'   `record_pk`, `column_name`, `raw_value`, `raw_source`); `pipeline_fill`, the cells
 #'   the pipeline's missing-value fill wrote (`table_name`, `record_pk`, `column_name`,
-#'   `written_value`); and `previous`, an earlier run to compare with, as
-#'   [gpq_compare_runs()] takes it, of which pre-flight reads a folder's files and the issues'
-#'   columns, never their rows. Pre-flight stops on an input it can't read cleanly or without
-#'   exactly its columns (an earlier run's issues may hold the issues' other columns and the
-#'   specification's attributes), on a run folder that isn't a completed run's, and on an
-#'   override whose `issue_class` isn't `source` or `harmonization` or
+#'   `written_value`); `previous`, an earlier run to compare with, as [gpq_compare_runs()]
+#'   takes it, of which pre-flight reads a folder's files and the issues' columns, never their
+#'   rows; and `acknowledgements`, your register, as [gpq_apply_acknowledgements()] takes it,
+#'   which may also hold the run's group columns, each an attribute of the specification.
+#'   Pre-flight stops on an input it can't read cleanly or without exactly its columns (an
+#'   earlier run's issues may hold the issues' other columns and the specification's
+#'   attributes), on a run folder that isn't a completed run's, on an acknowledgement whose
+#'   `decision` isn't `verified` or `rejected_proposal` or whose `run_scope` isn't `package` or
+#'   `merged`, and on an override whose `issue_class` isn't `source` or `harmonization` or
 #'   that gives none of `fingerprint`, `rule_id`, `table_name`, `column_name` and the group
 #'   columns (`input_unparseable`). It warns on two overrides that give one scope two classes
 #'   (`override_scope_conflict`), and on an override naming a rule that isn't registered, or

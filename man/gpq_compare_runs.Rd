@@ -76,5 +76,6 @@ changes$issues[, c("rule_id", "record_pk", "change", "change_cause")]
 changes$resolved[, c("rule_id", "record_pk", "change", "change_cause")]
 }
 \seealso{
-\code{\link[=gpq_check_conformance]{gpq_check_conformance()}} and \code{\link[=gpq_write_results]{gpq_write_results()}} for the runs.
+\code{\link[=gpq_check_conformance]{gpq_check_conformance()}} and \code{\link[=gpq_write_results]{gpq_write_results()}} for the runs, and
+\code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}}, which matches issues the same way.
 }

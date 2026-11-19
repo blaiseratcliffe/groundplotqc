@@ -13,6 +13,7 @@ reference:
       - gpq_type_map
   - title: "Generic engine: checks and results"
     contents:
+      - gpq_apply_acknowledgements
       - gpq_build_reports
       - gpq_check_conformance
       - gpq_compare_runs

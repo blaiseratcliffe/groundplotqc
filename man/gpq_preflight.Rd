@@ -28,12 +28,15 @@ for issues, with the columns
 \code{lineage}, the provider's raw values of the cells the pipeline changed (\code{table_name},
 \code{record_pk}, \code{column_name}, \code{raw_value}, \code{raw_source}); \code{pipeline_fill}, the cells
 the pipeline's missing-value fill wrote (\code{table_name}, \code{record_pk}, \code{column_name},
-\code{written_value}); and \code{previous}, an earlier run to compare with, as
-\code{\link[=gpq_compare_runs]{gpq_compare_runs()}} takes it, of which pre-flight reads a folder's files and the issues'
-columns, never their rows. Pre-flight stops on an input it can't read cleanly or without
-exactly its columns (an earlier run's issues may hold the issues' other columns and the
-specification's attributes), on a run folder that isn't a completed run's, and on an
-override whose \code{issue_class} isn't \code{source} or \code{harmonization} or
+\code{written_value}); \code{previous}, an earlier run to compare with, as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}}
+takes it, of which pre-flight reads a folder's files and the issues' columns, never their
+rows; and \code{acknowledgements}, your register, as \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} takes it,
+which may also hold the run's group columns, each an attribute of the specification.
+Pre-flight stops on an input it can't read cleanly or without exactly its columns (an
+earlier run's issues may hold the issues' other columns and the specification's
+attributes), on a run folder that isn't a completed run's, on an acknowledgement whose
+\code{decision} isn't \code{verified} or \code{rejected_proposal} or whose \code{run_scope} isn't \code{package} or
+\code{merged}, and on an override whose \code{issue_class} isn't \code{source} or \code{harmonization} or
 that gives none of \code{fingerprint}, \code{rule_id}, \code{table_name}, \code{column_name} and the group
 columns (\code{input_unparseable}). It warns on two overrides that give one scope two classes
 (\code{override_scope_conflict}), and on an override naming a rule that isn't registered, or

@@ -219,7 +219,8 @@ read_previous <- function(previous) {
 #'   `change_cause` set; and `resolved`, the earlier run's issues that the current run doesn't
 #'   have, a new data.table, with `change` `"resolved"`, `change_cause` set and
 #'   `first_seen_run` filled as for a persisting issue.
-#' @seealso [gpq_check_conformance()] and [gpq_write_results()] for the runs.
+#' @seealso [gpq_check_conformance()] and [gpq_write_results()] for the runs, and
+#'   [gpq_apply_acknowledgements()], which matches issues the same way.
 #' @examples
 #' # Two runs of magp_example: the first with missing tree distances on two trees, the second
 #' # with one of them filled in and a third tree's missing.

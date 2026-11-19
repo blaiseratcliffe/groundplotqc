@@ -11,8 +11,9 @@
 #' specification; `lineage` is the raw-value table (10.2); `pipeline_fill` has the `filled`
 #' evidence's columns (3.6); `previous`, an earlier run, a run folder or an issues table (9.3),
 #' has the columns the comparison reads (gpq_compare_runs()), and may hold any other column of
-#' the issues or attribute of the specification. The other inputs of 3.6's list join with their
-#' milestones.
+#' the issues or attribute of the specification; `acknowledgements`, your register, has 11.8's
+#' columns and may also hold group columns, each an attribute of the specification (D23.26). The
+#' other inputs of 3.6's list join with their milestones.
 #' @noRd
 run_input_schema <- function() {
   list(
@@ -24,6 +25,10 @@ run_input_schema <- function() {
     previous = c(
       "run_id", "run_scope", "rule_id", "rule_fingerprint", "table_name", "fingerprint",
       "fingerprint_pk", "first_seen_run"
+    ),
+    acknowledgements = c(
+      "fingerprint", "fingerprint_pk", "rule_id", "table_name", "column_name", "provider_key",
+      "acknowledged_value", "decision", "who", "when", "why", "run_scope"
     )
   )
 }
@@ -187,11 +192,13 @@ override_scope <- function(data, groups) {
 #'
 #' In order: the reader's findings (a cell that isn't valid UTF-8, a malformed line; for
 #' `previous`, a folder that isn't a completed run's), at their cells; one finding naming the
-#' columns the input lacks and those it doesn't take, at its header, an overrides column that is
-#' an attribute of the specification taken as a group column, and an earlier run's column that
-#' is another column of the issues or an attribute taken too (D23.33); then, for overrides
-#' holding all their own columns, each row whose class isn't source or harmonization, and each
-#' row with no scope cell.
+#' columns the input lacks and those it doesn't take, at its header, an overrides or
+#' acknowledgements column that is an attribute of the specification taken as a group column,
+#' and an earlier run's column that is another column of the issues or an attribute taken too
+#' (D23.33); then, for overrides holding all their own columns, each row whose class isn't
+#' source or harmonization, and each row with no scope cell; and for acknowledgements holding
+#' all theirs, each row whose decision isn't verified or rejected_proposal, and each whose run
+#' scope isn't package or merged (D23.26).
 #' @noRd
 input_problems <- function(spec, read, input) {
   data <- read$data
@@ -200,7 +207,9 @@ input_problems <- function(spec, read, input) {
   attributes <- unique(spec$attributes$attribute_name)
   missing <- setdiff(own, names(data))
   extra <- setdiff(names(data), own)
-  if (input == "overrides") {
+  # The overrides and the acknowledgements may hold group columns, each an attribute (D19.51,
+  # D23.26).
+  if (input %chin% c("overrides", "acknowledgements")) {
     extra <- setdiff(extra, attributes)
   }
   # An earlier run's issues hold the issues' other columns and the run's group and key
@@ -244,6 +253,21 @@ input_problems <- function(spec, read, input) {
         cell_references(where, no_scope + 1L, 1L)
       )
     ))
+  }
+  if (input == "acknowledgements" && length(missing) == 0L) {
+    coded <- list(decision = c("verified", "rejected_proposal"), run_scope = c("package", "merged"))
+    found <- c(found, lapply(names(coded), function(column) {
+      cell <- data[[column]]
+      bad <- which(!cell %chin% coded[[column]])
+      findings_of(
+        where$file,
+        report_text(
+          paste0("preflight_detail_input_unparseable_", column),
+          position = input_positions(read, input, bad), value = cell[bad]
+        ),
+        cell_references(where, bad + 1L, match(column, names(data)))
+      )
+    }))
   }
   rbindlist(found)
 }

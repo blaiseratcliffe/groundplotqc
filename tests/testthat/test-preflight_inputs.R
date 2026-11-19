@@ -236,6 +236,58 @@ test_that("input_unparseable reads previous for its form, folder and columns onl
   }
 })
 
+test_that("input_unparseable names an acknowledgement's columns, decision and run scope (D23.26)", {
+  entries <- function(decision = "verified", run_scope = "package", ...) {
+    data.frame(
+      fingerprint = "value_above_max|hauls|minutes|pk:H2",
+      fingerprint_pk = "value_above_max|hauls|minutes|pk:H2", rule_id = "value_above_max",
+      table_name = "hauls", column_name = "minutes", provider_key = NA,
+      acknowledged_value = "900", decision = decision, who = "A. Reviewer",
+      when = "2026-11-17", why = "Checked.", run_scope = run_scope, ...
+    )
+  }
+  expect_equal(nrow(input_check("input_unparseable", list(acknowledgements = entries()))), 0L)
+  # water_body, an attribute of the survey, is a group column; colour isn't.
+  wrong <- entries(water_body = "LK", colour = "red")
+  wrong$why <- NULL
+  found <- input_check("input_unparseable", list(acknowledgements = wrong))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "acknowledgements", missing = "why", extra = "colour"
+  ))
+  # A decision and a run scope outside their values, each by its row, a blank one named so.
+  register <- entries(
+    decision = c("verified", "fine", "verified"), run_scope = c("package", "package", NA)
+  )
+  found <- input_check("input_unparseable", list(acknowledgements = register))
+  at_row <- function(row) {
+    report_text("input_position_memory", row = row, input = "acknowledgements")
+  }
+  expect_equal(found$detail, c(
+    report_text(
+      "preflight_detail_input_unparseable_decision",
+      position = at_row(2L), value = "fine"
+    ),
+    report_text(
+      "preflight_detail_input_unparseable_run_scope",
+      position = at_row(3L), value = NA
+    )
+  ))
+  expect_match(found$detail[[2L]], "(blank)", fixed = TRUE)
+  # From a CSV file, each at its line.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(register, path)
+  found <- input_check("input_unparseable", list(acknowledgements = path))
+  expect_equal(found$source_cell, paste0(basename(path), c(":3", ":4")))
+  # Without a column of its own, the decision and run scope wait.
+  register$why <- NULL
+  found <- input_check("input_unparseable", list(acknowledgements = register))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_missing",
+    input = "acknowledgements", missing = "why"
+  ))
+})
+
 test_that("override_scope_conflict names each row repeating a scope with the other class (D9.27)", {
   # 2 repeats 1 with its class; 3 repeats 1 with the other; 5's group differs from 4's; 7
   # repeats 6, whose blank rule ID is equal to its own.
