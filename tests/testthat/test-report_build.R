@@ -181,6 +181,33 @@ test_that("a unit's record counts go to it alone; its report ranks its own units
   expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
   expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 2L, "0.07"), fixed = TRUE)
   expect_false(grepl("P-110-1", ranked("100"), fixed = TRUE))
+  # The build reads the three settings as the run recorded them (R60, D20.52): a recorded rate
+  # of 0.1 marks P-100-1's 0.12 above it.
+  three <- c("blocking_severities", "problem_plot_rate", "problem_plot_min_records")
+  recorded <- data.table::copy(x$metadata$settings)
+  data.table::set(
+    recorded,
+    i = which(recorded$setting == "problem_plot_rate"), j = "value", value = "0.1"
+  )
+  x$metadata$settings <- recorded
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  files <- gpq_build_reports(x, output)
+  expect_match(ranked("100"), "Above 0.1</th>", fixed = TRUE)
+  expect_match(ranked("100"), "<td class=\"num\">0.12</td><td>yes</td>", fixed = TRUE)
+  # A run that recorded none of them, as one an earlier version made, takes the option, or the
+  # built-in value where no option is set: blocking errors and flags, 20 records at least.
+  x$metadata$settings <- recorded[!recorded$setting %chin% three]
+  withr::local_options(
+    groundplotqc.problem_plot_rate = 0.5, groundplotqc.blocking_severities = NULL,
+    groundplotqc.problem_plot_min_records = NULL
+  )
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  files <- gpq_build_reports(x, output)
+  expect_match(ranked("100"), "Above 0.5</th>", fixed = TRUE)
+  expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
+  expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 2L, "0.07"), fixed = TRUE)
 })
 
 test_that("route_unit keeps only the lineage rows of its unit's routed cells (D20.61, D20.65)", {

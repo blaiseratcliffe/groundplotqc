@@ -763,12 +763,12 @@ capped_table <- function(shown, caption, row_class, text, settings) {
 #' blocked; in each group the 20 with the highest rate are shown, ties by their blocked
 #' records, then by key in C order (D23.38). One table: the breakdown columns and the key column
 #' under their raw names (D20.56), "*" in a breakdown shown as W4, each cut at `cell_cap`
-#' (D20.39); the records, the blocked records, the rate to two decimals and whether it is above
-#' `problem_plot_rate`; sorted by group in C order, then by rank. At most `row_cap` rows, the
-#' first ones, with a line naming no file, since the CSV holds no rates (capped_table(),
-#' D20.91). Without a problem unit, one line saying so; with no unit_records row while an
-#' issue names a unit, as in a run folder an earlier version wrote, which holds no counts
-#' (D23.33), one line saying so; with no unit ranked, one line.
+#' (D20.39); the records, the blocked records, the rate to two decimals and whether that rate,
+#' as shown, is above `problem_plot_rate` (D23.104); sorted by group in C order, then by rank.
+#' At most `row_cap` rows, the first ones, with a line naming no file, since the CSV holds no
+#' rates (capped_table(), D20.91). Without a problem unit, one line saying so; with no
+#' unit_records row while an issue names a unit, as in a run folder an earlier version wrote,
+#' which holds no counts (D23.33), one line saying so; with no unit ranked, one line.
 #' @noRd
 section_problem_plots <- function(tables, text, settings) {
   lang <- settings$lang
@@ -816,6 +816,9 @@ section_problem_plots <- function(tables, text, settings) {
   top <- which(place <= 20L)
   ranked <- ranked[top]
   not_linked <- word("report_not_linked")
+  # The share as shown, to two decimals; the mark reads that value, so a shown share equal to
+  # problem_plot_rate is never marked above it (D23.104, R63).
+  share <- round(ranked$rate, 2L)
   # The breakdown columns and the key column, the report unit's own column left out.
   shown_cols <- setdiff(unique(c(groups[-1L], key_col)), groups[1L])
   columns <- c(
@@ -825,9 +828,9 @@ section_problem_plots <- function(tables, text, settings) {
       shown
     }),
     list(
-      ranked$n_records, ranked$n_blocked, round(ranked$rate, 2L),
+      ranked$n_records, ranked$n_blocked, share,
       fifelse(
-        ranked$rate > settings$problem_plot_rate, word("report_problem_plots_above"),
+        share > settings$problem_plot_rate, word("report_problem_plots_above"),
         word("report_problem_plots_not_above")
       )
     )
