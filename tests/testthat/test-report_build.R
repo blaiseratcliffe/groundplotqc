@@ -771,7 +771,11 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
 test_that("given previous and a register, each unit's sections 11 and 12 hold its own (13)", {
   # About 8 builds, 2 to 3 s, so skipped on CRAN (D20.3, D23.157): the test of a unit's resolved
   # issues, register entries and previous run below, with one build of two units and one of a
-  # run of 100 alone, covers each routing case on CRAN; this one adds the other register cases.
+  # run of 100 alone, covers the routing of each unit's own on CRAN. This one still holds what
+  # that one doesn't: the typed previous run, previous as a CSV path or a run folder, the
+  # register without a unit column or with "*", the solo run whose previous names only 100 and
+  # "*", the solo run persisting 110's issue on 100's fingerprint, and the build stopping before
+  # it removes or writes anything.
   testthat::skip_on_cran()
   local_results_registry()
   results <- fx_report_results()
@@ -1068,7 +1072,9 @@ test_that("a unit's resolved issues, register entries and previous run reach it 
     for (value in c(own[[unit]][1:2], "2026-10-01", "2026-10-26")) {
       expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value))
     }
-    for (value in c(own[[setdiff(names(own), unit)]], nowhere)) {
+    # The values the previous run or the register holds for the other unit, and the hidden ones.
+    other <- setdiff(names(own), unit)
+    for (value in c(own[[other]][1:2], nowhere, "LAPSED-ON-HELD"[unit == "110"])) {
       expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value))
       expect_false(any(grepl(value, unlist(csv), fixed = TRUE)), info = paste(unit, value, "csv"))
     }
