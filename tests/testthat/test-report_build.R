@@ -850,20 +850,64 @@ test_that("given previous and a register, each unit's sections 11 and 12 hold it
   expect_true(grepl("WHY-OF-110", page, fixed = TRUE))
   csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
   expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "acknowledged")
-  # The run of 100 alone given the previous run of 100 and 110 (D23.127): the resolved "*"
-  # issue, RES-STAR, goes to 100 only when the previous issues name no unit but 100, so 100's
-  # page never shows it beside 110's own; 100's own resolved issue shows either way.
-  solo_files <- gpq_build_reports(solo, solo_output, previous = previous)
-  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  # The run of 100 alone given the previous run of 100 and 110 (D23.127, D23.141, D23.142): as
+  # the previous run names another unit, its resolved issues are routed as a run of several
+  # units routes them, so 100's page shows its own unmarked one, RES-100-own, but neither
+  # 110's, the "*" record-level RES-STAR, the "*" column-level RES-STAR-COLUMN nor its own
+  # marked RES-MARKED; with the previous run naming no unit but 100, all its resolved issues
+  # are 100's.
+  solo_page <- function(previous) {
+    solo_files <- gpq_build_reports(solo, solo_output, previous = previous)
+    readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  }
+  star_column <- complete_table(list(
+    issue_id = 105L, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = "*", row_number = NA_integer_, pk_positional = FALSE, level = "column",
+    value = "RES-STAR-COLUMN", unit = "*", area = "*", plot = "*", reaches_other_unit = FALSE,
+    status = "open", issue_class = "source", fingerprint = "gone-5", fingerprint_pk = "gone-pk-5"
+  ), schema, "issues")
+  page <- solo_page(rbind(previous, star_column))
   expect_true(grepl("RES-100-own", page, fixed = TRUE))
-  for (value in c("RES-STAR", "RES-110-own")) {
+  for (value in c("RES-STAR", "RES-STAR-COLUMN", "RES-MARKED", "RES-110-own")) {
     expect_false(grepl(value, page, fixed = TRUE), info = value)
   }
   previous_100 <- previous[previous$unit %chin% c("100", "*")]
-  solo_files <- gpq_build_reports(solo, solo_output, previous = previous_100)
-  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
-  for (value in c("RES-100-own", "RES-STAR")) {
+  page <- solo_page(rbind(previous_100, star_column))
+  for (value in c("RES-100-own", "RES-STAR", "RES-STAR-COLUMN", "RES-MARKED")) {
     expect_true(grepl(value, page, fixed = TRUE), info = value)
+  }
+  # So where every issue of 110's persists, matching one of 100's on its fingerprint: the
+  # previous run itself names 110, given as its issues in memory or as a CSV file (D23.142).
+  persisting <- previous_100[previous_100$issue_id == 11L]
+  data.table::set(
+    persisting,
+    j = c("issue_id", "unit", "area", "plot"), value = list(120L, "110", "A-110-1", "P-110-1")
+  )
+  named_110 <- rbind(previous_100, persisting)
+  named_csv <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(named_110, named_csv)
+  for (given in list(named_110, named_csv)) {
+    page <- solo_page(given)
+    expect_true(grepl("RES-100-own", page, fixed = TRUE))
+    for (value in c("RES-STAR", "RES-MARKED")) {
+      expect_false(grepl(value, page, fixed = TRUE), info = value)
+    }
+  }
+  # And given as a run folder, by the units its run.csv lists: a run of 100 and 110 whose
+  # resolved issues are 100's marked one and a "*" one.
+  earlier <- fx_report_results()
+  earlier_gone <- data.table::copy(gone[gone$value %chin% c("RES-MARKED", "RES-STAR")])
+  data.table::set(earlier_gone, j = "run_id", value = earlier$metadata$run$run_id)
+  earlier$issues <- rbind(earlier$issues[earlier$issues$unit != "110"], earlier_gone)
+  earlier$corrections <- earlier$corrections[
+    earlier$corrections$issue_id %in% earlier$issues$issue_id
+  ]
+  earlier_dir <- gpq_write_results(earlier, withr::local_tempdir())
+  page <- solo_page(earlier_dir)
+  for (value in c("RES-STAR", "RES-MARKED")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
   }
   # A bad previous run or register stops the build before it removes or writes anything.
   stamp <- file.mtime(files)

@@ -43,9 +43,9 @@
 #' "*" too, as its issues are taken; they are counts, so they hold no other unit's values.
 #' Resolved (D23.35): `resolved` is NULL or the previous run's issues gpq_compare_runs() lists
 #' as resolved; the unit takes them as it takes the run's issues, by their own report-unit
-#' column and marks, and none where they lack either (fail closed), but in a run of one unit a
-#' "*" record-level one is the unit's only where they name no other unit, and otherwise only a
-#' unit rule's unmarked one (D23.127). Returns
+#' column and marks, and none where they lack either (fail closed). In a run of one unit whose
+#' previous run named another unit, gpq_build_reports() gives the resolved issues routed first
+#' as a run of several units routes them (D23.127, D23.141, D23.142). Returns
 #' `list(results, issues, corrections, lineage, unit_records, resolved)`, new data.tables,
 #' `lineage` and `resolved` NULL when none is given.
 #' @noRd
@@ -106,34 +106,23 @@ route_unit <- function(x, unit, units, lineage = NULL, resolved = NULL) {
     take_results[star] <- one | unit_rule(results$rule_id[star]) | counts_none
     # The issues a unit takes, the run's or the previous run's resolved ones alike; a table
     # without the report-unit column, or of several units without the marks, gives none (fail
-    # closed, D18.89). In a run of one unit, a resolved "*" record-level issue is the unit's
-    # only where the previous issues name no other unit; otherwise it goes as in a run of
-    # several units, to a unit rule's unmarked issue only (D23.127). A table without `level`
-    # reads each "*" issue as record-level, a missing mark as marked (fail closed).
-    taken <- function(table, earlier = FALSE) {
+    # closed, D18.89).
+    taken <- function(table) {
       value <- table[[unit_col]]
       marked <- table$reaches_other_unit
       if (is.null(value) || (!one && is.null(marked))) {
         return(logical(nrow(table)))
       }
-      star <- which(value == "*")
       if (one) {
-        take <- value %chin% c(unit, "*")
-        if (earlier && !all(value %chin% c(unit, "*"))) {
-          if (!is.null(table$level)) {
-            star <- star[!table$level[star] %chin% "column"]
-          }
-          unmarked <- if (is.null(marked)) FALSE else marked[star] %in% FALSE
-          take[star] <- unit_rule(table$rule_id[star]) & unmarked
-        }
-        return(take)
+        return(value %chin% c(unit, "*"))
       }
       take <- value == unit
+      star <- which(value == "*")
       take[star] <- unit_rule(table$rule_id[star])
       take & marked %in% FALSE
     }
     take_issues <- taken(issues)
-    take_resolved <- if (!is.null(resolved)) taken(resolved, earlier = TRUE)
+    take_resolved <- if (!is.null(resolved)) taken(resolved)
     # A unit's record counts as its issues are taken, "*" only in a run of one unit (D23.38).
     count_units <- if (one) c(unit, "*") else unit
     take_counts <- x$unit_records[[unit_col]] %chin% count_units
@@ -552,7 +541,7 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
     # (16.2).
     read_here <- c(
       "rule_id", "severity", "table_name", "column_name", "provider_key", "record_pk", "value",
-      "level", "issue_id", "reaches_other_unit", "first_seen_run", "change_cause",
+      "issue_id", "reaches_other_unit", "first_seen_run", "change_cause",
       setdiff(names(gone), names(results_schema()$issues))
     )
     unread <- setdiff(names(gone), read_here)
@@ -607,6 +596,38 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
     # Its stops come before any file is removed or written (D20.8).
     stems <- unit_file_name(units)
     labels <- units
+  }
+  # In a run of one unit, a previous run that named another unit has its resolved issues
+  # routed as a run of several units routes them: the unit's own unmarked ones and a unit
+  # rule's unmarked "*" ones (D23.127, D23.141). The units are read from the previous run
+  # itself: a folder's run.csv lists them, an issues table's report-unit column holds them, a
+  # CSV file's read alone (D23.142); a cell other than the unit or "*", NA included, names
+  # another (fail closed). route_unit() routes them on a copy of the run holding no rows of
+  # its own.
+  if (!is.null(gone) && !is.null(unit_col) && length(units) == 1L) {
+    named <- if (is.character(previous) && dir.exists(previous)) {
+      split_units(
+        read_run_csv(file.path(previous, "metadata", "run.csv"), metadata_schema()$run)$report_units
+      )
+    } else if (is.data.frame(previous)) {
+      unique(previous[[unit_col]])
+    } else if (unit_col %chin% names(fread(previous, nrows = 0L))) {
+      unique(fread(
+        previous,
+        select = unit_col, colClasses = "character", encoding = "UTF-8"
+      )[[1L]])
+    }
+    if (!is.null(named) && !is.character(named)) {
+      named <- as_text(named)
+    }
+    if (!all(named %chin% c(units, "*"))) {
+      several <- reported
+      for (part in c("results", "issues", "corrections", "unit_records")) {
+        several[[part]] <- reported[[part]][0L]
+      }
+      gone <- route_unit(several, units, c(units, setdiff(named, units)), resolved = gone)$resolved
+      rm(several)
+    }
   }
   reports_dir <- file.path(run_dir, "reports")
   tables_dir <- file.path(run_dir, "tables")
