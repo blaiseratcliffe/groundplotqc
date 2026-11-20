@@ -171,6 +171,10 @@ test_that("a run pre-flight stops writes its run, with its tables' contributors 
 })
 
 test_that("a delivery's run: its files, each contributor's kept to its own records (13; D21.13)", {
+  # The whole of magp_example run and reported, about 3 s, so skipped on CRAN (D20.3, D23.145):
+  # there, test-report_build.R's hand-made results cover each routing case of plan 13's test,
+  # and the runs below and the pre-flight stop's above cover the run's steps.
+  testthat::skip_on_cran()
   # One run serves the delivery's checks (its folder, inputs, times, keys, classes and reports)
   # and plan 13's confidentiality test, both tests' plants and inputs on one copy (D21.37).
   tables <- fx_mark_fixture(lapply(magp_example, data.table::copy))
@@ -634,7 +638,7 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
 test_that("magp_read_delivery()'s result runs as given, its file and hash kept (M7b m27)", {
   # A second run of the whole of magp_example, about 2 s, so skipped on CRAN (D20.3, D23.8):
   # the delivery's run above, from its path, which the run passes to magp_read_delivery(),
-  # covers the same steps there.
+  # covers the same steps off CRAN, and test-magp_read.R the read on CRAN (D23.145).
   testthat::skip_on_cran()
   path <- fx_magp_rdata()
   delivery <- magp_read_delivery(path)
