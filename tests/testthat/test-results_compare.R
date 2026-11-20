@@ -124,9 +124,22 @@ test_that("issues sharing a pk: form match by their fingerprints alone (D9.22, D
     record_pk = c("k1", "k1"), provider_key = c("site=1; tree=2", "site=1; tree=3")
   )
   now <- issues_of(record_pk = "k1", provider_key = "site=1; tree=4", run_id = later)
+  given <- data.table::copy(before)
   out <- gpq_compare_runs(now, before)
   expect_equal(now$change, "new")
   expect_equal(out$resolved$fingerprint, before$fingerprint)
+  # The caller's earlier issues are as they were, and the resolved ones keep their pk: form.
+  expect_identical(before, given)
+  expect_equal(out$resolved$fingerprint_pk, given$fingerprint_pk)
+  # So where the earlier run holds one record's issue twice, sharing a key, and the later run
+  # one whose fingerprint differs, its pk: form the same: it is new, both earlier ones resolved.
+  before <- issues_of(record_pk = c("k1", "k1"), provider_key = "site=1; tree=2")
+  given <- data.table::copy(before)
+  now <- issues_of(record_pk = "k1", provider_key = "site=1; tree=4", run_id = later)
+  out <- gpq_compare_runs(now, before)
+  expect_equal(now$change, "new")
+  expect_equal(out$resolved$fingerprint, before$fingerprint)
+  expect_identical(before, given)
   # A PK one issue alone holds still matches by its pk: form when its fingerprint changes: the
   # test "an issue still persists after its provider key's decoding changes (D9.22)" above.
 })

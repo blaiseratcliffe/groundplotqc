@@ -75,7 +75,7 @@ match_issues <- function(issues, other, group_cols, unmatched_tables = NULL) {
   # record-level issue holds that form: issues sharing one, as records sharing a duplicated PK
   # give, match by their fingerprints alone (D23.148). The form carries its rule, table and
   # column, so it is counted as it is.
-  forms <- issues$fingerprint_pk[record]
+  forms <- text(issues$fingerprint_pk[record])
   shared <- forms %chin% forms[duplicated(forms, incomparables = NA)]
   unmatched <- record[!shared & !record %in% by_print$row]
   by_pk <- key_matches(
@@ -361,7 +361,10 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
     key_of <- seq_along(seen)
   }
   if (length(shared) > 0L) {
-    set(distinct, i = shared, j = "fingerprint_pk", value = NA_character_)
+    # A new column, never a write into one: `keys` holds the caller's own vectors.
+    set(distinct, j = "fingerprint_pk", value = replace(
+      distinct$fingerprint_pk, shared, NA_character_
+    ))
   }
   rm(keys)
   pairs <- match_issues(issues, distinct, group_cols, unmatched_tables)

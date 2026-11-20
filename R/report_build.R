@@ -570,6 +570,15 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
   if (!is.null(acknowledgements)) {
     gpq_apply_acknowledgements(reported$issues[0L], acknowledgements, unmatched_tables)
     register <- read_input_table(acknowledgements, "acknowledgements")$data
+    # The pk: forms more than one record-level issue of the run holds, worked out once: each
+    # unit's matching copy leaves them out, so a unit's report counts the run's issues, as the
+    # run does, not its own alone (D23.148, D23.152).
+    forms <- reported$issues$fingerprint_pk[
+      !reported$issues$level %chin% "column" &
+        !reported$issues$table_name %chin% unmatched_tables
+    ]
+    shared_forms <- unique(forms[duplicated(forms, incomparables = NA)])
+    rm(forms)
   }
   unit_col <- if (length(group_cols) > 0L) group_cols[[1L]] else NULL
   if (is.null(unit_col)) {
@@ -729,10 +738,21 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
   # shows none in a run of several units (fail closed), so no unit's report holds an entry made
   # for another's issue (13).
   acknowledged_in <- function(issues, unit) {
-    lapsed <- gpq_apply_acknowledgements(issues, register, unmatched_tables)$lapsed
+    # The unit's matching copy: its columns where they are but two new ones, the pk: forms the
+    # run shares left out and the statuses the register sets, which the unit's issues then take
+    # (D23.148, D23.152).
+    matching <- setDT(lapply(issues, identity))
+    set(matching, j = "fingerprint_pk", value = replace(
+      issues$fingerprint_pk,
+      which(!issues$level %chin% "column" & issues$fingerprint_pk %chin% shared_forms),
+      NA_character_
+    ))
+    set(matching, j = "status", value = copy(issues$status))
+    lapsed <- gpq_apply_acknowledgements(matching, register, unmatched_tables)$lapsed
+    set(issues, j = "status", value = matching$status)
     groups <- setdiff(names(issues), names(results_schema()$issues))
     held <- intersect(groups, names(register))
-    pairs <- match_issues(issues, register, held, unmatched_tables)
+    pairs <- match_issues(matching, register, held, unmatched_tables)
     if (length(held) > 0L) {
       # gpq_apply_acknowledgements()'s match on the group columns the register holds, its pk:
       # form pass included (D9.22, D23.111, D23.128); change the two together. Each test worked
@@ -754,13 +774,13 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
       if (length(left) > 0L) {
         columns <- c("table_name", "level", "run_scope", "fingerprint_pk")
         by_pk <- setDT(lapply(structure(columns, names = columns), function(column) {
-          issues[[column]][left]
+          matching[[column]][left]
         }))
         set(by_pk, j = "fingerprint", value = NA_character_)
         reached <- which(
           !issues$level %chin% "column" & !issues$table_name %chin% unmatched_tables
         )
-        forms <- issues$fingerprint_pk[reached]
+        forms <- matching$fingerprint_pk[reached]
         shared <- which(by_pk$fingerprint_pk %chin% forms[duplicated(forms, incomparables = NA)])
         set(by_pk, i = shared, j = "fingerprint_pk", value = NA_character_)
         again <- match_issues(by_pk, register, character(), unmatched_tables)

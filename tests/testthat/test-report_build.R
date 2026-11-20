@@ -930,6 +930,46 @@ test_that("given previous and a register, each unit's sections 11 and 12 hold it
   expect_identical(file.mtime(files), stamp)
 })
 
+test_that("a unit's report counts the run's pk: forms, as the run does (D23.148, D23.152)", {
+  local_results_registry()
+  results <- fx_report_results()
+  issues <- results$issues
+  # 110's issue 19 is given 100's issue 11's pk: form and value, as a record sharing its PK
+  # would hold; their fingerprints differ. An entry made from issue 11, its unit "*", holds.
+  mine <- match(11L, issues$issue_id)
+  theirs <- match(19L, issues$issue_id)
+  data.table::set(
+    issues,
+    i = theirs, j = c("fingerprint_pk", "value"),
+    value = list(issues$fingerprint_pk[[mine]], issues$value[[mine]])
+  )
+  register <- data.frame(
+    fingerprint = issues$fingerprint[mine], fingerprint_pk = issues$fingerprint_pk[mine],
+    rule_id = issues$rule_id[mine], table_name = issues$table_name[mine],
+    column_name = issues$column_name[mine], provider_key = issues$provider_key[mine],
+    acknowledged_value = issues$value[mine], decision = "verified", who = "A. Reviewer",
+    when = "2026-11-01", why = "Checked.", run_scope = "package", unit = "*", area = "*",
+    plot = "*"
+  )
+  # The run's issues: 11 acknowledged, 19 open, its pk: form shared in the run.
+  run_issues <- data.table::copy(issues)
+  gpq_apply_acknowledgements(run_issues, register)
+  expect_equal(run_issues$status[c(mine, theirs)], c("acknowledged", "open"))
+  # Each unit's report agrees, though 110's issues alone hold the form once.
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output, acknowledgements = register)
+  status_in <- function(unit, at) {
+    csv <- data.table::fread(
+      files[names(files) == unit][[2L]],
+      encoding = "UTF-8", colClasses = "character"
+    )
+    csv$status[csv$record_pk == issues$record_pk[[at]] & csv$rule_id == issues$rule_id[[at]]]
+  }
+  expect_equal(status_in("100", mine), "acknowledged")
+  expect_equal(status_in("110", theirs), "open")
+})
+
 test_that("gpq_build_reports writes only into a saved run's folder and rebuilds cleanly", {
   local_results_registry()
   results <- fx_report_results()
