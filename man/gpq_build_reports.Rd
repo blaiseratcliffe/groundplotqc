@@ -134,10 +134,10 @@ fixed, under review and covering a whole column, and is listed with the other ac
 issues instead; the issues CSV keeps it, with the status \code{acknowledged}. Given
 \code{acknowledgements}, the register is applied first, as \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} applies
 it, and the list shows each issue's entry, its decision, when and why, never who made it,
-and, apart, the entries that no longer hold, since their issue's value changed. In a run of
-several units, an entry is shown only in the report of the unit its own report-unit column
-names, or, where that is \code{"*"}, in each report its issue goes to; a register without that
-column shows no entry.
+and, apart, the entries that no longer hold, since their issue's value changed. An entry is
+shown only in the report of the unit its own report-unit column names, or, where that is
+\code{"*"}, in each report its issue goes to; a register without that column shows its entries in
+a run of one unit and none in a run of several.
 
 A chart shows at most \code{row_cap} bars, except the chart by severity, which always shows its
 four. Tables of checks, issues and reasons show at most \code{row_cap} rows and \code{example_cap}

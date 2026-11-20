@@ -563,7 +563,8 @@ test_that("records reaching an integer64 column in two tables write its values i
   # As above, with zone an integer64 column in both tables, as fread() reads integers beyond
   # 32 bits: values a double can't hold, ranked by integer64's own order on the mixed-homes
   # path. Trees 1 to 3 keep their own zone; tree 4 holds a missing-value code and takes its
-  # plot's, as tree 5's NA does.
+  # plot's, as tree 5's NA does. Trees 1 and 2's values are one double, 2^53, so a rank taken
+  # on a double would merge them.
   dictionary <- data.frame(
     table_name = c("plots", "plots", "trees", "trees", "trees"),
     attribute_name = c("plot_id", "zone", "tree_id", "plot_id", "zone"),
@@ -575,7 +576,7 @@ test_that("records reaching an integer64 column in two tables write its values i
     numeric = c(missing = -1, not_applicable = -9),
     character = c(missing = "X", not_applicable = "Z")
   ))
-  big <- c("9007199254740993", "9007199254740995", "-9007199254740993")
+  big <- c("9007199254740993", "9007199254740992", "-9007199254740993")
   tables <- list(
     plots = data.table::data.table(
       plot_id = c("p1", "p2"), zone = bit64::as.integer64(c(big[[3L]], "12"))

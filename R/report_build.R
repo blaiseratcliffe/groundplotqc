@@ -43,7 +43,9 @@
 #' "*" too, as its issues are taken; they are counts, so they hold no other unit's values.
 #' Resolved (D23.35): `resolved` is NULL or the previous run's issues gpq_compare_runs() lists
 #' as resolved; the unit takes them as it takes the run's issues, by their own report-unit
-#' column and marks, and none where they lack either (fail closed). Returns
+#' column and marks, and none where they lack either (fail closed), but in a run of one unit a
+#' "*" record-level one is the unit's only where they name no other unit, and otherwise only a
+#' unit rule's unmarked one (D23.127). Returns
 #' `list(results, issues, corrections, lineage, unit_records, resolved)`, new data.tables,
 #' `lineage` and `resolved` NULL when none is given.
 #' @noRd
@@ -104,23 +106,34 @@ route_unit <- function(x, unit, units, lineage = NULL, resolved = NULL) {
     take_results[star] <- one | unit_rule(results$rule_id[star]) | counts_none
     # The issues a unit takes, the run's or the previous run's resolved ones alike; a table
     # without the report-unit column, or of several units without the marks, gives none (fail
-    # closed, D18.89).
-    taken <- function(table) {
+    # closed, D18.89). In a run of one unit, a resolved "*" record-level issue is the unit's
+    # only where the previous issues name no other unit; otherwise it goes as in a run of
+    # several units, to a unit rule's unmarked issue only (D23.127). A table without `level`
+    # reads each "*" issue as record-level, a missing mark as marked (fail closed).
+    taken <- function(table, earlier = FALSE) {
       value <- table[[unit_col]]
       marked <- table$reaches_other_unit
       if (is.null(value) || (!one && is.null(marked))) {
         return(logical(nrow(table)))
       }
+      star <- which(value == "*")
       if (one) {
-        return(value %chin% c(unit, "*"))
+        take <- value %chin% c(unit, "*")
+        if (earlier && !all(value %chin% c(unit, "*"))) {
+          if (!is.null(table$level)) {
+            star <- star[!table$level[star] %chin% "column"]
+          }
+          unmarked <- if (is.null(marked)) FALSE else marked[star] %in% FALSE
+          take[star] <- unit_rule(table$rule_id[star]) & unmarked
+        }
+        return(take)
       }
       take <- value == unit
-      star <- which(value == "*")
       take[star] <- unit_rule(table$rule_id[star])
       take & marked %in% FALSE
     }
     take_issues <- taken(issues)
-    take_resolved <- if (!is.null(resolved)) taken(resolved)
+    take_resolved <- if (!is.null(resolved)) taken(resolved, earlier = TRUE)
     # A unit's record counts as its issues are taken, "*" only in a run of one unit (D23.38).
     count_units <- if (one) c(unit, "*") else unit
     take_counts <- x$unit_records[[unit_col]] %chin% count_units
@@ -313,10 +326,10 @@ unit_file_name <- function(units) {
 #' issues instead; the issues CSV keeps it, with the status `acknowledged`. Given
 #' `acknowledgements`, the register is applied first, as [gpq_apply_acknowledgements()] applies
 #' it, and the list shows each issue's entry, its decision, when and why, never who made it,
-#' and, apart, the entries that no longer hold, since their issue's value changed. In a run of
-#' several units, an entry is shown only in the report of the unit its own report-unit column
-#' names, or, where that is `"*"`, in each report its issue goes to; a register without that
-#' column shows no entry.
+#' and, apart, the entries that no longer hold, since their issue's value changed. An entry is
+#' shown only in the report of the unit its own report-unit column names, or, where that is
+#' `"*"`, in each report its issue goes to; a register without that column shows its entries in
+#' a run of one unit and none in a run of several.
 #'
 #' A chart shows at most `row_cap` bars, except the chart by severity, which always shows its
 #' four. Tables of checks, issues and reasons show at most `row_cap` rows and `example_cap`
@@ -534,6 +547,18 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
     ))
     gone <- gpq_compare_runs(reported, previous, unmatched_tables)$resolved
     setcolorder(reported$issues, names(issues))
+    # Only the resolved issues' columns route_unit() and section 11 read are kept, the others
+    # dropped by reference from the comparison's own new table, so no unit's copy holds them
+    # (16.2).
+    read_here <- c(
+      "rule_id", "severity", "table_name", "column_name", "provider_key", "record_pk", "value",
+      "level", "issue_id", "reaches_other_unit", "first_seen_run", "change_cause",
+      setdiff(names(gone), names(results_schema()$issues))
+    )
+    unread <- setdiff(names(gone), read_here)
+    if (length(unread) > 0L) {
+      set(gone, j = unread, value = NULL)
+    }
     # The resolved issues' columns route_unit() and section 11 read, as text, as the comparison
     # reads them: an issues table read with fread() may hold a report unit or record ID of
     # digits as numbers, or an empty provider key as logical (D23.112). `gone` is the
@@ -675,22 +700,31 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
   # One unit's acknowledgements (D23.34, D23.36): the register applied to its routed issues, a
   # copy of their own, so the caller's issues keep their statuses; then, for each issue it
   # acknowledges, the first entry that holds, matched and read as gpq_apply_acknowledgements()
-  # matches and holds one (a record-level entry on its own report unit, D23.111; the issue's
-  # value, a blank one as NA, is the acknowledged value), and the entries that lapsed. Where the
-  # register holds the report-unit column, in any run, an entry shows only where its own cell
-  # there is the unit's or "*" (D23.110); a register without it shows none in a run of several
-  # units (fail closed), so no unit's report holds an entry made for another's issue (13).
+  # matches and holds one (a record-level entry on the group columns the register holds,
+  # D23.111, D23.128; the issue's value, a blank one as NA, is the acknowledged value), and the
+  # entries that lapsed. Where the register holds the report-unit column, in any run, an entry
+  # shows only where its own cell there is the unit's or "*" (D23.110); a register without it
+  # shows none in a run of several units (fail closed), so no unit's report holds an entry made
+  # for another's issue (13).
   acknowledged_in <- function(issues, unit) {
     lapsed <- gpq_apply_acknowledgements(issues, register, unmatched_tables)$lapsed
     groups <- setdiff(names(issues), names(results_schema()$issues))
-    pairs <- match_issues(issues, register, intersect(groups, names(register)), unmatched_tables)
-    if (length(groups) > 0L && groups[[1L]] %chin% names(register)) {
-      # gpq_apply_acknowledgements()'s match on the report unit, its pk: form pass included
-      # (D9.22, D23.111); change the two together. Each test worked out before the brackets.
+    held <- intersect(groups, names(register))
+    pairs <- match_issues(issues, register, held, unmatched_tables)
+    if (length(held) > 0L) {
+      # gpq_apply_acknowledgements()'s match on the group columns the register holds, its pk:
+      # form pass included (D9.22, D23.111, D23.128); change the two together. Each test worked
+      # out before the brackets.
       own_unit <- function(pairs) {
-        given <- register[[groups[[1L]]]][pairs$at]
-        issues$level[pairs$row] %chin% "column" | given %chin% "*" |
-          (given == issues[[groups[[1L]]]][pairs$row]) %in% TRUE
+        own <- issues$level[pairs$row] %chin% "column"
+        record <- which(!own)
+        ok <- rep(TRUE, length(record))
+        for (column in held) {
+          given <- register[[column]][pairs$at[record]]
+          ok <- ok & (given %chin% "*" | (given == issues[[column]][pairs$row[record]]) %in% TRUE)
+        }
+        own[record] <- ok
+        own
       }
       own <- own_unit(pairs)
       left <- setdiff(pairs$row[!own], pairs$row[own])

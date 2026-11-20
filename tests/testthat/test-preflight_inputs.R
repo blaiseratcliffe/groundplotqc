@@ -187,11 +187,15 @@ test_that("input_unparseable reads previous for its form, folder and columns onl
     expect_equal(nrow(input_check("input_unparseable", list(previous = previous))), 0L)
   }
   # Only the issues' columns are read: a file whose rows don't read cleanly passes here, and
-  # stops the comparison, which reads them (D23.46).
+  # stops the comparison, which reads them: fread() doesn't read its first line as a header, so
+  # the issues' columns are missing (W16) (D23.46).
   broken <- file.path(dir, "broken.csv")
   writeLines(c(readLines(issues_csv, n = 1L), "\"1\",\"2\",\"3\""), broken)
   expect_equal(nrow(input_check("input_unparseable", list(previous = broken))), 0L)
-  expect_error(gpq_compare_runs(run$issues, broken))
+  expect_error(
+    gpq_compare_runs(run$issues, broken), "`previous` lacks the issues columns",
+    fixed = TRUE
+  )
   # Columns: one the comparison reads missing, one no issues table has, and a group column and
   # an issues column of the earlier run's own taken.
   issues <- as.data.frame(run$issues)

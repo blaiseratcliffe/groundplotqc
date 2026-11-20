@@ -108,8 +108,9 @@
 #'   or end with a space, tab or line break, or hold ";" or "=". Pre-flight stops
 #'   on a rule ID that isn't registered (`rule_id_unknown`).
 #'
-#' In a rule set's settings rows, a whole number has type `integer`, a number
-#' with a fraction, such as `0.25`, has type `double`, a setting
+#' In a rule set's settings rows, a setting that takes a whole number has type
+#' `integer` and one that takes a number with a fraction, such as
+#' `problem_plot_rate`, has type `double`, whatever the value written; a setting
 #' with several values gives them joined by "; ", and a named one gives
 #' "name=value" parts. In every tier, a code can't be empty, begin or end with
 #' a space, tab or line break, or hold ";". In `groundplotqc.unknown_codes` the

@@ -64,6 +64,21 @@ test_that("new, persisting and resolved issues, each new or resolved one's cause
   expect_equal(now$change, c("persisting", "persisting", "new", "new"))
   expect_equal(again$resolved$record_pk, c("k4", "k5", "k6"))
   expect_identical(before, given)
+  # Records sharing a key, as pk_duplicate finds them, give issues sharing a fingerprint in both
+  # runs: each current one persists, first seen when the earliest earlier one was (R15), and
+  # each earlier one of a key no current issue has is resolved, one row each.
+  before <- rbind(
+    issues_of(record_pk = "d1", first_seen_run = c(NA, "20261020T120000Z_cccccc", NA)),
+    issues_of(record_pk = c("d2", "d2"))
+  )
+  now <- issues_of(record_pk = c("d1", "d1", "d1"), run_id = later)
+  out <- gpq_compare_runs(now, before)
+  expect_equal(now$change, rep("persisting", 3L))
+  expect_equal(now$first_seen_run, rep("20261020T120000Z_cccccc", 3L))
+  expect_equal(now$change_cause, rep(NA_character_, 3L))
+  expect_equal(out$resolved$record_pk, c("d2", "d2"))
+  expect_equal(out$resolved$first_seen_run, rep(earlier, 2L))
+  expect_equal(out$resolved$change_cause, rep("data", 2L))
 })
 
 test_that("an issue still persists after its provider key's decoding changes (D9.22)", {
@@ -200,9 +215,12 @@ test_that("a run folder or an issues file is read for its issues and rules (D23.
     utils::read.csv(issues_csv, colClasses = "character"), data.table::fread(issues_csv)
   )
   for (earlier_issues in as_read) {
+    given <- data.table::copy(earlier_issues)
     from_read <- gpq_compare_runs(now$issues, earlier_issues)
     expect_equal(as.integer(from_read$resolved$issue_id), c(2L, 4L))
     expect_equal(now$issues$first_seen_run[c(1L, 5L)], rep(first$issues$run_id[[1L]], 2L))
+    # The caller's frame, its blanks read anew in a table of the comparison's own, is unchanged.
+    expect_identical(earlier_issues, given)
   }
   # So with the current issues read back with fread() too, issue 3's "" on each side: new.
   read_back <- data.table::fread(issues_csv, colClasses = "character")

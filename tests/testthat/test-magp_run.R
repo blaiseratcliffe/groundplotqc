@@ -164,6 +164,9 @@ test_that("a run pre-flight stops writes its run, with its tables' contributors 
       run_dir = run_dir
     )
   )
+  for (contributor in c("100", "110")) {
+    expect_equal(nrow(magp_list_runs(output, contributor)), 1L, info = contributor)
+  }
   expect_equal(nrow(magp_list_runs(output, "130")), 0L)
 })
 
@@ -571,8 +574,9 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
   )
   # Each planted value shows on its own unit's page, as a token or, with spaces, as a fixed
   # substring, so its absence from the other unit's page below is read in the HTML, not only
-  # in the CSV, and no cap hid it there, example_cap's two examples a check among them (M8 m10,
-  # m2).
+  # in the CSV, and no cap hid it on its own page, where example_cap shows a check's first two
+  # examples. On the other unit's page, a check row holding a leaked value would hold at most
+  # two values on this run, within example_cap, and the CSV is uncapped (M8 m10, m2).
   for (unit in units) {
     spaced <- grepl(" ", planted[[unit]], fixed = TRUE)
     expect_identical(
@@ -628,7 +632,7 @@ test_that("a delivery's run: its files, each contributor's kept to its own recor
 })
 
 test_that("magp_read_delivery()'s result runs as given, its file and hash kept (M7b m27)", {
-  # A second run of the whole of magp_example, about 3 s, so skipped on CRAN (D20.3, D23.8):
+  # A second run of the whole of magp_example, about 2 s, so skipped on CRAN (D20.3, D23.8):
   # the delivery's run above, from its path, which the run passes to magp_read_delivery(),
   # covers the same steps there.
   testthat::skip_on_cran()
@@ -1066,11 +1070,13 @@ test_that("magp_list_runs() lists a contributor's run folders, oldest first (D23
     }
     run_dir
   }
-  # Made out of time order: a completed run of 100 and 110; a run pre-flight stopped; a run
-  # whose write stopped before its results (run.csv, no results.csv); a folder a stop after
-  # pre-flight left (no run.csv), whose contributors can't be known; a run of 110 alone; and
-  # a contributor whose ID holds "; ", as run.csv escapes it (W201).
+  # Made out of time order: a completed run of 100 and 110, and one of 100 with the same start,
+  # listed before it by its run ID (R40); a run pre-flight stopped; a completed run's run.csv
+  # with no results.csv beside it; a folder a stop after pre-flight left (no run.csv), whose
+  # contributors can't be known; a run of 110 alone; and a contributor whose ID holds "; ", as
+  # run.csv escapes it (W201).
   later <- run_folder("20261103T090000Z_aaaaaa", c("100", "110"))
+  tied <- run_folder("20261103T090000Z_0aaaaa", "100")
   stopped <- run_folder("20261101T090000Z_bbbbbb", c("100", "a; b"), "stopped_preflight", FALSE)
   cut <- run_folder("20261102T090000Z_cccccc", "100", results = FALSE)
   left <- run_folder("20261102T080000Z_dddddd", results = FALSE)
@@ -1082,13 +1088,13 @@ test_that("magp_list_runs() lists a contributor's run folders, oldest first (D23
   expect_equal(
     magp_list_runs(output, "100"),
     data.table::data.table(
-      run_id = basename(c(stopped, left, cut, later)),
+      run_id = basename(c(stopped, left, cut, tied, later)),
       run_start = c(
         "2026-11-01T09:00:00Z", "2026-11-02T08:00:00Z", "2026-11-02T09:00:00Z",
-        "2026-11-03T09:00:00Z"
+        "2026-11-03T09:00:00Z", "2026-11-03T09:00:00Z"
       ),
-      outcome = c("stopped_preflight", "incomplete", "incomplete", "completed"),
-      run_dir = c(stopped, left, cut, later)
+      outcome = c("stopped_preflight", "incomplete", "incomplete", "completed", "completed"),
+      run_dir = c(stopped, left, cut, tied, later)
     )
   )
   expect_equal(magp_list_runs(output, "a; b")$run_dir, c(stopped, left))

@@ -389,6 +389,22 @@ test_that("\"NaN\" with a Unicode space is lost, not a number that isn't finite 
   open <- open[open$rule_id != "class_mismatch"]
   expect_equal(open$rule_id, c("coercion_loss", "coercion_loss", "value_not_finite"))
   expect_equal(open$value, catches$weight[1:3])
+  # In a key, ID or coded column, a padded value is whitespace_padding's (D16.42, D23.103):
+  # with weight ID-marked, "NaN" and "Inf" with a thin space are reported there (Layer 2), not
+  # by coercion_loss.
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  marked <- which(attributes$table_name == "catches" & attributes$attribute_name == "weight")
+  data.table::set(attributes, i = marked, j = "id_marked", value = TRUE)
+  spec$attributes <- attributes
+  issues <- gpq_check_conformance(fish, spec, layers = 1:2)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  open <- open[order(open$row_number)]
+  expect_equal(
+    paste(open$rule_id, open$row_number),
+    c("whitespace_padding 1", "whitespace_padding 2", "value_not_finite 3")
+  )
+  expect_equal(open$value, catches$weight[1:3])
 })
 
 test_that("a value of only Unicode spaces outside the keys is blank_string's (m35, D8.8)", {

@@ -66,6 +66,18 @@ test_that("an entry holds on its value; one whose value changed lapses (D4.2, D4
   out <- gpq_apply_acknowledgements(issues, register)
   expect_equal(issues$status, c("acknowledged", "acknowledged", "open"))
   expect_equal(nrow(out$lapsed), 1L)
+  # A record-level entry matches on every group column the register holds, "*" there matching
+  # every value (D23.128): with no report-unit column, an entry of another dataset on u1's k1
+  # neither acknowledges it nor lapses, one of dataset "*" acknowledges k2, and u2's own k3
+  # lapses.
+  issues <- issues_of(record_pk = c("k1", "k2", "k3"), unit = c("u1", "u1", "u2"))
+  data.table::set(issues, j = "dataset", value = c("d1", "d1", "d2"))
+  register <- entries_of(issues, acknowledged_value = c("900", "900", "1"))
+  register$unit <- NULL
+  register$dataset <- c("d2", "*", "d2")
+  out <- gpq_apply_acknowledgements(issues, register)
+  expect_equal(issues$status, c("open", "acknowledged", "open"))
+  expect_equal(out$lapsed$fingerprint, register$fingerprint[[3L]])
 })
 
 test_that("an entry still matches after its provider key's decoding changes (D9.22)", {

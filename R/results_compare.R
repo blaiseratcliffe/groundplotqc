@@ -311,12 +311,37 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
     known <- other$rule_fingerprint[match(rule_id, other$rule_id)]
     fifelse(is.na(known), absent, fifelse(known == rule_fingerprint, "data", "rules_or_spec"))
   }
-  pairs <- match_issues(issues, before, group_cols, unmatched_tables)
-  matched <- unique(pairs$at)
   # A persisting issue was first seen when the earliest issue it matches was: that issue's
   # first_seen_run, or its run's ID, which sort as their UTC times do (9.1).
   seen <- fcoalesce(text(before$first_seen_run), text(before$run_id))
-  set(pairs, j = "seen", value = seen[pairs$at])
+  # The earlier issues are matched by their distinct keys, the columns match_issues() reads,
+  # each key with its earliest seen, so issues sharing a fingerprint in both runs, as records
+  # sharing a primary key give, meet once per current issue and key, never once per pair (16.2).
+  # Where no key repeats, the earlier issues are matched where they are.
+  key_cols <- c(
+    "fingerprint", "fingerprint_pk", "run_scope", "rule_id", "table_name",
+    intersect(group_cols, names(before))
+  )
+  keys <- setDT(lapply(structure(key_cols, names = key_cols), function(column) {
+    text(before[[column]])
+  }))
+  key_of <- frankv(keys, ties.method = "dense", na.last = TRUE)
+  if (anyDuplicated(key_of) > 0L) {
+    by_key <- data.table(group = key_of, seen = seen, at = seq_along(key_of))
+    setorderv(by_key, c("group", "seen"))
+    by_key <- by_key[!duplicated(by_key$group)]
+    distinct <- setDT(lapply(keys, function(column) column[by_key$at]))
+    key_seen <- by_key$seen
+  } else {
+    distinct <- before
+    key_seen <- seen
+    key_of <- seq_along(seen)
+  }
+  rm(keys)
+  pairs <- match_issues(issues, distinct, group_cols, unmatched_tables)
+  rm(distinct)
+  matched <- unique(pairs$at)
+  set(pairs, j = "seen", value = key_seen[pairs$at])
   setorderv(pairs, c("row", "seen"))
   pairs <- pairs[!duplicated(pairs$row)]
   change <- rep("new", nrow(issues))
@@ -338,7 +363,7 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
     !text(before$table_name) %chin% unmatched_tables &
       !(is.na(before$fingerprint) & is.na(before$fingerprint_pk))
   )
-  gone <- judged[!judged %in% matched]
+  gone <- judged[!key_of[judged] %in% matched]
   resolved <- setDT(lapply(before, function(column) column[gone]))
   # A resolved issue's rule as the current run knows it: a renamed rule's new ID, the first of
   # a split rule's.
