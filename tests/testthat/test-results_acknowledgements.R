@@ -106,6 +106,30 @@ test_that("an entry still matches after its provider key's decoding changes (D9.
   expect_equal(nrow(out$lapsed), 0L)
 })
 
+test_that("an entry acknowledges by fingerprint alone a pk: form issues share (D9.22, D23.148)", {
+  # Two records of hauls share the PK k1, as a duplicated PK gives, each with its own provider
+  # key: their fingerprints differ, their pk: form is the same. The entry made from the first's
+  # issue acknowledges it only.
+  keys <- c("site=1; tree=2", "site=1; tree=3")
+  issues <- issues_of(record_pk = c("k1", "k1"), provider_key = keys)
+  out <- gpq_apply_acknowledgements(issues, entries_of(issues[1L]))
+  expect_equal(issues$status, c("acknowledged", "open"))
+  expect_equal(nrow(out$lapsed), 0L)
+  # So where the second's fingerprint meets only another unit's entry, and it is matched again
+  # by its pk: form (D23.111): the first's entry still acknowledges the first only.
+  issues <- issues_of(record_pk = c("k1", "k1"), provider_key = keys)
+  register <- rbind(
+    entries_of(issues[1L]),
+    entries_of(issues_of(record_pk = "k1", provider_key = keys[[2L]], unit = "u2"))
+  )
+  out <- gpq_apply_acknowledgements(issues, register)
+  expect_equal(issues$status, c("acknowledged", "open"))
+  expect_equal(nrow(out$lapsed), 0L)
+  # A PK one issue alone holds is still acknowledged by its pk: form when its fingerprint
+  # changes: the test "an entry still matches after its provider key's decoding changes
+  # (D9.22)" above.
+})
+
 test_that("a blank value equals a blank one; a column-level entry matches on its group", {
   # A column-level issue has no value; k2's value is spaces, which the register reads as blank.
   issues <- rbind(

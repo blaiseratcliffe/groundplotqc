@@ -757,6 +757,12 @@ gpq_build_reports <- function(results, output_dir, group_cols = NULL, previous =
           issues[[column]][left]
         }))
         set(by_pk, j = "fingerprint", value = NA_character_)
+        reached <- which(
+          !issues$level %chin% "column" & !issues$table_name %chin% unmatched_tables
+        )
+        forms <- issues$fingerprint_pk[reached]
+        shared <- which(by_pk$fingerprint_pk %chin% forms[duplicated(forms, incomparables = NA)])
+        set(by_pk, i = shared, j = "fingerprint_pk", value = NA_character_)
         again <- match_issues(by_pk, register, character(), unmatched_tables)
         set(again, j = "row", value = left[again$row])
         own_again <- own_unit(again)

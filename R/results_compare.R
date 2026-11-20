@@ -14,7 +14,8 @@
 #' and the `group_cols` a column-level issue is matched on. An issue matches a row of `other`
 #' with its own fingerprint and run scope; an issue that matches none that way matches a row
 #' with its own pk: form and run scope, so a change in a contributor's decoding doesn't break the
-#' match (D9.22), nor does a row giving only the pk: form (R51). A column-level issue names no
+#' match (D9.22), nor does a row giving only the pk: form (R51), where no other record-level
+#' issue of `issues` holds that pk: form (D23.148). A column-level issue names no
 #' record, so it matches on the group columns too, in both passes (D23.21), and on none where
 #' `other` lacks one of them. An NA fingerprint or
 #' pk: form matches nothing, on either side (D15.9), and an issue or row of a table in
@@ -70,8 +71,13 @@ match_issues <- function(issues, other, group_cols, unmatched_tables = NULL) {
     list(issues$fingerprint[record], issues$run_scope[record]), record, side,
     c("fingerprint", "run_scope")
   )
-  # A record-level issue the fingerprint didn't match, by its pk: form (D9.22).
-  unmatched <- record[!record %in% by_print$row]
+  # A record-level issue the fingerprint didn't match, by its pk: form (D9.22), where no other
+  # record-level issue holds that form: issues sharing one, as records sharing a duplicated PK
+  # give, match by their fingerprints alone (D23.148). The form carries its rule, table and
+  # column, so it is counted as it is.
+  forms <- issues$fingerprint_pk[record]
+  shared <- forms %chin% forms[duplicated(forms, incomparables = NA)]
+  unmatched <- record[!shared & !record %in% by_print$row]
   by_pk <- key_matches(
     list(issues$fingerprint_pk[unmatched], issues$run_scope[unmatched]), unmatched, side,
     c("fingerprint_pk", "run_scope")
@@ -185,7 +191,10 @@ read_previous <- function(previous) {
 #' @details
 #' An issue persists when the earlier run has an issue with the same `fingerprint`, or failing
 #' that the same `fingerprint_pk`, and the same `run_scope`, so it still matches after the
-#' contributor's provider keys are decoded differently. A column-level issue, which names no
+#' contributor's provider keys are decoded differently. A record-level issue's `fingerprint_pk`
+#' is matched only where no other record-level issue of the run or of the earlier run has it,
+#' so the issues of records sharing a primary key match by their `fingerprint` alone. A
+#' column-level issue, which names no
 #' record, also needs the same values in the group columns: the run's `group_cols`, or, for an
 #' issues table, its columns beyond the issues' own. Every issue is matched, whatever its
 #' status. An issue whose `fingerprint` and `fingerprint_pk` are both missing, as on a record
@@ -317,7 +326,8 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
   # The earlier issues are matched by their distinct keys, the columns match_issues() reads,
   # each key with its earliest seen, so issues sharing a fingerprint in both runs, as records
   # sharing a primary key give, meet once per current issue and key, never once per pair (16.2).
-  # Where no key repeats, the earlier issues are matched where they are.
+  # Where no key repeats, the earlier issues are matched where they are, or their keys where a
+  # pk: form is left out (below).
   key_cols <- c(
     "fingerprint", "fingerprint_pk", "run_scope", "rule_id", "table_name",
     intersect(group_cols, names(before))
@@ -326,16 +336,32 @@ gpq_compare_runs <- function(current, previous, unmatched_tables = NULL) {
     text(before[[column]])
   }))
   key_of <- frankv(keys, ties.method = "dense", na.last = TRUE)
+  # The pk: pass counts the earlier run's record-level issues too, as match_issues() counts the
+  # current run's (D23.148, D23.149): a pk: form more than one of them holds is left out of the
+  # keys matched, so a current issue meets it by fingerprint alone. Without a `level` column
+  # every earlier issue is counted.
+  counted <- !keys$table_name %chin% unmatched_tables
+  if ("level" %chin% names(before)) {
+    counted <- counted & !text(before$level) %chin% "column"
+  }
+  counted <- which(counted)
+  forms <- keys$fingerprint_pk[counted]
+  shared <- counted[forms %chin% forms[duplicated(forms, incomparables = NA)]]
   if (anyDuplicated(key_of) > 0L) {
     by_key <- data.table(group = key_of, seen = seen, at = seq_along(key_of))
     setorderv(by_key, c("group", "seen"))
     by_key <- by_key[!duplicated(by_key$group)]
     distinct <- setDT(lapply(keys, function(column) column[by_key$at]))
     key_seen <- by_key$seen
+    shared <- which(by_key$at %in% shared)
   } else {
-    distinct <- before
+    # The earlier issues where they are, or their keys where a pk: form is to be left out.
+    distinct <- if (length(shared) > 0L) keys else before
     key_seen <- seen
     key_of <- seq_along(seen)
+  }
+  if (length(shared) > 0L) {
+    set(distinct, i = shared, j = "fingerprint_pk", value = NA_character_)
   }
   rm(keys)
   pairs <- match_issues(issues, distinct, group_cols, unmatched_tables)

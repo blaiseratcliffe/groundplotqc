@@ -95,6 +95,42 @@ test_that("an issue still persists after its provider key's decoding changes (D9
   expect_equal(nrow(out$resolved), 0L)
 })
 
+test_that("issues sharing a pk: form match by their fingerprints alone (D9.22, D23.148)", {
+  # Two records of hauls share the PK k1, as a duplicated PK gives, each with its own provider
+  # key: their fingerprints differ, their pk: form is the same. The earlier run holds the
+  # first's issue; the second's is new, though its pk: form is the first's.
+  before <- issues_of(record_pk = "k1", provider_key = "site=1; tree=2")
+  now <- issues_of(
+    record_pk = c("k1", "k1"), provider_key = c("site=1; tree=2", "site=1; tree=3"),
+    run_id = later
+  )
+  expect_equal(length(unique(now$fingerprint)), 2L)
+  expect_equal(length(unique(c(before$fingerprint_pk, now$fingerprint_pk))), 1L)
+  out <- gpq_compare_runs(now, before)
+  expect_equal(now$change, c("persisting", "new"))
+  expect_equal(nrow(out$resolved), 0L)
+  # The first's issue gone, two others sharing its PK: both new, the first's resolved.
+  now <- issues_of(
+    record_pk = c("k1", "k1"), provider_key = c("site=1; tree=3", "site=1; tree=4"),
+    run_id = later
+  )
+  out <- gpq_compare_runs(now, before)
+  expect_equal(now$change, c("new", "new"))
+  expect_equal(out$resolved$fingerprint, before$fingerprint)
+  # The earlier run's issues are counted too (D23.149): it holds two records sharing k1, the
+  # later run one whose fingerprint is neither's, its pk: form its own in the later run. It is
+  # new, and both earlier ones resolved.
+  before <- issues_of(
+    record_pk = c("k1", "k1"), provider_key = c("site=1; tree=2", "site=1; tree=3")
+  )
+  now <- issues_of(record_pk = "k1", provider_key = "site=1; tree=4", run_id = later)
+  out <- gpq_compare_runs(now, before)
+  expect_equal(now$change, "new")
+  expect_equal(out$resolved$fingerprint, before$fingerprint)
+  # A PK one issue alone holds still matches by its pk: form when its fingerprint changes: the
+  # test "an issue still persists after its provider key's decoding changes (D9.22)" above.
+})
+
 test_that("matching needs the same run scope, and a column-level issue the same groups (D23.21)", {
   # A merged run's issue never matches a package run's of the same fingerprint (D8.16).
   before <- issues_of(record_pk = "k1", run_scope = "merged")

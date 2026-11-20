@@ -16,7 +16,8 @@
 #'
 #' @details
 #' An entry matches an issue as [gpq_compare_runs()] matches an earlier run's: by its
-#' `fingerprint`, or failing that its `fingerprint_pk`, and the same `run_scope`, so it still
+#' `fingerprint`, or failing that its `fingerprint_pk` where no other record-level issue of the
+#' run has it, and the same `run_scope`, so it still
 #' matches after the contributor's provider keys are decoded differently. An entry for a
 #' column-level issue, which names no record, also needs the issue's values in the register's
 #' group columns. An entry for a record-level issue also needs the issue's values in the group
@@ -163,7 +164,8 @@ gpq_apply_acknowledgements <- function(issues, acknowledgements, unmatched_table
     # register holds, "*" in one of them matching every issue's value there (D23.111, D23.128).
     # An issue whose fingerprint met only other groups' entries is matched again by its pk: form
     # alone, as an issue its fingerprint matches nothing is (D9.22): its fingerprint is left
-    # out of a copy of those rows' matching columns. Each test worked out before the brackets.
+    # out of a copy of those rows' matching columns, and so is a pk: form another record-level
+    # issue holds too (D23.148). Each test worked out before the brackets.
     own_unit <- function(pairs) {
       own <- issues$level[pairs$row] %chin% "column"
       record <- which(!own)
@@ -184,6 +186,12 @@ gpq_apply_acknowledgements <- function(issues, acknowledgements, unmatched_table
         issues[[column]][left]
       }))
       set(by_pk, j = "fingerprint", value = NA_character_)
+      # A pk: form another record-level issue holds too matches nothing, as in match_issues(),
+      # which sees only the issues matched again here (D23.148).
+      reached <- which(!issues$level %chin% "column" & !issues$table_name %chin% unmatched_tables)
+      forms <- issues$fingerprint_pk[reached]
+      shared <- which(by_pk$fingerprint_pk %chin% forms[duplicated(forms, incomparables = NA)])
+      set(by_pk, i = shared, j = "fingerprint_pk", value = NA_character_)
       again <- match_issues(by_pk, data, character(), unmatched_tables)
       set(again, j = "row", value = left[again$row])
       own_again <- own_unit(again)

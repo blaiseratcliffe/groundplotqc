@@ -34,7 +34,8 @@ since as lapsed. The issues' \code{status} is set by reference.
 }
 \details{
 An entry matches an issue as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}} matches an earlier run's: by its
-\code{fingerprint}, or failing that its \code{fingerprint_pk}, and the same \code{run_scope}, so it still
+\code{fingerprint}, or failing that its \code{fingerprint_pk} where no other record-level issue of the
+run has it, and the same \code{run_scope}, so it still
 matches after the contributor's provider keys are decoded differently. An entry for a
 column-level issue, which names no record, also needs the issue's values in the register's
 group columns. An entry for a record-level issue also needs the issue's values in the group

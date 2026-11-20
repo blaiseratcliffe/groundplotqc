@@ -37,7 +37,10 @@ issues' \code{first_seen_run}, \code{change} and \code{change_cause} are set by 
 \details{
 An issue persists when the earlier run has an issue with the same \code{fingerprint}, or failing
 that the same \code{fingerprint_pk}, and the same \code{run_scope}, so it still matches after the
-contributor's provider keys are decoded differently. A column-level issue, which names no
+contributor's provider keys are decoded differently. A record-level issue's \code{fingerprint_pk}
+is matched only where no other record-level issue of the run or of the earlier run has it,
+so the issues of records sharing a primary key match by their \code{fingerprint} alone. A
+column-level issue, which names no
 record, also needs the same values in the group columns: the run's \code{group_cols}, or, for an
 issues table, its columns beyond the issues' own. Every issue is matched, whatever its
 status. An issue whose \code{fingerprint} and \code{fingerprint_pk} are both missing, as on a record
