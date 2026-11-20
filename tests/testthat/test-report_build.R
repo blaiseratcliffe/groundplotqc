@@ -189,9 +189,9 @@ test_that("a unit's record counts go to it alone; its report ranks its own units
     recorded,
     i = which(recorded$setting == "problem_plot_rate"), j = "value", value = "0.1"
   )
+  # The build reads the run's units from the saved run.csv alone, so the folder written above
+  # serves each build, which replaces the last one's reports.
   x$metadata$settings <- recorded
-  output <- withr::local_tempdir()
-  gpq_write_results(x, output)
   files <- gpq_build_reports(x, output)
   expect_match(ranked("100"), "Above 0.1</th>", fixed = TRUE)
   expect_match(ranked("100"), "<td class=\"num\">0.12</td><td>yes</td>", fixed = TRUE)
@@ -206,8 +206,6 @@ test_that("a unit's record counts go to it alone; its report ranks its own units
     i = which(recorded$setting == "problem_plot_min_records"), j = "value", value = "26"
   )
   x$metadata$settings <- recorded
-  output <- withr::local_tempdir()
-  gpq_write_results(x, output)
   files <- gpq_build_reports(x, output)
   expect_false(grepl("P-100-1", ranked("100"), fixed = TRUE))
   expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 1L, "0.03"), fixed = TRUE)
@@ -218,8 +216,6 @@ test_that("a unit's record counts go to it alone; its report ranks its own units
     groundplotqc.problem_plot_rate = 0.5, groundplotqc.blocking_severities = NULL,
     groundplotqc.problem_plot_min_records = NULL
   )
-  output <- withr::local_tempdir()
-  gpq_write_results(x, output)
   files <- gpq_build_reports(x, output)
   expect_match(ranked("100"), "Above 0.5</th>", fixed = TRUE)
   expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
