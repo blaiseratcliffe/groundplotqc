@@ -325,7 +325,8 @@ unit_file_name <- function(units) {
 #' examples per check. In a chart's labels and in the tables of checks and issues, delivered
 #' text, such as a value, a key, a record ID, or a table or column name, longer than `cell_cap`
 #' characters is cut and ends with an ellipsis; a check's examples are cut together, as one
-#' text. The issues CSV has every issue, with its text in full.
+#' text. The issues CSV has every issue of this run, with its text in full; the issues
+#' resolved since the previous run are listed on the page only.
 #'
 #' @param results A `gpq_results` object, such as [gpq_check_conformance()] returns, its issues
 #'   classed by [gpq_classify_issues()] and its run written to `output_dir` by
