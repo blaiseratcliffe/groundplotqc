@@ -778,7 +778,8 @@ capped_table <- function(shown, caption, row_class, text, settings, ...) {
 #' columns and the problem unit's key column where the earlier run has them, "*" shown as W4;
 #' delivered text cut at `cell_cap` (D20.39); sorted by severity, check, table, column,
 #' provider key, record ID and issue ID; a column empty in every row left out (D20.44); at most
-#' `row_cap` rows, with a line naming no file, since the CSV doesn't hold them (D23.34).
+#' `row_cap` rows, with a line naming no file, since the CSV doesn't hold them (D23.34). A column
+#' the earlier run's issues lack reads as empty (D23.160).
 #' @noRd
 section_changes <- function(tables, text, settings) {
   lang <- settings$lang
@@ -824,6 +825,16 @@ section_changes <- function(tables, text, settings) {
     return(html_section("changes", title, body))
   }
   severities <- c("error", "warning", "flag", "info")
+  # A column the earlier run's issues lack reads as empty, one missing value per row (D23.160).
+  held <- function(column, empty = NA_character_) {
+    if (is.null(resolved[[column]])) rep(empty, nrow(resolved)) else resolved[[column]]
+  }
+  severity_of <- held("severity")
+  column_name <- held("column_name")
+  provider_key <- held("provider_key")
+  record_pk <- held("record_pk")
+  value <- held("value")
+  issue_id <- held("issue_id", NA_integer_)
   registry <- rule_registry()
   map <- rule_id_map()
   rule_id <- fcoalesce(map$new_rule_id[match(resolved$rule_id, map$old_rule_id)], resolved$rule_id)
@@ -843,9 +854,9 @@ section_changes <- function(tables, text, settings) {
   )
   columns <- c(
     list(
-      severity_words[match(resolved$severity, severities)], rule_id,
-      unname(messages[message_ids]), cut(resolved$table_name), cut(resolved$column_name),
-      cut(resolved$provider_key), cut(resolved$record_pk), cut(resolved$value), cut(first_seen)
+      severity_words[match(severity_of, severities)], rule_id,
+      unname(messages[message_ids]), cut(resolved$table_name), cut(column_name),
+      cut(provider_key), cut(record_pk), cut(value), cut(first_seen)
     ),
     lapply(extra, function(column) linked(as.character(resolved[[column]])))
   )
@@ -860,14 +871,13 @@ section_changes <- function(tables, text, settings) {
   # The text keys read as UTF-8, so the radix sort's byte order is C order whatever a key's
   # encoding mark (D20.42, R94).
   order_by <- order(
-    match(resolved$severity, severities), enc2utf8(rule_id), enc2utf8(resolved$table_name),
-    enc2utf8(resolved$column_name), enc2utf8(resolved$provider_key),
-    enc2utf8(resolved$record_pk), resolved$issue_id,
+    match(severity_of, severities), enc2utf8(rule_id), enc2utf8(resolved$table_name),
+    enc2utf8(column_name), enc2utf8(provider_key), enc2utf8(record_pk), issue_id,
     method = "radix"
   )
   shown <- as.data.table(lapply(columns[kept], function(x) x[order_by]))
   setnames(shown, headers[kept])
-  severity <- resolved$severity[order_by]
+  severity <- severity_of[order_by]
   row_class <- fifelse(severity %chin% severities, paste0("sev-", severity), NA_character_)
   html_section("changes", title, c(
     body,

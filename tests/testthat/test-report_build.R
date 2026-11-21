@@ -1426,6 +1426,50 @@ test_that("a run with no group columns builds one report of every issue (D20.29,
   )
 })
 
+test_that("a previous issues table of documented columns only builds section 11 (11; D23.160)", {
+  skip_on_cran()
+  fish <- fx_fish_spec()
+  tables <- fx_fish_clean()
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  results <- suppressWarnings(gpq_check_conformance(tables, fish, layers = 0))
+  gpq_classify_issues(results$issues, NULL)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  # The earlier run's one issue, which this run no longer holds, in the eight columns
+  # gpq_compare_runs() documents and no others.
+  documented <- c(
+    "run_id", "run_scope", "rule_id", "rule_fingerprint", "table_name", "fingerprint",
+    "fingerprint_pk", "first_seen_run"
+  )
+  previous <- data.table::copy(results$issues[1L, documented, with = FALSE])
+  data.table::set(previous, j = "run_id", value = "20261001T080000Z_0000aa")
+  data.table::set(previous, j = c("fingerprint", "fingerprint_pk"), value = list("gone", "gone"))
+  data.table::set(previous, j = "first_seen_run", value = "20261001T080000Z_0000aa")
+  files <- gpq_build_reports(results, output, previous = previous)
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  start <- regexpr("<section[^>]*id=\"changes\"", page)
+  expect_gt(start, 0L)
+  section <- substr(page, start, nchar(page))
+  section <- substr(section, 1L, regexpr("</section>", section) - 1L)
+  # The resolved issue is listed, by its check ID, and the counts row says one resolved.
+  expect_match(section, "column_missing", fixed = TRUE)
+  expect_match(
+    section,
+    sprintf(
+      "<td>%s</td>(<td class=\"num\">[0-9]+</td>){2}<td class=\"num\">1</td>",
+      html_escape(report_text("report_changes_resolved"))
+    )
+  )
+  # The columns the earlier run lacks are empty in every row, so the table leaves them out.
+  for (id in c(
+    "report_column_severity", "report_column_column", "report_column_provider_key",
+    "report_column_record_pk", "report_column_issue_value"
+  )) {
+    expect_false(grepl(paste0(">", html_escape(report_text(id)), "<"), section, fixed = TRUE))
+  }
+})
+
 test_that("reports/ and tables/ hold only units' files and package_file_stems (D20.70, D20.73)", {
   local_results_registry()
   output <- withr::local_tempdir()
