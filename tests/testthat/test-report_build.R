@@ -1461,6 +1461,8 @@ test_that("a previous issues table of documented columns only builds section 11 
       html_escape(report_text("report_changes_resolved"))
     )
   )
+  # The resolved issue has no severity, so its row has no severity class.
+  expect_false(grepl("<tr class=\"sev-", section, fixed = TRUE))
   # The columns the earlier run lacks are empty in every row, so the table leaves them out.
   for (id in c(
     "report_column_severity", "report_column_column", "report_column_provider_key",
