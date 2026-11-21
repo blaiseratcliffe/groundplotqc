@@ -31,7 +31,7 @@ fx_hostile_text <- function() {
 # A run's results on the fish survey: group columns unit and area, the problem unit's key
 # column plot; a fail, a not_run and a plausibility row; record issues with an empty value,
 # hostile text, a missing PK and a provider key; a not_evaluated issue and a column-level
-# one; one correction. Needs local_results_registry() in force.
+# one; one correction; three plots' record counts. Needs local_results_registry() in force.
 fx_results <- function() {
   spec <- fx_fish_spec()
   run_id <- "20261008T120000Z_abc123"
@@ -90,7 +90,12 @@ fx_results <- function() {
     support_n = 1L, support_d = 1L, fixed_value_passes = TRUE, easy_fix = FALSE,
     easy_fix_blocked_by = "2; problem_plot"
   ))
-  new_gpq_results(results, issues, corrections, metadata)
+  # The records of three plots (D23.24), hostile text among the keys.
+  unit_records <- complete_table(list(
+    run_id = run_id, unit = "u1", area = c("a1", "a1", "*"), plot = c("p1", "p2", hostile[[3L]]),
+    table_name = c("catches", "catches", "hauls"), n_records = c(2L, 1L, 3L)
+  ), results_schema(c("unit", "area"), "plot")$unit_records, "unit_records")
+  new_gpq_results(results, issues, corrections, unit_records, metadata)
 }
 
 # A run of two report units, "100" and "110", for the report tests (M7a tasks 7 to 11):
@@ -103,7 +108,7 @@ fx_results <- function() {
 # row per unit and its marked "*" row; fk_orphan's not-evaluated records with no issue, and
 # not-evaluated issues with their roots, one of them held back. Also every class, the
 # severities error, warning and flag (an info rule writes results rows only, D20.55),
-# provider keys of each status, hostile text and two corrections.
+# provider keys of each status, hostile text and two corrections; no record counts.
 # Planted values, for the confidentiality tests (13): 100's own "AB-secret", "A-100-1",
 # "P-100-1", "P-100-2" and "ST-100-1"; 110's own "BC-secret", "A-110-1", "P-110-1" and
 # "ST-110-2"; and, held only by "*" rows, marked issues and a results row's examples, so in
@@ -278,5 +283,6 @@ fx_report_results <- function() {
     proposed_value = c("150", "-99"), strategy = c("none", "sentinel_fix"), tie = FALSE,
     fixed_value_passes = TRUE, easy_fix = c(FALSE, TRUE)
   ))
-  new_gpq_results(results, issues, corrections, metadata)
+  unit_records <- empty_table(results_schema(c("unit", "area"), "plot")$unit_records)
+  new_gpq_results(results, issues, corrections, unit_records, metadata)
 }

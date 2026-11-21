@@ -1,14 +1,19 @@
-# Pre-flight's run inputs (plan 3.6, 4.2; D19.51): the optional tables gpq_preflight(inputs = )
-# takes at M6, each a data.frame or a CSV path read as the specification's inputs are, and the
+# Pre-flight's run inputs (plan 3.6, 4.2; D19.51, D23.33): the optional tables
+# gpq_preflight(inputs = ) takes, each a data.frame or a CSV path read as the specification's
+# inputs are (the earlier run, previous, also a run folder, read for its columns only), and the
 # three checks of them: input_unparseable (a stop), override_scope_conflict and
 # override_unknown_name (warnings). gpq_classify_issues() reads its overrides and evidence
 # through the same reader (R/lineage_classify.R, R/lineage_evidence.R).
 
-#' The run inputs pre-flight takes at M6, with their own columns (3.6; D19.51)
+#' The run inputs pre-flight takes, with their own columns (3.6; D19.51, D23.33)
 #'
 #' `overrides` (10.3 step 1) may also hold group columns, each an attribute of the
 #' specification; `lineage` is the raw-value table (10.2); `pipeline_fill` has the `filled`
-#' evidence's columns (3.6). The other inputs of 3.6's list join with their milestones.
+#' evidence's columns (3.6); `previous`, an earlier run, a run folder or an issues table (9.3),
+#' has the columns the comparison reads (gpq_compare_runs()), and may hold any other column of
+#' the issues or attribute of the specification; `acknowledgements`, your register, has 11.8's
+#' columns and may also hold group columns, each an attribute of the specification (D23.26). The
+#' other inputs of 3.6's list join with their milestones.
 #' @noRd
 run_input_schema <- function() {
   list(
@@ -16,7 +21,20 @@ run_input_schema <- function() {
       "fingerprint", "rule_id", "table_name", "column_name", "issue_class", "who", "when", "why"
     ),
     lineage = c("table_name", "record_pk", "column_name", "raw_value", "raw_source"),
-    pipeline_fill = c("table_name", "record_pk", "column_name", "written_value")
+    pipeline_fill = c("table_name", "record_pk", "column_name", "written_value"),
+    previous = c(
+      "run_id", "run_scope", "rule_id", "rule_fingerprint", "table_name", "fingerprint",
+      "fingerprint_pk", "first_seen_run"
+    ),
+    acknowledgements = c(
+      "fingerprint", "fingerprint_pk", "rule_id", "table_name", "column_name", "provider_key",
+      "acknowledged_value", "decision", "who", "when", "why", "run_scope"
+    ),
+    # The attribution map (10.4) is also keyed by one group column its caller names (MAGPlot:
+    # jurisdiction, D23.27), an attribute of the specification, so it isn't among its own.
+    attribution_map = c(
+      "table_name", "attribute_name", "script_file", "script_block", "script_commit", "note"
+    )
   )
 }
 
@@ -24,8 +42,12 @@ run_input_schema <- function() {
 #'
 #' `x` is a list named by input, each name one of `taken` and given once; each element a
 #' data.frame or the path of a CSV file, read by read_input_table(): every cell text, a blank
-#' NA, and a file's reading problems kept as findings. Anything else is a caller's error naming
-#' `arg`. Returns the reads, named as `x` is; the caller's tables are never changed.
+#' NA, and a file's reading problems kept as findings. `previous` may also be a run folder, and
+#' is read for its form, a folder's files and run outcome and its issues' columns, never their
+#' rows, which gpq_compare_runs() reads (D23.33): its `data` has no rows, and a folder that isn't
+#' a completed run's is its finding. Anything else is a caller's error naming `arg`, or, for
+#' `previous`, naming it. Returns the reads, named as `x` is; the caller's tables are never
+#' changed.
 #' @noRd
 read_run_inputs <- function(x, arg, taken) {
   shaped <- is.list(x) && !is.data.frame(x) && (length(x) == 0L || (
@@ -49,7 +71,86 @@ read_run_inputs <- function(x, arg, taken) {
       paste(mark_invalid_utf8(bad), collapse = ", "), listed
     ), call. = FALSE)
   }
-  read <- lapply(given, function(input) read_input_table(x[[input]], input))
+  # An earlier run, as read_input_table() reads an input: its issues' header as `data`, with no
+  # rows, and a folder's problem as its finding (D23.46).
+  previous_read <- function(previous) {
+    folder <- is.character(previous) && length(previous) == 1L && !is.na(previous) &&
+      dir.exists(previous)
+    if (!folder && !is.data.frame(previous) && !is_path_to(previous, "csv")) {
+      # M8a1 W15
+      stop(
+        "`previous` must be a run folder, a data.frame or the path of an existing .csv file.",
+        call. = FALSE
+      )
+    }
+    # The header alone, its first line read as a CSV's: fread() given the whole file would read
+    # its rows to place the header.
+    header <- function(path) {
+      first <- readLines(path, n = 1L, warn = FALSE, encoding = "UTF-8")
+      columns <- if (length(first) == 0L) {
+        character()
+      } else {
+        names(fread(
+          text = first, sep = ",", header = TRUE, colClasses = "character",
+          encoding = "UTF-8", showProgress = FALSE
+        ))
+      }
+      mark_invalid_utf8(gsub("\"\"", "\"", columns, fixed = TRUE))
+    }
+    problem <- NULL
+    if (folder) {
+      inside <- c("metadata/run.csv", "tables/issues.csv", "tables/results.csv")
+      lacking <- inside[!file.exists(file.path(previous, inside))]
+      if (length(lacking) > 0L) {
+        problem <- report_text(
+          "preflight_detail_input_unparseable_folder",
+          input = "previous", folder = basename(previous), file = lacking[[1L]]
+        )
+      } else {
+        run <- read_run_csv(file.path(previous, "metadata", "run.csv"), metadata_schema()$run)
+        if (!identical(run$outcome, "completed")) {
+          problem <- report_text(
+            "preflight_detail_input_unparseable_stopped",
+            input = "previous", folder = basename(previous)
+          )
+        }
+      }
+      columns <- if (is.null(problem)) {
+        header(file.path(previous, "tables", "issues.csv"))
+      } else {
+        run_input_schema()$previous
+      }
+      where <- list(kind = "csv", file = "issues.csv", row_map = 1L)
+      # The run folder by its name, its run ID, not hashed: its issues file can be large.
+      manifest <- data.table(
+        input = "previous", file = basename(previous), file_date = NA_character_,
+        sha256 = NA_character_
+      )
+    } else if (is.data.frame(previous)) {
+      columns <- names(previous)
+      where <- list(kind = "memory", file = "in memory")
+      manifest <- manifest_row("previous")
+    } else {
+      columns <- header(previous)
+      where <- list(kind = "csv", file = basename(previous), row_map = 1L)
+      manifest <- manifest_row("previous", previous)
+    }
+    found <- if (!is.null(problem)) {
+      data.table(
+        rule_id = "input_unparseable", input = "previous", file = basename(previous),
+        detail = problem, source_cell = NA_character_
+      )
+    }
+    list(
+      data = setDT(structure(rep(list(character()), length(columns)), names = columns)),
+      where = where, manifest = manifest, invalid = fix_invalid_utf8(data.table()),
+      findings = bind_component("read_findings", list(found)),
+      blank_header = logical(length(columns))
+    )
+  }
+  read <- lapply(given, function(input) {
+    if (input == "previous") previous_read(x[[input]]) else read_input_table(x[[input]], input)
+  })
   names(read) <- given
   read
 }
@@ -94,11 +195,17 @@ override_scope <- function(data, groups) {
 
 #' One run input's input_unparseable findings (3.6; D19.51)
 #'
-#' In order: the reader's findings (a cell that isn't valid UTF-8, a malformed line), at their
-#' cells; one finding naming the columns the input lacks and those it doesn't take, at its
-#' header, an overrides column that is an attribute of the specification taken as a group
-#' column; then, for overrides holding all their own columns, each row whose class isn't
-#' source or harmonization, and each row with no scope cell.
+#' In order: the reader's findings (a cell that isn't valid UTF-8, a malformed line; for
+#' `previous`, a folder that isn't a completed run's), at their cells; one finding naming the
+#' columns the input lacks and those it doesn't take, at its header, an overrides or
+#' acknowledgements column that is an attribute of the specification taken as a group column,
+#' an attribution map's as its key column, and an earlier run's column that is another column
+#' of the issues or an attribute taken too (D23.33); then, for overrides holding all their own
+#' columns, each row whose class isn't source or harmonization, and each row with no scope
+#' cell; for acknowledgements holding all theirs, each row whose decision isn't verified or
+#' rejected_proposal, and each whose run scope isn't package or merged (D23.26); and for an
+#' attribution map holding all its own columns, each row with a blank cell among its table,
+#' attribute and key, and each repeating an earlier row's (D23.39).
 #' @noRd
 input_problems <- function(spec, read, input) {
   data <- read$data
@@ -107,8 +214,15 @@ input_problems <- function(spec, read, input) {
   attributes <- unique(spec$attributes$attribute_name)
   missing <- setdiff(own, names(data))
   extra <- setdiff(names(data), own)
-  if (input == "overrides") {
+  # The overrides and the acknowledgements may hold group columns, and the attribution map is
+  # keyed by the group column its caller names, each an attribute (D19.51, D23.26, D23.27).
+  if (input %chin% c("overrides", "acknowledgements", "attribution_map")) {
     extra <- setdiff(extra, attributes)
+  }
+  # An earlier run's issues hold the issues' other columns and the run's group and key
+  # columns, each an attribute of the specification (9.3; D23.33).
+  if (input == "previous") {
+    extra <- setdiff(extra, c(names(results_schema()$issues), attributes))
   }
   found <- list(findings_of(read$findings$file, read$findings$detail, read$findings$source_cell))
   if (length(missing) > 0L || length(extra) > 0L) {
@@ -144,6 +258,61 @@ input_problems <- function(spec, read, input) {
           position = input_positions(read, input, no_scope)
         ),
         cell_references(where, no_scope + 1L, 1L)
+      )
+    ))
+  }
+  if (input == "acknowledgements" && length(missing) == 0L) {
+    coded <- list(decision = c("verified", "rejected_proposal"), run_scope = c("package", "merged"))
+    found <- c(found, lapply(names(coded), function(column) {
+      cell <- data[[column]]
+      bad <- which(!cell %chin% coded[[column]])
+      findings_of(
+        where$file,
+        report_text(
+          paste0("preflight_detail_input_unparseable_", column),
+          position = input_positions(read, input, bad), value = cell[bad]
+        ),
+        cell_references(where, bad + 1L, match(column, names(data)))
+      )
+    }))
+  }
+  if (input == "attribution_map" && length(missing) == 0L) {
+    # Each map row names one table and attribute for one key value, "*" standing for all in a
+    # key value's own row (D23.39), so a row with a blank among them, or repeating an earlier
+    # row's, would leave an issue no script or two. The key is the table, the attribute and
+    # the columns taken as the key above.
+    keys <- c("table_name", "attribute_name", setdiff(names(data), c(own, extra)))
+    listed <- paste(keys, collapse = ", ")
+    given <- Reduce(`&`, lapply(keys, function(column) !is.na(data[[column]])))
+    blank <- which(!given)
+    keyed <- which(given)
+    # Each keyed row's first row with the same key; the columns are renamed first, so no
+    # caller's key column can meet a name of the grouping's own.
+    cells <- data[keyed, keys, with = FALSE]
+    key_names <- sprintf("key_%d", seq_along(keys))
+    setnames(cells, key_names)
+    grouped <- cells[, list(row = .I, first = .I[1L]), by = key_names]
+    again <- grouped[grouped$row != grouped$first]
+    again <- again[order(again$row)]
+    twice <- keyed[again$row]
+    found <- c(found, list(
+      findings_of(
+        where$file,
+        report_text(
+          "preflight_detail_input_unparseable_map_blank",
+          position = input_positions(read, input, blank), columns = rep(listed, length(blank))
+        ),
+        cell_references(where, blank + 1L, 1L)
+      ),
+      findings_of(
+        where$file,
+        report_text(
+          "preflight_detail_input_unparseable_map_repeat",
+          position = input_positions(read, input, twice),
+          first = input_positions(read, input, keyed[again$first], short = TRUE),
+          columns = rep(listed, length(twice))
+        ),
+        cell_references(where, twice + 1L, 1L)
       )
     ))
   }

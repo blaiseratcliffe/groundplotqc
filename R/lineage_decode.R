@@ -257,8 +257,9 @@ decode_records <- function(input, table, rows, labels, flags) {
 #'
 #' `flags` is NULL or a list named by table, each name once, each element a data.frame holding
 #' the table's primary-key columns, named as the dictionary names them, and at least one flag
-#' column. An element's keys are written as the run writes record_pk (record_pk_text(): the
-#' parts' text joined "|"), so a number-typed or integer64 key meets its own row. A key given
+#' column. An element's keys are written as the run writes record_pk (record_pk_text(): each
+#' part's text escaped and the parts joined "|", D23.12), so a number-typed or integer64 key, or
+#' a composite one whose parts hold "|", meets its own row. A key given
 #' twice in one element, or one the table doesn't hold, is a caller's error. Returns, per
 #' table, `at` (each of the table's rows' row in the element, NA where none: a record whose key
 #' is missing gets no flag, and every holder of a repeated key gets that key's flags) and
@@ -302,7 +303,7 @@ flag_values <- function(flags, input) {
     }
     parts <- lapply(pk_columns, function(column) value_text(element[[column]]))
     if (length(parts) > 1L) {
-      parts <- lapply(parts, utf8_marked)
+      parts <- lapply(parts, function(part) escape_key_part(utf8_marked(part)))
     }
     given <- do.call(paste, c(parts, sep = "|"))
     given[Reduce(`|`, lapply(parts, function(part) is.na(part) | is_blank(part)))] <- NA_character_

@@ -1,7 +1,8 @@
 # A run's files (plan 9.1, 9.5, 11.9; D4.16, D7.11, D15.4): gpq_write_results() writes a
-# gpq_results object to <output_dir>/<run_id>/, the three tables to tables/ and the
+# gpq_results object to <output_dir>/<run_id>/, the four tables to tables/ and the
 # metadata to metadata/, and gpq_read_results() reads them back with each column's class
-# from its schema, so a round trip is identical. A run stopped at pre-flight writes only its
+# from its schema, so a round trip is identical; a folder written before unit_records reads
+# with that table empty (D23.33). A run stopped at pre-flight writes only its
 # run and spec_manifest tables (write_run_metadata()) beside the two pre-flight files. Both
 # functions' help pages give runnable examples on magp_example (D15.34). Every file is the
 # compiled writer's bytes: UTF-8, LF, every text field quoted, NA as an empty field. Each
@@ -14,9 +15,9 @@
 #'
 #' @description
 #' Writes a `gpq_results` object to `<output_dir>/<run_id>/`: the results summary,
-#' issues and corrections to `tables/`, and the run metadata to `metadata/`, one
-#' CSV file for each table: `results.csv`, `issues.csv` and `corrections.csv`, and
-#' the eight metadata tables.
+#' issues, corrections and the problem units' record counts to `tables/`, and the run
+#' metadata to `metadata/`, one CSV file for each table: `results.csv`, `issues.csv`,
+#' `corrections.csv` and `unit_records.csv`, and the eight metadata tables.
 #'
 #' @details
 #' Every file has LF line endings, every text field quoted and a missing value an
@@ -78,7 +79,7 @@ gpq_write_results <- function(results, output_dir) {
   # file in the run folder but the run's own pre-flight files, as a run ID used before leaves
   # (D16.5). Each is named by its path inside the run folder, the files the call would write
   # first and the rest in C order, the last two joined by " and " (R69).
-  table_names <- c("results", "issues", "corrections")
+  table_names <- c("results", "issues", "corrections", "unit_records")
   inside <- c(
     file.path("tables", paste0(table_names, ".csv")),
     file.path("metadata", paste0(names(metadata), ".csv"))
@@ -174,7 +175,9 @@ write_run_metadata <- function(metadata, run_dir) {
 #' @details
 #' The object read is identical to the one written. A run that stopped at
 #' pre-flight has no results to read, and the call stops; so does a missing file,
-#' or one that doesn't read cleanly, naming the file.
+#' or one that doesn't read cleanly, naming the file. The one exception is
+#' `tables/unit_records.csv`, which folders written by earlier versions of groundplotqc
+#' don't have: a run folder without it reads with `unit_records` empty.
 #'
 #' @param run_dir A run folder, as [gpq_write_results()] returns it.
 #' @return An object of class `gpq_results`, the tables and metadata
@@ -211,12 +214,24 @@ gpq_read_results <- function(run_dir) {
   })
   names(metadata) <- names(schema)
   # The problem unit's key column, if any, is read as text like the group columns.
-  tables <- results_schema(split_joined(run$group_cols))
-  read <- lapply(names(tables), function(name) {
+  group_cols <- split_joined(run$group_cols)
+  tables <- results_schema(group_cols)
+  # A run folder written before the run counted its problem units' records has no
+  # unit_records.csv (D23.33): its table is empty, with the issues' key column, if they have
+  # one beyond the group columns (an issues table with more is refused as before).
+  counted <- file.exists(file.path(run_dir, "tables", "unit_records.csv"))
+  names_read <- if (counted) names(tables) else setdiff(names(tables), "unit_records")
+  read <- lapply(names_read, function(name) {
     read_run_csv(file.path(run_dir, "tables", paste0(name, ".csv")), tables[[name]])
   })
-  names(read) <- names(tables)
-  new_gpq_results(read$results, read$issues, read$corrections, metadata)
+  names(read) <- names_read
+  if (!counted) {
+    key_col <- setdiff(names(read$issues), names(tables$issues))
+    read$unit_records <- empty_table(
+      results_schema(group_cols, if (length(key_col) == 1L) key_col)$unit_records
+    )
+  }
+  new_gpq_results(read$results, read$issues, read$corrections, read$unit_records, metadata)
 }
 
 #' One of a run's CSV files read with its columns' classes

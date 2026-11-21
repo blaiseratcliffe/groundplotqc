@@ -138,6 +138,163 @@ test_that("a unit's routed tables hold no other unit's or \"*\" record's values 
   }
 })
 
+test_that("a unit's record counts go to it alone; its report ranks its own units (13; D23.38)", {
+  # Three more builds of two units and their writes, about 1 s, so skipped on CRAN (D20.3,
+  # D23.157): the test below, with its routing and two builds, covers the same on CRAN.
+  testthat::skip_on_cran()
+  local_results_registry()
+  x <- fx_report_results()
+  # Counts for 100's plot P-100-1 in two tables, 110's P-110-1, and a plot whose unit is "*",
+  # whose key is in no unit's files of the two-unit run.
+  x$unit_records <- complete_table(
+    list(
+      run_id = x$metadata$run$run_id, unit = c("100", "100", "110", "*"),
+      area = c("A-100-1", "A-100-1", "A-110-1", "*"),
+      plot = c("P-100-1", "P-100-1", "P-110-1", "P-ZZ-77"),
+      table_name = c("hauls", "catches", "catches", "catches"), n_records = c(5L, 20L, 30L, 40L)
+    ),
+    results_schema(c("unit", "area"), "plot")$unit_records, "unit_records"
+  )
+  units <- c("100", "110")
+  expect_identical(route_unit(x, "100", units)$unit_records, x$unit_records[1:2])
+  expect_identical(route_unit(x, "110", units)$unit_records, x$unit_records[3L])
+  # In a run of one unit, "*" too, as its issues are taken.
+  expect_identical(route_unit(x, "110", "110")$unit_records, x$unit_records[3:4])
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  files <- gpq_build_reports(x, output)
+  ranked <- function(unit) {
+    file <- files[names(files) == unit][[1L]]
+    page <- readChar(file, file.size(file), useBytes = TRUE)
+    expect_false(grepl("P-ZZ-77", page, fixed = TRUE), info = unit)
+    regmatches(page, regexpr("<section id=\"problem-plots\">.*?</section>", page, perl = TRUE))
+  }
+  # P-100-1's 25 records, three of them holding an open error (a haul's and two catches'; its
+  # warning and its not-evaluated issue don't count); P-110-1's 30, with an open error and an
+  # open flag.
+  row <- function(area, plot, n, blocked, rate) {
+    sprintf(
+      paste0(
+        "<tr><td>%s</td><td>%s</td><td class=\"num\">%d</td><td class=\"num\">%d</td>",
+        "<td class=\"num\">%s</td><td>no</td></tr>"
+      ),
+      area, plot, n, blocked, rate
+    )
+  }
+  expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
+  expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 2L, "0.07"), fixed = TRUE)
+  expect_false(grepl("P-110-1", ranked("100"), fixed = TRUE))
+  # The build reads the three settings as the run recorded them (R60, D20.52): a recorded rate
+  # of 0.1 marks P-100-1's 0.12 above it.
+  three <- c("blocking_severities", "problem_plot_rate", "problem_plot_min_records")
+  recorded <- data.table::copy(x$metadata$settings)
+  data.table::set(
+    recorded,
+    i = which(recorded$setting == "problem_plot_rate"), j = "value", value = "0.1"
+  )
+  # The build reads the run's units from the saved run.csv alone, so the folder written above
+  # serves each build, which replaces the last one's reports.
+  x$metadata$settings <- recorded
+  files <- gpq_build_reports(x, output)
+  expect_match(ranked("100"), "Above 0.1</th>", fixed = TRUE)
+  expect_match(ranked("100"), "<td class=\"num\">0.12</td><td>yes</td>", fixed = TRUE)
+  # So are the recorded severities and size: with errors alone blocking, P-110-1 holds one
+  # blocked record, and with 26 records at least, P-100-1's 25 aren't ranked.
+  data.table::set(
+    recorded,
+    i = which(recorded$setting == "blocking_severities"), j = "value", value = "error"
+  )
+  data.table::set(
+    recorded,
+    i = which(recorded$setting == "problem_plot_min_records"), j = "value", value = "26"
+  )
+  x$metadata$settings <- recorded
+  files <- gpq_build_reports(x, output)
+  expect_false(grepl("P-100-1", ranked("100"), fixed = TRUE))
+  expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 1L, "0.03"), fixed = TRUE)
+  # A run that recorded none of them, as one an earlier version made, takes the option, or the
+  # built-in value where no option is set: blocking errors and flags, 20 records at least.
+  x$metadata$settings <- recorded[!recorded$setting %chin% three]
+  withr::local_options(
+    groundplotqc.problem_plot_rate = 0.5, groundplotqc.blocking_severities = NULL,
+    groundplotqc.problem_plot_min_records = NULL
+  )
+  files <- gpq_build_reports(x, output)
+  expect_match(ranked("100"), "Above 0.5</th>", fixed = TRUE)
+  expect_match(ranked("100"), row("A-100-1", "P-100-1", 25L, 3L, "0.12"), fixed = TRUE)
+  expect_match(ranked("110"), row("A-110-1", "P-110-1", 30L, 2L, "0.07"), fixed = TRUE)
+})
+
+test_that("a unit's counts go to it alone, and its report reads the run's settings (13)", {
+  local_results_registry()
+  x <- fx_report_results()
+  # Counts for 100's plot P-100-1 in two tables, 110's P-110-1, and a plot whose unit is "*".
+  x$unit_records <- complete_table(
+    list(
+      run_id = x$metadata$run$run_id, unit = c("100", "100", "110", "*"),
+      area = c("A-100-1", "A-100-1", "A-110-1", "*"),
+      plot = c("P-100-1", "P-100-1", "P-110-1", "P-ZZ-77"),
+      table_name = c("hauls", "catches", "catches", "catches"), n_records = c(5L, 20L, 30L, 40L)
+    ),
+    results_schema(c("unit", "area"), "plot")$unit_records, "unit_records"
+  )
+  units <- c("100", "110")
+  expect_identical(route_unit(x, "100", units)$unit_records, x$unit_records[1:2])
+  expect_identical(route_unit(x, "110", units)$unit_records, x$unit_records[3L])
+  # In a run of one unit, "*" too, as its issues are taken.
+  expect_identical(route_unit(x, "110", "110")$unit_records, x$unit_records[3:4])
+  output <- withr::local_tempdir()
+  gpq_write_results(x, output)
+  ranked <- function(files, unit) {
+    file <- files[names(files) == unit][[1L]]
+    page <- readChar(file, file.size(file), useBytes = TRUE)
+    expect_false(grepl("P-ZZ-77", page, fixed = TRUE), info = unit)
+    regmatches(page, regexpr("<section id=\"problem-plots\">.*?</section>", page, perl = TRUE))
+  }
+  row <- function(area, plot, n, blocked, rate, above) {
+    sprintf(
+      paste0(
+        "<tr><td>%s</td><td>%s</td><td class=\"num\">%d</td><td class=\"num\">%d</td>",
+        "<td class=\"num\">%s</td><td>%s</td></tr>"
+      ),
+      area, plot, n, blocked, rate, above
+    )
+  }
+  # The run's recorded settings (R60, D20.52): a rate of 0.02 marks P-110-1's 0.03 (30 records,
+  # one with an open error, as errors alone block); at least 26 records leave P-100-1's 25 out.
+  recorded <- data.table::copy(x$metadata$settings)
+  set_recorded <- function(name, value) {
+    data.table::set(recorded, i = which(recorded$setting == name), j = "value", value = value)
+  }
+  set_recorded("problem_plot_rate", "0.02")
+  set_recorded("blocking_severities", "error")
+  set_recorded("problem_plot_min_records", "26")
+  x$metadata$settings <- recorded
+  files <- gpq_build_reports(x, output)
+  page_100 <- ranked(files, "100")
+  expect_false(grepl("P-100-1", page_100, fixed = TRUE))
+  page_110 <- ranked(files, "110")
+  expect_match(page_110, "Above 0.02</th>", fixed = TRUE)
+  expect_match(page_110, row("A-110-1", "P-110-1", 30L, 1L, "0.03", "yes"), fixed = TRUE)
+  expect_false(grepl("P-100-1", page_110, fixed = TRUE))
+  # A run that recorded none of them, as one an earlier version made, takes the option, or the
+  # built-in value where no option is set: blocking errors and flags, 20 records at least.
+  three <- c("blocking_severities", "problem_plot_rate", "problem_plot_min_records")
+  x$metadata$settings <- recorded[!recorded$setting %chin% three]
+  withr::local_options(
+    groundplotqc.problem_plot_rate = 0.5, groundplotqc.blocking_severities = NULL,
+    groundplotqc.problem_plot_min_records = NULL
+  )
+  files <- gpq_build_reports(x, output)
+  page_100 <- ranked(files, "100")
+  expect_match(page_100, "Above 0.5</th>", fixed = TRUE)
+  expect_match(page_100, row("A-100-1", "P-100-1", 25L, 3L, "0.12", "no"), fixed = TRUE)
+  expect_false(grepl("P-110-1", page_100, fixed = TRUE))
+  page_110 <- ranked(files, "110")
+  expect_match(page_110, row("A-110-1", "P-110-1", 30L, 2L, "0.07", "no"), fixed = TRUE)
+  expect_false(grepl("P-100-1", page_110, fixed = TRUE))
+})
+
 test_that("route_unit keeps only the lineage rows of its unit's routed cells (D20.61, D20.65)", {
   local_results_registry()
   x <- fx_report_results()
@@ -217,23 +374,25 @@ test_that("route_unit gives lineage rows only to an issue whose key names one re
 })
 
 test_that("a key text two units' records share sends its raw value to neither (D20.118)", {
-  # A run: 100's record ("a|b", "c") and 110's ("a", "b|c") both write record_pk "a|b|c", and
-  # each fails value_below_min, so each unit has an issue on that text's weight.
+  # A run: 100's record ("x", 0.1 + 0.2) and 110's ("x", 0.3) both write record_pk "x|0.3", a
+  # number being written to 15 significant digits, and each fails value_below_min, so each
+  # unit has an issue on that text's weight. (Parts holding "|" no longer share a text: each
+  # is escaped, D23.12.)
   dictionary <- data.frame(
     table_name = "k", attribute_name = c("a", "b", "unit", "weight"),
-    key_type = c("PK", "PK", ".", "."), data_type = c(rep("character", 3L), "numeric"),
+    key_type = c("PK", "PK", ".", "."),
+    data_type = c("character", "numeric", "character", "numeric"),
     min_value = c(NA, NA, NA, "0")
   )
   tables <- list(k = data.frame(
-    a = c("a|b", "a", "x"), b = c("c", "b|c", "y"), unit = c("100", "110", "100"),
-    weight = c(-5, -5, 1)
+    a = "x", b = c(0.1 + 0.2, 0.3, 1), unit = c("100", "110", "100"), weight = c(-5, -5, 1)
   ))
   x <- gpq_check_conformance(tables, gpq_read_spec(dictionary), group_cols = "unit", layers = 3)
   below <- x$issues[x$issues$rule_id == "value_below_min"]
-  expect_identical(below$record_pk, c("a|b|c", "a|b|c"))
+  expect_identical(below$record_pk, c("x|0.3", "x|0.3"))
   expect_identical(below$pk_positional, c(TRUE, TRUE))
   lineage <- data.table::data.table(
-    table_name = "k", record_pk = "a|b|c", column_name = "weight", raw_value = "RAW-SHARED",
+    table_name = "k", record_pk = "x|0.3", column_name = "weight", raw_value = "RAW-SHARED",
     raw_source = "x"
   )
   units <- c("100", "110")
@@ -242,6 +401,23 @@ test_that("a key text two units' records share sends its raw value to neither (D
     expect_true("value_below_min" %in% routed$issues$rule_id)
     expect_length(routed$lineage$raw_value, 0L)
   }
+  # The parts holding "|" are escaped, so 100's key ("a|b", "c") and 110's ("a", "b|c") write
+  # different texts, each naming one record, and a lineage row on 100's escaped key reaches
+  # 100's issue only (D23.12).
+  dictionary$data_type[[2L]] <- "character"
+  tables <- list(k = data.frame(
+    a = c("a|b", "a"), b = c("c", "b|c"), unit = c("100", "110"), weight = c(-5, -5)
+  ))
+  x <- gpq_check_conformance(tables, gpq_read_spec(dictionary), group_cols = "unit", layers = 3)
+  below <- x$issues[x$issues$rule_id == "value_below_min"]
+  expect_identical(below$record_pk, c("a\\|b|c", "a|b\\|c"))
+  expect_identical(below$pk_positional, c(FALSE, FALSE))
+  lineage <- data.table::data.table(
+    table_name = "k", record_pk = "a\\|b|c", column_name = "weight", raw_value = "RAW-ESCAPED",
+    raw_source = "x"
+  )
+  expect_identical(route_unit(x, "100", units, lineage)$lineage$raw_value, "RAW-ESCAPED")
+  expect_length(route_unit(x, "110", units, lineage)$lineage$raw_value, 0L)
 })
 
 test_that("corrections follow their issues", {
@@ -350,7 +526,9 @@ test_that("a run with no group columns is one unit holding every row and remaind
     n_records = c(NA, NA, 9L), reaches_other_unit = FALSE, root_issue_id = c(NA, 1L, NA),
     status = c("open", "not_evaluated", "open")
   ))
-  x <- new_gpq_results(results, issues, new_corrections(), metadata)
+  x <- new_gpq_results(
+    results, issues, new_corrections(), empty_table(results_schema()$unit_records), metadata
+  )
   routed <- route_unit(x, NULL, character())
   expect_identical(routed$issues$issue_id, 1:3)
   expect_identical(routed$results$rule_id, rule_id)
@@ -432,8 +610,10 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "COM0", "LPT0", "COM¹", "LPT¹",
     "CONX", "COM10", "xCON", "CON-1", ".CON",
     "preflight", "PreFlight", "national_summary", "preflight.x",
-    # The package's own file stems, in any case (D20.70, D20.73); a value only holding one isn't.
-    "report", "Results", "ISSUES", "corrections", "issues.csv", "my_report"
+    # The package's own file stems, in any case (D20.70, D20.73, D23.25); a value only holding
+    # one isn't.
+    "report", "Results", "ISSUES", "corrections", "issues.csv", "my_report",
+    "unit_records", "Unit_Records"
   )
   stems <- unit_file_name(units)
   expect_identical(stems, c(
@@ -443,7 +623,8 @@ test_that("unit_file_name() keeps safe ASCII and writes every other byte as %XX 
     "%43OM0", "%4CPT0", "COM%C2%B9", "LPT%C2%B9",
     "CONX", "COM10", "xCON", "CON-1", "%2ECON",
     "%70reflight", "%50reFlight", "%6Eational_summary", "preflight.x",
-    "%72eport", "%52esults", "%49SSUES", "%63orrections", "issues.csv", "my_report"
+    "%72eport", "%52esults", "%49SSUES", "%63orrections", "issues.csv", "my_report",
+    "%75nit_records", "%55nit_Records"
   ))
   expect_identical(unit_file_name("Issues"), "%49ssues")
   expect_true(all(grepl("^[A-Za-z0-9._%-]+$", stems)))
@@ -587,6 +768,414 @@ test_that("gpq_build_reports writes each unit's report and CSV, holding only tha
   }
 })
 
+test_that("given previous and a register, each unit's sections 11 and 12 hold its own (13)", {
+  # About 8 builds, 2 to 3 s, so skipped on CRAN (D20.3, D23.157): the test of a unit's resolved
+  # issues, register entries and previous run below, with one build of two units and one of a
+  # run of 100 alone, covers the routing of each unit's own on CRAN. This one still holds what
+  # that one doesn't: the typed previous run, previous as a CSV path or a run folder, the
+  # register without a unit column or with "*", the solo run whose previous names only 100 and
+  # "*", the solo run persisting 110's issue on 100's fingerprint, and the build stopping before
+  # it removes or writes anything.
+  testthat::skip_on_cran()
+  local_results_registry()
+  results <- fx_report_results()
+  issues <- results$issues
+  schema <- results_schema(c("unit", "area"), "plot")$issues
+  # The previous run: this run's issues but 100's issue 7 and 110's issue 18, each a source
+  # issue, so both are new, and four issues this run doesn't have: 100's, 110's, one marked,
+  # and one of a record rule whose unit is "*", each holding a value of its own.
+  previous <- data.table::copy(issues)[!issues$issue_id %in% c(7L, 18L)]
+  data.table::set(previous, j = "run_id", value = "20261001T080000Z_0000aa")
+  gone <- complete_table(list(
+    issue_id = 101:104, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = c("H91", "H92", "H93", "H94"), row_number = 1:4, pk_positional = FALSE,
+    level = "record", value = c("RES-100-own", "RES-110-own", "RES-MARKED", "RES-STAR"),
+    unit = c("100", "110", "100", "*"), area = c("A-100-1", "A-110-1", "A-100-1", "*"),
+    plot = c("P-100-1", "P-110-1", "P-100-1", "*"),
+    reaches_other_unit = c(FALSE, FALSE, TRUE, FALSE), status = "open",
+    issue_class = "source", fingerprint = paste0("gone-", 1:4),
+    fingerprint_pk = paste0("gone-pk-", 1:4)
+  ), schema, "issues")
+  previous <- rbind(previous, gone)
+  # The register: first two entries naming 100 for 110's issues 19 and 18, one holding and one
+  # lapsed, which no unit shows, and one that lapsed on 100's issue 8; then an entry that holds
+  # for issue 8 (a missing value), one for 110's issue 19, one that lapsed on 100's issue 11
+  # and one on 110's issue 18; and an entry for issue 14, which reaches no unit. Each issue's
+  # list row shows its first entry that holds, its own unit's. The report-unit column is named
+  # unit, as a variable of the build is.
+  at <- match(c(19L, 18L, 8L, 8L, 19L, 11L, 18L, 14L), issues$issue_id)
+  held <- issues$value[at[[1L]]]
+  why <- c(
+    "WHY-CROSS", "LAPSED-CROSS", "LAPSED-ON-HELD", "WHY-100-own", "WHY-110-own",
+    "LAPSED-100-own", "LAPSED-110-own", "WHY-MARKED"
+  )
+  register <- data.frame(
+    fingerprint = issues$fingerprint[at], fingerprint_pk = issues$fingerprint_pk[at],
+    rule_id = issues$rule_id[at], table_name = issues$table_name[at],
+    column_name = issues$column_name[at], provider_key = issues$provider_key[at],
+    acknowledged_value = c(
+      held, "OLD-CROSS", "OLD-ON-HELD", NA, held, "OLD-100-own", "OLD-110-own", NA
+    ),
+    decision = "verified", who = "WHO-secret", when = "2026-11-01", why = why,
+    run_scope = "package", unit = c("100", "100", "100", "100", "110", "100", "110", "110"),
+    area = issues$area[at], plot = issues$plot[at]
+  )
+  before <- data.table::copy(results$issues)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output, previous = previous, acknowledgements = register)
+  # The caller's results are as they were (D20.120).
+  expect_identical(results$issues, before)
+  own <- list(
+    "100" = c("RES-100-own", "WHY-100-own", "OLD-100-own", "LAPSED-100-own", "LAPSED-ON-HELD"),
+    "110" = c("RES-110-own", "WHY-110-own", "OLD-110-own", "LAPSED-110-own")
+  )
+  nowhere <- c(
+    "RES-MARKED", "RES-STAR", "WHY-MARKED", "WHY-CROSS", "LAPSED-CROSS", "OLD-CROSS", "WHO-secret"
+  )
+  for (unit in names(own)) {
+    at <- which(names(files) == unit)
+    page <- readChar(files[[at[[1L]]]], file.size(files[[at[[1L]]]]), useBytes = TRUE)
+    csv <- data.table::fread(files[[at[[2L]]]], encoding = "UTF-8", colClasses = "character")
+    for (value in own[[unit]]) {
+      expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+    }
+    for (value in c(own[[setdiff(names(own), unit)]], nowhere)) {
+      expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+    }
+    # The acknowledged issue's row shows the entry that holds, never the one that lapsed.
+    listed <- regmatches(page, regexpr(
+      "<caption>Acknowledged issues</caption>.*?</table>", page,
+      perl = TRUE
+    ))
+    expect_true(grepl(own[[unit]][[2L]], listed, fixed = TRUE), info = unit)
+    expect_false(grepl("LAPSED-", listed, fixed = TRUE), info = unit)
+    # The CSV keeps the acknowledged issue, with its status, and holds no resolved one (D23.34).
+    expect_false(any(grepl("RES-", unlist(csv), fixed = TRUE)), info = unit)
+    acked <- match(c("100" = 8L, "110" = 19L)[[unit]], issues$issue_id)
+    row <- csv$record_pk == issues$record_pk[acked] & csv$rule_id == issues$rule_id[acked]
+    expect_equal(csv$status[row], "acknowledged", info = unit)
+    # Persisting issues were first seen in the previous run, new ones in this one (D23.35).
+    expect_true(grepl("<td>2026-10-01</td>", page, fixed = TRUE), info = unit)
+    expect_true(grepl("<td>2026-10-26</td>", page, fixed = TRUE), info = unit)
+  }
+  # route_unit gives each unit its own resolved issues, the marked and "*" ones to none.
+  saved <- gpq_read_results(file.path(output, results$metadata$run$run_id))
+  compared <- gpq_compare_runs(saved, previous)
+  for (unit in names(own)) {
+    routed <- route_unit(results, unit, names(own), resolved = compared$resolved)
+    expect_identical(routed$resolved$value, own[[unit]][[1L]], info = unit)
+  }
+  # A previous run's issues as fread() reads them, a numeric report unit, a record ID of digits
+  # and an empty provider key: the build reads them as text (D23.112).
+  typed <- as.data.frame(gone)[1:2, ]
+  typed$unit <- c(100, 110)
+  typed$record_pk <- c(91L, 92L)
+  typed$provider_key <- NA
+  typed_given <- data.table::copy(typed)
+  typed_files <- gpq_build_reports(results, output, previous = typed)
+  # The caller's previous run keeps its columns' classes and values.
+  expect_identical(typed, typed_given)
+  for (unit in names(own)) {
+    path <- typed_files[names(typed_files) == unit][[1L]]
+    page <- readChar(path, file.size(path), useBytes = TRUE)
+    expect_true(grepl(own[[unit]][[1L]], page, fixed = TRUE), info = unit)
+    expect_false(grepl(own[[setdiff(names(own), unit)]][[1L]], page, fixed = TRUE), info = unit)
+  }
+  # A run of unit 100 alone, given entries of 110's on 100's provider keys (D23.110, D23.111):
+  # one would hold and one has lapsed, yet neither acknowledges 100's issue nor shows.
+  solo <- fx_report_results()
+  data.table::set(solo$metadata$run, j = "report_units", value = "100")
+  solo$results <- solo$results[solo$results$unit != "110"]
+  solo$issues <- solo$issues[solo$issues$unit != "110"]
+  solo$corrections <- solo$corrections[solo$corrections$issue_id %in% solo$issues$issue_id]
+  shared <- match(c(11L, 10L), issues$issue_id)
+  theirs <- data.frame(
+    fingerprint = issues$fingerprint[shared], fingerprint_pk = issues$fingerprint_pk[shared],
+    rule_id = issues$rule_id[shared], table_name = issues$table_name[shared],
+    column_name = issues$column_name[shared], provider_key = issues$provider_key[shared],
+    acknowledged_value = c(issues$value[shared[[1L]]], "VALUE-OF-110"), decision = "verified",
+    who = "WHO-secret", when = "2026-11-01", why = c("WHY-OF-110", "WHY-LAPSED-110"),
+    run_scope = "package", unit = "110", area = "A-110-1", plot = "P-110-1"
+  )
+  solo_output <- withr::local_tempdir()
+  gpq_write_results(solo, solo_output)
+  solo_files <- gpq_build_reports(solo, solo_output, acknowledgements = theirs)
+  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  for (value in c("WHY-OF-110", "WHY-LAPSED-110", "VALUE-OF-110")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
+  expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "open")
+  # A register without the report-unit column matches a record-level entry on the other group
+  # columns it holds (D23.128): 110's area and plot on 100's provider keys neither acknowledge
+  # 100's issue nor show; with "*" there, the entry that holds acknowledges it and shows.
+  theirs$unit <- NULL
+  solo_files <- gpq_build_reports(solo, solo_output, acknowledgements = theirs)
+  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  for (value in c("WHY-OF-110", "WHY-LAPSED-110", "VALUE-OF-110")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
+  expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "open")
+  theirs$area <- "*"
+  theirs$plot <- "*"
+  solo_files <- gpq_build_reports(solo, solo_output, acknowledgements = theirs)
+  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  expect_true(grepl("WHY-OF-110", page, fixed = TRUE))
+  csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
+  expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "acknowledged")
+  # The run of 100 alone given the previous run of 100 and 110 (D23.127, D23.141, D23.142): as
+  # the previous run names another unit, its resolved issues are routed as a run of several
+  # units routes them, so 100's page shows its own unmarked one, RES-100-own, but neither
+  # 110's, the "*" record-level RES-STAR, the "*" column-level RES-STAR-COLUMN nor its own
+  # marked RES-MARKED; with the previous run naming no unit but 100, all its resolved issues
+  # are 100's.
+  solo_page <- function(previous) {
+    solo_files <- gpq_build_reports(solo, solo_output, previous = previous)
+    readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  }
+  star_column <- complete_table(list(
+    issue_id = 105L, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = "*", row_number = NA_integer_, pk_positional = FALSE, level = "column",
+    value = "RES-STAR-COLUMN", unit = "*", area = "*", plot = "*", reaches_other_unit = FALSE,
+    status = "open", issue_class = "source", fingerprint = "gone-5", fingerprint_pk = "gone-pk-5"
+  ), schema, "issues")
+  page <- solo_page(rbind(previous, star_column))
+  expect_true(grepl("RES-100-own", page, fixed = TRUE))
+  for (value in c("RES-STAR", "RES-STAR-COLUMN", "RES-MARKED", "RES-110-own")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  previous_100 <- previous[previous$unit %chin% c("100", "*")]
+  page <- solo_page(rbind(previous_100, star_column))
+  for (value in c("RES-100-own", "RES-STAR", "RES-STAR-COLUMN", "RES-MARKED")) {
+    expect_true(grepl(value, page, fixed = TRUE), info = value)
+  }
+  # So where every issue of 110's persists, matching one of 100's on its fingerprint: the
+  # previous run itself names 110, given as its issues in memory or as a CSV file (D23.142).
+  persisting <- previous_100[previous_100$issue_id == 11L]
+  data.table::set(
+    persisting,
+    j = c("issue_id", "unit", "area", "plot"), value = list(120L, "110", "A-110-1", "P-110-1")
+  )
+  named_110 <- rbind(previous_100, persisting)
+  named_csv <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(named_110, named_csv)
+  for (given in list(named_110, named_csv)) {
+    page <- solo_page(given)
+    expect_true(grepl("RES-100-own", page, fixed = TRUE))
+    for (value in c("RES-STAR", "RES-MARKED")) {
+      expect_false(grepl(value, page, fixed = TRUE), info = value)
+    }
+  }
+  # And given as a run folder, by the units its run.csv lists: a run of 100 and 110 whose
+  # resolved issues are 100's marked one and a "*" one.
+  earlier <- fx_report_results()
+  earlier_gone <- data.table::copy(gone[gone$value %chin% c("RES-MARKED", "RES-STAR")])
+  data.table::set(earlier_gone, j = "run_id", value = earlier$metadata$run$run_id)
+  earlier$issues <- rbind(earlier$issues[earlier$issues$unit != "110"], earlier_gone)
+  earlier$corrections <- earlier$corrections[
+    earlier$corrections$issue_id %in% earlier$issues$issue_id
+  ]
+  earlier_dir <- gpq_write_results(earlier, withr::local_tempdir())
+  page <- solo_page(earlier_dir)
+  for (value in c("RES-STAR", "RES-MARKED")) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  # A bad previous run or register stops the build before it removes or writes anything.
+  stamp <- file.mtime(files)
+  expect_error(
+    gpq_build_reports(results, output, previous = file.path(output, "nowhere")),
+    "`previous` must be a run folder, a data.frame or the path of an existing .csv file.",
+    fixed = TRUE
+  )
+  register$decision[[1L]] <- "maybe"
+  expect_error(
+    gpq_build_reports(results, output, acknowledgements = register),
+    "an acknowledgement's decision is verified or rejected_proposal.",
+    fixed = TRUE
+  )
+  expect_error(
+    gpq_build_reports(results, output, unmatched_tables = 1),
+    "`unmatched_tables` must be NULL or a character vector of table names.",
+    fixed = TRUE
+  )
+  expect_identical(file.mtime(files), stamp)
+})
+
+test_that("a unit's resolved issues, register entries and previous run reach it alone (13)", {
+  local_results_registry()
+  results <- fx_report_results()
+  issues <- results$issues
+  schema <- results_schema(c("unit", "area"), "plot")$issues
+  # The previous run: this run's issues but 100's issue 7 and 110's issue 18, and four issues
+  # this run doesn't have: 100's, 110's, one marked and one of a "*" unit, each with its own value.
+  previous <- data.table::copy(issues)[!issues$issue_id %in% c(7L, 18L)]
+  data.table::set(previous, j = "run_id", value = "20261001T080000Z_0000aa")
+  gone <- complete_table(list(
+    issue_id = 101:104, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = c("H91", "H92", "H93", "H94"), row_number = 1:4, pk_positional = FALSE,
+    level = "record", value = c("RES-100-own", "RES-110-own", "RES-MARKED", "RES-STAR"),
+    unit = c("100", "110", "100", "*"), area = c("A-100-1", "A-110-1", "A-100-1", "*"),
+    plot = c("P-100-1", "P-110-1", "P-100-1", "*"),
+    reaches_other_unit = c(FALSE, FALSE, TRUE, FALSE), status = "open",
+    issue_class = "source", fingerprint = paste0("gone-", 1:4),
+    fingerprint_pk = paste0("gone-pk-", 1:4)
+  ), schema, "issues")
+  previous <- rbind(previous, gone)
+  # route_unit gives each unit its own resolved issues, the marked and "*" ones to none.
+  compared <- gpq_compare_runs(results, previous)
+  own <- list(
+    "100" = c("RES-100-own", "WHY-100-own", "OLD-100-own", "LAPSED-100-own", "LAPSED-ON-HELD"),
+    "110" = c("RES-110-own", "WHY-110-own", "OLD-110-own", "LAPSED-110-own")
+  )
+  for (unit in names(own)) {
+    routed <- route_unit(results, unit, names(own), resolved = compared$resolved)
+    expect_identical(routed$resolved$value, own[[unit]][[1L]], info = unit)
+  }
+  # The register: two entries naming 100 for 110's issues 19 and 18, one holding and one lapsed,
+  # which no unit shows; an entry for 100's issue 8 that lapsed, then one that holds; one for
+  # 110's issue 19; and one for issue 14, which reaches no unit.
+  at <- match(c(19L, 18L, 8L, 8L, 19L, 14L), issues$issue_id)
+  held <- issues$value[at[[1L]]]
+  register <- data.frame(
+    fingerprint = issues$fingerprint[at], fingerprint_pk = issues$fingerprint_pk[at],
+    rule_id = issues$rule_id[at], table_name = issues$table_name[at],
+    column_name = issues$column_name[at], provider_key = issues$provider_key[at],
+    acknowledged_value = c(held, "OLD-CROSS", "OLD-ON-HELD", NA, held, NA),
+    decision = "verified", who = "WHO-secret", when = "2026-11-01",
+    why = c(
+      "WHY-CROSS", "LAPSED-CROSS", "LAPSED-ON-HELD", "WHY-100-own", "WHY-110-own", "WHY-MARKED"
+    ),
+    run_scope = "package", unit = c("100", "100", "100", "100", "110", "110"),
+    area = issues$area[at], plot = issues$plot[at]
+  )
+  before <- data.table::copy(results$issues)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output, previous = previous, acknowledgements = register)
+  # The caller's results are as they were (D20.120).
+  expect_identical(results$issues, before)
+  nowhere <- c(
+    "RES-MARKED", "RES-STAR", "WHY-MARKED", "WHY-CROSS", "LAPSED-CROSS", "OLD-CROSS", "WHO-secret"
+  )
+  for (unit in names(own)) {
+    at <- which(names(files) == unit)
+    page <- readChar(files[[at[[1L]]]], file.size(files[[at[[1L]]]]), useBytes = TRUE)
+    csv <- data.table::fread(files[[at[[2L]]]], encoding = "UTF-8", colClasses = "character")
+    for (value in c(own[[unit]][1:2], "2026-10-01", "2026-10-26")) {
+      expect_true(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+    }
+    # The values the previous run or the register holds for the other unit, and the hidden ones.
+    other <- setdiff(names(own), unit)
+    for (value in c(own[[other]][1:2], nowhere, "LAPSED-ON-HELD"[unit == "110"])) {
+      expect_false(grepl(value, page, fixed = TRUE), info = paste(unit, value))
+      expect_false(any(grepl(value, unlist(csv), fixed = TRUE)), info = paste(unit, value, "csv"))
+    }
+    # The acknowledged issue's row shows the entry that holds, never the one that lapsed.
+    listed <- regmatches(page, regexpr(
+      "<caption>Acknowledged issues</caption>.*?</table>", page,
+      perl = TRUE
+    ))
+    expect_true(grepl(own[[unit]][[2L]], listed, fixed = TRUE), info = unit)
+    expect_false(grepl("LAPSED-", listed, fixed = TRUE), info = unit)
+    # The CSV keeps the acknowledged issue with its status, and holds no resolved one (D23.34).
+    expect_false(any(grepl("RES-", unlist(csv), fixed = TRUE)), info = unit)
+    acked <- match(c("100" = 8L, "110" = 19L)[[unit]], issues$issue_id)
+    row <- csv$record_pk == issues$record_pk[acked] & csv$rule_id == issues$rule_id[acked]
+    expect_equal(csv$status[row], "acknowledged", info = unit)
+  }
+  # The run of 100 alone, given the previous run of 100 and 110 and entries of 110's on 100's
+  # provider keys (D23.110, D23.111, D23.127, D23.141): its page shows its own unmarked resolved
+  # issue, but neither 110's, the "*" ones nor its marked one, and no entry of 110's acknowledges
+  # or shows.
+  solo <- fx_report_results()
+  data.table::set(solo$metadata$run, j = "report_units", value = "100")
+  solo$results <- solo$results[solo$results$unit != "110"]
+  solo$issues <- solo$issues[solo$issues$unit != "110"]
+  solo$corrections <- solo$corrections[solo$corrections$issue_id %in% solo$issues$issue_id]
+  star_column <- complete_table(list(
+    issue_id = 105L, run_id = "20261001T080000Z_0000aa", run_scope = "package",
+    rule_id = "code_not_in_list", rule_fingerprint = "f1", stage = "conformance", layer = 3L,
+    severity = "error", reason_code = "*", table_name = "hauls", column_name = "gear",
+    record_pk = "*", row_number = NA_integer_, pk_positional = FALSE, level = "column",
+    value = "RES-STAR-COLUMN", unit = "*", area = "*", plot = "*", reaches_other_unit = FALSE,
+    status = "open", issue_class = "source", fingerprint = "gone-5", fingerprint_pk = "gone-pk-5"
+  ), schema, "issues")
+  shared <- match(c(11L, 10L), issues$issue_id)
+  theirs <- data.frame(
+    fingerprint = issues$fingerprint[shared], fingerprint_pk = issues$fingerprint_pk[shared],
+    rule_id = issues$rule_id[shared], table_name = issues$table_name[shared],
+    column_name = issues$column_name[shared], provider_key = issues$provider_key[shared],
+    acknowledged_value = c(issues$value[shared[[1L]]], "VALUE-OF-110"), decision = "verified",
+    who = "WHO-secret", when = "2026-11-01", why = c("WHY-OF-110", "WHY-LAPSED-110"),
+    run_scope = "package", unit = "110", area = "A-110-1", plot = "P-110-1"
+  )
+  solo_output <- withr::local_tempdir()
+  gpq_write_results(solo, solo_output)
+  solo_files <- gpq_build_reports(
+    solo, solo_output,
+    previous = rbind(previous, star_column), acknowledgements = theirs
+  )
+  page <- readChar(solo_files[[1L]], file.size(solo_files[[1L]]), useBytes = TRUE)
+  expect_true(grepl("RES-100-own", page, fixed = TRUE))
+  hidden <- c(
+    "RES-STAR", "RES-STAR-COLUMN", "RES-MARKED", "RES-110-own", "WHY-OF-110", "WHY-LAPSED-110",
+    "VALUE-OF-110", "WHO-secret"
+  )
+  for (value in hidden) {
+    expect_false(grepl(value, page, fixed = TRUE), info = value)
+  }
+  csv <- data.table::fread(solo_files[[2L]], encoding = "UTF-8", colClasses = "character")
+  expect_equal(csv$status[csv$record_pk == issues$record_pk[shared[[1L]]]], "open")
+})
+
+test_that("a unit's report counts the run's pk: forms, as the run does (D23.148, D23.152)", {
+  local_results_registry()
+  results <- fx_report_results()
+  issues <- results$issues
+  # 110's issue 19 is given 100's issue 11's pk: form and value, as a record sharing its PK
+  # would hold; their fingerprints differ. An entry made from issue 11, its unit "*", holds.
+  mine <- match(11L, issues$issue_id)
+  theirs <- match(19L, issues$issue_id)
+  data.table::set(
+    issues,
+    i = theirs, j = c("fingerprint_pk", "value"),
+    value = list(issues$fingerprint_pk[[mine]], issues$value[[mine]])
+  )
+  register <- data.frame(
+    fingerprint = issues$fingerprint[mine], fingerprint_pk = issues$fingerprint_pk[mine],
+    rule_id = issues$rule_id[mine], table_name = issues$table_name[mine],
+    column_name = issues$column_name[mine], provider_key = issues$provider_key[mine],
+    acknowledged_value = issues$value[mine], decision = "verified", who = "A. Reviewer",
+    when = "2026-11-01", why = "Checked.", run_scope = "package", unit = "*", area = "*",
+    plot = "*"
+  )
+  # The run's issues: 11 acknowledged, 19 open, its pk: form shared in the run.
+  run_issues <- data.table::copy(issues)
+  gpq_apply_acknowledgements(run_issues, register)
+  expect_equal(run_issues$status[c(mine, theirs)], c("acknowledged", "open"))
+  # Each unit's report agrees, though 110's issues alone hold the form once.
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  files <- gpq_build_reports(results, output, acknowledgements = register)
+  status_in <- function(unit, at) {
+    csv <- data.table::fread(
+      files[names(files) == unit][[2L]],
+      encoding = "UTF-8", colClasses = "character"
+    )
+    csv$status[csv$record_pk == issues$record_pk[[at]] & csv$rule_id == issues$rule_id[[at]]]
+  }
+  expect_equal(status_in("100", mine), "acknowledged")
+  expect_equal(status_in("110", theirs), "open")
+})
+
 test_that("gpq_build_reports writes only into a saved run's folder and rebuilds cleanly", {
   local_results_registry()
   results <- fx_report_results()
@@ -632,9 +1221,8 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
   files <- gpq_build_reports(results, output)
   expect_false(any(file.exists(stale)))
   expect_equal(readLines(file.path(run_dir, "reports", "preflight.html")), "pre-flight")
-  expect_true(all(file.exists(
-    file.path(run_dir, "tables", c("results.csv", "issues.csv", "corrections.csv"))
-  )))
+  own_tables <- c("results.csv", "issues.csv", "corrections.csv", "unit_records.csv")
+  expect_true(all(file.exists(file.path(run_dir, "tables", own_tables))))
   # A rebuild writes the same files again, and nothing else.
   again <- gpq_build_reports(results, output)
   expect_equal(again, files)
@@ -642,7 +1230,7 @@ test_that("gpq_build_reports writes only into a saved run's folder and rebuilds 
     list.files(run_dir, recursive = TRUE, all.files = TRUE),
     c(
       "reports/preflight.html", sub(paste0(run_dir, "/"), "", files, fixed = TRUE),
-      "tables/results.csv", "tables/issues.csv", "tables/corrections.csv",
+      file.path("tables", own_tables),
       file.path("metadata", paste0(names(metadata_schema()), ".csv"))
     )
   )
@@ -838,6 +1426,52 @@ test_that("a run with no group columns builds one report of every issue (D20.29,
   )
 })
 
+test_that("a previous issues table of documented columns only builds section 11 (11; D23.160)", {
+  skip_on_cran()
+  fish <- fx_fish_spec()
+  tables <- fx_fish_clean()
+  tables$hauls <- data.table::copy(tables$hauls)
+  tables$hauls$minutes <- NULL
+  results <- suppressWarnings(gpq_check_conformance(tables, fish, layers = 0))
+  gpq_classify_issues(results$issues, NULL)
+  output <- withr::local_tempdir()
+  gpq_write_results(results, output)
+  # The earlier run's one issue, which this run no longer holds, in the eight columns
+  # gpq_compare_runs() documents and no others.
+  documented <- c(
+    "run_id", "run_scope", "rule_id", "rule_fingerprint", "table_name", "fingerprint",
+    "fingerprint_pk", "first_seen_run"
+  )
+  previous <- data.table::copy(results$issues[1L, documented, with = FALSE])
+  data.table::set(previous, j = "run_id", value = "20261001T080000Z_0000aa")
+  data.table::set(previous, j = c("fingerprint", "fingerprint_pk"), value = list("gone", "gone"))
+  data.table::set(previous, j = "first_seen_run", value = "20261001T080000Z_0000aa")
+  files <- gpq_build_reports(results, output, previous = previous)
+  page <- paste(readLines(files[[1L]], encoding = "UTF-8"), collapse = "\n")
+  start <- regexpr("<section[^>]*id=\"changes\"", page)
+  expect_gt(start, 0L)
+  section <- substr(page, start, nchar(page))
+  section <- substr(section, 1L, regexpr("</section>", section) - 1L)
+  # The resolved issue is listed, by its check ID, and the counts row says one resolved.
+  expect_match(section, "column_missing", fixed = TRUE)
+  expect_match(
+    section,
+    sprintf(
+      "<td>%s</td>(<td class=\"num\">[0-9]+</td>){2}<td class=\"num\">1</td>",
+      html_escape(report_text("report_changes_resolved"))
+    )
+  )
+  # The resolved issue has no severity, so its row has no severity class.
+  expect_false(grepl("<tr class=\"sev-", section, fixed = TRUE))
+  # The columns the earlier run lacks are empty in every row, so the table leaves them out.
+  for (id in c(
+    "report_column_severity", "report_column_column", "report_column_provider_key",
+    "report_column_record_pk", "report_column_issue_value"
+  )) {
+    expect_false(grepl(paste0(">", html_escape(report_text(id)), "<"), section, fixed = TRUE))
+  }
+})
+
 test_that("reports/ and tables/ hold only units' files and package_file_stems (D20.70, D20.73)", {
   local_results_registry()
   output <- withr::local_tempdir()
@@ -1017,7 +1651,10 @@ test_that("a report at every cap, each cell at its longest, stays under 10 MB (D
     n_unchecked = 7L, reason_code = "*", n_distinct_fail_values = 0L, n_easy_fix = 0L,
     status = "pass", message_id = "code_not_in_list"
   ), group_cols = c("unit", "area", "zone"))
-  worst <- new_gpq_results(results, issues, new_corrections(), metadata)
+  worst <- new_gpq_results(
+    results, issues, new_corrections(),
+    empty_table(results_schema(c("unit", "area", "zone"), "plot")$unit_records), metadata
+  )
   # A raw value of 200 characters on each source issue's cell, starting "R" so it can be told
   # from the other cells once cut.
   lineage <- data.frame(

@@ -7,7 +7,10 @@
 magp_run_qc(
   tables,
   output_dir,
+  previous = NULL,
+  acknowledgements = NULL,
   overrides = NULL,
+  attribution_map = NULL,
   lineage = NULL,
   pipeline_fill = NULL,
   report = TRUE,
@@ -23,10 +26,30 @@ refused; check CSV files with \code{\link[=gpq_check_conformance]{gpq_check_conf
 \item{output_dir}{The folder that holds run folders, made if it doesn't exist. The run writes
 into \verb{<output_dir>/<run_id>/}.}
 
+\item{previous}{\code{NULL}, or an earlier run to compare with: its run folder, as
+\code{magp_run_qc()} wrote it, or its issues table, a data.frame or the path of a CSV file, as
+\code{\link[=gpq_compare_runs]{gpq_compare_runs()}} takes it. It should be an earlier run of the same contributors; it is
+compared as given. \code{\link[=magp_list_runs]{magp_list_runs()}} lists a contributor's runs. Give the folder or the
+file's path, or read the file with \code{colClasses = "character"}: \code{\link[utils:read.table]{utils::read.csv()}} reads a
+dataset ID such as \code{"100.10"} as the number 100.1, which no longer matches.}
+
+\item{acknowledgements}{\code{NULL}, or your acknowledgements register: a data.frame or the path
+of a CSV file, as \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} takes it, which may also hold the run's
+group columns \code{magp_contributor_id}, \code{jurisdiction} and \code{magp_dataset_id}. Give the file's
+path, or read it with \code{colClasses = "character"}: an \code{acknowledged_value} such as \code{"4.20"}
+read as the number 4.2 no longer matches, so its entry lapses.}
+
 \item{overrides}{\code{NULL}, or your overrides of issue classes: a data.frame or the path of a
 CSV file, as \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} takes them, whose scope may also name the
 issues' group columns: the run's \code{magp_contributor_id}, \code{jurisdiction} and
 \code{magp_dataset_id}, and the plot's key \code{magp_plot_id}.}
+
+\item{attribution_map}{\code{NULL}, or the map of MAGPlot's processing scripts: a data.frame or
+the path of a CSV file with the columns \code{jurisdiction}, \code{table_name}, \code{attribute_name},
+\code{script_file}, \code{script_block}, \code{script_commit} and \code{note}, a row for each jurisdiction,
+table and attribute a script makes, and a row whose \code{table_name} and \code{attribute_name} are
+both \code{"*"} naming a jurisdiction's script as a whole. The package's synthetic example is
+\code{system.file("extdata", "examples", "attribution_map.csv", package = "groundplotqc")}.}
 
 \item{lineage}{\code{NULL}, or the provider's raw values of the cells the pipeline changed: a
 data.frame or the path of a CSV file with the columns \code{table_name}, \code{record_pk},
@@ -47,8 +70,9 @@ the built-in values (see \link{groundplotqc_options}).}
 }
 \value{
 The run's results, invisibly: a \code{gpq_results} object as \code{\link[=gpq_check_conformance]{gpq_check_conformance()}}
-describes it, each issue with its provider key and class, as written to the run folder. A
-run that pre-flight stops returns nothing.
+describes it, each issue with its provider key and class, and with what \code{attribution_map},
+\code{previous} and \code{acknowledgements} give it, as written to the run folder. A run that
+pre-flight stops returns nothing.
 }
 \description{
 Runs MAGPlot 2.0's quality checks on one delivery from start to finish: pre-flight, the
@@ -70,18 +94,34 @@ Otherwise the run checks Layers 0 to 4, with MAGPlot's group columns \code{magp_
 \code{magp_plots}). It then gives each issue its provider key, from its contributor's lineage
 spec and Ontario's age-tree flag, and its class, from your \code{overrides} first, then from the
 evidence: the columns MAGPlot's pipeline computes, \code{pipeline_fill}, and \code{lineage} together
-with MAGPlot's translation tables' provider codes. It writes the results and the run
-metadata, and with \code{report = TRUE} builds the reports.
+with MAGPlot's translation tables' provider codes.
 
-Pre-flight checks \code{overrides}, \code{lineage} and \code{pipeline_fill}, and the run then reads them as
-\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} reads them, before any check. The run stops there wherever
-\code{\link[=gpq_classify_issues]{gpq_classify_issues()}} would on an input that pre-flight lets pass, such as an \code{overrides}
-column that is an attribute of the specification but not one of the issues' group columns,
-or a cell that \code{lineage} or \code{pipeline_fill} lists twice.
+Given \code{attribution_map}, each issue then takes the processing script and block the map names
+for its jurisdiction, table and column, or else its jurisdiction's script as a whole, as
+\code{script_file}, \code{script_block} and \code{attribution_status} (see \code{\link[=gpq_check_conformance]{gpq_check_conformance()}}). A
+delivery doesn't yet record the commit of the scripts that made it, so a mapped issue's
+\code{attribution_status} is \code{script_version_unknown}, and one the map doesn't name is \code{unmapped}.
+Given \code{previous}, the run compares its issues with that run's, as \code{\link[=gpq_compare_runs]{gpq_compare_runs()}} does,
+so each issue is \code{new} or \code{persisting}, with the run it was first seen in; given
+\code{acknowledgements}, it applies your register, as \code{\link[=gpq_apply_acknowledgements]{gpq_apply_acknowledgements()}} does, so an
+issue whose entry still holds is \code{acknowledged}. Neither matches the issues of \code{magp_designs}
+and \code{magp_design_frames}, whose keys each delivery numbers anew: they are new in every run,
+and no acknowledgement reaches them. The run then writes the results and the run metadata,
+and with \code{report = TRUE} builds the reports, which compare and apply again to list the
+earlier run's issues this run no longer has and the entries that have lapsed.
+
+Pre-flight checks every run input given, and the run then reads \code{overrides}, \code{lineage} and
+\code{pipeline_fill} as \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} reads them, before any check. The run stops there
+wherever \code{\link[=gpq_classify_issues]{gpq_classify_issues()}} would on an input that pre-flight lets pass, such as an
+\code{overrides} column that is an attribute of the specification but not one of the issues' group
+columns, or a cell that \code{lineage} or \code{pipeline_fill} lists twice. An \code{attribution_map}
+without the column \code{jurisdiction}, which pre-flight lets pass, stops the run before the
+delivery is loaded.
 
 In \code{metadata/run.csv}, \code{run_start} is when the run started and \code{run_end} is set just before
 the results are written: the time between them covers loading the tables, pre-flight, the
-checks, the provider keys and the classes, not the writing or the reports.
+checks, the provider keys, the classes, the scripts, and the comparison with \code{previous} and
+your \code{acknowledgements}, not the writing or the reports.
 
 In \code{metadata/inputs.csv}, each table's row (\verb{tables:<name>}) names the delivery's \code{.Rdata}
 file and its SHA-256, with the table's row count as its detail. A delivery that holds
@@ -93,7 +133,11 @@ as "in memory", with no hash. Each run input that classification is given adds a
 these, with the input \code{overrides}, \code{filled} (your \code{pipeline_fill}), \code{lineage}, \code{computed} or
 \code{crosswalk} and the rows classification reads from it as its detail. A CSV file you gave is
 recorded by its file name and SHA-256; a data.frame is recorded as "in memory", with no
-hash, and so are MAGPlot's own \code{computed} and \code{crosswalk}, which every run has.
+hash, and so are MAGPlot's own \code{computed} and \code{crosswalk}, which every run has. Then come a
+row for each of \code{attribution_map}, \code{previous} and \code{acknowledgements} given, in that order,
+recorded the same way, with the rows read from it as its detail. An earlier run's folder is
+recorded by its name, its run ID, with no hash, since its issues file can be large, and
+\code{previous}'s row has no detail, since only the comparison reads the earlier issues.
 
 The run lets go of the tables once each issue has its provider key, before the classes and
 the reports. Their memory is freed only when nothing else holds them, so give the \code{.Rdata}
@@ -117,6 +161,7 @@ run_dir <- file.path(output, results$metadata$run$run_id)
 list.files(run_dir, recursive = TRUE)
 }
 \seealso{
-\code{\link[=magp_read_delivery]{magp_read_delivery()}}, which loads a delivery; \code{\link[=gpq_build_reports]{gpq_build_reports()}}, which builds
-a saved run's reports again.
+\code{\link[=magp_read_delivery]{magp_read_delivery()}}, which loads a delivery; \code{\link[=magp_list_runs]{magp_list_runs()}}, which lists a
+contributor's runs, to pick the earlier one; \code{\link[=gpq_build_reports]{gpq_build_reports()}}, which builds a saved
+run's reports again.
 }

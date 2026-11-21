@@ -47,6 +47,14 @@
 #' - `groundplotqc.column_level_min_n`: the fewest records a column must have in
 #'   a group before a rule that fails on all of them is recorded as one
 #'   column-level issue. Built-in: `10`.
+#' - `groundplotqc.blocking_severities`: the severities whose open issues count
+#'   toward a problem unit's rate, in the problem plots a report
+#'   [gpq_build_reports()] writes ranks: each `"error"`, `"warning"`, `"flag"`
+#'   or `"info"`, given once. Built-in: `c("error", "flag")`.
+#' - `groundplotqc.problem_plot_rate`: the rate above which a problem unit is
+#'   marked in those problem plots, a number from 0 to 1. Built-in: `0.25`.
+#' - `groundplotqc.problem_plot_min_records`: the fewest records a problem unit
+#'   must have to be ranked there. Built-in: `20`.
 #' - `groundplotqc.raw_na_policy`: when a raw `NA` is an error (`raw_na`) in a
 #'   column outside the primary and foreign keys, whose missing values
 #'   `pk_missing` and `fk_unassigned` report (Layer 4, see
@@ -100,7 +108,9 @@
 #'   or end with a space, tab or line break, or hold ";" or "=". Pre-flight stops
 #'   on a rule ID that isn't registered (`rule_id_unknown`).
 #'
-#' In a rule set's settings rows, a whole number has type `integer`, a setting
+#' In a rule set's settings rows, a setting that takes a whole number has type
+#' `integer` and one that takes a number with a fraction, such as
+#' `problem_plot_rate`, has type `double`, whatever the value written; a setting
 #' with several values gives them joined by "; ", and a named one gives
 #' "name=value" parts. In every tier, a code can't be empty, begin or end with
 #' a space, tab or line break, or hold ";". In `groundplotqc.unknown_codes` the

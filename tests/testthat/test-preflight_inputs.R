@@ -64,11 +64,16 @@ test_that("a wrong inputs list or element is a caller's error (D19.51)", {
     shape,
     fixed = TRUE
   )
+  # A name outside the list: thresholds, which joins at M13. The names taken are listed as the
+  # schema gives them, the first three M6's.
+  taken <- names(run_input_schema())
+  expect_identical(taken[1:3], c("overrides", "lineage", "pipeline_fill"))
+  n <- length(taken)
   expect_error(
-    gpq_preflight(spec, inputs = list(previous = override_rows())),
-    paste(
-      "`inputs` names tables it doesn't take: previous.",
-      "It takes overrides, lineage and pipeline_fill."
+    gpq_preflight(spec, inputs = list(thresholds = override_rows())),
+    sprintf(
+      "`inputs` names tables it doesn't take: thresholds. It takes %s and %s.",
+      paste(taken[-n], collapse = ", "), taken[[n]]
     ),
     fixed = TRUE
   )
@@ -169,6 +174,122 @@ test_that("input_unparseable reports a run input's file that doesn't read cleanl
   found <- input_check("input_unparseable", list(lineage = path))
   expect_equal(nrow(found), 1L)
   expect_equal(found$source_cell, paste0(basename(path), ":3"))
+})
+
+test_that("input_unparseable reads previous for its form, folder and columns only (D23.33)", {
+  # A run of the fish survey, its group column water_body, written to its folder.
+  run <- gpq_check_conformance(fx_fish_clean(), fish_spec, group_cols = "water_body", layers = 0)
+  dir <- withr::local_tempdir()
+  run_dir <- gpq_write_results(run, dir)
+  issues_csv <- file.path(run_dir, "tables", "issues.csv")
+  # The folder, its issues file and its issues in memory pass.
+  for (previous in list(run_dir, issues_csv, run$issues)) {
+    expect_equal(nrow(input_check("input_unparseable", list(previous = previous))), 0L)
+  }
+  # Only the issues' columns are read: a file whose rows don't read cleanly passes here, and
+  # stops the comparison, which reads them: fread() doesn't read its first line as a header, so
+  # the issues' columns are missing (W16) (D23.46).
+  broken <- file.path(dir, "broken.csv")
+  writeLines(c(readLines(issues_csv, n = 1L), "\"1\",\"2\",\"3\""), broken)
+  expect_equal(nrow(input_check("input_unparseable", list(previous = broken))), 0L)
+  expect_error(
+    gpq_compare_runs(run$issues, broken), "`previous` lacks the issues columns",
+    fixed = TRUE
+  )
+  # Columns: one the comparison reads missing, one no issues table has, and a group column and
+  # an issues column of the earlier run's own taken.
+  issues <- as.data.frame(run$issues)
+  issues$first_seen_run <- NULL
+  issues$colour <- character()
+  found <- input_check("input_unparseable", list(previous = issues))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "previous", missing = "first_seen_run", extra = "colour"
+  ))
+  # A folder that isn't a completed run's: none of a run's files, a stopped run's, a run's with
+  # no results file; each named once, at the folder.
+  empty <- file.path(dir, "not_a_run")
+  dir.create(empty)
+  found <- input_check("input_unparseable", list(previous = empty))
+  expect_equal(c(found$file, found$detail), c("not_a_run", report_text(
+    "preflight_detail_input_unparseable_folder",
+    input = "previous", folder = "not_a_run", file = "metadata/run.csv"
+  )))
+  stopped <- file.path(dir, "stopped")
+  stopped_run <- data.table::copy(run$metadata$run)
+  data.table::set(stopped_run, j = "outcome", value = "stopped_preflight")
+  write_run_metadata(list(run = stopped_run), stopped)
+  dir.create(file.path(stopped, "tables"))
+  file.copy(issues_csv, file.path(stopped, "tables"))
+  file.copy(file.path(run_dir, "tables", "results.csv"), file.path(stopped, "tables"))
+  found <- input_check("input_unparseable", list(previous = stopped))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_stopped",
+    input = "previous", folder = "stopped"
+  ))
+  unlink(file.path(run_dir, "tables", "results.csv"))
+  found <- input_check("input_unparseable", list(previous = run_dir))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_folder",
+    input = "previous", folder = basename(run_dir), file = "tables/results.csv"
+  ))
+  # Neither a folder, a data.frame nor a CSV file: a caller's error.
+  form <- "`previous` must be a run folder, a data.frame or the path of an existing .csv file."
+  for (bad in list(42, file.path(dir, "absent.csv"), list(issues))) {
+    expect_error(input_check("input_unparseable", list(previous = bad)), form, fixed = TRUE)
+  }
+})
+
+test_that("input_unparseable names an acknowledgement's columns, decision and run scope (D23.26)", {
+  entries <- function(decision = "verified", run_scope = "package", ...) {
+    data.frame(
+      fingerprint = "value_above_max|hauls|minutes|pk:H2",
+      fingerprint_pk = "value_above_max|hauls|minutes|pk:H2", rule_id = "value_above_max",
+      table_name = "hauls", column_name = "minutes", provider_key = NA,
+      acknowledged_value = "900", decision = decision, who = "A. Reviewer",
+      when = "2026-11-17", why = "Checked.", run_scope = run_scope, ...
+    )
+  }
+  expect_equal(nrow(input_check("input_unparseable", list(acknowledgements = entries()))), 0L)
+  # water_body, an attribute of the survey, is a group column; colour isn't.
+  wrong <- entries(water_body = "LK", colour = "red")
+  wrong$why <- NULL
+  found <- input_check("input_unparseable", list(acknowledgements = wrong))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "acknowledgements", missing = "why", extra = "colour"
+  ))
+  # A decision and a run scope outside their values, each by its row, a blank one named so.
+  register <- entries(
+    decision = c("verified", "fine", "verified"), run_scope = c("package", "package", NA)
+  )
+  found <- input_check("input_unparseable", list(acknowledgements = register))
+  at_row <- function(row) {
+    report_text("input_position_memory", row = row, input = "acknowledgements")
+  }
+  expect_equal(found$detail, c(
+    report_text(
+      "preflight_detail_input_unparseable_decision",
+      position = at_row(2L), value = "fine"
+    ),
+    report_text(
+      "preflight_detail_input_unparseable_run_scope",
+      position = at_row(3L), value = NA
+    )
+  ))
+  expect_match(found$detail[[2L]], "(blank)", fixed = TRUE)
+  # From a CSV file, each at its line.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(register, path)
+  found <- input_check("input_unparseable", list(acknowledgements = path))
+  expect_equal(found$source_cell, paste0(basename(path), c(":3", ":4")))
+  # Without a column of its own, the decision and run scope wait.
+  register$why <- NULL
+  found <- input_check("input_unparseable", list(acknowledgements = register))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_missing",
+    input = "acknowledgements", missing = "why"
+  ))
 })
 
 test_that("override_scope_conflict names each row repeating a scope with the other class (D9.27)", {
@@ -333,4 +454,72 @@ test_that("gpq_preflight warns on overrides, stops on one it can't use, and keep
     gpq_preflight(spec, inputs = list(overrides = override_rows(issue_class = "neither"))),
     class = "gpq_preflight_error"
   )
+})
+
+test_that("input_unparseable checks the attribution map's columns, its key taken (D23.27)", {
+  # water_body is an attribute of the survey, so the map's key column; colour isn't.
+  map <- data.frame(
+    water_body = c("LK", "LK", "*"), table_name = c("hauls", "*", "*"),
+    attribute_name = c("minutes", "*", "*"), script_file = "lake.R", script_block = NA,
+    script_commit = NA, note = NA
+  )
+  expect_equal(nrow(input_check("input_unparseable", list(attribution_map = map))), 0L)
+  odd <- map
+  odd$colour <- "red"
+  odd$note <- NULL
+  found <- input_check("input_unparseable", list(attribution_map = odd))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_both",
+    input = "attribution_map", missing = "note", extra = "colour"
+  ))
+  # Without a column of its own, the rows wait: a blank key cell gives only the missing column.
+  odd$colour <- NULL
+  odd$table_name[[1L]] <- NA
+  found <- input_check("input_unparseable", list(attribution_map = odd))
+  expect_equal(found$detail, report_text(
+    "preflight_detail_input_unparseable_missing",
+    input = "attribution_map", missing = "note"
+  ))
+  # A map with no rows, in memory or as a header-only file, gives no finding.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(map[0, ], path)
+  for (empty in list(map[0, ], path)) {
+    expect_equal(nrow(input_check("input_unparseable", list(attribution_map = empty))), 0L)
+  }
+})
+
+test_that("input_unparseable names a map row with a blank key cell or a repeated key (D23.39)", {
+  # Rows 2 and 4 leave a cell of their key blank; 5 repeats 1's key and 6 repeats 3's; 7 has
+  # 1's table and attribute for another key value, so it repeats nothing.
+  map <- data.frame(
+    water_body = c("LK", "LK", "*", NA, "LK", "*", "RV"),
+    table_name = c("hauls", NA, "*", "hauls", "hauls", "*", "hauls"),
+    attribute_name = c("minutes", "gear", "*", "gear", "minutes", "*", "minutes"),
+    script_file = "lake.R", script_block = NA, script_commit = NA, note = NA
+  )
+  found <- input_check("input_unparseable", list(attribution_map = map))
+  row <- function(r) report_text("input_position_memory", row = r, input = "attribution_map")
+  short <- function(r) report_text("rule_set_position_memory_short", row = r)
+  columns <- "table_name, attribute_name, water_body"
+  expect_equal(found$detail, c(
+    report_text(
+      "preflight_detail_input_unparseable_map_blank",
+      position = row(c(2L, 4L)), columns = columns
+    ),
+    report_text(
+      "preflight_detail_input_unparseable_map_repeat",
+      position = row(c(5L, 6L)), first = short(c(1L, 3L)), columns = columns
+    )
+  ))
+  # From a CSV file, each at its line; gpq_preflight() stops on them.
+  path <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(map, path)
+  found <- input_check("input_unparseable", list(attribution_map = path))
+  expect_equal(found$source_cell, paste0(basename(path), c(":3", ":5", ":6", ":7")))
+  expect_match(found$detail[[3L]], paste("Line 6 of", basename(path)), fixed = TRUE)
+  expect_error(
+    gpq_preflight(fish_spec, inputs = list(attribution_map = path)),
+    class = "gpq_preflight_error"
+  )
+  expect_no_error(gpq_preflight(fish_spec, inputs = list(attribution_map = map[c(1L, 3L, 7L), ])))
 })

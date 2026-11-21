@@ -398,7 +398,8 @@ disagreeing_rows <- function(groups, value) {
 #'
 #' `pk_duplicate` per table: every record holding a primary key value another record holds,
 #' a composite key compared whole and reported on its first part, its value the parts joined
-#' with "|" (D18.10 (2), D18.42), a number-typed part compared by its number, as the joins
+#' with "|", each escaped as record_pk's are (D18.10 (2), D18.42, D23.12), a number-typed part
+#' compared by its number, as the joins
 #' read it, and text that doesn't read as one as written (D18.100); a key NA, blank or a
 #' sentinel, allowed or not, is left alone, pk_missing's where `allowed_in_pk` refuses it;
 #' not_run (no_column) where a part's column wasn't given (D9.24). `pk_missing` per key part:
@@ -620,7 +621,9 @@ check_keys <- function(input, context) {
         value <- if (length(values) == 1L) {
           value_text(x[fail])
         } else {
-          do.call(paste, c(lapply(values, function(v) value_text(v[fail])), sep = "|"))
+          # Each part escaped, as record_pk_text() joins them (D23.12).
+          parts <- lapply(values, function(v) escape_key_part(value_text(v[fail])))
+          do.call(paste, c(parts, sep = "|"))
         }
         record_outcome("pk_duplicate", table, attribute, fail, value)
       }

@@ -558,6 +558,44 @@ test_that("records reaching a column in two tables write each one's values as te
   expect_identical(given, c(2L, 2L, 2L, 2L))
 })
 
+test_that("records reaching an integer64 column in two tables write its values in full (M8 m7)", {
+  testthat::skip_if_not_installed("bit64")
+  # As above, with zone an integer64 column in both tables, as fread() reads integers beyond
+  # 32 bits: values a double can't hold, ranked by integer64's own order on the mixed-homes
+  # path. Trees 1 to 3 keep their own zone; tree 4 holds a missing-value code and takes its
+  # plot's, as tree 5's NA does. Trees 1 and 2's values are one double, 2^53, so a rank taken
+  # on a double would merge them.
+  dictionary <- data.frame(
+    table_name = c("plots", "plots", "trees", "trees", "trees"),
+    attribute_name = c("plot_id", "zone", "tree_id", "plot_id", "zone"),
+    key_type = c("PK", ".", "PK", "FK", "."),
+    reference_table = c(NA, NA, NA, "plots", NA),
+    data_type = c("character", "numeric", "character", "character", "numeric")
+  )
+  spec <- gpq_read_spec(dictionary, sentinels = gpq_sentinels(
+    numeric = c(missing = -1, not_applicable = -9),
+    character = c(missing = "X", not_applicable = "Z")
+  ))
+  big <- c("9007199254740993", "9007199254740992", "-9007199254740993")
+  tables <- list(
+    plots = data.table::data.table(
+      plot_id = c("p1", "p2"), zone = bit64::as.integer64(c(big[[3L]], "12"))
+    ),
+    trees = data.table::data.table(
+      tree_id = paste0("t", 1:5), plot_id = c("p1", "p2", "p1", "p1", "p2"),
+      zone = bit64::as.integer64(c(big[[1L]], big[[2L]], big[[1L]], "-1", NA))
+    )
+  )
+  input <- conformance_input(tables, spec, group_cols = "zone")
+  zone <- reach_column(input, "trees", "zone")
+  expect_equal(zone$home, c("trees", "trees", "trees", "plots", "plots"))
+  zones <- c(big[[1L]], big[[2L]], big[[1L]], big[[3L]], "12")
+  expect_identical(reached_values(input, zone, "zone"), zones)
+  # The groups read the same text.
+  trees <- input$groups$trees
+  expect_equal(trees$values$zone[trees$row_group], zones)
+})
+
 test_that("walk_fk_paths reaches a table through its next route, every row taken (D20.51)", {
   dictionary <- data.table::fread(example_file("fish_dictionary.csv"), colClasses = "character")
   station <- dictionary[dictionary$table == "hauls" & dictionary$field == "station_id"]
@@ -1019,21 +1057,35 @@ test_that("a composite PK's parts are joined with \"|\"", {
   )
 })
 
-test_that("a record whose PK text another record holds is positional (D20.118)", {
-  # Parts holding "|" join to one text: ("a|b", "c") and ("a", "b|c") are both "a|b|c", the
-  # text the lineage input and decoding read, though the parts differ.
+test_that("a record whose PK text another record holds is positional (D20.118, D23.12)", {
+  # Each part is escaped before the parts are joined (D23.12): ("a|b", "c") and ("a", "b|c"),
+  # and ("a\", "|c") and ("a\|", "c"), which unescaped would each join to one text, write four,
+  # so none is positional.
   dictionary <- data.frame(
     table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
     data_type = "character"
   )
   tables <- list(k = data.table::data.table(
-    a = c("a|b", "a", "x"), b = c("c", "b|c", "y"), v = c("p", "q", "r")
+    a = c("a|b", "a", "x", "a\\", "a\\|"), b = c("c", "b|c", "y", "|c", "c"),
+    v = c("p", "q", "r", "s", "t")
   ))
   input <- conformance_input(tables, gpq_read_spec(dictionary))
-  # Judged over the table's rows, for a row given alone too.
+  pk <- record_pk_text(input, "k", 1:5)
+  expect_identical(pk$record_pk, c("a\\|b|c", "a|b\\|c", "x|y", "a\\\\|\\|c", "a\\\\\\||c"))
+  expect_identical(pk$positional, rep(FALSE, 5L))
+  # A composite key's numbers can still write one text, 15 significant digits: judged over
+  # the table's rows, for a row given alone too.
+  dictionary <- data.frame(
+    table_name = "k", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = c("character", "numeric", "character")
+  )
+  tables <- list(k = data.table::data.table(
+    a = "x", b = c(0.1 + 0.2, 0.3, 0.4), v = c("p", "q", "r")
+  ))
+  input <- conformance_input(tables, gpq_read_spec(dictionary))
   expect_true(record_pk_text(input, "k", 2L)$positional)
   pk <- record_pk_text(input, "k", 1:3)
-  expect_identical(pk$record_pk, c("a|b|c", "a|b|c", "x|y"))
+  expect_identical(pk$record_pk, c("x|0.3", "x|0.3", "x|0.4"))
   expect_identical(pk$positional, c(TRUE, TRUE, FALSE))
   # A one-column key too: two numbers written as one text, 15 significant digits.
   dictionary <- data.frame(
@@ -1138,7 +1190,11 @@ test_that("coerce_column() refuses what D16.42's pattern refuses, by byte tests 
     # one, a minus sign.
     paste0(intToUtf8(0xa0), "1"), paste0("1", intToUtf8(0xa0)), paste0("1", intToUtf8(0x2009)),
     paste0(intToUtf8(0x2009), "1"), paste0("1", intToUtf8(0x3000)), intToUtf8(0xff11),
-    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1")
+    intToUtf8(0x661), paste0(intToUtf8(0x2212), "1"),
+    # NaN and Inf with a Unicode space after them, which as.numeric() reads on Windows: NaN
+    # is refused too, though is.na() is TRUE for it (M4b m18).
+    paste0("NaN", intToUtf8(0x2009)), paste0("nan", intToUtf8(0x3000)),
+    paste0("Inf", intToUtf8(0x2009))
   )
   read <- suppressWarnings(as.numeric(forms))
   expected <- read

@@ -1,6 +1,6 @@
-# Tests for the results model: the three tables' schemas, the constructors, the checks of
+# Tests for the results model: the four tables' schemas, the constructors, the checks of
 # each table and the gpq_results object (plan 9.1 to 9.4, 9.7; D4.1, D7.3, D7.5, D8.16,
-# D9.21, D9.24, D15.9).
+# D9.21, D9.24, D15.9, D23.24).
 
 # The schema of one of fx_results()'s tables: group columns unit and area, key column plot.
 fish_schema <- function(name) {
@@ -24,6 +24,19 @@ test_that("results_schema() puts the caller's columns in their places, as text (
   expect_false(any(c("unit", "area", "plot") %in% names(schema$corrections)))
   # A key column that is also a group column comes once.
   expect_equal(sum(names(results_schema("plot", "plot")$issues) == "plot"), 1L)
+  # unit_records: run_id, the group columns, the key column, table_name and n_records
+  # (D23.24); the key column once where it is a group column, none without one.
+  expect_equal(
+    schema$unit_records,
+    c(
+      run_id = "character", unit = "character", area = "character", plot = "character",
+      table_name = "character", n_records = "integer"
+    )
+  )
+  expect_named(
+    results_schema("plot", "plot")$unit_records, c("run_id", "plot", "table_name", "n_records")
+  )
+  expect_named(results_schema()$unit_records, c("run_id", "table_name", "n_records"))
   # No caller columns: the fixed columns only.
   expect_equal(results_schema()$results[["layer"]], "integer")
   expect_equal(results_schema()$issues[["pk_positional"]], "logical")
@@ -286,25 +299,50 @@ test_that("new_gpq_results() checks the tables together", {
   local_results_registry()
   object <- fx_results()
   expect_s3_class(object, "gpq_results")
-  expect_named(object, c("results", "issues", "corrections", "metadata"))
+  expect_named(object, c("results", "issues", "corrections", "unit_records", "metadata"))
   args <- unclass(object)
+  expect_error(
+    validate_gpq_results(structure(args[-4L], class = "gpq_results")),
+    "A gpq_results object holds results, issues, corrections, unit_records and metadata.",
+    fixed = TRUE
+  )
   other_run <- data.table::copy(args$issues)
   data.table::set(other_run, j = "run_id", value = "20261008T130000Z_000000")
   expect_error(
-    new_gpq_results(args$results, other_run, args$corrections, args$metadata),
+    new_gpq_results(args$results, other_run, args$corrections, args$unit_records, args$metadata),
     "issues table holds rows of another run"
   )
   stray <- data.table::copy(args$corrections)
   data.table::set(stray, j = "issue_id", value = 99L)
   expect_error(
-    new_gpq_results(args$results, args$issues, stray, args$metadata),
+    new_gpq_results(args$results, args$issues, stray, args$unit_records, args$metadata),
     "names issues the issues table doesn't have"
   )
   extra <- data.table::copy(args$issues)
   data.table::set(extra, j = "stand", value = "s1")
   expect_error(
-    new_gpq_results(args$results, extra, args$corrections, args$metadata),
+    new_gpq_results(args$results, extra, args$corrections, args$unit_records, args$metadata),
     "columns no schema has: plot, stand"
+  )
+  # unit_records (D23.24): the run's own rows, the run's group and key columns, each row
+  # counting records, one row per group, unit and table.
+  counts <- function(column, value, i = 1L) {
+    changed <- data.table::copy(args$unit_records)
+    data.table::set(changed, i = i, j = column, value = value)
+    new_gpq_results(args$results, args$issues, args$corrections, changed, args$metadata)
+  }
+  expect_error(
+    counts("run_id", "20261008T130000Z_000000"), "unit_records table holds rows of another run"
+  )
+  expect_error(counts("n_records", 0L), "has a row counting no records, or more than one row")
+  expect_error(counts("plot", "p1", 2L), "more than one row for a unit and table")
+  expect_error(counts("plot", NA), "unit_records table has blank cells in plot")
+  expect_error(counts("n_records", NA), "has blank cells in n_records")
+  expect_error(
+    new_gpq_results(
+      args$results, args$issues, args$corrections, args$unit_records[, -4L], args$metadata
+    ),
+    "The unit_records table has the columns run_id, unit, area, plot, table_name, n_records"
   )
 })
 
@@ -314,7 +352,13 @@ test_that("bind_results() appends one run's results to another's, renumbering ID
   second <- object
   second$results <- data.table::copy(object$results)
   data.table::set(second$results, j = "area", value = "a9")
+  # The second's record counts are left out: the first's are kept, not copied (D23.24).
+  second$unit_records <- data.table::copy(object$unit_records)
+  data.table::set(second$unit_records, j = "n_records", value = 9L)
   both <- bind_results(object, second)
+  expect_identical(
+    data.table::address(both$unit_records), data.table::address(object$unit_records)
+  )
   expect_equal(nrow(both$results), 2L * nrow(object$results))
   expect_equal(both$issues$issue_id, 1:10)
   expect_equal(both$issues$root_issue_id[[9L]], 6L)
@@ -368,7 +412,7 @@ test_that("bind_results() appends one run's results to another's, renumbering ID
   # Another run's results, every table carrying its run ID, aren't bound.
   other <- object
   other$metadata$run <- data.table::copy(object$metadata$run)
-  for (name in c("results", "issues", "corrections")) {
+  for (name in c("results", "issues", "corrections", "unit_records")) {
     other[[name]] <- data.table::copy(object[[name]])
     data.table::set(other[[name]], j = "run_id", value = "20261008T130000Z_000000")
   }

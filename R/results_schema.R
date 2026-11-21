@@ -1,21 +1,23 @@
 # The results model (plan 9.1 to 9.4; D4.1, D7.3, D7.5, D8.16, D9.21, D9.24): a run's results
-# summary, issues and corrections, their columns, classes and coded values, the
-# constructors that complete and check them, and the gpq_results object that holds them
-# with the run metadata (R/results_metadata.R). The caller's group columns, and in issues
-# the problem unit's key column, carry the caller's names and hold text: "*" where a table
-# can't reach the column (D7.5; D9.24 for the group columns, R6 for the key column). The
-# engine refuses rows for a rule the registry doesn't declare (9.7).
+# summary, issues, corrections and problem-unit record counts (unit_records, 8.8; D23.24), their
+# columns, classes and coded values, the constructors that complete and check them, and the
+# gpq_results object that holds them with the run metadata (R/results_metadata.R). The caller's
+# group columns, and in issues and unit_records the problem unit's key column, carry the
+# caller's names and hold text: "*" where a table can't reach the column (D7.5; D9.24 for the
+# group columns, R6 for the key column). The engine refuses rows for a rule the registry
+# doesn't declare (9.7).
 
-#' The three tables' columns and classes, with the caller's columns in their places
+#' The four tables' columns and classes, with the caller's columns in their places
 #'
 #' Results carry the group columns after `column_name`; issues carry the group columns,
 #' then the problem unit's key column unless it is one of them, after
-#' `provider_key_status` and before `reaches_other_unit` (9.2, 9.3; D20.18). Each caller column
-#' is character. A caller column that
+#' `provider_key_status` and before `reaches_other_unit` (9.2, 9.3; D20.18); unit_records
+#' carries them after `run_id`, before `table_name` and `n_records` (8.8, 9.1; D23.24). Each
+#' caller column is character. A caller column that
 #' repeats, is blank, or has the name of a fixed column is a caller error, and so is a group
 #' column whose name holds "; " (D15.39, D15.40). So is one named like a column a report adds,
-#' `message` or `n_not_evaluated_own`, or starting with `key_`, the provider CSV's key parts
-#' (D20.76).
+#' `message`, `n_not_evaluated_own`, `n_blocked` or `rate`, or starting with `key_`, the
+#' provider CSV's key parts (D20.76).
 #' @noRd
 results_schema <- function(group_cols = character(), key_col = NULL) {
   chr <- "character"
@@ -46,9 +48,11 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
     reason_code = chr, support = chr, support_n = int, support_d = int, evidence = chr,
     fixed_value_passes = lgl, easy_fix = lgl, easy_fix_blocked_by = chr
   )
-  # A report's routed results add n_not_evaluated_own (route_unit()) and the provider's CSV
-  # message (provider_csv_table()), so a caller's column can't take either name (D20.76).
-  report <- c("message", "n_not_evaluated_own")
+  unit_records <- c(run_id = chr, table_name = chr, n_records = int)
+  # A report's routed results add n_not_evaluated_own (route_unit()), the provider's CSV
+  # message (provider_csv_table()) and the problem units' rates n_blocked and rate
+  # (problem_plot_rates()), so a caller's column can't take any of these names (D20.76).
+  report <- c("message", "n_not_evaluated_own", "n_blocked", "rate")
   validate_caller_columns(
     group_cols, key_col, unique(c(names(results), names(issues), names(corrections), report))
   )
@@ -62,7 +66,11 @@ results_schema <- function(group_cols = character(), key_col = NULL) {
       issues, caller(unique(c(group_cols, key_col))),
       after = match("provider_key_status", names(issues))
     ),
-    corrections = corrections
+    corrections = corrections,
+    unit_records = append(
+      unit_records, caller(unique(c(group_cols, key_col))),
+      after = match("run_id", names(unit_records))
+    )
   )
 }
 
@@ -178,9 +186,10 @@ new_corrections <- function(x = NULL) {
 #' A table checked against its schema, changing nothing
 #'
 #' Every table: a data.table with exactly the schema's columns in order, of its classes.
-#' Then, for the results, issues and corrections tables (9.2 to 9.4) and the run and
-#' settings tables (9.5): the columns that must hold a value hold one, a text one never
-#' empty; coded columns hold their values only; and each table's rules between columns. Results and
+#' Then, for the results, issues, corrections and unit_records tables (9.2 to 9.4; D23.24)
+#' and the run and settings tables (9.5): the columns that must hold a value hold one, a text
+#' one never empty; coded columns hold their values only; and each table's rules between
+#' columns. Results and
 #' issues name only rules the registry declares that aren't pre-flight checks, with the
 #' registry's stage and layer (9.7), a conformance row's reason code is "*" (R3), and a results
 #' row has `n_unchecked` unless its rule is a unit rule (D20.15). A problem is a developer
@@ -222,6 +231,7 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
       "correction_id", "run_id", "issue_id", "table_name", "column_name", "proposed_value",
       "strategy", "easy_fix"
     ),
+    unit_records = c("run_id", caller, "table_name", "n_records"),
     run = c(
       "run_id", "run_start", "run_end", "package_version", "r_version", "platform",
       "data_table_version", "outcome"
@@ -296,6 +306,14 @@ validate_schema <- function(x, name, schema, registry = rule_registry()) {
     results = check_results_rows(x, caller, fail),
     issues = check_issues_rows(x, fail),
     corrections = check_corrections_rows(x, fail),
+    # One row per group, problem unit and table, each counting records (D23.24).
+    unit_records = {
+      repeated <- anyDuplicated(x, by = setdiff(names(x), "n_records")) > 0L
+      if (any(x$n_records < 1L) || repeated) {
+        # M8a1 W9
+        fail("has a row counting no records, or more than one row for a unit and table")
+      }
+    },
     run = if (nrow(x) != 1L) fail("must have one row"),
     NULL
   )
@@ -395,19 +413,22 @@ check_corrections_rows <- function(x, fail) {
   invisible(NULL)
 }
 
-#' A gpq_results object: the three tables and the run metadata, checked together
+#' A gpq_results object: the four tables and the run metadata, checked together
 #'
 #' The group columns are the ones the run table records (D9.29); the problem unit's key
-#' column is the issues column beyond them and the fixed ones, if any. Every row carries
-#' the run's ID; every correction names an issue. Returns
-#' `structure(list(results, issues, corrections, metadata), class = "gpq_results")`. The
-#' object holds the tables it is given, not copies of them, so a later change by reference
-#' to a table the caller still holds reaches the object.
+#' column is the issues column beyond them and the fixed ones, if any, and unit_records carries
+#' both (D23.24). Every row carries the run's ID; every correction names an issue. Returns
+#' `structure(list(results, issues, corrections, unit_records, metadata), class =
+#' "gpq_results")`. The object holds the tables it is given, not copies of them, so a later
+#' change by reference to a table the caller still holds reaches the object.
 #' @noRd
-new_gpq_results <- function(results, issues, corrections, metadata,
+new_gpq_results <- function(results, issues, corrections, unit_records, metadata,
                             registry = rule_registry()) {
   object <- structure(
-    list(results = results, issues = issues, corrections = corrections, metadata = metadata),
+    list(
+      results = results, issues = issues, corrections = corrections,
+      unit_records = unit_records, metadata = metadata
+    ),
     class = "gpq_results"
   )
   validate_gpq_results(object, registry)
@@ -418,9 +439,12 @@ new_gpq_results <- function(results, issues, corrections, metadata,
 #' @noRd
 validate_gpq_results <- function(x, registry = rule_registry()) {
   whole <- inherits(x, "gpq_results") &&
-    identical(names(x), c("results", "issues", "corrections", "metadata"))
+    identical(names(x), c("results", "issues", "corrections", "unit_records", "metadata"))
   if (!whole) {
-    stop("A gpq_results object holds results, issues, corrections and metadata.", call. = FALSE)
+    stop(
+      "A gpq_results object holds results, issues, corrections, unit_records and metadata.",
+      call. = FALSE
+    )
   }
   validate_metadata(x$metadata)
   run <- x$metadata$run
@@ -433,7 +457,7 @@ validate_gpq_results <- function(x, registry = rule_registry()) {
   }
   key_col <- if (length(extra) == 1L) extra
   schema <- results_schema(group_cols, key_col)
-  for (name in c("results", "issues", "corrections")) {
+  for (name in c("results", "issues", "corrections", "unit_records")) {
     validate_schema(x[[name]], name, schema[[name]], registry)
     if (any(x[[name]]$run_id != run$run_id)) {
       stop(sprintf("The %s table holds rows of another run.", name), call. = FALSE)
@@ -448,8 +472,10 @@ validate_gpq_results <- function(x, registry = rule_registry()) {
 #' One run's results with another's for the same run appended, issue and correction IDs
 #' renumbered after the first's (plan 3.4: Layer 6 appends to results; R16, D15.26)
 #'
-#' Both are gpq_results of the same run, with the same group columns; the metadata is the
-#' first's, not a copy of it, so a later change by reference to it reaches the bound object.
+#' Both are gpq_results of the same run, with the same group columns; the metadata and
+#' unit_records are the first's, not copies of them, so a later change by reference to them
+#' reaches the bound object. unit_records counts the run's records, which the second object's
+#' checks read too, so the second's is left out (D23.24).
 #' The second object's `issue_id`, `root_issue_id`, `correction_id` and corrections'
 #' `issue_id` move by the first's largest ID. So do the issue IDs written in corrections'
 #' `related_issue_ids` and `easy_fix_blocked_by` (D15.26): cells of parts joined with "; ",
@@ -517,7 +543,8 @@ bind_results <- function(x, y, registry = rule_registry()) {
     )
   }
   new_gpq_results(
-    rbindlist(list(x$results, y$results)), issues, corrections, x$metadata, registry
+    rbindlist(list(x$results, y$results)), issues, corrections, x$unit_records, x$metadata,
+    registry
   )
 }
 

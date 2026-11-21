@@ -6,8 +6,9 @@
 # severity and whether it is on, from the rule set (D16.6, D16.7); a value that failed an
 # earlier layer masked as not_evaluated (6.2); failures and masked records collapsed into
 # column-level issues (6.3, D16.10), each issue marked where it reaches another report unit
-# (D20.10); each rule's counts checked to add up to its groups' records (D20.15); and the
-# run's metadata with its self-test (9.5, 9.7).
+# (D20.10); each rule's counts checked to add up to its groups' records (D20.15); the problem
+# units' record counts (8.8; D23.24, R/results_problem_plots.R); and the run's metadata with
+# its self-test (9.5, 9.7).
 
 #' Check tables against a specification: structure, types, missing-value codes, value
 #' domains and keys
@@ -126,13 +127,14 @@
 #'   under `"*"`; in the report-unit column, its records' issues go into no provider's report
 #'   in a run of several units.
 #' @param problem_unit `NULL`, or `list(table, key_col)`: the table and key column of the
-#'   unit problem plots are ranked by; issues carry that key under its name.
+#'   unit problem plots are ranked by; issues carry that key under its name, and
+#'   `unit_records` counts each unit's records.
 #' @param rules `NULL`, or a rule set such as [magp_rules()] returns.
 #' @param layers The layers to run, whole numbers from 0 to 5.
 #' @param settings A named list of settings.
 #' @param run_id `NULL`, to make one from the run's start, or a run ID such as
 #'   `"20261215T140312Z_3fa9c1"`: the UTC start time and six hex characters.
-#' @return An object of class `gpq_results`, a list of three tables and the run metadata:
+#' @return An object of class `gpq_results`, a list of four tables and the run metadata:
 #'   - `results`: the summary, one row per rule, table, column and group: `run_id`,
 #'     `run_scope`, `rule_id`, `rule_fingerprint`, `stage`, `layer`, `severity`, `table_name`,
 #'     `column_name`, the group columns, `n_checked`, `n_fail`, `n_not_evaluated`,
@@ -153,7 +155,15 @@
 #'     the problem unit's key column, `reaches_other_unit`, `root_issue_id`, `status` (`open`
 #'     or `not_evaluated`), `issue_class`, `class_basis`, `script_file`, `script_block`,
 #'     `attribution_status`, `fingerprint`, `fingerprint_pk`, `first_seen_run`, `change` and
-#'     `change_cause`. The columns a conformance run doesn't fill are NA. `reaches_other_unit`
+#'     `change_cause`. The columns a conformance run doesn't fill are NA. `script_file` and
+#'     `script_block` are the processing script, and the block in it, that an attribution map,
+#'     such as [magp_run_qc()]'s `attribution_map`, names for the issue's table and column, and
+#'     `attribution_status` says whether that
+#'     script is known to be the one that made the delivery: `current` when the map's commit
+#'     is the delivery's, `may_be_stale` when it differs or the map gives none,
+#'     `script_version_unknown` when the delivery records none, and `unmapped` when the map
+#'     names no script for the column, the issue then taking the script its group's row
+#'     names as a whole, if any. `reaches_other_unit`
 #'     is TRUE where the issue holds a value read from a record of another report unit, or
 #'     from a record whose report unit is `"*"`. Such a value is a group value or the problem
 #'     unit's key reached through the keys, any side of `key_incoherent`'s key pairs on the
@@ -162,6 +172,11 @@
 #'     or with no unit. For a column-level issue it is TRUE when any record it covers is. It is
 #'     FALSE in a run without group columns, and isn't part of the fingerprint.
 #'   - `corrections`: an empty table.
+#'   - `unit_records`: the records behind the problem units' rates, one row per group, problem
+#'     unit and table holding records of that unit: `run_id`, the group columns, the problem
+#'     unit's key column, `table_name` and `n_records`, the number of the table's records in
+#'     that group whose problem unit is that one, read as issues read it. A record whose
+#'     problem unit's key is `"*"` isn't counted. Empty without `problem_unit`.
 #'   - `metadata`: the tables of `metadata/` in a run folder. In its `run` table, `run_end` is
 #'     when this call ends: it covers pre-flight, reading the tables and the checks, not what
 #'     comes after, such as writing the results.
@@ -271,6 +286,9 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
   fingerprints <- issue_fingerprint(issues)
   set(issues, j = "fingerprint", value = fingerprints$fingerprint)
   set(issues, j = "fingerprint_pk", value = fingerprints$fingerprint_pk)
+  # The records behind the problem units' rates, so a rebuild ranks them without the data (8.8;
+  # D9.31, D23.24).
+  unit_records <- unit_record_counts(input, run_id)
   run_rules <- context$run_rules
   expected <- run_rules[!run_rules$rule_id %chin% state$not_expected]
   report_units <- if (length(group_cols) > 0L) {
@@ -300,7 +318,7 @@ gpq_check_conformance <- function(tables, spec, table_map = NULL, group_cols = N
     rules = rules, settings = settings, inputs = inputs,
     self_test = run_self_test(results, expected)
   )
-  new_gpq_results(results, issues, new_corrections(), metadata, registry)
+  new_gpq_results(results, issues, new_corrections(), unit_records, metadata, registry)
 }
 
 #' A run's state while its layers are recorded: the results and issue rows so far, the next
@@ -1017,7 +1035,8 @@ cascade_masks <- function(state, table, attribute, layer, row_group, masked_by =
 #' that checked nothing is not_run, reason none_checked (D18.22). Each issue is marked
 #' reaches_other_unit where its record's mark (conformance_input()) or the rule's for the
 #' record (the outcome's `reaches_other_unit`) is TRUE, a column-level issue where any of its
-#' records' is (D20.10).
+#' records' is (D20.10). A column-level issue's `expected` is the value every failing record it
+#' covers shares, NA where they differ (M8 m15, D23.6).
 #' @noRd
 record_records <- function(outcome, rule, severity, layer, input, context, state, run_id) {
   table <- outcome$table_name
@@ -1130,12 +1149,19 @@ record_records <- function(outcome, rule, severity, layer, input, context, state
   if (length(whole) > 0L) {
     # A column-level issue is marked when any record it covers is (D20.10 (b)).
     marked <- tabulate(row_group[fail[other[fail]]], n_groups) > 0L
+    # It keeps the expected value every failing record it covers shares, and none where they
+    # differ (M8 m15, D23.6): each group's distinct expected values, counted.
+    shared <- rep(NA_character_, length(whole))
+    if (length(expected) == length(fail)) {
+      distinct <- unique(data.table(group = row_group[fail], expected = expected))
+      once <- tabulate(distinct$group, n_groups)[whole] == 1L
+      shared[once] <- as.character(distinct$expected[match(whole[once], distinct$group)])
+    }
     ids <- issue_rows(
       run_id, rule, severity, context, table, attribute,
       list(
         record_pk = "*", row_number = NA_integer_, pk_positional = NA, level = "column",
-        n_records = fail_count[whole], value = NA_character_,
-        expected = if (length(outcome$expected) == 1L) outcome$expected else NA_character_,
+        n_records = fail_count[whole], value = NA_character_, expected = shared,
         reaches_other_unit = marked[whole], root_issue_id = NA_integer_, status = "open"
       ),
       group_values(grouping, whole), rep("*", length(whole)), input, state

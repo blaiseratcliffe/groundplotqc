@@ -13,8 +13,10 @@ reference:
       - gpq_type_map
   - title: "Generic engine: checks and results"
     contents:
+      - gpq_apply_acknowledgements
       - gpq_build_reports
       - gpq_check_conformance
+      - gpq_compare_runs
       - gpq_read_results
       - gpq_write_results
   - title: "Generic engine: lineage and issue classes"
@@ -24,6 +26,7 @@ reference:
   - title: MAGPlot 2.0 layer
     contents:
       - magp_example
+      - magp_list_runs
       - magp_read_delivery
       - magp_rules
       - magp_run_qc

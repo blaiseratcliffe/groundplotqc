@@ -9,7 +9,8 @@
 # builder of R/report_html.R that calls it (11.1), and delivered text in a table cell or a bar
 # label is cut at `cell_cap` characters before it is escaped (cut_cell_text(), D20.39).
 # Sections 2 to 6 show open issues and section 10 the not-evaluated ones; each open issue is
-# listed in exactly one of sections 3 to 6 (D20.28).
+# listed in exactly one of sections 3 to 6 (D20.28), and each acknowledged one in section 12
+# alone (D23.36).
 
 #' Section 1, "About this report": the run's facts, then its specification files and its
 #' settings, each folded (D20.40)
@@ -318,7 +319,8 @@ issue_summary <- function(issues, section, text, settings) {
 #' the lineage input's raw value of each issue's cell, one per row of `issues`, NA where it has
 #' none (D20.17); it comes apart from `issues`, so a caller's column of any name keeps its place
 #' (D20.123). Each row: severity, check, table, column, provider key and its status, record ID,
-#' value, raw value, expected value, then those columns, "*" in them shown as W4. Delivered text
+#' value, raw value, expected value, the date of the run it was first seen in where `issues`
+#' holds `first_seen_run` (D23.35), then those columns, "*" in them shown as W4. Delivered text
 #' is cut at `cell_cap` (D20.39), and so are the table's and the column's names (D20.134). A
 #' column empty in every row is left out (D20.42, D20.44); the CSV keeps every column. Sorted
 #' by severity, check, table, column and provider key, then record ID and issue ID; capped at
@@ -340,12 +342,19 @@ issue_records <- function(issues, raw_values, section, text, settings) {
   }
   severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
   status_words <- vapply(paste0("report_key_", statuses), word, "", USE.NAMES = FALSE)
+  # The run each issue was first seen in, as its ID's UTC date (11.8; D4.7, D23.35): an ID
+  # such as "20261215T140312Z_3fa9c1" shows "2026-12-15", any other as written, cut.
+  first_seen <- issues$first_seen_run
+  if (is.null(first_seen)) {
+    first_seen <- rep(NA_character_, nrow(issues))
+  }
+  first_seen <- cut(sub("^([0-9]{4})([0-9]{2})([0-9]{2})T[0-9]{6}Z_.*$", "\\1-\\2-\\3", first_seen))
   columns <- c(
     list(
       severity_words[match(issues$severity, severities)], issues$rule_id, cut(issues$table_name),
       cut(issues$column_name), cut(issues$provider_key),
       status_words[match(issues$provider_key_status, statuses)], cut(issues$record_pk),
-      cut(issues$value), cut(as.character(raw_values)), cut(issues$expected)
+      cut(issues$value), cut(as.character(raw_values)), cut(issues$expected), first_seen
     ),
     lapply(extra, function(column) linked(issues[[column]]))
   )
@@ -354,7 +363,7 @@ issue_records <- function(issues, raw_values, section, text, settings) {
     word("report_column_column"), word("report_column_provider_key"),
     word("report_column_key_status"), word("report_column_record_pk"),
     word("report_column_issue_value"), word("report_column_raw_value"),
-    word("report_column_expected"), extra
+    word("report_column_expected"), word("report_column_first_seen"), extra
   )
   # A column empty in every row is left out (D20.42, D20.44), such as the raw value when no
   # lineage was given; the CSV keeps every column.
@@ -383,9 +392,9 @@ issue_records <- function(issues, raw_values, section, text, settings) {
 #' 6 (D20.28), so a whole-column problem isn't passed over; then the record-level ones in
 #' issue_summary()'s "By check" table and issue_records()' "Each issue" table, which shows each
 #' cell's raw value from `tables$lineage`, joined on table, record and column for an issue
-#' whose key names one record (D20.17, D20.117) and passed as `raw_values` (D20.123), the
-#' breakdown columns (the group columns after the report unit) and the problem unit's key
-#' column. With no source issue, W101 alone.
+#' whose key names one record (D20.17, D20.117) and passed as `raw_values` (D20.123), the date
+#' of the run each was first seen in (D23.35), the breakdown columns (the group columns after
+#' the report unit) and the problem unit's key column. With no source issue, W101 alone.
 #' @noRd
 section_actions <- function(tables, text, settings) {
   lang <- settings$lang
@@ -414,7 +423,7 @@ section_actions <- function(tables, text, settings) {
   if (length(record) > 0L) {
     columns <- c(
       "issue_id", "severity", "rule_id", "table_name", "column_name", "provider_key",
-      "provider_key_status", "record_pk", "value", "expected"
+      "provider_key_status", "record_pk", "value", "expected", "first_seen_run"
     )
     shown <- issues[record, unique(c(columns, tables$group_cols[-1L], tables$key_col)),
       with = FALSE
@@ -727,6 +736,399 @@ section_not_evaluated <- function(tables, text, settings) {
         n = nrow(rows), total = total, text = text
       )), "</p>")
     }
+  ))
+}
+
+#' A table whose rows the issues CSV doesn't hold, such as section 13's: its first `row_cap`
+#' rows, then report_rows_shown's line, which names no file, as section 10 caps its table
+#' (D20.91); `shown` is the table as html_table() takes it, `row_class` one class per row or
+#' NULL; `...` goes to html_table(), such as its `decimals` (D23.109). Returns the HTML.
+#' @noRd
+capped_table <- function(shown, caption, row_class, text, settings, ...) {
+  total <- nrow(shown)
+  kept <- seq_len(min(total, settings$row_cap))
+  c(
+    html_table(
+      shown[kept], caption,
+      row_class = if (!is.null(row_class)) row_class[kept], lang = settings$lang, text = text,
+      ...
+    ),
+    if (total > length(kept)) {
+      paste0("<p>", html_escape(report_text(
+        "report_rows_shown", settings$lang,
+        n = length(kept), total = total, text = text
+      )), "</p>")
+    }
+  )
+}
+
+#' Section 11, "Changes since the previous run": the unit's issues counted new, resolved and
+#' persisting, then the resolved ones listed (11.3, 11.8; D4.7, D23.30 to D23.32, D23.35)
+#'
+#' Every issue counts, whatever its status (D23.32), a column-level one once. The counts: new
+#' and resolved by cause, `data` or `rules_or_spec` (D23.31), with their totals, and persisting
+#' as a total; a cause no issue gives counts 0. `tables$resolved` is NULL when the build wasn't
+#' given `previous`: the counts are then the issues' saved `change`, with no resolved row and a
+#' line saying the resolved issues need the previous run (D23.30); with no saved `change`
+#' either, one line saying the run wasn't compared. Otherwise it holds the unit's routed
+#' resolved issues (route_unit()), listed as the "Each issue" tables list issues: severity,
+#' check (a renamed or split rule under its first new ID, rule_id_map(), as the comparison
+#' reads it), what it means (no text for a rule the registry no longer has), table, column,
+#' provider key, record ID, value, the date of the run it was first seen in, then the breakdown
+#' columns and the problem unit's key column where the earlier run has them, "*" shown as W4;
+#' delivered text cut at `cell_cap` (D20.39); sorted by severity, check, table, column,
+#' provider key, record ID and issue ID; a column empty in every row left out (D20.44); at most
+#' `row_cap` rows, with a line naming no file, since the CSV doesn't hold them (D23.34). A column
+#' the earlier run's issues lack reads as empty (D23.160).
+#' @noRd
+section_changes <- function(tables, text, settings) {
+  lang <- settings$lang
+  word <- function(text_id) report_text(text_id, lang, text = text)
+  cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
+  title <- word("report_section_changes")
+  issues <- tables$issues
+  resolved <- tables$resolved
+  change <- issues$change
+  if (is.null(resolved) && all(is.na(change))) {
+    return(html_section(
+      "changes", title, paste0("<p>", html_escape(word("report_changes_empty")), "</p>")
+    ))
+  }
+  causes <- c("data", "rules_or_spec")
+  by_cause <- function(cause) tabulate(match(cause, causes), length(causes))
+  new <- change %chin% "new"
+  rows <- list(c(by_cause(issues$change_cause[new]), sum(new)))
+  labels <- word("report_changes_new")
+  if (!is.null(resolved)) {
+    rows <- c(rows, list(c(by_cause(resolved$change_cause), nrow(resolved))))
+    labels <- c(labels, word("report_changes_resolved"))
+  }
+  rows <- c(rows, list(c(NA_integer_, NA_integer_, sum(change %chin% "persisting"))))
+  labels <- c(labels, word("report_changes_persisting"))
+  counts <- data.table(
+    labels, vapply(rows, `[[`, 1L, 1L), vapply(rows, `[[`, 1L, 2L), vapply(rows, `[[`, 1L, 3L)
+  )
+  setnames(counts, c(
+    word("report_column_change"), word("report_column_by_data"),
+    word("report_column_by_rules"), word("report_column_total")
+  ))
+  body <- c(
+    paste0("<p>", html_escape(word("report_changes_intro")), "</p>"),
+    html_table(counts, word("report_changes_caption"), lang = lang, text = text)
+  )
+  if (is.null(resolved)) {
+    return(html_section("changes", title, c(
+      body, paste0("<p>", html_escape(word("report_changes_no_previous")), "</p>")
+    )))
+  }
+  if (nrow(resolved) == 0L) {
+    return(html_section("changes", title, body))
+  }
+  severities <- c("error", "warning", "flag", "info")
+  # A column the earlier run's issues lack reads as empty, one missing value per row (D23.160).
+  held <- function(column, empty = NA_character_) {
+    if (is.null(resolved[[column]])) rep(empty, nrow(resolved)) else resolved[[column]]
+  }
+  severity_of <- held("severity")
+  column_name <- held("column_name")
+  provider_key <- held("provider_key")
+  record_pk <- held("record_pk")
+  value <- held("value")
+  issue_id <- held("issue_id", NA_integer_)
+  registry <- rule_registry()
+  map <- rule_id_map()
+  rule_id <- fcoalesce(map$new_rule_id[match(resolved$rule_id, map$old_rule_id)], resolved$rule_id)
+  message_ids <- registry$message_id[match(rule_id, registry$rule_id)]
+  known <- unique(message_ids[!is.na(message_ids)])
+  messages <- structure(vapply(known, word, ""), names = known)
+  not_linked <- word("report_not_linked")
+  linked <- function(x) {
+    shown <- cut(x)
+    shown[x %chin% "*"] <- not_linked
+    shown
+  }
+  extra <- intersect(setdiff(c(tables$group_cols[-1L], tables$key_col), ""), names(resolved))
+  severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
+  first_seen <- sub(
+    "^([0-9]{4})([0-9]{2})([0-9]{2})T[0-9]{6}Z_.*$", "\\1-\\2-\\3", resolved$first_seen_run
+  )
+  columns <- c(
+    list(
+      severity_words[match(severity_of, severities)], rule_id,
+      unname(messages[message_ids]), cut(resolved$table_name), cut(column_name),
+      cut(provider_key), cut(record_pk), cut(value), cut(first_seen)
+    ),
+    lapply(extra, function(column) linked(as.character(resolved[[column]])))
+  )
+  headers <- c(
+    word("report_column_severity"), word("report_column_check"), word("report_column_meaning"),
+    word("report_column_table"), word("report_column_column"), word("report_column_provider_key"),
+    word("report_column_record_pk"), word("report_column_issue_value"),
+    word("report_column_first_seen"), extra
+  )
+  # A column empty in every row is left out (D20.42, D20.44).
+  kept <- !vapply(columns, function(x) all(is.na(x) | !nzchar(x)), TRUE)
+  # The text keys read as UTF-8, so the radix sort's byte order is C order whatever a key's
+  # encoding mark (D20.42, R94).
+  order_by <- order(
+    match(severity_of, severities), enc2utf8(rule_id), enc2utf8(resolved$table_name),
+    enc2utf8(column_name), enc2utf8(provider_key), enc2utf8(record_pk), issue_id,
+    method = "radix"
+  )
+  shown <- as.data.table(lapply(columns[kept], function(x) x[order_by]))
+  setnames(shown, headers[kept])
+  severity <- severity_of[order_by]
+  row_class <- fifelse(severity %chin% severities, paste0("sev-", severity), NA_character_)
+  html_section("changes", title, c(
+    body,
+    capped_table(shown, word("report_changes_resolved_caption"), row_class, text, settings)
+  ))
+}
+
+#' Section 12, "Acknowledged issues": the unit's acknowledged issues, each with its register
+#' entry, then the entries that lapsed (11.3, 11.8; D4.8, D23.34, D23.36)
+#'
+#' The unit's issues of status acknowledged, which sections 2 to 6 leave out, one row each,
+#' under the section's intro: severity, shown as the row's label (D23.113), what the check
+#' means, table, column, provider key, the acknowledged value, the decision, when and why,
+#' never who (D23.36). `tables$acknowledgements` is NULL when the build wasn't
+#' given the register: the acknowledged value is then the issue's own, the decision, when and
+#' why are empty and left out, and a line says they need the register. Otherwise it holds, by
+#' `issue_id`, the entry that holds for each of the unit's acknowledged issues
+#' (gpq_build_reports()), its `acknowledged_value`, `decision`, `when` and `why`; an issue no
+#' entry of the unit's holds for shows only what the issue gives. `tables$lapsed` holds the
+#' unit's lapsed entries (gpq_apply_acknowledgements()), each listed apart with what its check
+#' means (its rule ID read through rule_id_map()), its table, column, provider key, acknowledged
+#' value, the issue's current value, decision, when and why. Delivered text, and the register's
+#' copies of it, cut at `cell_cap` (D20.39); `when` and `why` are the register's own, shown in
+#' full. The issues sorted as the "Each issue" tables sort, the lapsed entries by table, column,
+#' provider key and check, both in C order; a column empty in every row left out (D20.44); each
+#' at most `row_cap` rows, the acknowledged issues' note naming the unit's CSV, which holds
+#' them, and the lapsed entries' a line naming no file (D23.116). With neither, one line.
+#' @noRd
+section_acknowledged <- function(tables, text, settings) {
+  lang <- settings$lang
+  word <- function(text_id) report_text(text_id, lang, text = text)
+  cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
+  title <- word("report_section_acknowledged")
+  issues <- tables$issues
+  entries <- tables$acknowledgements
+  lapsed <- tables$lapsed
+  at <- which(issues$status %chin% "acknowledged")
+  if (length(at) == 0L && NROW(lapsed) == 0L) {
+    return(html_section(
+      "acknowledged", title, paste0("<p>", html_escape(word("report_acknowledged_empty")), "</p>")
+    ))
+  }
+  severities <- c("error", "warning", "flag", "info")
+  registry <- rule_registry()
+  map <- rule_id_map()
+  # What each check means, a rule renamed or split since read under its first new ID; no text
+  # for a rule the registry doesn't have.
+  meaning <- function(rule_id) {
+    rule_id <- fcoalesce(map$new_rule_id[match(rule_id, map$old_rule_id)], rule_id)
+    message_ids <- registry$message_id[match(rule_id, registry$rule_id)]
+    known <- unique(message_ids[!is.na(message_ids)])
+    unname(structure(vapply(known, word, ""), names = known)[message_ids])
+  }
+  decisions <- c(
+    verified = word("report_decision_verified"),
+    rejected_proposal = word("report_decision_rejected_proposal")
+  )
+  severity_words <- vapply(paste0("report_severity_", severities), word, "", USE.NAMES = FALSE)
+  # A column empty in every row is left out (D20.42, D20.44).
+  table_of <- function(columns, headers) {
+    kept <- !vapply(columns, function(x) all(is.na(x) | !nzchar(x)), TRUE)
+    shown <- as.data.table(columns[kept])
+    setnames(shown, headers[kept])
+    shown
+  }
+  body <- character()
+  if (length(at) > 0L) {
+    # The intro only above the acknowledged issues (D23.115).
+    body <- paste0("<p>", html_escape(report_text(
+      "report_acknowledged_intro", lang,
+      csv_name = settings$csv_name, text = text
+    )), "</p>")
+    # The text keys read as UTF-8, so the radix sort's byte order is C order whatever a key's
+    # encoding mark, as the "Each issue" tables sort (D20.42, R94).
+    at <- at[order(
+      match(issues$severity[at], severities), enc2utf8(issues$rule_id[at]),
+      enc2utf8(issues$table_name[at]), enc2utf8(issues$column_name[at]),
+      enc2utf8(issues$provider_key[at]), enc2utf8(issues$record_pk[at]), issues$issue_id[at],
+      method = "radix"
+    )]
+    held <- if (!is.null(entries)) match(issues$issue_id[at], entries$issue_id)
+    entry <- function(column) {
+      if (is.null(entries)) rep(NA_character_, length(at)) else entries[[column]][held]
+    }
+    acknowledged_value <- if (is.null(entries)) issues$value[at] else entry("acknowledged_value")
+    # Severity first, in its words, the row's class showing it as the label (D23.113); the
+    # rows are in the issues CSV, so a cap's note names it (D20.68, D23.116).
+    shown <- table_of(
+      list(
+        severity_words[match(issues$severity[at], severities)], meaning(issues$rule_id[at]),
+        cut(issues$table_name[at]), cut(issues$column_name[at]), cut(issues$provider_key[at]),
+        cut(acknowledged_value), unname(decisions[entry("decision")]), entry("when"),
+        entry("why")
+      ),
+      c(
+        word("report_column_severity"), word("report_column_meaning"),
+        word("report_column_table"), word("report_column_column"),
+        word("report_column_provider_key"), word("report_column_acknowledged_value"),
+        word("report_column_decision"), word("report_column_when"), word("report_column_why")
+      )
+    )
+    body <- c(body, html_table(
+      shown, word("report_acknowledged_caption"), settings$row_cap, settings$csv_name,
+      row_class = paste0("sev-", issues$severity[at]), lang = lang, text = text
+    ))
+    if (is.null(entries)) {
+      body <- c(body, paste0("<p>", html_escape(word("report_acknowledged_no_register")), "</p>"))
+    }
+  }
+  if (NROW(lapsed) > 0L) {
+    # Worked out before the brackets: the entries hold the caller's group columns.
+    by_key <- order(
+      enc2utf8(lapsed$table_name), enc2utf8(lapsed$column_name), enc2utf8(lapsed$provider_key),
+      enc2utf8(lapsed$rule_id),
+      method = "radix"
+    )
+    lapsed <- lapsed[by_key]
+    body <- c(
+      body,
+      paste0("<p>", html_escape(word("report_acknowledged_lapsed_intro")), "</p>"),
+      capped_table(
+        table_of(
+          list(
+            meaning(lapsed$rule_id), cut(lapsed$table_name), cut(lapsed$column_name),
+            cut(lapsed$provider_key), cut(lapsed$acknowledged_value), cut(lapsed$current_value),
+            unname(decisions[lapsed$decision]), lapsed$when, lapsed$why
+          ),
+          c(
+            word("report_column_meaning"), word("report_column_table"),
+            word("report_column_column"), word("report_column_provider_key"),
+            word("report_column_acknowledged_value"), word("report_column_current_value"),
+            word("report_column_decision"), word("report_column_when"), word("report_column_why")
+          )
+        ),
+        word("report_acknowledged_lapsed_caption"), NULL, text, settings
+      )
+    )
+  }
+  html_section("acknowledged", title, body)
+}
+
+#' Section 13, "Problem units": in each group, the units with the most records holding an
+#' open blocking issue for their size (8.8; D3.14, D23.33, D23.37, D23.38)
+#'
+#' The rates are problem_plot_rates()' on the unit's routed unit_records and issues, a unit
+#' being a value of the problem unit's key column within one combination of the report's group
+#' columns, its blocked records those holding an open record-level issue of a severity in
+#' `blocking_severities`, so acknowledged issues and column-level ones don't count (D23.37). A
+#' unit is ranked when it has at least `problem_plot_min_records` records and one of them
+#' blocked; in each group the 20 with the highest rate are shown, ties by their blocked
+#' records, then by key in C order (D23.38). One table: the breakdown columns and the key column
+#' under their raw names (D20.56), "*" in a breakdown shown as W4, each cut at `cell_cap`
+#' (D20.39); the records, the blocked records, the rate to two decimals, written padded
+#' ("0.10", html_table()'s `decimals`, D23.109), and whether that rate, as shown, is above
+#' `problem_plot_rate` (D23.104); sorted by group in C order, then by rank.
+#' At most `row_cap` rows, the first ones, with a line naming no file, since the CSV holds no
+#' rates (capped_table(), D20.91). Without a problem unit, one line saying so; with no
+#' unit_records row while an issue names a unit, as in a run folder an earlier version wrote,
+#' which holds no counts (D23.33), one line saying so; with no unit ranked, one line.
+#' @noRd
+section_problem_plots <- function(tables, text, settings) {
+  lang <- settings$lang
+  word <- function(text_id) report_text(text_id, lang, text = text)
+  cut <- function(x) cut_cell_text(x, settings$cell_cap) # D20.59: the cut's name
+  title <- word("report_section_problem_plots")
+  alone <- function(text_id) {
+    html_section("problem-plots", title, paste0("<p>", html_escape(word(text_id)), "</p>"))
+  }
+  key_col <- tables$key_col
+  if (is.null(key_col)) {
+    return(alone("report_problem_plots_no_unit"))
+  }
+  issues <- tables$issues
+  unit_records <- tables$unit_records
+  if (nrow(unit_records) == 0L && any(!issues[[key_col]] %chin% c("*", NA))) {
+    return(alone("report_problem_plots_no_counts"))
+  }
+  groups <- tables$group_cols
+  rates <- problem_plot_rates(
+    unit_records, issues, groups, key_col, settings$blocking_severities
+  )
+  # Each row test is worked out before the brackets: the rates hold the caller's columns, whose
+  # names could be any of these variables'.
+  big <- which(rates$n_records >= settings$problem_plot_min_records & rates$n_blocked > 0L)
+  ranked <- rates[big]
+  if (nrow(ranked) == 0L) {
+    return(alone("report_problem_plots_empty"))
+  }
+  # By group in C order, then the highest rate, the most blocked records and the key; the text
+  # keys read as UTF-8, so the radix sort's byte order is C order whatever their marks (D20.42).
+  in_group <- lapply(groups, function(column) enc2utf8(ranked[[column]]))
+  by_rank <- do.call(order, c(
+    in_group, list(-ranked$rate, -ranked$n_blocked, enc2utf8(ranked[[key_col]])),
+    list(method = "radix")
+  ))
+  ranked <- ranked[by_rank]
+  # Each unit's place in its group, the first 20 kept (D23.38); a run with no group columns is
+  # one group.
+  place <- if (length(groups) > 0L) {
+    do.call(rowid, lapply(groups, function(column) ranked[[column]]))
+  } else {
+    seq_len(nrow(ranked))
+  }
+  top <- which(place <= 20L)
+  ranked <- ranked[top]
+  not_linked <- word("report_not_linked")
+  # The share as shown, to two decimals; the mark reads that value, so a shown share equal to
+  # problem_plot_rate is never marked above it (D23.104, R63).
+  share <- round(ranked$rate, 2L)
+  # The breakdown columns and the key column, the report unit's own column left out.
+  shown_cols <- setdiff(unique(c(groups[-1L], key_col)), groups[1L])
+  columns <- c(
+    lapply(shown_cols, function(column) {
+      shown <- cut(ranked[[column]])
+      shown[ranked[[column]] %chin% "*"] <- not_linked
+      shown
+    }),
+    list(
+      ranked$n_records, ranked$n_blocked, share,
+      fifelse(
+        share > settings$problem_plot_rate, word("report_problem_plots_above"),
+        word("report_problem_plots_not_above")
+      )
+    )
+  )
+  shown <- as.data.table(columns)
+  setnames(shown, c(
+    shown_cols, word("report_column_records"), word("report_column_records_blocked"),
+    word("report_column_rate"),
+    report_text(
+      "report_column_above_rate", lang,
+      rate = as_text(settings$problem_plot_rate), text = text
+    )
+  ))
+  severities <- c("error", "warning", "flag", "info")
+  blocking <- severities[severities %chin% settings$blocking_severities]
+  html_section("problem-plots", title, c(
+    paste0("<p>", html_escape(report_text(
+      "report_problem_plots_intro", lang,
+      key_col = key_col,
+      severities = paste(
+        vapply(paste0("report_severity_", blocking), word, "", USE.NAMES = FALSE),
+        collapse = ", "
+      ),
+      min_n = settings$problem_plot_min_records, rate = as_text(settings$problem_plot_rate),
+      text = text
+    )), "</p>"),
+    capped_table(
+      shown, word("report_problem_plots_caption"), NULL, text, settings,
+      decimals = structure(2L, names = word("report_column_rate"))
+    )
   ))
 }
 

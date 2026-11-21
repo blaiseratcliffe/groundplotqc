@@ -6,9 +6,11 @@
 # code_set_max_values, code_set_skip_attributes and code_set_skip_pattern from M5, read by
 # Layer 3 (D18.9, D18.20), the design candidates' eight, read by Layer 4 (D18.39), from M6
 # fallback_class, read by gpq_classify_issues() and resolved whole like unknown_codes (D19.53),
-# and from M7a row_cap and cell_cap, the HTML reports' caps (D4.18, D20.39). A rule-set row
-# gives a setting as text: a whole number for type "integer", several values "; "-joined, a
-# named value as "name=value" (D16.12).
+# from M7a row_cap and cell_cap, the HTML reports' caps (D4.18, D20.39), and from M8a1
+# blocking_severities, problem_plot_rate and problem_plot_min_records, read by the reports'
+# problem-plot section (8.8; D3.14, D8.15, D23.38). A rule-set row gives a setting as text: a
+# whole number for type "integer", a number with a fraction for type "double", several values
+# "; "-joined, a named value as "name=value" (D16.12).
 
 #' The declared settings: the type a rule-set row gives, the built-in value, a test of a
 #' value, what the test wants, and how a rule-set row's text becomes a value
@@ -60,6 +62,11 @@ setting_definitions <- function() {
   }
   as_whole <- function(text) {
     if (!is.na(text) && grepl("^[0-9]+$", text)) as.numeric(text) else NA_real_
+  }
+  # A number written with digits and at most one point, such as "0.25" or ".25" (D23.38).
+  as_fraction <- function(text) {
+    number <- "^([0-9]+([.][0-9]*)?|[.][0-9]+)$"
+    if (!is.na(text) && grepl(number, text)) as.numeric(text) else NA_real_
   }
   # The design candidates' settings (D18.39): a table setting names one table,
   # design_signature_by one attribute, the others any number of attributes, each once
@@ -119,6 +126,34 @@ setting_definitions <- function() {
     ),
     column_level_min_n = list(
       type = "integer", built_in = 10L, valid = function(x) whole(x, 1),
+      wants = "one whole number, 1 or more", from_text = as_whole
+    ),
+    # The problem-plot section's (8.8; D3.14, D8.15, D23.38): the severities whose open
+    # record-level issues count toward a unit's rate, the rate a unit is marked above, and the
+    # fewest records a unit needs to be ranked.
+    blocking_severities = list(
+      type = "character", built_in = c("error", "flag"),
+      valid = function(x) {
+        text_ok(x) && is.null(names(x)) && all(x %chin% c("error", "warning", "flag", "info")) &&
+          !anyDuplicated(x)
+      },
+      # M8a1 W57
+      wants = paste(
+        "a character vector of severities, each \"error\", \"warning\", \"flag\" or \"info\"",
+        "and given once"
+      ),
+      from_text = parts
+    ),
+    problem_plot_rate = list(
+      type = "double", built_in = 0.25,
+      valid = function(x) {
+        is.numeric(x) && is.null(dim(x)) && length(x) == 1L && !is.na(x) && x >= 0 && x <= 1
+      },
+      # M8a1 W58
+      wants = "one number from 0 to 1", from_text = as_fraction
+    ),
+    problem_plot_min_records = list(
+      type = "integer", built_in = 20L, valid = function(x) whole(x, 1),
       wants = "one whole number, 1 or more", from_text = as_whole
     ),
     raw_na_policy = list(

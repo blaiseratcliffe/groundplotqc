@@ -1,0 +1,9 @@
+jurisdiction,table_name,attribute_name,script_file,script_block,script_commit,note
+AB,*,*,scripts/ab_example.R,,,"Synthetic, for the package's tests and examples; not MAGPlot's map"
+AB,magp_sites,estab_date,scripts/ab_example.R,block 3: sites,a1b2c3d,
+AB,magp_plot_meas,canopy_structure,scripts/ab_example.R,block 5: plot measurements,a1b2c3d,
+AB,magp_tree_meas,species,scripts/shared_example.R,block 7: species codes,,
+BC,*,*,scripts/bc_example.R,,,
+BC,magp_plots,plot_slope,scripts/bc_example.R,block 4: plots,e4f5a6b,
+BC,magp_plot_meas,canopy_structure,scripts/bc_example.R,block 5: plot measurements,e4f5a6b,
+BC,magp_tree_meas,species,scripts/shared_example.R,block 7: species codes,,

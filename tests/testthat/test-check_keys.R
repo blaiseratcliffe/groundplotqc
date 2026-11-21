@@ -100,6 +100,24 @@ test_that("a composite key is compared whole, on its first part; each part check
   expect_equal(placed_at(opened(results, "pk_missing")), "t a 4")
 })
 
+test_that("a composite key's value escapes its parts as record_pk does (D23.12)", {
+  dictionary <- data.frame(
+    table_name = "t", attribute_name = c("a", "b", "v"), key_type = c("PK", "PK", "."),
+    data_type = "character"
+  )
+  # Rows 1 and 2 hold one key; row 3's ("x", "y|w\") would join to theirs unescaped.
+  tables <- list(t = data.table::data.table(
+    a = c("x|y", "x|y", "x"), b = c("w\\", "w\\", "y|w\\"), v = c("p", "q", "r")
+  ))
+  results <- gpq_check_conformance(tables, gpq_read_spec(dictionary), layers = 4)
+  found <- opened(results, "pk_duplicate")
+  expect_equal(placed_at(found), c("t a 1", "t a 2"))
+  expect_equal(found$value, c("x\\|y|w\\\\", "x\\|y|w\\\\"))
+  expect_equal(found$record_pk, found$value)
+  registry <- rule_registry()
+  expect_equal(registry$rule_version[registry$rule_id == "pk_duplicate"], 2L)
+})
+
 test_that("pk_missing finds NA, blanks and a sentinel the key can't hold (D9.24, D18.15)", {
   nbsp <- intToUtf8(0xA0)
   fish <- edited("catches", "catch_id", 1:5, c(NA, "", nbsp, "?", "~"))

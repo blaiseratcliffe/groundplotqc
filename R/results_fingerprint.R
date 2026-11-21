@@ -18,13 +18,21 @@ sha256_bytes <- function(bytes) {
 #' The pk: form is `rule_id|table_name|column_name|pk:<record_pk>`, NA where the record's
 #' PK is missing (`record_pk` NA, D15.9). The fingerprint is
 #' `rule_id|table_name|column_name|<provider_key>` where the provider key is filled, and the
-#' pk: form otherwise (D4.2, D9.22). Readable text, never hashed (D8.16). Returns a new
-#' data.table with the columns `fingerprint` and `fingerprint_pk`, one row per issue.
+#' pk: form otherwise (D4.2, D9.22). The table and column names are escaped as a key's parts
+#' are (escape_key_part()), so table "a|b" with column "c" and table "a" with column "b|c"
+#' never share a fingerprint; the last part goes in as it is, `record_pk` already escaped
+#' where it is composite (record_pk_text(); D23.12, D23.26). Readable text, never hashed
+#' (D8.16). Returns a new data.table with the columns `fingerprint` and `fingerprint_pk`, one
+#' row per issue.
 #' @noRd
 issue_fingerprint <- function(issues) {
   # The text up to the last part, for the given rows only.
   stem <- function(rows) {
-    paste(issues$rule_id[rows], issues$table_name[rows], issues$column_name[rows], sep = "|")
+    paste(
+      issues$rule_id[rows], escape_key_part(issues$table_name[rows]),
+      escape_key_part(issues$column_name[rows]),
+      sep = "|"
+    )
   }
   pk <- rep(NA_character_, length(issues$rule_id))
   with_pk <- which(!is.na(issues$record_pk))

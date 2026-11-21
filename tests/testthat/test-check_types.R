@@ -195,10 +195,12 @@ test_that("a date-typed key of only Unicode spaces is blank to Layer 1 too (D18.
   expect_false(any(issues$rule_id == "date_unparseable"))
 })
 
-test_that("coercion_loss and date_unparseable are at rule_version 2 (D15.6, D18.62, D18.63)", {
+test_that("Layer 1's rule versions: coercion_loss 3, date_unparseable and value_not_finite 2", {
+  # D15.6: version 2 for D18.62, D18.63 and D18.111; coercion_loss 3 and value_not_finite 2 for
+  # "NaN" with a Unicode space (M4b m18, D23.22).
   registry <- rule_registry()
-  at <- match(c("coercion_loss", "date_unparseable"), registry$rule_id)
-  expect_equal(registry$rule_version[at], c(2L, 2L))
+  at <- match(c("coercion_loss", "date_unparseable", "value_not_finite"), registry$rule_id)
+  expect_equal(registry$rule_version[at], c(3L, 2L, 2L))
 })
 
 test_that("an ID column's \"NA\" is Layer 2's and a plain column's is coercion_loss's (D8.8)", {
@@ -372,6 +374,37 @@ test_that("hexadecimal text is lost, not a number (D16.42, m26)", {
     "coercion_loss 0x10", "coercion_loss 0X1p3", "coercion_loss 0x1p9999",
     "value_not_finite Infinity"
   ))
+})
+
+test_that("\"NaN\" with a Unicode space is lost, not a number that isn't finite (M4b m18)", {
+  # as.numeric() reads "NaN" and "Inf" with a thin space after them on Windows, and D16.42
+  # keeps plain-ASCII numbers only: both are coercion_loss's, plain "NaN" value_not_finite's.
+  thin <- intToUtf8(0x2009)
+  fish <- fx_fish_clean()
+  catches <- data.table::copy(fish$catches)
+  catches$weight <- as.character(catches$weight)
+  catches$weight[1:3] <- c(paste0("NaN", thin), paste0("Inf", thin), "NaN")
+  fish$catches <- catches
+  open <- fish_open(fish, layers = 1)
+  open <- open[open$rule_id != "class_mismatch"]
+  expect_equal(open$rule_id, c("coercion_loss", "coercion_loss", "value_not_finite"))
+  expect_equal(open$value, catches$weight[1:3])
+  # In a key, ID or coded column, a padded value is whitespace_padding's (D16.42, D23.103):
+  # with weight ID-marked, "NaN" and "Inf" with a thin space are reported there (Layer 2), not
+  # by coercion_loss.
+  spec <- fx_fish_spec()
+  attributes <- data.table::copy(spec$attributes)
+  marked <- which(attributes$table_name == "catches" & attributes$attribute_name == "weight")
+  data.table::set(attributes, i = marked, j = "id_marked", value = TRUE)
+  spec$attributes <- attributes
+  issues <- gpq_check_conformance(fish, spec, layers = 1:2)$issues
+  open <- issues[issues$status == "open" & issues$rule_id != "class_mismatch"]
+  open <- open[order(open$row_number)]
+  expect_equal(
+    paste(open$rule_id, open$row_number),
+    c("whitespace_padding 1", "whitespace_padding 2", "value_not_finite 3")
+  )
+  expect_equal(open$value, catches$weight[1:3])
 })
 
 test_that("a value of only Unicode spaces outside the keys is blank_string's (m35, D8.8)", {

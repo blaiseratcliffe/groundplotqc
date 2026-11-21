@@ -663,20 +663,34 @@ preflight_check_functions <- function() {
 #'   [magp_rules()] returns. Its `rules` rows are checked against the specification and the
 #'   registered rules, and its `settings` rows give settings.
 #' @param inputs A named list of the run's optional inputs, each a data.frame or the path of
-#'   a CSV file, read as text: `overrides`, your classes for issues, with the columns
+#'   a CSV file, read as text, or for `previous` also a run folder: `overrides`, your classes
+#'   for issues, with the columns
 #'   `fingerprint`, `rule_id`, `table_name`, `column_name`, `issue_class`, `who`, `when` and
 #'   `why`, and any of the run's group columns, each an attribute of the specification;
 #'   `lineage`, the provider's raw values of the cells the pipeline changed (`table_name`,
-#'   `record_pk`, `column_name`, `raw_value`, `raw_source`); and `pipeline_fill`, the cells
+#'   `record_pk`, `column_name`, `raw_value`, `raw_source`); `pipeline_fill`, the cells
 #'   the pipeline's missing-value fill wrote (`table_name`, `record_pk`, `column_name`,
-#'   `written_value`). Pre-flight stops on an input it can't read cleanly or without exactly
-#'   its columns, and on an override whose `issue_class` isn't `source` or `harmonization` or
+#'   `written_value`); `previous`, an earlier run to compare with, as [gpq_compare_runs()]
+#'   takes it, of which pre-flight reads a folder's files and the issues' columns, never their
+#'   rows; and `acknowledgements`, your register, as [gpq_apply_acknowledgements()] takes it,
+#'   which may also hold the run's group columns, each an attribute of the specification.
+#'   Pre-flight stops on an input it can't read cleanly or without exactly its columns (an
+#'   earlier run's issues may hold the issues' other columns and the specification's
+#'   attributes), on a run folder that isn't a completed run's, on an acknowledgement whose
+#'   `decision` isn't `verified` or `rejected_proposal` or whose `run_scope` isn't `package` or
+#'   `merged`, and on an override whose `issue_class` isn't `source` or `harmonization` or
 #'   that gives none of `fingerprint`, `rule_id`, `table_name`, `column_name` and the group
 #'   columns (`input_unparseable`). It warns on two overrides that give one scope two classes
 #'   (`override_scope_conflict`), and on an override naming a rule that isn't registered, or
 #'   a table or column the dictionary doesn't have (`override_unknown_name`); a rule renamed
 #'   or split since is known, as is a column `"*"`, and the delivery's own names in an
-#'   override of `table_unexpected` or `column_unexpected`.
+#'   override of `table_unexpected` or `column_unexpected`. `attribution_map` gives the
+#'   processing script and block that make each table's attribute, with the columns
+#'   `table_name`, `attribute_name`, `script_file`, `script_block`, `script_commit` and
+#'   `note`, and one more, an attribute of the specification, giving the group value each row
+#'   is for, such as a jurisdiction; a row whose `table_name` and `attribute_name` are both
+#'   `"*"` names that group's script as a whole. Pre-flight stops on a map row that leaves its
+#'   table, attribute or group blank, or that repeats an earlier row's (`input_unparseable`).
 #' @param settings A named list of settings, which come before the rule set's, the
 #'   options' and the built-in values (see [groundplotqc_options]). Pre-flight reads `lang`,
 #'   the run language, whose text `text_id_fallback` checks; `severity`, severities by rule

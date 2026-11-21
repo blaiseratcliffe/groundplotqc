@@ -190,8 +190,10 @@ coerce_column <- function(x, r_class, date_format = NA_character_) {
     # Unicode space after it: a value it reads is kept only when written as a decimal number,
     # Inf or NaN, in plain ASCII (D16.42, m26). Of the values it reads, those are the ones
     # holding no "x" or "X" and no byte outside ASCII, which byte tests find at a tenth of a
-    # pattern's cost (D17.22). A number is plain ASCII, so its bytes are read.
-    read <- which(!is.na(number))
+    # pattern's cost (D17.22). A number is plain ASCII, so its bytes are read. A NaN it reads is
+    # tested too, as is.na() is TRUE for it, so "NaN" with a Unicode space after it is lost,
+    # not a number that isn't finite (M4b m18, D23.22).
+    read <- which(!is.na(number) | is.nan(number))
     held <- text[read]
     refused <- grepl("x", held, fixed = TRUE, useBytes = TRUE) |
       grepl("X", held, fixed = TRUE, useBytes = TRUE) |
@@ -797,12 +799,14 @@ key_text <- function(input, table, rows) {
 
 #' Each given row's PK as text and whether it is positional (9.3, 9.6; D8.16, D15.9)
 #'
-#' A composite PK's parts are joined with "|" in key_part order. A PK with a part missing
-#' (NA, blank, or its column not given) is NA; a row is positional when its PK is missing, the
-#' PK repeats in the table, or its text does: parts holding "|" can join to another record's
-#' text, which the lineage input and decoding read (D20.118). The repeats are found once per
-#' table, over all its rows, and kept in the cache. Returns `record_pk` and `positional` for
-#' `rows`.
+#' A composite PK's parts are joined with "|" in key_part order, each escaped first
+#' (escape_key_part(): a backslash written as two, a "|" as a backslash and a "|"), so no two
+#' sets of parts join to one text (D23.12, D23.26); a one-column PK's value is as written. A PK
+#' with a part missing (NA, blank, or its column not given) is NA; a row is positional when its
+#' PK is missing, the PK repeats in the table, or its text does: a number is written to 15
+#' digits, so two numbers can write one text, which the lineage input and decoding read
+#' (D20.118). The repeats are found once per table, over all its rows, and kept in the cache.
+#' Returns `record_pk` and `positional` for `rows`.
 #' @noRd
 record_pk_text <- function(input, table, rows) {
   keys <- input$spec$keys
@@ -838,8 +842,9 @@ record_pk_text <- function(input, table, rows) {
     # A composite PK's parts that are valid UTF-8 left unmarked are marked UTF-8 before they
     # are joined, since paste() reads unmarked text beside UTF-8 in the session's encoding; the
     # PK is then held as gpq_check_conformance() holds the caller's other text (D16.47, I1).
+    # Each part is escaped too, so ("a|b", "c") and ("a", "b|c") write two texts (D23.12).
     if (length(parts) > 1L) {
-      parts <- lapply(parts, utf8_marked)
+      parts <- lapply(parts, function(part) escape_key_part(utf8_marked(part)))
     }
     text <- do.call(paste, c(parts, sep = "|"))
     text[missing] <- NA_character_
@@ -868,10 +873,10 @@ record_pk_text <- function(input, table, rows) {
       rounding <- setNumericRounding(0L)
       on.exit(setNumericRounding(rounding), add = TRUE)
       repeats <- duplicated(keyed) | duplicated(keyed, fromLast = TRUE)
-      # The text's repeats too, over every row (D20.118): ("a|b", "c") and ("a", "b|c") are
-      # both "a|b|c", and a number is written to 15 digits. A one-column PK stored as text is
-      # its own text, so its repeats are the ones just found. An NA text is a missing PK,
-      # positional already.
+      # The text's repeats too, over every row (D20.118): a number is written to 15 digits, so
+      # two numbers can write one text, which escaped parts never do (D23.12). A one-column PK
+      # stored as text is its own text, so its repeats are the ones just found. An NA text is a
+      # missing PK, positional already.
       if (!is.character(keyed)) {
         text <- pk_text(NULL)
         repeats <- repeats | duplicated(text) | duplicated(text, fromLast = TRUE)

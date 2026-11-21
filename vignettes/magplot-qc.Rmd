@@ -55,11 +55,11 @@ results <- magp_run_qc(path, output)
 The run writes a folder named by its run ID inside the folder given. `metadata/` holds the
 run's own record and its inputs, settings, rules, pre-flight's findings, the specification's
 manifest, the clashes between the specification's files that precedence settled, and the
-checks the run was meant to report and didn't. `tables/` holds the run's results, issues and
-corrections, and each contributor's issues CSV. `reports/` holds pre-flight's page and each
-contributor's report. Only a contributor's `reports/<contributor>.html` and
-`tables/<contributor>_issues.csv` are for that contributor; everything else in the folder is
-MAGPlot's own.
+checks the run was meant to report and didn't. `tables/` holds the run's results, issues,
+corrections and each plot's record counts, and each contributor's issues CSV. `reports/` holds
+pre-flight's page and each contributor's report. Only a contributor's
+`reports/<contributor>.html` and `tables/<contributor>_issues.csv` are for that contributor;
+everything else in the folder is MAGPlot's own.
 
 ```{r}
 run_dir <- file.path(output, results$metadata$run$run_id)
@@ -90,3 +90,28 @@ browser, here `reports/100.html`. Each report is one file that needs no internet
 ```{r, eval = FALSE}
 utils::browseURL(file.path(run_dir, "reports", "100.html"))
 ```
+
+## A later delivery
+
+When a corrected delivery comes in, give `magp_run_qc()` the earlier run's folder as
+`previous`. Each issue is then `new` or `persisting` since that run, with the run it was first
+seen in, and each report lists the issues the earlier run had that this one doesn't. Here the
+diameter has been corrected and the crown class code hasn't. An attribution map names the
+processing script behind each issue; the package's synthetic example map stands in for
+MAGPlot's.
+
+```{r, R.options = list(width = 125)}
+delivery$magp_tree_meas$dbh[2] <- magp_example$magp_tree_meas$dbh[2]
+save(list = names(delivery), envir = list2env(delivery), file = path)
+map <- system.file("extdata", "examples", "attribution_map.csv", package = "groundplotqc")
+later <- magp_run_qc(path, output, previous = run_dir, attribution_map = map)
+open <- later$issues[later$issues$status == "open"]
+open[, c(
+  "magp_contributor_id", "table_name", "column_name", "rule_id", "change", "first_seen_run",
+  "script_file", "attribution_status"
+)]
+```
+
+The crown class code persists from the first run. The example map names no block for the crown
+class, so the issue takes the script of its contributor's jurisdiction as a whole, and is
+`unmapped`.

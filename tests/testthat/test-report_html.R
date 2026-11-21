@@ -113,6 +113,28 @@ test_that("html_table writes a double column's cells in full, right-aligned (R4,
     capped, "<td class=\"num\">100000</td></tr><tr><td class=\"num\">0.0001</td>",
     fixed = TRUE
   )
+  # A column `decimals` names is padded to its decimals and stays right-aligned; another column
+  # of numbers is written in full, as before (D23.109).
+  padded <- html_table(
+    data.table::data.table(share = c(0.1, 1, NA, 0.25), x = c(0.1, 1, 2.25, 1e5)), "c",
+    decimals = c(share = 2L)
+  )
+  expect_match(
+    padded, "<th scope=\"col\" data-gpq-sort class=\"num\">share</th>",
+    fixed = TRUE
+  )
+  expect_match(padded, "<tr><td class=\"num\">0.10</td><td class=\"num\">0.1</td></tr>",
+    fixed = TRUE
+  )
+  expect_match(padded, "<tr><td class=\"num\">1.00</td><td class=\"num\">1</td></tr>",
+    fixed = TRUE
+  )
+  expect_match(padded, "<tr><td class=\"num\"></td><td class=\"num\">2.25</td></tr>",
+    fixed = TRUE
+  )
+  expect_match(padded, "<tr><td class=\"num\">0.25</td><td class=\"num\">100000</td></tr>",
+    fixed = TRUE
+  )
 })
 
 test_that("html_table refuses bad arguments, naming the argument", {

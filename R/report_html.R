@@ -57,10 +57,13 @@ cut_cell_text <- function(x, cell_cap) {
 #' the severity's colour; a row of class "total" goes in the table's foot, after the body, so
 #' it is never sorted, filtered or capped and isn't counted in the note. The note and the
 #' filter box's label are in `lang`, from the caller's `text` table where it has them (D14.7,
-#' D14.30).
+#' D14.30). `decimals` is NULL or a named integer vector, a column's name to its number of
+#' decimals: a column of numbers it names is written to that many, padded ("0.10", "1.00",
+#' formatC()'s format "f"), NA as an empty cell, and stays right-aligned; any other column is
+#' written as above (D23.104, D23.109).
 #' @noRd
 html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL, row_class = NULL,
-                       lang = "en", text = NULL) {
+                       lang = "en", text = NULL, decimals = NULL) {
   if (!is.data.frame(dt)) {
     stop("`dt` must be a data.frame or data.table.", call. = FALSE)
   }
@@ -122,8 +125,14 @@ html_table <- function(dt, caption, row_cap = NULL, csv_name = NULL, row_class =
     cells <- lapply(seq_along(dt), function(j) {
       column <- dt[[j]]
       x <- if (length(at) == length(column)) column else column[at]
-      # A double in full (as_text(), D12.45): 100000, never as.character()'s "1e+05" (D20.132).
-      if (is.double(x) && !is.object(x)) {
+      places <- decimals[names(dt)[[j]]]
+      if (length(places) == 1L && !is.na(places) && is.numeric(x) && !is.object(x)) {
+        # A column given its decimals, padded to them (D23.109).
+        written <- formatC(x, format = "f", digits = unname(places))
+        written[is.na(x)] <- NA_character_
+        x <- written
+      } else if (is.double(x) && !is.object(x)) {
+        # A double in full (as_text(), D12.45): 100000, never as.character()'s "1e+05" (D20.132).
         x <- as_text(x)
       }
       value <- html_escape(x)
